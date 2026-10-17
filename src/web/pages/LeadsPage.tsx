@@ -87,7 +87,7 @@ export function LeadModal({ id, onClose }: { id: string; onClose: () => void }) 
         <div className="body">
           {d && (
             <>
-              <LeadSummary d={d} />
+              <LeadSummary d={d} onChange={load} />
               <h3>Calls</h3>
               <CallHistory calls={d.calls} onChange={load} />
               <h3 style={{ marginTop: 14 }}>Notes</h3>

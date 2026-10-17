@@ -11,6 +11,7 @@ import { CURRENT_RESULT_SQL } from '../domain/leadState.js';
 import { numberChecks, numberStats, recordNumberCheck } from '../domain/numbers.js';
 import { checkLatestBackup, type RestoreCheck } from '../backup.js';
 import { getSetting, setSetting } from '../ai/settings.js';
+import { rescheduleAppointment, type CalendarWorker } from '../calendar/sync.js';
 
 const idParam = z.object({ id: z.string().max(64) });
 const filterQuery = z.object({
@@ -44,7 +45,7 @@ export function runBackupCheckIfDue(db: DB, config: Config, now = new Date()): R
   return r;
 }
 
-export function registerReportRoutes(app: FastifyInstance, deps: { db: DB; config: Config }) {
+export function registerReportRoutes(app: FastifyInstance, deps: { db: DB; config: Config; calendar?: CalendarWorker }) {
   const { db, config } = deps;
 
   // ---------- reports ----------
@@ -105,7 +106,14 @@ export function registerReportRoutes(app: FastifyInstance, deps: { db: DB; confi
         note: z.string().max(2000).nullish(),
       })
       .parse(req.body);
-    return recordAppointmentResult(db, id, b);
+    const r = db.transaction(() => {
+      const res = recordAppointmentResult(db, id, b);
+      // A new time gets its own #MP event with the same note, when the old one was on the calendar.
+      if (res.new_appointment_id) rescheduleAppointment(db, id, res.new_appointment_id);
+      return res;
+    })();
+    if (r.new_appointment_id) deps.calendar?.kick();
+    return r;
   });
 
   app.get('/api/appointments/:id/results', async (req) => appointmentResults(db, idParam.parse(req.params).id));
