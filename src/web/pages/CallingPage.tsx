@@ -700,6 +700,23 @@ function LogCall({
             </span>
           );
         })()}
+        {!(changed && defaultNumber.known) && (() => {
+          // You call leads from a number in their county's area code. Say so when this one isn't, and offer one that is.
+          const codes = d.county_area_codes ?? [];
+          const chosen = activeNumbers.find((x) => x.id === numberId);
+          if (!codes.length || !chosen || codes.includes(chosen.e164.slice(2, 5))) return null;
+          const local = activeNumbers.find((x) => codes.includes(x.e164.slice(2, 5)) && x.reputation_status !== 'flagged');
+          return (
+            <span className="warn">
+              {d.lead.county ?? 'This county'} uses {codes.join('/')}; this number is {chosen.e164.slice(2, 5)}.{' '}
+              {local && (
+                <button className="btn small" onClick={() => setNumberId(local.id)}>
+                  Use {local.label ? `${local.label}, ` : ''}{fmtPhone(local.e164)}
+                </button>
+              )}
+            </span>
+          );
+        })()}
         {activeNumbers.length === 0 && <span className="help">Add your numbers on the Numbers page to record which one you used.</span>}
       </div>
       <div className="outcomes" role="group" aria-label="Outcome">

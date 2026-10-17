@@ -221,6 +221,10 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       linked,
       changes: db.prepare('SELECT * FROM lead_change WHERE lead_id = ? ORDER BY created_at DESC').all(id),
       lead_type: lead.lead_type ? db.prepare('SELECT * FROM lead_type WHERE code = ?').get(lead.lead_type) : null,
+      /** Area codes of the county the lead was bought for (not the lead's own phone). */
+      county_area_codes: lead.county_key
+        ? (db.prepare('SELECT area_code FROM county_area_code WHERE county_key = ? ORDER BY area_code').all(lead.county_key) as { area_code: string }[]).map((r) => r.area_code)
+        : [],
     };
   });
 
