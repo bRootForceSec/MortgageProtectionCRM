@@ -13,6 +13,18 @@ export function DataPage() {
   const [health, setHealth] = useState(false);
   const [backups, setBackups] = useState<{ file: string; bytes: number; created_at: string }[]>([]);
   const [busy, setBusy] = useState(false);
+  const [check, setCheck] = useState<{ at: string; file: string | null; ok: boolean | null; message: string } | null>(null);
+  useEffect(() => void api.get<typeof check>('/backups/check').then(setCheck).catch(() => {}), []);
+  const checkNow = async () => {
+    setBusy(true);
+    try {
+      setCheck(await api.post<typeof check>('/backups/check', {}));
+    } catch (e: any) {
+      toast(e.message, 'error');
+    } finally {
+      setBusy(false);
+    }
+  };
   const h = health ? '?health=1' : '';
 
   const load = () => api.get<typeof backups>('/backups').then(setBackups);
@@ -59,7 +71,15 @@ export function DataPage() {
           Backups are verified copies of the whole database, saved in {meta?.data_dir}/backups. A backup runs every night at 11:30 PM once the app is installed with scripts/install.sh, and before every update.
           To restore one, follow "Backups and restore" in the README. The current database is kept aside, not deleted.
         </p>
-        <button className="btn primary" onClick={backupNow} disabled={busy}>Back up now</button>
+        <div className="row">
+          <button className="btn primary" onClick={backupNow} disabled={busy}>Back up now</button>
+          <button className="btn" onClick={checkNow} disabled={busy || !backups.length}>Check the newest backup restores</button>
+        </div>
+        <p className={check?.ok === false ? 'warn' : 'help'} aria-label="Restore check">
+          {check
+            ? <>Restore check {fmtDateTime(check.at)}{check.file ? ` (${check.file})` : ''}: {check.ok ? '✓ ' : ''}{check.message}</>
+            : 'Once a week the app restores the newest backup into a scratch copy to make sure it works. It hasn\'t run yet.'}
+        </p>
         <table className="grid" style={{ marginTop: 10 }}>
           <thead><tr><th>File</th><th>Created</th><th>Size</th></tr></thead>
           <tbody>

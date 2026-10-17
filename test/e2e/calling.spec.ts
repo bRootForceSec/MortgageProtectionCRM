@@ -195,6 +195,25 @@ test('dial counter, undo, remapped keys, QR dialing, scripts and lead edits', as
   await expect(page.getByRole('heading', { name: 'Today' })).toBeVisible();
 });
 
+test('reports: numbers open the calls behind them', async ({ page }) => {
+  await page.goto(launchUrl);
+  await page.getByRole('button', { name: 'Reports' }).click();
+  await expect(page.getByRole('heading', { name: 'Reports' })).toBeVisible();
+  const dials = page.locator('.summary-tiles div', { hasText: 'Dials' }).first().locator('button.num');
+  await expect(dials).not.toHaveText('0');
+  const attempts = await page.locator('.summary-tiles div', { hasText: 'Attempts' }).first().locator('button.num').innerText();
+  await page.locator('.summary-tiles div', { hasText: 'Attempts' }).first().locator('button.num').click();
+  const dialog = page.getByRole('dialog', { name: 'Attempts' });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.locator('tbody tr')).toHaveCount(Number(attempts));
+  await page.screenshot({ path: 'test-results/reports-drill.png', fullPage: true });
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await expect(page.getByRole('heading', { name: /By batch/ })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /benchmarks/ })).toBeVisible();
+  await page.screenshot({ path: 'test-results/reports.png', fullPage: true });
+});
+
 test('API refuses requests without the access cookie', async ({ request }) => {
   const r = await request.get(`http://127.0.0.1:${PORT}/api/meta`);
   expect(r.status()).toBe(401);

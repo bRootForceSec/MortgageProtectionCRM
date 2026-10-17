@@ -8,14 +8,16 @@ import { NumbersPage } from './pages/NumbersPage';
 import { DataPage } from './pages/DataPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { TodayPage } from './pages/TodayPage';
+import { ReportsPage } from './pages/ReportsPage';
 import { UpdateBar } from './components/UpdateBar';
 import { CallbackAlerts } from './components/CallbackAlerts';
 import { buildKeyMap, type CallingSettingsResponse, type KeyMap } from './shortcuts';
 
-export type Page = 'calling' | 'today' | 'import' | 'leads' | 'calls' | 'numbers' | 'data' | 'settings';
+export type Page = 'calling' | 'today' | 'reports' | 'import' | 'leads' | 'calls' | 'numbers' | 'data' | 'settings';
 const PAGES: { key: Page; label: string }[] = [
   { key: 'calling', label: 'Calling' },
   { key: 'today', label: 'Today' },
+  { key: 'reports', label: 'Reports' },
   { key: 'leads', label: 'Leads' },
   { key: 'calls', label: 'Call history' },
   { key: 'import', label: 'Import' },
@@ -118,6 +120,7 @@ export function App() {
         <div className="page" style={page === 'calling' ? { padding: 0, overflow: 'hidden' } : undefined}>
           {page === 'calling' && <CallingPage />}
           {page === 'today' && <TodayPage />}
+          {page === 'reports' && <ReportsPage />}
           {page === 'import' && <ImportPage />}
           {page === 'leads' && <LeadsPage />}
           {page === 'calls' && <CallsPage />}
