@@ -66,7 +66,7 @@ export function CallingCard() {
         <label>Bring back an unanswered lead after</label>
         <span><NumberField value={s.retry_gap_minutes} onSave={(n) => set({ retry_gap_minutes: n ?? 0 })} /> minutes <span className="help">(0 = right away; default 240 = 4 hours)</span></span>
 
-        <label>Appointment and callback times</label>
+        <label>Callback times</label>
         <span>
           Suggest today at the next half hour. From <NumberField value={s.late_cutoff_hour} onSave={(n) => set({ late_cutoff_hour: Math.min(24, n ?? 21) })} width={70} />:00
           on, suggest tomorrow at 10 AM. <span className="help">(24 = always today)</span>
@@ -119,7 +119,7 @@ export function CallingCard() {
           <span className="help">Shown in the top bar. Leave blank for none.</span>
         </span>
 
-        <label>Callback and appointment alerts</label>
+        <label>Callback alerts</label>
         <span>
           <label className="choice-inline"><input type="checkbox" checked={s.alerts.desktop} onChange={(e) => set({ alerts: { ...s.alerts, desktop: e.target.checked } })} /> desktop notification</label>{' '}
           {s.alerts.desktop && perm !== 'granted' && perm !== 'unsupported' && (

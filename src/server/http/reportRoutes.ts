@@ -6,12 +6,9 @@ import { DomainError } from '../domain/calls.js';
 import { parseList, groupWhere } from '../domain/groupFilter.js';
 import { buildReport, drill, DrillSpec, loadTargets, reportSheets, saveTargets, type ReportFilter } from '../domain/reports.js';
 import { toXlsx } from '../domain/exporter.js';
-import { APPOINTMENT_RESULTS, appointmentResults, recordAppointmentResult } from '../domain/appointments.js';
-import { CURRENT_RESULT_SQL } from '../domain/leadState.js';
 import { numberChecks, numberStats, recordNumberCheck } from '../domain/numbers.js';
 import { checkLatestBackup, type RestoreCheck } from '../backup.js';
 import { getSetting, setSetting } from '../ai/settings.js';
-import { rescheduleAppointment, type CalendarWorker } from '../calendar/sync.js';
 
 const idParam = z.object({ id: z.string().max(64) });
 const filterQuery = z.object({
@@ -45,7 +42,7 @@ export function runBackupCheckIfDue(db: DB, config: Config, now = new Date()): R
   return r;
 }
 
-export function registerReportRoutes(app: FastifyInstance, deps: { db: DB; config: Config; calendar?: CalendarWorker }) {
+export function registerReportRoutes(app: FastifyInstance, deps: { db: DB; config: Config }) {
   const { db, config } = deps;
 
   // ---------- reports ----------
@@ -79,44 +76,6 @@ export function registerReportRoutes(app: FastifyInstance, deps: { db: DB; confi
     }
   });
 
-  // ---------- appointment results ----------
-  /** Appointments whose time has passed (or that have no date) and that you haven't said how they went. */
-  app.get('/api/appointments/results-due', async (req) => {
-    const q = z.object({ counties: z.string().max(4000).optional(), area_codes: z.string().max(400).optional() }).parse(req.query);
-    const g = groupWhere('l.county_key', { counties: parseList(q.counties), areaCodes: parseList(q.area_codes) });
-    return db
-      .prepare(
-        `SELECT a.id, a.lead_id, a.scheduled_for, a.notes, a.recorded_via,
-                trim(coalesce(l.first_name,'') || ' ' || coalesce(l.last_name,'')) name, l.phone_e164, l.time_zone, l.county, l.state
-         FROM appointment a JOIN lead l ON l.id = a.lead_id LEFT JOIN call c ON c.id = a.set_on_call_id
-         WHERE a.internal_status <> 'canceled' AND (c.id IS NULL OR c.voided_at IS NULL)
-           AND (a.scheduled_for IS NULL OR a.scheduled_for < @now) AND ${CURRENT_RESULT_SQL} IS NULL
-           AND ${g.sql}
-         ORDER BY a.scheduled_for IS NULL, a.scheduled_for DESC`,
-      )
-      .all({ now: new Date().toISOString(), ...g.params });
-  });
-
-  app.post('/api/appointments/:id/result', async (req) => {
-    const { id } = idParam.parse(req.params);
-    const b = z
-      .object({
-        result: z.enum([...APPOINTMENT_RESULTS, 'cleared']),
-        rescheduled_for: z.string().max(40).nullish(),
-        note: z.string().max(2000).nullish(),
-      })
-      .parse(req.body);
-    const r = db.transaction(() => {
-      const res = recordAppointmentResult(db, id, b);
-      // A new time gets its own #MP event with the same note, when the old one was on the calendar.
-      if (res.new_appointment_id) rescheduleAppointment(db, id, res.new_appointment_id);
-      return res;
-    })();
-    if (r.new_appointment_id) deps.calendar?.kick();
-    return r;
-  });
-
-  app.get('/api/appointments/:id/results', async (req) => appointmentResults(db, idParam.parse(req.params).id));
 
   // ---------- caller ID numbers ----------
   app.get('/api/numbers/stats', async (req) => {

@@ -232,7 +232,7 @@ export function registerImportRoutes(
     const rows = db
       .prepare(
         `SELECT l.county_key, max(l.county) county, max(l.state) state, COUNT(*) leads,
-                SUM(CASE WHEN s.status NOT IN ('dead','invalid','sold') THEN 1 ELSE 0 END) workable
+                SUM(CASE WHEN s.status IN ('new','retry','callback') THEN 1 ELSE 0 END) workable
          FROM lead l JOIN lead_state s ON s.lead_id = l.id WHERE l.county_key IS NOT NULL GROUP BY l.county_key ORDER BY state, county`,
       )
       .all() as { county_key: string; county: string; state: string; leads: number; workable: number }[];

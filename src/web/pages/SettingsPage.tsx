@@ -3,7 +3,6 @@ import { api } from '../api';
 import { useApp } from '../App';
 import { useLeadTypes } from './ImportPage';
 import { CallingCard, ShortcutsCard, ScriptsCard } from './CallingSettingsCards';
-import { GoogleCalendarCard } from '../components/Calendar';
 
 // Settings: which AI reads scanned lead pages, lead types and prices, and the area codes each county is called under.
 
@@ -30,7 +29,6 @@ export function SettingsPage() {
   return (
     <>
       <CallingCard />
-      <GoogleCalendarCard />
       <ShortcutsCard />
       <ScriptsCard />
       <AiCard />

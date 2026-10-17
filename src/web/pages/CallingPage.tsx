@@ -3,7 +3,6 @@ import { defaultWhen } from '../when';
 import { api, fmtMoney, fmtPhone, fmtRelative, newKey, toLocalInput, type LeadDetail, type QueueResponse, type QueueItem } from '../api';
 import { useApp } from '../App';
 import { LeadSummary, CallHistory, Notes } from '../components/LeadView';
-import { useCalendarStatus } from '../components/Calendar';
 import { EditLead } from '../components/EditLead';
 import { DialQr } from '../components/DialQr';
 import { GroupPicker, useGroups } from '../components/GroupPicker';
@@ -12,7 +11,6 @@ import { fillScript, isAction, isTyping, keyLabel, normKey, type KeyMap } from '
 const BUCKETS: { key: QueueItem['bucket'] | 'all'; label: string }[] = [
   { key: 'all', label: 'All' },
   { key: 'callback_due', label: 'Callbacks due' },
-  { key: 'appointment_passed', label: 'Past appointments' },
   { key: 'new', label: 'New' },
   { key: 'retry', label: 'Retry' },
 ];
@@ -160,13 +158,13 @@ export function CallingPage() {
     if (!keep) select(l.items[0]?.lead_id ?? null);
   }, [fetchQueue, listKey, selected, setList]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  /** Adds callbacks and past appointments that came due since the list was built, at the top. */
+  /** Adds callbacks that came due since the list was built, at the top. */
   const mergeDue = useCallback(async () => {
     const q = await fetchQueue();
     if (!q) return;
     updateList((items) => {
       const have = new Set(items.map((i) => i.lead_id));
-      const due = q.items.filter((i) => (i.bucket === 'callback_due' || i.bucket === 'appointment_passed') && !have.has(i.lead_id));
+      const due = q.items.filter((i) => i.bucket === 'callback_due' && !have.has(i.lead_id));
       setMore(q.items.filter((i) => !have.has(i.lead_id) && !due.includes(i)).length);
       return due.length ? [...due.map((i) => ({ ...i, due_now: true })), ...items] : items;
     });
@@ -300,11 +298,10 @@ export function CallingPage() {
     setSaved(null);
     try {
       const r = await api.post<{
-        lead_id: string; outcome_code: string | null; callback_due_at: string | null; appointment_at: string | null;
+        lead_id: string; outcome_code: string | null; callback_due_at: string | null;
         dial_count: number; talk_seconds: number | null; from_number_id: string | null; note: string | null;
-        calendar_unitrust_has_it?: boolean;
       }>(`/calls/${s.callId}/void`, { reason: 'undo' });
-      const when = r.appointment_at ?? r.callback_due_at;
+      const when = r.callback_due_at;
       setRestore({
         leadId: s.leadId,
         n: Date.now(),
@@ -319,8 +316,7 @@ export function CallingPage() {
       setAttempt({ dials: r.dial_count, timerStart: null, to: null });
       markDone(s.leadId, null);
       select(s.leadId);
-      if (r.calendar_unitrust_has_it) toast(`Undone. Unitrust had already booked ${s.name}'s appointment: cancel it in Unitrust.`, 'error');
-      else toast(`Undone. Pick the right outcome for ${s.name} and press Enter.`);
+      toast(`Undone. Pick the right outcome for ${s.name} and press Enter.`);
       bumpStats();
       await loadDetail(s.leadId);
     } catch (e: any) {
@@ -391,7 +387,7 @@ export function CallingPage() {
             title="A 3-digit number finds every county under that area code"
           />
           <GroupPicker groups={groups} onChange={setGroups} />
-          <div className="tabs" title={`Order: due callbacks, past appointments, new leads (newest batch first), then retries ${gapText} after the last attempt (change this in Settings). Skipped leads drop to the end for today.`}>
+          <div className="tabs" title={`Order: due callbacks, new leads (newest batch first), then retries ${gapText} after the last attempt (change this in Settings). Skipped leads drop to the end for today.`}>
             {BUCKETS.map((b) => (
               <button key={b.key} className={bucket === b.key ? 'active' : ''} onClick={() => setBucket(b.key)}>
                 {b.label}
@@ -426,7 +422,7 @@ export function CallingPage() {
                     <span className="badge done">{i.done.label}{i.done.dials > 1 ? ` · ${i.done.dials} dials` : ''}</span>
                   ) : (
                     <span className={`badge ${i.bucket}`}>
-                      {i.due_now ? 'due now' : i.bucket === 'callback_due' ? (i.needs_time ? 'callback, needs a time' : 'callback') : i.bucket === 'appointment_passed' ? (i.needs_time ? 'appt, needs a date' : 'appt passed') : i.bucket}
+                      {i.due_now ? 'due now' : i.bucket === 'callback_due' ? (i.needs_time ? 'callback, needs a time' : 'callback') : i.bucket}
                     </span>
                   )}
                   <span className="sub">
@@ -454,7 +450,7 @@ export function CallingPage() {
             <div className="empty">Select a lead from the list, or import leads first.</div>
           ) : (
             <>
-              <LeadSummary d={detail} onDial={dial} dialLabel={dialLabel} dialKey={k('dial')} onEdit={() => setEditing(true)} editKey={k('edit')} onChange={() => void refreshDetail()} />
+              <LeadSummary d={detail} onDial={dial} dialLabel={dialLabel} dialKey={k('dial')} onEdit={() => setEditing(true)} editKey={k('edit')} />
               {showScript && <ScriptPanel d={detail} />}
               <LogCall
                 key={`${detail.lead.id}-${restore?.leadId === detail.lead.id ? restore.n : 0}`}
@@ -565,7 +561,7 @@ function LogCall({
   const defaultNumber = useMemo(() => {
     const pref = d.state?.preferred_number_id;
     if (pref && activeNumbers.some((n) => n.id === pref)) {
-      return { id: pref, why: d.appointments.length ? 'number this appointment was set from' : 'number last used with this lead', known: true };
+      return { id: pref, why: d.state?.status === 'appointment_set' ? 'number this appointment was set from' : 'number last used with this lead', known: true };
     }
     const last = store(LAST_NUMBER_KEY);
     if (last && activeNumbers.some((n) => n.id === last)) return { id: last, why: 'your last used number', known: false };
@@ -577,9 +573,6 @@ function LogCall({
   const [when, setWhen] = useState(restore?.when ?? '');
   const [minutes, setMinutes] = useState(restore?.minutes ?? '');
   const [note, setNote] = useState(restore?.note ?? '');
-  const [cal] = useCalendarStatus();
-  const [toCalendar, setToCalendar] = useState(true);
-  const [sourceLeadId, setSourceLeadId] = useState('');
   const [saving, setSaving] = useState(false);
   const [key, setKey] = useState(newKey());
   const whenRef = useRef<HTMLInputElement>(null);
@@ -589,13 +582,13 @@ function LogCall({
   }, [defaultNumber.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const outcome = meta?.outcome_codes.find((o) => o.code === code) ?? null;
-  const needsWhen = outcome?.requires_callback_time || outcome?.code === 'appointment';
+  const needsWhen = !!outcome?.requires_callback_time;
   const changed = numberId !== defaultNumber.id;
 
   const choose = useCallback((c: string) => {
     setCode(c);
     const o = meta?.outcome_codes.find((x) => x.code === c);
-    if (o?.requires_callback_time || c === 'appointment') {
+    if (o?.requires_callback_time) {
       setWhen((w) => w || toLocalInput(defaultWhen(calling?.settings.late_cutoff_hour ?? 21)));
       setTimeout(() => whenRef.current?.focus(), 0);
     }
@@ -611,7 +604,7 @@ function LogCall({
     if (!code || saving) return;
     if (code === 'dnc_request' && !window.confirm('Move this lead to the dead pile? It will leave the queue.')) return;
     if (needsWhen && !when) {
-      toast(code === 'appointment' ? 'Enter the appointment time' : 'Enter when to call back', 'error');
+      toast('Enter when to call back', 'error');
       whenRef.current?.focus();
       return;
     }
@@ -624,21 +617,15 @@ function LogCall({
         to_e164: attempt.to,
         outcome_code: code,
         callback_due_at: outcome?.requires_callback_time ? iso : null,
-        appointment_at: code === 'appointment' ? iso : null,
         talk_seconds: minutes ? Number(minutes) * 60 : timerSeconds(),
         dial_count: attempt.dials,
         note: note || null,
-        calendar: code === 'appointment' && cal?.connected
-          ? { add: toCalendar, source_lead_id: d.lead.source_lead_id ? null : sourceLeadId.trim() || null }
-          : null,
       });
       if (numberId) store(LAST_NUMBER_KEY, numberId);
       setCode(null);
       setWhen('');
       setMinutes('');
       setNote('');
-      setSourceLeadId('');
-      setToCalendar(true);
       setKey(newKey());
       await onSaved({
         callId: r.call_id, leadId: d.lead.id, name: [d.lead.first_name, d.lead.last_name].filter(Boolean).join(' ') || 'this lead',
@@ -649,13 +636,13 @@ function LogCall({
     } finally {
       setSaving(false);
     }
-  }, [code, saving, needsWhen, when, key, numberId, outcome, minutes, note, d.lead.id, toast, onSaved, attempt, cal, toCalendar, sourceLeadId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [code, saving, needsWhen, when, key, numberId, outcome, minutes, note, d.lead.id, toast, onSaved, attempt]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Layout effect: the hotkeys are live as soon as the lead is on screen, so a fast keypress isn't lost.
   useLayoutEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (document.querySelector('.modal-back')) return;
-      if (e.key === 'Enter' && code && (!isTyping(e) || e.ctrlKey || e.metaKey || ['when-input', 'log-note', 'log-minutes', 'log-lead-id'].includes((e.target as HTMLElement).id))) {
+      if (e.key === 'Enter' && code && (!isTyping(e) || e.ctrlKey || e.metaKey || ['when-input', 'log-note', 'log-minutes'].includes((e.target as HTMLElement).id))) {
         e.preventDefault();
         void save();
         return;
@@ -705,7 +692,7 @@ function LogCall({
           const shown = n ? `${n.label ? `${n.label}, ` : ''}${fmtPhone(n.e164)}` : 'another number';
           return (
             <span className="warn">
-              {d.appointments.length
+              {d.state?.status === 'appointment_set'
                 ? `This lead's appointment was set from ${shown}. They may not pick up a number they don't know.`
                 : `You've reached this lead before from ${shown}. They may not pick up a number they don't know.`}
             </span>
@@ -741,7 +728,7 @@ function LogCall({
         <div className="row" style={{ alignItems: 'flex-end' }}>
           {needsWhen && (
             <label className="field">
-              <span>{code === 'appointment' ? 'Appointment time' : 'Call back at'} (your time)</span>
+              <span>Call back at (your time)</span>
               <input id="when-input" ref={whenRef} type="datetime-local" value={when} onChange={(e) => setWhen(e.target.value)} />
             </label>
           )}
@@ -750,23 +737,9 @@ function LogCall({
             <input id="log-minutes" type="number" min={0} max={600} value={minutes} onChange={(e) => setMinutes(e.target.value)} style={{ width: 90 }} />
           </label>
           <label className="field" style={{ flex: 1, minWidth: 200 }}>
-            <span>{code === 'appointment' && cal?.connected && toCalendar ? 'Note (goes at the top of Unitrust\'s calendar event)' : 'Note (optional)'}</span>
+            <span>Note (optional)</span>
             <input id="log-note" value={note} onChange={(e) => setNote(e.target.value)} />
           </label>
-          {code === 'appointment' && cal?.connected && (
-            <>
-              {toCalendar && !d.lead.source_lead_id && (
-                <label className="field">
-                  <span>Lead ID (Unitrust needs it)</span>
-                  <input id="log-lead-id" value={sourceLeadId} onChange={(e) => setSourceLeadId(e.target.value)} inputMode="numeric" style={{ width: 120 }} />
-                </label>
-              )}
-              <label className="choice" title="Adds a 30-minute #MP event to your Google Calendar">
-                <input type="checkbox" checked={toCalendar} onChange={(e) => setToCalendar(e.target.checked)} />
-                <span>Google Calendar{toCalendar && d.lead.source_lead_id ? <span className="muted"> · #MP {d.lead.source_lead_id}</span> : null}</span>
-              </label>
-            </>
-          )}
           <button className="btn primary" onClick={save} disabled={saving}>Save <kbd>Enter</kbd></button>
           <button className="btn" onClick={() => setCode(null)}>Cancel <kbd>Esc</kbd></button>
         </div>

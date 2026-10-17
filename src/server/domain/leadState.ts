@@ -3,18 +3,19 @@ import { nowIso } from '../ids.js';
 import { retryGapMs } from './callingSettings.js';
 
 // lead_state is a derived projection. It is computed only from authoritative facts:
-// calls, current outcomes, lead actions (skip / dead / restore) and appointments.
+// calls, current outcomes and lead actions (skip / dead / restore).
 // `rebuildLeadState` can be run at any time and must produce the same result.
+//
+// Appointments are tracked in Unitrust, not here. "Appointment set" is just how a call ended: the lead leaves the
+// queue and has no date or time here.
 
 /**
- * SQL for an appointment's current result, aliased `a`: the newest result you entered, else the result
- * a spreadsheet import recorded (official_status), else NULL. "cleared" means no result.
+ * Outcomes that mean the lead booked an appointment. "Appointment sat, no sale" and "Sold" are retired, but older
+ * history (and spreadsheets) can still carry them; they mean the lead was booked.
  */
-export const CURRENT_RESULT_SQL = `coalesce(
-  (SELECT nullif(r.result, 'cleared') FROM appointment_result r WHERE r.appointment_id = a.id ORDER BY r.entered_at DESC, r.id DESC LIMIT 1),
-  CASE WHEN NOT EXISTS (SELECT 1 FROM appointment_result r WHERE r.appointment_id = a.id) THEN a.official_status END)`;
+export const BOOKED_CODES = new Set(['appointment', 'sat_no_sale', 'sold']);
 
-export type LeadStatus = 'new' | 'retry' | 'callback' | 'appointment_set' | 'invalid' | 'dead' | 'sold';
+export type LeadStatus = 'new' | 'retry' | 'callback' | 'appointment_set' | 'invalid' | 'dead';
 
 /** Default gap before an unanswered lead comes back. You can change it in Settings. */
 export const RETRY_GAP_MS = 4 * 60 * 60 * 1000;
@@ -33,16 +34,6 @@ export interface LeadFacts {
     lead_effect?: string | null;
   }[];
   actions: { action: 'skip' | 'mark_dead' | 'restore'; created_at: string }[];
-  appointments: {
-    scheduled_for: string | null;
-    internal_status: string;
-    set_from_number_id: string | null;
-    created_at: string;
-    official_status?: string | null;
-    /** How it went (see appointments.ts), if you've said. */
-    result?: string | null;
-    result_at?: string | null;
-  }[];
 }
 
 export interface DerivedLeadState {
@@ -74,20 +65,12 @@ export function deriveLeadState(f: LeadFacts, now: string, retryGap = RETRY_GAP_
     ...outcomes.filter((o) => o.marks_dead).map((o) => o.entered_at),
   ].sort().at(-1);
 
-  const appts = [...f.appointments].sort(byKey('created_at'));
-  const soldAt = [
-    ...outcomes.filter((o) => o.lead_effect === 'sold').map((o) => o.entered_at),
-    ...appts.filter((a) => a.result === 'sold').map((a) => a.result_at ?? a.created_at),
-  ].sort().at(-1);
-  // An appointment is open until it's canceled or you've said how it went.
-  const live = appts.filter((a) => a.internal_status !== 'canceled' && !a.result);
-  const openAppt = live.filter((a) => a.scheduled_for !== null && a.scheduled_for >= now).at(-1);
-  // An appointment from a spreadsheet has no date: it stays open ("needs a date") until a later call says otherwise.
-  const undatedAppt = lastOutcome?.outcome_code === 'appointment' ? live.filter((a) => a.scheduled_for === null).at(-1) : undefined;
   // Calls from a spreadsheet have no real time, so they don't start the retry gap.
   const timedCalls = placed.filter((c) => c.time_known !== 0);
+  // The number the lead knows you by: the one you booked them from, else the last one that reached them.
+  const bookedCall = [...placed].reverse().find((c) => outcomes.some((o) => o.call_id === c.id && BOOKED_CODES.has(o.outcome_code)));
   const preferred =
-    appts.at(-1)?.set_from_number_id ??
+    bookedCall?.from_number_id ??
     [...placed].reverse().find((c) => outcomes.some((o) => o.call_id === c.id && o.counts_as_human_contact))?.from_number_id ??
     null;
 
@@ -103,9 +86,10 @@ export function deriveLeadState(f: LeadFacts, now: string, retryGap = RETRY_GAP_
   if (lastOutcome?.grp === 'invalid' && lastOutcome.entered_at > lastRestore) {
     return { ...base, status: 'invalid', next_due_at: null };
   }
-  if (soldAt && soldAt > lastRestore) return { ...base, status: 'sold', next_due_at: null };
-  if (openAppt) return { ...base, status: 'appointment_set', next_due_at: openAppt.scheduled_for };
-  if (undatedAppt) return { ...base, status: 'appointment_set', next_due_at: null };
+  // Booked: out of the queue until a later call says otherwise (or you restore it).
+  if (lastOutcome && BOOKED_CODES.has(lastOutcome.outcome_code) && lastOutcome.entered_at > lastRestore) {
+    return { ...base, status: 'appointment_set', next_due_at: null };
+  }
   // A callback without a time (e.g. "reschedule" in a spreadsheet) is due now and listed as "needs a time".
   if (lastOutcome?.outcome_code === 'callback') {
     return { ...base, status: 'callback', next_due_at: lastOutcome.callback_due_at ?? null };
@@ -135,14 +119,6 @@ export function loadLeadFacts(db: DB, leadId: string): LeadFacts {
       )
       .all(leadId) as LeadFacts['outcomes'],
     actions: db.prepare('SELECT action, created_at FROM lead_action WHERE lead_id = ?').all(leadId) as LeadFacts['actions'],
-    appointments: db
-      .prepare(
-        `SELECT a.scheduled_for, a.internal_status, a.set_from_number_id, a.created_at, a.official_status,
-                ${CURRENT_RESULT_SQL} result,
-                (SELECT r.entered_at FROM appointment_result r WHERE r.appointment_id = a.id ORDER BY r.entered_at DESC, r.id DESC LIMIT 1) result_at
-         FROM appointment a WHERE a.lead_id = ?`,
-      )
-      .all(leadId) as LeadFacts['appointments'],
   };
 }
 
@@ -173,9 +149,9 @@ export function verifyLeadState(db: DB, now = nowIso()): string[] {
   const gap = retryGapMs(db);
   for (const r of rows) {
     const d = deriveLeadState(loadLeadFacts(db, r.lead_id), now, gap);
-    // Status/next_due depend on "now" for appointments and retries, so compare the time-independent fields
+    // Status/next_due depend on "now" for retries, so compare the time-independent fields
     // plus status for leads whose status cannot change with time.
-    const timeless = ['dead', 'invalid', 'new', 'callback', 'sold'].includes(d.status);
+    const timeless = ['dead', 'invalid', 'new', 'callback', 'appointment_set'].includes(d.status);
     if (keys.some((k) => d[k] !== r[k]) || (timeless && d.status !== r.status)) bad.push(r.lead_id);
   }
   const missing = db.prepare('SELECT id FROM lead WHERE id NOT IN (SELECT lead_id FROM lead_state)').all() as { id: string }[];

@@ -1,10 +1,9 @@
 import { useState } from 'react';
-import { AppointmentCalendar } from './Calendar';
 import { api, fmtDateTime, fmtMoney, fmtPhone, fullName, localTime, type LeadDetail, type Call } from '../api';
 import { useApp } from '../App';
 
 const STATUS_LABEL: Record<string, string> = {
-  new: 'New', retry: 'Retry', callback: 'Callback', appointment_set: 'Appointment', invalid: 'Invalid number', dead: 'Dead lead', sold: 'Sold',
+  new: 'New', retry: 'Retry', callback: 'Callback', appointment_set: 'Appointment set', invalid: 'Invalid number', dead: 'Dead lead',
 };
 
 function leadAge(iso: string | null | undefined) {
@@ -24,11 +23,9 @@ export function StatusBadge({ status }: { status: string }) {
 
 /** Header + key facts used on the calling screen and the lead modal. */
 export function LeadSummary({
-  d, onDial, dialLabel = 'Copy number', dialKey, onEdit, editKey, onChange,
+  d, onDial, dialLabel = 'Copy number', dialKey, onEdit, editKey,
 }: {
   d: LeadDetail;
-  /** Something on the lead changed here (e.g. the calendar note); reload it. */
-  onChange?: () => void;
   /** On the Calling screen: dial (or copy, or show a QR code, per Settings) and start the attempt. */
   onDial?: (e164: string) => void;
   dialLabel?: string;
@@ -106,51 +103,8 @@ export function LeadSummary({
         {Object.entries(extra).map(([k, v]) => <Fact key={k} label={k} v={v} />)}
         {l.source_page != null && <Fact label="PDF page" v={l.source_page} />}
       </div>
-      {d.appointments.length > 0 && (
-        <div className="card" style={{ padding: 10 }}>
-          {d.appointments.map((a) => (
-            <div key={a.id}>
-              Appointment <b>{a.scheduled_for ? fmtDateTime(a.scheduled_for) : a.result ? '' : 'needs a date'}</b>
-              {a.internal_status !== 'canceled' && <> · <AppointmentResult id={a.id} value={a.result} /></>}
-              {a.recorded_via === 'sheet_import' && <span className="muted"> (from your spreadsheet)</span>}
-              {a.from_e164 && <> · set from <b>{a.from_label ?? fmtPhone(a.from_e164)}</b> ({fmtPhone(a.from_e164)})</>}
-              {a.internal_status === 'canceled' && <span className="muted"> · canceled{a.notes ? ` ${a.notes}` : ''}</span>}
-              <AppointmentCalendar a={a} onChange={onChange ?? (() => {})} />
-            </div>
-          ))}
-        </div>
-      )}
       {d.linked.length > 0 && <LinkedLeads d={d} />}
       {(warnings.length > 0 || importNotes) && <p className="help">Import notes: {[importNotes, ...warnings].filter(Boolean).join(' ')}</p>}
-    </>
-  );
-}
-
-const RESULT_LABELS: Record<string, string> = {
-  sat_no_sale: 'Sat, no sale', sold: 'Sold (app written)', no_show: 'No-show', rescheduled: 'Rescheduled', canceled: 'Canceled',
-};
-
-/** How the appointment went, for your numbers (the IMO site stays the official record). */
-function AppointmentResult({ id, value }: { id: string; value: string | null }) {
-  const [v, setV] = useState(value ?? '');
-  const [err, setErr] = useState('');
-  const set = async (next: string) => {
-    if (next === 'rescheduled') return setErr('Reschedule from the Today page so the new time is saved.');
-    try {
-      await api.post(`/appointments/${id}/result`, { result: next || 'cleared' });
-      setV(next);
-      setErr('');
-    } catch (e: any) {
-      setErr(e.message);
-    }
-  };
-  return (
-    <>
-      <select value={v} onChange={(e) => set(e.target.value)} aria-label="How it went" disabled={v === 'rescheduled'}>
-        <option value="">How did it go?</option>
-        {Object.entries(RESULT_LABELS).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
-      </select>
-      {err && <span className="warn"> {err}</span>}
     </>
   );
 }
@@ -218,9 +172,8 @@ export function CallHistory({ calls, onChange }: { calls: Call[]; onChange: () =
   const remove = async (c: Call) => {
     if (!window.confirm('Undo this call? It stays in the history, marked as undone, and stops counting toward the lead and your numbers.')) return;
     try {
-      const r = await api.post<{ calendar_unitrust_has_it?: boolean }>(`/calls/${c.id}/void`, { reason: 'undone from history' });
-      if (r.calendar_unitrust_has_it) toast('Call undone. Unitrust had already booked the appointment: cancel it in Unitrust.', 'error');
-      else toast('Call undone');
+      await api.post(`/calls/${c.id}/void`, { reason: 'undone from history' });
+      toast('Call undone');
       bumpStats();
       onChange();
     } catch (e: any) {

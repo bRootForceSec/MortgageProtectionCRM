@@ -9,7 +9,7 @@ import { todayRange } from '../components/CallbackAlerts';
 interface Stats {
   id: string;
   calls_today: number; dials_today: number; calls_7d: number; dials_7d: number; contacts_7d: number;
-  calls_30d: number; dials_30d: number; appointments: number; open_appointments: number; contact_rate_7d: number | null;
+  calls_30d: number; dials_30d: number; appointments: number; contact_rate_7d: number | null;
 }
 interface Check { item: string; label: string; checked_on: string | null; result: 'ok' | 'problem' | null; note: string | null }
 
@@ -107,7 +107,7 @@ export function NumbersPage() {
               <td>{st ? `${st.calls_7d} / ${st.dials_7d}` : ''}</td>
               <td>{st?.contact_rate_7d != null ? `${Math.round(st.contact_rate_7d * 100)}%` : '–'}</td>
               <td>{st ? `${st.calls_30d} / ${st.dials_30d}` : ''}</td>
-              <td>{st?.appointments ?? ''}{st && st.open_appointments > 0 && <div className="muted small">{st.open_appointments} still coming up</div>}</td>
+              <td>{st?.appointments ?? ''}</td>
               <td>{n.status}{n.retired_at && <span className="muted"> {fmtDateTime(n.retired_at)}</span>}</td>
               <td>
                 <select value={n.reputation_status} onChange={(e) => update(n, { reputation_status: e.target.value })} disabled={n.status === 'retired'}>
@@ -122,8 +122,8 @@ export function NumbersPage() {
                   <button className="btn small" onClick={() => update(n, { status: 'active' })}>Reactivate</button>
                 ) : (
                   <button className="btn small danger" onClick={() => {
-                    const openAppts = st?.open_appointments ?? 0;
-                    if (openAppts && !window.confirm(`${openAppts} appointment(s) still coming up were set from this number. Those leads may call it back. Retire it anyway?`)) return;
+                    const booked = st?.appointments ?? 0;
+                    if (booked && !window.confirm(`${booked} appointment(s) were set from this number. Those leads may call it back. Retire it anyway?`)) return;
                     const reason = window.prompt('Why retire this number? (history is kept)');
                     if (reason !== null) void update(n, { status: 'retired', retire_reason: reason });
                   }}>Retire</button>

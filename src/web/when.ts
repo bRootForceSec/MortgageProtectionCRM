@@ -1,5 +1,5 @@
 /**
- * Appointments are almost always set for the same day: today at the next half hour.
+ * Callbacks default to today at the next half hour.
  * After the evening cutoff it suggests tomorrow at 10 AM instead.
  */
 export function defaultWhen(cutoffHour: number, now = new Date()): Date {

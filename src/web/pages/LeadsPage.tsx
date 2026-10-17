@@ -6,7 +6,7 @@ import { GroupPicker, useGroups } from '../components/GroupPicker';
 
 const STATUSES = [
   { key: 'all', label: 'All' }, { key: 'new', label: 'New' }, { key: 'retry', label: 'Retry' }, { key: 'callback', label: 'Callbacks' },
-  { key: 'appointment_set', label: 'Appointments' }, { key: 'invalid', label: 'Invalid' }, { key: 'dead', label: 'Dead pile' },
+  { key: 'appointment_set', label: 'Appointment set' }, { key: 'invalid', label: 'Invalid' }, { key: 'dead', label: 'Dead pile' },
 ];
 
 export function LeadsPage() {
@@ -87,7 +87,7 @@ export function LeadModal({ id, onClose }: { id: string; onClose: () => void }) 
         <div className="body">
           {d && (
             <>
-              <LeadSummary d={d} onChange={load} />
+              <LeadSummary d={d} />
               <h3>Calls</h3>
               <CallHistory calls={d.calls} onChange={load} />
               <h3 style={{ marginTop: 14 }}>Notes</h3>

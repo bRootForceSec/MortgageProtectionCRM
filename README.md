@@ -10,21 +10,20 @@ A small calling CRM that runs on your own computer. It imports your lead spreads
 - **Import** Excel (.xlsx) or CSV lead sheets. Columns are matched automatically and the match is remembered for next time. Rows with something missing open in the same review window. Rows that were blanked out to take them off the call list are discarded. A Status column becomes call history, dated "on or before" the day the file was saved, because the real time isn't known. Re-importing the same file adds nothing.
 - **Lead types and prices** (FE-A to E, editable in Settings). Pick the type per order, and change it for some leads when an order is mixed. Each lead keeps its own price.
 - **Counties and area codes**: every lead is grouped by the county it was bought for, taken from the lead page or else the address. Each county is linked to its usual area codes automatically (built in for Indiana, Michigan and Ohio; change them in Settings). Picking an area code means every county under that code, never the lead's own phone number. The same county and area-code choice applies on Calling, Leads, Calls and Today, and typing a 3-digit area code in any search box works the same way.
-- **Calling queue**: due callbacks first, then past appointments, then new leads (newest batch first), then retries after the gap you set (4 hours unless you change it). Skip moves a lead to the end for today.
+- **Calling queue**: due callbacks first, then new leads (newest batch first), then retries after the gap you set (4 hours unless you change it). Skip moves a lead to the end for today.
 - **Logging a call**: press the outcome key (`1`–`9`, `0`, `H`, `D`) then `Enter`. Each call is its own record with the caller ID you used. Changing an outcome later keeps the earlier one.
 - **Dial counter**: dialed twice before giving up? Press `→` (or `>`) for each extra dial and `←` (or `<`) to take one off. It's still one attempt; your numbers count both attempts and dials.
 - **Working list**: the Calling page keeps the list you started with. Worked leads stay in it, greyed out, so you see it go down; `↑`/`↓` move through it, and "Refresh list" brings in new leads. Callbacks that come due are added at the top.
 - **Undo**: press `Z` within 10 seconds of saving to go back to that lead and pick a different outcome. Older mistakes: "Undo call" in the history. An undone call stays in the history, marked, and stops counting.
 - **Dialing from the computer**: `C` copies the number, shows a QR code to scan with your phone (Android or iPhone), or sends the number to your phone with KDE Connect. It also starts a call timer that fills in talk minutes when someone picks up.
-- **Today page**: callbacks and appointments for the day, in your time and the lead's. A desktop alert and a sound when one comes due.
-- **How did it go?** Once an appointment's time passes, the Today page asks for its result: `1` Sat, no sale · `2` Sold · `3` No-show · `4` Rescheduled (asks for the new time) · `5` Canceled. These are your own notes for your numbers; the IMO site stays the official record.
-- **Reports**: today or any dates, for the counties or area codes you pick. Activity (dials, attempts, contacts, talks of 2+ minutes, appointments), by hour, best time to call by the lead's local time, by county, by batch (cost per lead reached, booked and sold, from each lead's own price) and against the flier's benchmarks by lead type (booked per contact, 80% sits, 50% apps; edit the targets on the page). Click any number to see the calls or leads behind it. "Export to Excel" saves the whole report.
-- **Numbers page**: calls, dials and pick-up rate for each caller ID (today, 7 and 30 days), appointments set from it, a warning before retiring a number with appointments still coming up, and a reputation checklist with the dates you did each check. The app never switches numbers by itself.
+- **Today page**: callbacks for the day, in your time and the lead's. A desktop alert and a sound when one comes due.
+- **Appointment set** is a call outcome with no date or time. The lead leaves the calling queue. Appointment times and results (sat, sold, no-show) are tracked in Unitrust, not here.
+- **Reports**: today or any dates, for the counties or area codes you pick. Activity (dials, attempts, contacts, talks of 2+ minutes, appointments), by hour, best time to call by the lead's local time, by county, by batch (cost per lead reached and booked, from each lead's own price) and against the flier's benchmarks by lead type (booked per contact; edit the targets on the page). Click any number to see the calls or leads behind it. "Export to Excel" saves the whole report.
+- **Numbers page**: calls, dials and pick-up rate for each caller ID (today, 7 and 30 days), appointments set from it, a warning before retiring a number you set appointments from, and a reputation checklist with the dates you did each check. The app never switches numbers by itself.
 - **Scripts** (`P`) with the lead's name, lender and address filled in, **daily goals** in the top bar, **edit a lead** (`E`) with the old values kept, and **keyboard shortcuts you can change** in Settings.
 - **Dead pile**: a do-not-call request moves the lead out of the queue. Everything else goes back into rotation. "Disconnected / invalid" and "wrong person" go to an invalid pile. Both piles can be restored.
 - **Duplicates**: leads with the same phone are linked (not merged), so co-borrowers and re-bought leads stay separate. Importing a phone number that's in the dead pile is flagged in the preview.
 - **Export** any table to CSV or Excel, or everything as one Excel file or a full JSON dump. Health fields are left out unless you tick the box.
-- **Google Calendar** (optional, Settings → Google Calendar): setting an appointment puts a 30-minute `#MP <lead ID> <LAST NAME>` event on your main calendar. Unitrust replaces it with its own event, and the app then adds your note at the top of Unitrust's event, leaving Unitrust's text as it was. The lead gets an **Open in Unitrust** button. Today warns you when Unitrust hasn't picked an event up, has a different time, or when you undid an appointment Unitrust had already booked. Details below.
 - **Backups** are verified copies of the database. Restore keeps the current database aside instead of deleting it. Once a week the app restores the newest backup into a scratch copy to check it works, and shows the result on Export & backup.
 
 ## Setup on Fedora
@@ -68,24 +67,6 @@ Put these in `~/.config/mpcrm/env` (one `NAME=value` per line, mode 600), then r
 | `MPCRM_BACKUP_KEEP` | `30` | How many backups to keep |
 | `MPCRM_BACKUP_AGE_RECIPIENT` | none | An [age](https://github.com/FiloSottile/age) public key; backups are then encrypted |
 
-### Google Calendar
-
-One-time setup, about 10 minutes. **Settings → Google Calendar** lists every click.
-
-1. In [Google Cloud](https://console.cloud.google.com/projectcreate), signed in as the Google account Unitrust uses, create a project and enable the **Google Calendar API**.
-2. Set up the consent screen (Audience: External), then **Publish app** so it says **In production**. In "Testing", Google signs you out every 7 days.
-3. Create an OAuth client of type **Desktop app**. Paste its client ID and secret into Settings, then click **Connect to Google**. Google warns that it hasn't verified the app; that's expected for your own app (Advanced → Go to …).
-
-What the app does:
-
-- The permission it asks for is your calendar's events only, plus your email address to show who is connected.
-- Google sends you back to the app on `127.0.0.1`; nothing is exposed to the internet. The client secret and sign-in are kept in `<data dir>/secrets.json` (mode 600), never shown, exported or backed up.
-- Booking (`7`): the note box becomes the calendar note. Untick **Google Calendar** to skip it. A lead without a lead ID asks for one, because Unitrust needs it.
-- The app checks the calendar once a minute for Unitrust's event, matched by its `LEAD ID:` line, and edits only that event's description. It tells Google not to email anyone. The borrower is a guest on Unitrust's event, so a borrower who uses Google Calendar may see the note.
-- If Unitrust rewrites its event and drops the note, the app adds it back up to 3 times, then stops and tells you.
-- Undo (`Z`) deletes the `#MP` event. If Unitrust already booked it, you're told to cancel it in Unitrust. Rescheduling from Today makes a new `#MP` event with the same note. Change a note later from the lead screen.
-- If the computer is offline, events wait and go out when it's back. Saving a call never waits on Google.
-
 ### AI for scanned pages
 
 Choose it in **Settings**. The default is **Claude with your Claude account**: install [Claude Code](https://claude.com/claude-code) and sign in once (`claude`), and the app uses it to read each scanned page, which costs a fraction of a cent of your usage per page. Haiku is the default model. API keys for the other options are kept in `<data dir>/secrets.json` (mode 600). They are never shown in the app and never included in exports or backups. The local-model option needs `pdftoppm` (`sudo dnf install poppler-utils`).
@@ -98,7 +79,7 @@ Choose it in **Settings**. The default is **Claude with your Claude account**: i
 
 1. **Import** a batch: Import → pick the lead type → choose the PDF or spreadsheet → (spreadsheet: check the column matches → Continue) → check any leads that need a look → set types for mixed orders → Import.
 2. **Numbers**: add your Sideline number once, so each call records which caller ID you used.
-3. **Calling**: the current lead's details are in the middle. Press `C` to dial (copy, QR code or KDE Connect, chosen in Settings), call on your phone, press `→` for each extra dial, then press the outcome key and `Enter`. `Enter` saves and moves straight on to the next lead. Appointment and callback times start at today's next half hour (tomorrow at 10 AM after the evening cutoff you set in Settings).
+3. **Calling**: the current lead's details are in the middle. Press `C` to dial (copy, QR code or KDE Connect, chosen in Settings), call on your phone, press `→` for each extra dial, then press the outcome key and `Enter`. `Enter` saves and moves straight on to the next lead. Callback times start at today's next half hour (tomorrow at 10 AM after the evening cutoff you set in Settings).
 
 These are the starting keys. Change any of them in **Settings → Keyboard shortcuts**.
 
@@ -120,7 +101,7 @@ These are the starting keys. Change any of them in **Settings → Keyboard short
 
 **KDE Connect** (optional): `sudo dnf install kdeconnectd`, install KDE Connect on your phone, pair them, then pick your phone in Settings → Calling. The phone opens its dialer with the number filled in. If the phone asks which app to use, pick Sideline.
 
-Callbacks and appointments ask for a time. A do-not-call request asks you to confirm before the lead moves to the dead pile.
+Callbacks ask for a time. Appointment set does not. A do-not-call request asks you to confirm before the lead moves to the dead pile.
 
 ## Backups and restore
 
@@ -147,7 +128,7 @@ Other commands (same folder): `node dist/server/cli.js verify` checks that deriv
 - Every call is a separate record. Raw call events are append-only.
 - Outcomes are separate from calls. Changing an outcome adds a new record that supersedes the old one.
 - Lead status (new, retry, callback, appointment, invalid, dead) is calculated from that history and can be rebuilt at any time.
-- Appointment outcomes like "sat", "no-show" or "sale" stay on the IMO site, which remains the official record.
+- Appointment times and outcomes like "sat", "no-show" or "sale" stay in Unitrust, which remains the official record.
 
 ## Development
 

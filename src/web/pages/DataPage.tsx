@@ -5,7 +5,7 @@ import { UpdatePanel } from '../components/UpdateBar';
 
 const TABLES = [
   ['leads', 'Leads'], ['calls', 'Calls'], ['outcomes', 'Outcomes (every change)'], ['events', 'Raw call events'], ['notes', 'Notes'],
-  ['batches', 'Import batches'], ['import_rows', 'Imported rows (incl. rejected)'], ['appointments', 'Appointments'], ['numbers', 'Caller ID numbers'],
+  ['batches', 'Import batches'], ['import_rows', 'Imported rows (incl. rejected)'], ['numbers', 'Caller ID numbers'],
 ] as const;
 
 export function DataPage() {

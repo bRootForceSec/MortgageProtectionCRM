@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { deriveLeadState, type LeadFacts } from '../../src/server/domain/leadState.js';
 
-const empty: LeadFacts = { calls: [], outcomes: [], actions: [], appointments: [] };
+const empty: LeadFacts = { calls: [], outcomes: [], actions: [] };
 const NOW = '2026-10-17T15:00:00.000Z';
 const call = (id: string, at: string, from: string | null = 'n1') => ({ id, requested_at: at, from_number_id: from, initiation_result: 'accepted' });
 const out = (call_id: string, code: string, at: string, extra: Partial<LeadFacts['outcomes'][number]> = {}) => ({
@@ -44,17 +44,26 @@ describe('deriveLeadState', () => {
     expect(s).toMatchObject({ status: 'callback', next_due_at: '2026-10-18T22:00:00.000Z' });
   });
 
-  it('future appointment wins and its number is preferred', () => {
-    const s = deriveLeadState({
+  it('appointment set takes the lead out of the queue, with no date, and its number is preferred', () => {
+    const booked = deriveLeadState({
       ...empty,
       calls: [call('c1', '2026-10-17T10:00:00.000Z', 'nA'), call('c2', '2026-10-17T12:00:00.000Z', 'nB')],
       outcomes: [
-        out('c1', 'appointment', '2026-10-17T10:05:00.000Z', { grp: 'contact', counts_as_human_contact: 1 }),
-        out('c2', 'no_answer', '2026-10-17T12:01:00.000Z'),
+        out('c1', 'vm_left', '2026-10-17T10:05:00.000Z'),
+        out('c2', 'appointment', '2026-10-17T12:01:00.000Z', { grp: 'contact', counts_as_human_contact: 1 }),
       ],
-      appointments: [{ scheduled_for: '2026-10-20T18:00:00.000Z', internal_status: 'scheduled', set_from_number_id: 'nA', created_at: '2026-10-17T10:05:00.000Z' }],
     }, NOW);
-    expect(s).toMatchObject({ status: 'appointment_set', preferred_number_id: 'nA', attempts_total: 2 });
+    expect(booked).toMatchObject({ status: 'appointment_set', next_due_at: null, preferred_number_id: 'nB', attempts_total: 2 });
+    // Older history may say sat or sold: that still means booked.
+    const sold = deriveLeadState({ ...empty, calls: [call('c1', '2026-10-17T10:00:00.000Z', 'nA')], outcomes: [out('c1', 'sold', '2026-10-17T10:05:00.000Z')] }, NOW);
+    expect(sold).toMatchObject({ status: 'appointment_set', preferred_number_id: 'nA' });
+    // A later call decides again.
+    const later = deriveLeadState({
+      ...empty,
+      calls: [call('c1', '2026-10-17T10:00:00.000Z', 'nA'), call('c2', '2026-10-17T12:00:00.000Z', 'nB')],
+      outcomes: [out('c1', 'appointment', '2026-10-17T10:05:00.000Z'), out('c2', 'callback', '2026-10-17T12:01:00.000Z', { callback_due_at: '2026-10-18T15:00:00.000Z' })],
+    }, NOW);
+    expect(later).toMatchObject({ status: 'callback', preferred_number_id: 'nA' });
   });
 
   it('is independent of input order', () => {
