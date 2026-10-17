@@ -23,13 +23,15 @@ export function StatusBadge({ status }: { status: string }) {
 
 /** Header + key facts used on the calling screen and the lead modal. */
 export function LeadSummary({
-  d, onDial, dialLabel = 'Copy number', dialKey, onEdit, editKey,
+  d, onDial, dialLabel = 'Copy number', dialKey, altKey, onEdit, editKey,
 }: {
   d: LeadDetail;
   /** On the Calling screen: dial (or copy, or show a QR code, per Settings) and start the attempt. */
   onDial?: (e164: string) => void;
   dialLabel?: string;
   dialKey?: string;
+  /** Key that dials the other number. */
+  altKey?: string;
   onEdit?: () => void;
   editKey?: string;
 }) {
@@ -50,10 +52,15 @@ export function LeadSummary({
   ].filter(([, v]) => v);
   const warnings: string[] = d.import_row?.warnings_json ? JSON.parse(d.import_row.warnings_json) : [];
   const { Passphrase: passphrase, 'Import notes': importNotes, 'Page type': pageType, ...extra } = (l.extra ?? {}) as Record<string, string>;
-  const others = [
+  // The big number is the one being called: the main number, unless it was ruled out and another one wasn't.
+  const blocked: string[] = d.state?.blocked_phones_json ? JSON.parse(d.state.blocked_phones_json) : [];
+  const main = d.state?.active_phone_e164 ?? l.phone_e164;
+  const others = ([
+    ['Main', l.phone_e164, l.phone_raw],
     ['Alternate', l.phone2_e164, l.phone2_raw],
     ['Called in from', l.phone3_e164, l.phone3_raw],
-  ].filter(([, e, r]) => e || r) as [string, string | null, string | null][];
+  ] as [string, string | null, string | null][]).filter(([label, e, r]) => (e || r) && !(e && e === main) && !(label === 'Main' && !e));
+  const firstOther = others.find(([, e]) => e && !blocked.includes(e))?.[1] ?? null;
   return (
     <>
       {passphrase && <div className="passphrase">Passphrase: <b>{passphrase}</b></div>}
@@ -70,15 +77,24 @@ export function LeadSummary({
           </div>
         </div>
         <div className="phones">
-          <div className="phone-big">{l.phone_e164 ? fmtPhone(l.phone_e164) : <span className="error">no valid phone</span>}</div>
-          {l.phone_e164 && <button className="btn small" onClick={() => copy()}>{dialLabel} {dialKey && <kbd>{dialKey}</kbd>}</button>}
-          {others.map(([label, e164, raw]) => (
-            <div key={label} className="row" style={{ justifyContent: 'flex-end' }}>
-              <span className="muted">{label}</span>
-              <span className="alt">{e164 ? fmtPhone(e164) : raw}</span>
-              {e164 && <button className="btn small" onClick={() => copy(e164)} title={`${dialLabel}: ${label.toLowerCase()} number`}>{onDial ? dialLabel.replace(' number', '') : 'Copy'}</button>}
-            </div>
-          ))}
+          <div className="phone-big">{main ? fmtPhone(main) : <span className="error">no valid phone</span>}</div>
+          {main && <button className="btn small" onClick={() => copy(main)}>{dialLabel} {dialKey && <kbd>{dialKey}</kbd>}</button>}
+          {others.map(([label, e164, raw]) => {
+            const bad = !!e164 && blocked.includes(e164);
+            return (
+              <div key={label} className="row" style={{ justifyContent: 'flex-end' }}>
+                <span className="muted">{label}</span>
+                <span className="alt" style={bad ? { textDecoration: 'line-through' } : undefined}>{e164 ? fmtPhone(e164) : raw}</span>
+                {bad && <span className="warn">bad number</span>}
+                {e164 && (
+                  <button className="btn small" onClick={() => copy(e164)} title={`${dialLabel}: ${label.toLowerCase()} number`}>
+                    {onDial ? dialLabel.replace(' number', '') : 'Copy'} {altKey && e164 === firstOther && <kbd>{altKey}</kbd>}
+                  </button>
+                )}
+              </div>
+            );
+          })}
+          {d.state?.block_reason && <div className="help warn">{d.state.block_reason}</div>}
         </div>
       </div>
       <div className="facts">

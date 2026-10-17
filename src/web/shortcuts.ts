@@ -2,7 +2,7 @@ import type { OutcomeCode } from './api';
 
 // Keyboard shortcuts you can change in Settings. Each action can have several keys; each outcome has one.
 
-export type ShortcutAction = 'list_up' | 'list_down' | 'dial' | 'dials_up' | 'dials_down' | 'next' | 'skip' | 'undo' | 'note' | 'search' | 'edit' | 'script';
+export type ShortcutAction = 'list_up' | 'list_down' | 'dial' | 'dial_alt' | 'dials_up' | 'dials_down' | 'next' | 'skip' | 'undo' | 'note' | 'search' | 'edit' | 'script';
 
 export interface CallingSettings {
   retry_gap_minutes: number;
@@ -10,6 +10,8 @@ export interface CallingSettings {
   dial_method: 'copy' | 'qr' | 'kdeconnect';
   kdeconnect_device: string | null;
   use_timer: boolean;
+  instant_save: boolean;
+  auto_send_next: boolean;
   shortcuts: { actions: Partial<Record<ShortcutAction, string[]>>; outcomes: Record<string, string | null> };
   scripts: { agent_name: string; opener: string; voicemail: string };
   goals: { dials: number | null; contacts: number | null; appointments: number | null };

@@ -154,7 +154,13 @@ export interface Call {
 
 export interface LeadDetail {
   lead: Record<string, any> & { id: string; extra: Record<string, string> };
-  state: { status: string; attempts_total: number; last_call_at: string | null; last_outcome_code: string | null; next_due_at: string | null; preferred_number_id: string | null } | null;
+  state: { status: string; attempts_total: number; last_call_at: string | null; last_outcome_code: string | null; next_due_at: string | null; preferred_number_id: string | null;
+    /** The number to call now: the first of the lead's numbers that isn't ruled out. */
+    active_phone_e164: string | null;
+    /** The lead's numbers that are ruled out (JSON list). */
+    blocked_phones_json: string | null;
+    block_reason: string | null;
+  } | null;
   batch: { id: string; name: string; imported_at: string; cost_per_lead_cents: number | null; lead_type: string | null; lead_age_label: string | null; file_name: string | null };
   import_row: { row_number: number; warnings_json: string | null } | null;
   calls: Call[];

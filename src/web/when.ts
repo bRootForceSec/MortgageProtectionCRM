@@ -2,6 +2,7 @@
 //   Day:  t / today, m / tomorrow, a weekday ("fri"), or a date ("10/24", "10/24/27", "2026-10-24").
 //   Time: blank for "any time that day", or "2", "2:30", "230p", "10am", "14:30".
 //         A time with no AM/PM from 1 to 7 is taken as PM (calling hours).
+//   The time is the lead's own time when you pass their time zone: "call me at 2" means 2 where they are.
 
 const WEEKDAYS = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
 
@@ -79,37 +80,83 @@ export interface CallbackWhen {
   anyTime: boolean;
 }
 
-/** Reads the two picker fields. Returns an error message instead when something can't be read. */
-export function readCallback(dayText: string, timeText: string, now = new Date()): CallbackWhen | { error: string } {
+/** Year, month, day, hour and minute of a moment as a clock in that time zone shows it. */
+function wallClock(d: Date, tz: string) {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: tz, year: 'numeric', month: 'numeric', day: 'numeric', hour: 'numeric', minute: 'numeric', hourCycle: 'h23',
+  }).formatToParts(d);
+  const get = (t: string) => Number(parts.find((p) => p.type === t)?.value ?? 0);
+  return { y: get('year'), mo: get('month'), d: get('day'), h: get('hour') % 24, mi: get('minute') };
+}
+
+/** The moment when a clock in `tz` shows that date and time. */
+export function fromWallClock(y: number, mo: number, d: number, h: number, mi: number, tz: string): Date {
+  const want = Date.UTC(y, mo - 1, d, h, mi);
+  let t = want;
+  // Two passes settle the zone's offset, including on daylight-saving days.
+  for (let i = 0; i < 2; i++) {
+    const w = wallClock(new Date(t), tz);
+    t += want - Date.UTC(w.y, w.mo - 1, w.d, w.h, w.mi);
+  }
+  return new Date(t);
+}
+
+function validZone(tz: string | null | undefined): tz is string {
+  if (!tz) return false;
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: tz });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** True when the lead's clock shows a different time from yours right now. */
+export function differentZone(tz: string | null | undefined, at = new Date()): boolean {
+  if (!validZone(tz)) return false;
+  const w = wallClock(at, tz);
+  return w.h !== at.getHours() || w.mi !== at.getMinutes();
+}
+
+/**
+ * Reads the two picker fields. Returns an error message instead when something can't be read.
+ * With the lead's time zone, the time you type is their time.
+ */
+export function readCallback(dayText: string, timeText: string, now = new Date(), tz?: string | null): CallbackWhen | { error: string } {
   const day = parseDay(dayText, now);
   if (!day) return { error: 'Type a day: t for today, m for tomorrow, a weekday, or a date like 10/24' };
   const mins = parseTime(timeText);
   if (mins === null) return { at: day, anyTime: true };
   if (Number.isNaN(mins)) return { error: 'Type a time like 2, 2:30 or 10am, or leave it blank for any time' };
-  const at = new Date(day);
+  let at = new Date(day);
   at.setHours(Math.floor(mins / 60), mins % 60, 0, 0);
+  if (validZone(tz)) at = fromWallClock(day.getFullYear(), day.getMonth() + 1, day.getDate(), Math.floor(mins / 60), mins % 60, tz);
   if (at.getTime() < now.getTime() - 60_000) return { error: 'That time has already passed today' };
   return { at, anyTime: false };
 }
 
-/** "Tomorrow, Sat Oct 18, any time" or "Mon Oct 20 at 2:30 PM". */
-export function describeCallback(w: CallbackWhen, now = new Date()): string {
+/** "Tomorrow, Sat Oct 18, any time" or "Mon Oct 20 at 2:30 PM", with their time and yours when they differ. */
+export function describeCallback(w: CallbackWhen, now = new Date(), tz?: string | null): string {
   const today = startOfDay(now);
   const days = Math.round((startOfDay(w.at).getTime() - today.getTime()) / 86_400_000);
   const name = days === 0 ? 'Today, ' : days === 1 ? 'Tomorrow, ' : '';
   const date = w.at.toLocaleDateString(undefined, {
     weekday: 'short', month: 'short', day: 'numeric', ...(w.at.getFullYear() !== today.getFullYear() ? { year: 'numeric' } : {}),
   });
-  return `${name}${date}${w.anyTime ? ', any time' : ` at ${w.at.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}`}`;
+  const mine = w.at.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+  if (w.anyTime) return `${name}${date}, any time`;
+  if (!differentZone(tz, w.at)) return `${name}${date} at ${mine}`;
+  const theirs = w.at.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit', timeZone: tz! });
+  return `${name}${date} at ${theirs} their time (${mine} yours)`;
 }
 
-/** Puts a saved callback back into the picker fields (after an undo). */
-export function callbackFields(iso: string | null, anyTime: boolean): { day: string; time: string } {
+/** Puts a saved callback back into the picker fields (after an undo), in the lead's time when given. */
+export function callbackFields(iso: string | null, anyTime: boolean, tz?: string | null): { day: string; time: string } {
   if (!iso) return { day: '', time: '' };
   const d = new Date(iso);
   const day = `${d.getMonth() + 1}/${d.getDate()}/${d.getFullYear()}`;
   if (anyTime) return { day, time: '' };
-  const h = d.getHours();
-  const time = `${h % 12 || 12}:${String(d.getMinutes()).padStart(2, '0')}${h < 12 ? 'am' : 'pm'}`;
+  const w = validZone(tz) ? wallClock(d, tz) : { h: d.getHours(), mi: d.getMinutes() };
+  const time = `${w.h % 12 || 12}:${String(w.mi).padStart(2, '0')}${w.h < 12 ? 'am' : 'pm'}`;
   return { day, time };
 }

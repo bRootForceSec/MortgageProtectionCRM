@@ -180,6 +180,26 @@ export const STATE_TZ: Record<string, { tz: string; split?: boolean }> = {
   PR: { tz: 'America/Puerto_Rico' },
 };
 
+// Counties whose time zone differs from their state's main one, by county key ("STATE|COUNTY NAME").
+// Indiana: the six northwest counties near Chicago and the six southwest counties near Evansville are Central.
+// Michigan: the four Upper Peninsula counties on the Wisconsin border are Central.
+const COUNTY_TZ: Record<string, string> = {
+  'IN|LAKE': 'America/Chicago', 'IN|PORTER': 'America/Chicago', 'IN|LAPORTE': 'America/Chicago', 'IN|LA PORTE': 'America/Chicago',
+  'IN|NEWTON': 'America/Chicago', 'IN|JASPER': 'America/Chicago', 'IN|STARKE': 'America/Chicago',
+  'IN|GIBSON': 'America/Chicago', 'IN|POSEY': 'America/Chicago', 'IN|VANDERBURGH': 'America/Chicago',
+  'IN|WARRICK': 'America/Chicago', 'IN|SPENCER': 'America/Chicago', 'IN|PERRY': 'America/Chicago',
+  'MI|GOGEBIC': 'America/Menominee', 'MI|IRON': 'America/Menominee', 'MI|DICKINSON': 'America/Menominee', 'MI|MENOMINEE': 'America/Menominee',
+};
+
+/** The lead's time zone: from its county when that county differs from the rest of the state, else from the state. */
+export function timeZoneFor(state: string | null | undefined, countyKey?: string | null): string | null {
+  if (countyKey && COUNTY_TZ[countyKey]) return COUNTY_TZ[countyKey]!;
+  return state && STATE_TZ[state] ? STATE_TZ[state]!.tz : null;
+}
+
+/** County keys with their own time zone, for the database upgrade that fixes leads imported before. */
+export const COUNTY_TIME_ZONES = COUNTY_TZ;
+
 const STATE_NAMES: Record<string, string> = {
   ALABAMA: 'AL', ALASKA: 'AK', ARIZONA: 'AZ', ARKANSAS: 'AR', CALIFORNIA: 'CA', COLORADO: 'CO',
   CONNECTICUT: 'CT', DELAWARE: 'DE', 'DISTRICT OF COLUMBIA': 'DC', FLORIDA: 'FL', GEORGIA: 'GA',

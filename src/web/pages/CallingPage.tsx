@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { callbackFields, describeCallback, readCallback } from '../when';
+import { callbackFields, describeCallback, differentZone, readCallback } from '../when';
 import { api, fmtMoney, fmtPhone, fmtRelative, newKey, type LeadDetail, type QueueResponse, type QueueItem } from '../api';
 import { useApp } from '../App';
 import { LeadSummary, CallHistory, Notes } from '../components/LeadView';
@@ -59,6 +59,8 @@ interface Saved {
   label: string;
   dials: number;
   at: number;
+  /** The lead's time zone, so an undone callback comes back in their time. */
+  tz: string | null;
 }
 
 /**
@@ -108,6 +110,8 @@ export function CallingPage() {
   const [qr, setQr] = useState<string | null>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
+  /** After a save or skip with KDE Connect: the next lead's number goes to your phone once that lead is shown. */
+  const autoSend = useRef<string | null>(null);
 
   useEffect(() => {
     const t = setTimeout(() => setDebounced(search.trim()), 250);
@@ -208,6 +212,14 @@ export function CallingPage() {
     listRef.current?.querySelector(`[data-lead="${selected}"]`)?.scrollIntoView({ block: 'nearest' });
   }, [selected]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Once the next lead is loaded, its current number (not a ruled-out one) goes to your phone.
+  useEffect(() => {
+    if (!detail || autoSend.current !== detail.lead.id || detail.lead.id !== selected) return;
+    autoSend.current = null;
+    const phone = detail.state?.active_phone_e164 ?? detail.lead.phone_e164;
+    if (phone && ['new', 'retry', 'callback'].includes(detail.state?.status ?? 'new')) void dial(phone);
+  }, [detail]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Opened from the Today page or a callback alert.
   useEffect(() => {
     const f = (e: Event) => {
@@ -239,11 +251,17 @@ export function CallingPage() {
     [items, idx],
   );
 
-  const goNext = useCallback(() => {
+  /** With KDE Connect and "send the next number" on, the next lead's number goes to your phone when it's shown. */
+  const queueAutoSend = (n: WorkItem | null | undefined) => {
+    autoSend.current = n && settings?.dial_method === 'kdeconnect' && settings?.auto_send_next !== false ? n.lead_id : null;
+  };
+
+  const goNext = useCallback((send = false) => {
     const n = nextUnworked();
+    if (send) queueAutoSend(n);
     if (n) select(n.lead_id);
     else toast('You\'ve worked the whole list. Press "Refresh list" to load more.');
-  }, [nextUnworked, toast]);
+  }, [nextUnworked, toast, settings]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const move = useCallback(
     (step: 1 | -1) => {
@@ -259,10 +277,15 @@ export function CallingPage() {
 
   const skip = useCallback(async () => {
     if (!selected) return;
-    await api.post(`/leads/${selected}/actions`, { action: 'skip' });
+    try {
+      await api.post(`/leads/${selected}/actions`, { action: 'skip' });
+    } catch (e: any) {
+      toast(`Couldn't skip: ${e.message}`, 'error');
+      return;
+    }
     markDone(selected, { label: 'Skipped', dials: 0 });
-    goNext();
-  }, [selected, goNext]); // eslint-disable-line react-hooks/exhaustive-deps
+    goNext(true);
+  }, [selected, goNext, toast]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const dial = useCallback(
     async (e164: string | null | undefined) => {
@@ -303,7 +326,7 @@ export function CallingPage() {
         lead_id: string; outcome_code: string | null; callback_due_at: string | null; callback_any_time: boolean;
         dial_count: number; talk_seconds: number | null; from_number_id: string | null; note: string | null;
       }>(`/calls/${s.callId}/void`, { reason: 'undo' });
-      const cb = callbackFields(r.callback_due_at, r.callback_any_time);
+      const cb = callbackFields(r.callback_due_at, r.callback_any_time, s.tz);
       setRestore({
         leadId: s.leadId,
         n: Date.now(),
@@ -319,7 +342,7 @@ export function CallingPage() {
       setAttempt({ dials: r.dial_count, timerStart: null, to: null });
       markDone(s.leadId, null);
       select(s.leadId);
-      toast(`Undone. Pick the right outcome for ${s.name} and press Enter.`);
+      toast(`Undone. Pick the right outcome for ${s.name}.`);
       bumpStats();
       await loadDetail(s.leadId);
     } catch (e: any) {
@@ -328,18 +351,29 @@ export function CallingPage() {
   }, [saved, toast, bumpStats, loadDetail]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const modalOpen = editing || !!qr;
+  /** The lead on screen is the one selected. Just after you move on, keys that act on a lead wait for it to load. */
+  const ready = !!detail && detail.lead.id === selected;
+  const phoneNow = detail ? detail.state?.active_phone_e164 ?? detail.lead.phone_e164 : null;
+  const otherPhone = detail ? otherNumber(detail) : null;
   // Layout effect, so the keys act on the lead you can see as soon as it's on screen.
   useLayoutEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (modalOpen || isTyping(e) || e.ctrlKey || e.metaKey || e.altKey) return;
       const act = (a: Parameters<typeof isAction>[1]) => isAction(keys, a, e);
+      const leadKey = ['dial', 'dial_alt', 'dials_up', 'dials_down', 'note', 'edit', 'skip'].some((a) => act(a as Parameters<typeof isAction>[1]));
+      if (leadKey && !ready) { e.preventDefault(); return; }
       if (act('list_down')) { e.preventDefault(); move(1); }
       else if (act('list_up')) { e.preventDefault(); move(-1); }
       else if (act('next')) { e.preventDefault(); goNext(); }
       else if (act('skip')) { e.preventDefault(); void skip(); }
       else if (act('search')) { e.preventDefault(); searchRef.current?.focus(); }
       else if (act('note')) { e.preventDefault(); document.getElementById('note-input')?.focus(); }
-      else if (act('dial')) { e.preventDefault(); void dial(detail?.lead.phone_e164); }
+      else if (act('dial')) { e.preventDefault(); void dial(phoneNow); }
+      else if (act('dial_alt')) {
+        e.preventDefault();
+        if (otherPhone) void dial(otherPhone);
+        else toast('This lead has no other working number');
+      }
       else if (act('dials_up')) { e.preventDefault(); setAttempt((a) => ({ ...a, dials: a.dials + 1 })); }
       else if (act('dials_down')) { e.preventDefault(); setAttempt((a) => ({ ...a, dials: Math.max(1, a.dials - 1) })); }
       else if (act('undo')) { e.preventDefault(); void undo(); }
@@ -348,7 +382,7 @@ export function CallingPage() {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [keys, move, goNext, skip, dial, undo, detail, modalOpen]);
+  }, [keys, move, goNext, skip, dial, undo, detail, modalOpen, ready, phoneNow, otherPhone, toast]);
 
   const refreshDetail = async () => {
     await loadDetail(selected);
@@ -363,6 +397,7 @@ export function CallingPage() {
     markDone(s.leadId, { label: s.label, dials: s.dials });
     const n = items.slice(Math.max(0, items.findIndex((i) => i.lead_id === s.leadId)) + 1).find((i) => !i.done && i.lead_id !== s.leadId)
       ?? items.find((i) => !i.done && i.lead_id !== s.leadId);
+    queueAutoSend(n);
     if (n) select(n.lead_id);
     else {
       toast('That was the last lead in your list. Press "Refresh list" to load more.');
@@ -439,7 +474,7 @@ export function CallingPage() {
         </div>
         <header style={{ borderTop: '1px solid var(--border)', borderBottom: 0 }}>
           <span className="help">
-            <kbd>{k('list_up')}</kbd><kbd>{k('list_down')}</kbd> move <kbd>{k('skip')}</kbd> skip <kbd>{k('search')}</kbd> search <kbd>{k('dial')}</kbd> {dialLabel.toLowerCase()}{' '}
+            <kbd>{k('list_up')}</kbd><kbd>{k('list_down')}</kbd> move <kbd>{k('skip')}</kbd> skip <kbd>{k('search')}</kbd> search <kbd>{k('dial')}</kbd> {dialLabel.toLowerCase()} <kbd>{k('dial_alt')}</kbd> other number{' '}
             <kbd>{k('dials_down')}</kbd><kbd>{k('dials_up')}</kbd> dials <kbd>Enter</kbd> save and next <kbd>{k('undo')}</kbd> undo <kbd>{k('note')}</kbd> note{' '}
             <kbd>{k('edit')}</kbd> edit <kbd>{k('script')}</kbd> script
           </span>
@@ -453,7 +488,7 @@ export function CallingPage() {
             <div className="empty">Select a lead from the list, or import leads first.</div>
           ) : (
             <>
-              <LeadSummary d={detail} onDial={dial} dialLabel={dialLabel} dialKey={k('dial')} onEdit={() => setEditing(true)} editKey={k('edit')} />
+              <LeadSummary d={detail} onDial={dial} dialLabel={dialLabel} dialKey={k('dial')} altKey={k('dial_alt')} onEdit={() => setEditing(true)} editKey={k('edit')} />
               {showScript && <ScriptPanel d={detail} />}
               <LogCall
                 key={`${detail.lead.id}-${restore?.leadId === detail.lead.id ? restore.n : 0}`}
@@ -462,6 +497,7 @@ export function CallingPage() {
                 setDials={(n) => setAttempt((a) => ({ ...a, dials: Math.max(1, n) }))}
                 resetTimer={() => setAttempt((a) => ({ ...a, timerStart: null }))}
                 restore={restore?.leadId === detail.lead.id ? restore.values : null}
+                active={ready}
                 onSaved={onSaved}
                 onRefresh={refreshDetail}
               />
@@ -475,7 +511,7 @@ export function CallingPage() {
         <div className="body">
           {detail && <CallHistory calls={detail.calls} onChange={refreshDetail} />}
           <h3 style={{ marginTop: 16 }}>Notes</h3>
-          {detail && <Notes d={detail} onChange={refreshDetail} />}
+          {detail && <Notes key={detail.lead.id} d={detail} onChange={refreshDetail} />}
         </div>
       </section>
       {editing && detail && <EditLead d={detail} onClose={() => setEditing(false)} onSaved={async () => { setEditing(false); await refreshDetail(); }} />}
@@ -549,13 +585,15 @@ function Timer({ start, onReset }: { start: number; onReset: () => void }) {
  * Phase 2 replaces "log" with "call" but keeps this outcome panel.
  */
 function LogCall({
-  d, attempt, setDials, resetTimer, restore, onSaved, onRefresh,
+  d, attempt, setDials, resetTimer, restore, active, onSaved, onRefresh,
 }: {
   d: LeadDetail;
   attempt: Attempt;
   setDials: (n: number) => void;
   resetTimer: () => void;
   restore: FormValues | null;
+  /** False for a moment after you move on, until the next lead is on screen: keys wait. */
+  active: boolean;
   onSaved: (s: Saved) => Promise<void>;
   onRefresh: () => Promise<void>;
 }) {
@@ -595,18 +633,22 @@ function LogCall({
     if (o?.requires_callback_time) {
       setDay((v) => v || 'tomorrow');
       setTimeout(() => { dayRef.current?.focus(); dayRef.current?.select(); }, 0);
+      return;
     }
-  }, [meta]);
+    // No answer and Bad number need nothing more, so they save straight away (Undo still catches a wrong key).
+    if (calling?.settings.instant_save !== false && o && instantOutcome(o)) void saveRef.current(c);
+  }, [meta, calling]);
 
   // Talk time from the timer, only when someone picked up and you didn't type minutes yourself.
-  const timerSeconds = () =>
-    attempt.timerStart && outcome?.counts_as_human_contact && calling?.settings.use_timer !== false
+  const timerSeconds = (o: typeof outcome) =>
+    attempt.timerStart && o?.counts_as_human_contact && calling?.settings.use_timer !== false
       ? Math.round((Date.now() - attempt.timerStart) / 1000)
       : null;
 
-  const save = useCallback(async () => {
-    if (!code || saving) return;
-    const cb = needsWhen ? readCallback(day, time) : null;
+  const save = useCallback(async (codeNow: string | null = code) => {
+    if (!codeNow || saving) return;
+    const o = meta?.outcome_codes.find((x) => x.code === codeNow) ?? null;
+    const cb = o?.requires_callback_time ? readCallback(day, time, new Date(), d.lead.time_zone) : null;
     if (cb && 'error' in cb) {
       toast(cb.error, 'error');
       dayRef.current?.focus();
@@ -618,10 +660,10 @@ function LogCall({
         idempotency_key: key,
         from_number_id: numberId || null,
         to_e164: attempt.to,
-        outcome_code: code,
+        outcome_code: codeNow,
         callback_due_at: cb ? cb.at.toISOString() : null,
         callback_any_time: cb ? cb.anyTime : null,
-        talk_seconds: minutes ? Number(minutes) * 60 : timerSeconds(),
+        talk_seconds: minutes ? Number(minutes) * 60 : timerSeconds(o),
         dial_count: attempt.dials,
         note: note || null,
       });
@@ -634,19 +676,21 @@ function LogCall({
       setKey(newKey());
       await onSaved({
         callId: r.call_id, leadId: d.lead.id, name: [d.lead.first_name, d.lead.last_name].filter(Boolean).join(' ') || 'this lead',
-        label: outcome?.label ?? code, dials: attempt.dials, at: Date.now(),
+        label: o?.label ?? codeNow, dials: attempt.dials, at: Date.now(), tz: d.lead.time_zone ?? null,
       });
     } catch (e: any) {
       toast(e.message, 'error');
     } finally {
       setSaving(false);
     }
-  }, [code, saving, needsWhen, day, time, key, numberId, outcome, minutes, note, d.lead.id, toast, onSaved, attempt]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [code, saving, meta, day, time, key, numberId, minutes, note, d.lead.id, toast, onSaved, attempt]); // eslint-disable-line react-hooks/exhaustive-deps
+  const saveRef = useRef(save);
+  saveRef.current = save;
 
   // Layout effect: the hotkeys are live as soon as the lead is on screen, so a fast keypress isn't lost.
   useLayoutEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (document.querySelector('.modal-back')) return;
+      if (document.querySelector('.modal-back') || !active) return;
       if (e.key === 'Enter' && code && (!isTyping(e) || e.ctrlKey || e.metaKey || ['callback-day', 'callback-time', 'log-note', 'log-minutes'].includes((e.target as HTMLElement).id))) {
         e.preventDefault();
         void save();
@@ -664,10 +708,10 @@ function LogCall({
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [keys, code, save, choose]);
+  }, [keys, code, save, choose, active]);
 
   if (!d.lead.phone_e164 && !d.lead.phone2_e164 && !d.lead.phone3_e164) return <p className="error">This lead has no valid phone number.</p>;
-  if (d.state?.status === 'dead') return <RestoreBox d={d} onSaved={onRefresh} label="This lead is in the dead pile." />;
+  if (d.state?.status === 'dead') return <RestoreBox d={d} onSaved={onRefresh} label={d.state.block_reason ? `${d.state.block_reason}.` : 'This lead is in the dead pile.'} />;
 
   const k = (a: keyof KeyMap['actions']) => keyLabel(keys.actions[a]?.[0] ?? '');
   return (
@@ -732,7 +776,8 @@ function LogCall({
       {code && (
         <div className="row" style={{ alignItems: 'flex-end' }}>
           {needsWhen && (() => {
-            const cb = readCallback(day, time);
+            const cb = readCallback(day, time, new Date(), d.lead.time_zone);
+            const theirs = differentZone(d.lead.time_zone);
             return (
               <div className="callback-picker">
                 <label className="field">
@@ -741,10 +786,10 @@ function LogCall({
                     placeholder="t, m, fri, 10/24" style={{ width: 120 }} autoComplete="off" />
                 </label>
                 <label className="field">
-                  <span>At (optional)</span>
+                  <span>At (optional{theirs ? ', their time' : ''})</span>
                   <input id="callback-time" value={time} onChange={(e) => setTime(e.target.value)} placeholder="any time" style={{ width: 90 }} autoComplete="off" />
                 </label>
-                <span className={'error' in cb ? 'help warn' : 'help'} aria-live="polite">{'error' in cb ? (day ? cb.error : '') : describeCallback(cb)}</span>
+                <span className={'error' in cb ? 'help warn' : 'help'} aria-live="polite">{'error' in cb ? (day ? cb.error : '') : describeCallback(cb, new Date(), d.lead.time_zone)}</span>
               </div>
             );
           })()}
@@ -756,12 +801,19 @@ function LogCall({
             <span>Note (optional)</span>
             <input id="log-note" value={note} onChange={(e) => setNote(e.target.value)} />
           </label>
-          <button className="btn primary" onClick={save} disabled={saving}>Save <kbd>Enter</kbd></button>
+          <button className="btn primary" onClick={() => void save()} disabled={saving}>Save <kbd>Enter</kbd></button>
           <button className="btn" onClick={() => setCode(null)}>Cancel <kbd>Esc</kbd></button>
         </div>
       )}
-      {!code && <p className="help">After the call, press the outcome key, then Enter. Dialed more than once? Press <kbd>{k('dials_up')}</kbd> for each extra dial.</p>}
-      {d.state?.status === 'invalid' && <RestoreBox d={d} onSaved={onRefresh} label="Marked as a bad number." />}
+      {!code && (
+        <p className="help">
+          {calling?.settings.instant_save !== false
+            ? 'After the call, press the outcome key. No answer and Bad number save right away; the others save with Enter.'
+            : 'After the call, press the outcome key, then Enter.'}{' '}
+          Dialed more than once? Press <kbd>{k('dials_up')}</kbd> for each extra dial first.
+        </p>
+      )}
+      {d.state?.status === 'invalid' && <RestoreBox d={d} onSaved={onRefresh} label={d.state.block_reason ? `${d.state.block_reason}.` : 'Marked as a bad number.'} />}
     </div>
   );
 }
@@ -778,4 +830,16 @@ function RestoreBox({ d, onSaved, label }: { d: LeadDetail; onSaved: () => Promi
       {label} <button className="btn small" onClick={restore}>Restore to queue</button>
     </div>
   );
+}
+
+/** Outcomes that need nothing more than the key: no callback time, and nobody was reached (so no talk time or note). */
+function instantOutcome(o: { requires_callback_time: number | boolean; counts_as_human_contact: number | boolean }) {
+  return !o.requires_callback_time && !o.counts_as_human_contact;
+}
+
+/** The lead's next working number after the one being called, if it has one. */
+export function otherNumber(d: LeadDetail): string | null {
+  const blocked: string[] = d.state?.blocked_phones_json ? JSON.parse(d.state.blocked_phones_json) : [];
+  const now = d.state?.active_phone_e164 ?? d.lead.phone_e164;
+  return [d.lead.phone_e164, d.lead.phone2_e164, d.lead.phone3_e164].find((p) => p && p !== now && !blocked.includes(p)) ?? null;
 }

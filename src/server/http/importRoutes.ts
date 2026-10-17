@@ -14,7 +14,8 @@ import {
 } from '../domain/drafts.js';
 import { loadAiSettings, saveAiSettings, getSetting, type Secrets } from '../ai/settings.js';
 import { countyKey, countyDisplayName } from '../domain/county.js';
-import { rebuildLeadState } from '../domain/leadState.js';
+import { rebuildLeadState, leadsSharingPhones } from '../domain/leadState.js';
+import { timeZoneFor } from '../domain/normalize.js';
 import { uuidv7, nowIso } from '../ids.js';
 import { editLeadDetails, EDITABLE_FIELDS } from '../domain/leadEdit.js';
 import { seedCountyAreaCodes, builtInAreaCodes } from '../domain/areaCodes.js';
@@ -281,6 +282,7 @@ export function registerImportRoutes(
     return db.transaction(() => {
       const lead = db.prepare('SELECT * FROM lead WHERE id = ?').get(id) as any;
       if (!lead) throw new DomainError('lead not found', 404);
+      const sharedBefore = leadsSharingPhones(db, [id]);
       const change = db.prepare('INSERT INTO lead_change (id, lead_id, field, old_value, new_value, created_at) VALUES (?,?,?,?,?,?)');
       if (b.details) {
         editLeadDetails(db, id, b.details);
@@ -305,7 +307,12 @@ export function registerImportRoutes(
           );
         }
       }
-      rebuildLeadState(db, [id]);
+      // The time zone follows the state and, where a state has two, the county.
+      const after = db.prepare('SELECT state, county_key, time_zone FROM lead WHERE id = ?').get(id) as { state: string | null; county_key: string | null; time_zone: string | null };
+      const tz = timeZoneFor(after.state, after.county_key);
+      if (tz !== after.time_zone) db.prepare('UPDATE lead SET time_zone = ? WHERE id = ?').run(tz, id);
+      // Leads that shared a phone with this one before the edit are rechecked too.
+      rebuildLeadState(db, [id, ...sharedBefore]);
       return db.prepare('SELECT * FROM lead WHERE id = ?').get(id);
     })();
   });

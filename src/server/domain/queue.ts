@@ -52,7 +52,7 @@ export function getQueue(
 
   const rows = db
     .prepare(
-      `SELECT l.id lead_id, trim(coalesce(l.first_name,'') || ' ' || coalesce(l.last_name,'')) name, l.phone_e164, l.state,
+      `SELECT l.id lead_id, trim(coalesce(l.first_name,'') || ' ' || coalesce(l.last_name,'')) name, coalesce(s.active_phone_e164, l.phone_e164) phone_e164, l.state,
               l.time_zone, l.county, l.county_key, b.name batch_name, b.imported_at batch_imported_at, r.row_number,
               s.status, s.attempts_total, s.last_call_at, s.last_outcome_code, s.next_due_at, s.due_any_time, s.skipped_at
        FROM lead l JOIN lead_state s ON s.lead_id = l.id JOIN import_batch b ON b.id = l.batch_id
@@ -89,11 +89,13 @@ export function getQueue(
   items.sort((a, b) => cmp(a._sort, b._sort));
   const counts = { callback_due: 0, new: 0, retry: 0 } as Record<QueueBucket, number>;
   for (const i of items) counts[i.bucket]++;
+  // Same counties, area codes and search as the list itself.
   const upcoming = db
     .prepare(
-      `SELECT COUNT(*) n FROM lead_state WHERE (status = 'callback' AND next_due_at > @now) OR (status = 'retry' AND next_due_at > @now)`,
+      `SELECT COUNT(*) n FROM lead l JOIN lead_state s ON s.lead_id = l.id
+       WHERE s.status IN ('callback','retry') AND s.next_due_at > @now AND ${group.sql} AND ${search.sql}`,
     )
-    .get({ now }) as { n: number };
+    .get({ now, ...group.params, ...search.params }) as { n: number };
   return {
     items: items.slice(0, limit).map(({ _sort, ...i }) => i),
     counts,

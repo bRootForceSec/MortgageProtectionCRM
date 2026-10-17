@@ -5,7 +5,7 @@ import { type ColumnMapping, type LeadFieldKey, LEAD_FIELDS, validateMapping, he
 import type { ParsedSheet } from './spreadsheet.js';
 import {
   coborrowerSignal, normalizeAge, normalizeCallinDate, normalizeMoneyToCents, normalizeState, normalizeUsPhone,
-  normalizeZip, splitName, STATE_TZ, toText,
+  normalizeZip, splitName, toText, timeZoneFor,
 } from './normalize.js';
 import { resolveCounty, lookupZip } from './county.js';
 import { rebuildLeadState } from './leadState.js';
@@ -191,7 +191,7 @@ export function mapFields(f: FieldValues, extra: Record<string, string> = {}): {
       county: county?.name ?? txt(f.county),
       county_key: county?.key ?? null,
       county_source: county?.source ?? null,
-      time_zone: st.value ? STATE_TZ[st.value]!.tz : null,
+      time_zone: timeZoneFor(st.value, county?.key ?? null),
       tobacco_raw: txt(f.tobacco),
       health_heart_raw: txt(f.health_heart),
       health_stroke_raw: txt(f.health_stroke),

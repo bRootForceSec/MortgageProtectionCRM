@@ -136,8 +136,8 @@ test('dial counter, undo, remapped keys, QR dialing, scripts and lead edits', as
   await expect(counter).toContainText('3 dials');
   await page.keyboard.press('<');
   await expect(counter).toContainText('2 dials');
+  // No answer saves on its own key, without Enter.
   await page.keyboard.press('1');
-  await page.keyboard.press('Enter');
   await expect(page.locator('.undo-bar')).toContainText('No answer · 2 dials');
   await expect(page.locator('.lead-name')).not.toHaveText(lead);
   await expect(page.locator('.topbar .stats')).toContainText('Dials 4');
@@ -180,6 +180,10 @@ test('dial counter, undo, remapped keys, QR dialing, scripts and lead edits', as
   await page.keyboard.press('Escape');
   await expect(page.getByRole('dialog')).toHaveCount(0);
   await expect(page.locator('.timer')).toBeVisible();
+
+  // X dials the lead's other number; this one has none.
+  await page.keyboard.press('x');
+  await expect(page.getByText('This lead has no other working number')).toBeVisible();
 
   await page.keyboard.press('p');
   await expect(page.locator('.card.script')).toContainText(`this is Alex about your`);
