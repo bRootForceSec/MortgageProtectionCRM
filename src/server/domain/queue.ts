@@ -1,5 +1,6 @@
 import type { DB } from '../db/connection.js';
 import { nowIso } from '../ids.js';
+import { groupWhere, searchWhere } from './groupFilter.js';
 
 // Queue order (documented in the UI tooltip):
 //   1. callbacks that are due, oldest due first
@@ -42,12 +43,9 @@ export function getQueue(
 ) {
   const now = opts.now ?? nowIso();
   const startOfDay = new Date(new Date(now).setHours(0, 0, 0, 0)).toISOString();
-  const limit = Math.min(Math.max(opts.limit ?? 200, 1), 1000);
-  const search = opts.search?.trim().toLowerCase();
-  const digits = search?.replace(/\D/g, '');
-  const counties = opts.counties?.filter(Boolean) ?? [];
-  const codes = opts.areaCodes?.filter((c) => /^\d{3}$/.test(c)) ?? [];
-  const grouped = counties.length > 0 || codes.length > 0;
+  const limit = Math.min(Math.max(opts.limit ?? 500, 1), 2000);
+  const group = groupWhere('l.county_key', opts);
+  const search = searchWhere(opts.search);
 
   const rows = db
     .prepare(
@@ -56,21 +54,9 @@ export function getQueue(
               s.status, s.attempts_total, s.last_call_at, s.last_outcome_code, s.next_due_at, s.skipped_at
        FROM lead l JOIN lead_state s ON s.lead_id = l.id JOIN import_batch b ON b.id = l.batch_id
        JOIN import_row r ON r.id = l.import_row_id
-       WHERE s.status NOT IN ('dead','invalid','sold')
-         AND (@grouped = 0 OR l.county_key IN (SELECT value FROM json_each(@counties))
-              OR l.county_key IN (SELECT county_key FROM county_area_code WHERE area_code IN (SELECT value FROM json_each(@codes))))
-         AND (@search IS NULL OR lower(coalesce(l.first_name,'') || ' ' || coalesce(l.last_name,'')) LIKE @like
-              OR (@digits <> '' AND l.phone_e164 LIKE @dlike))`,
+       WHERE s.status NOT IN ('dead','invalid','sold') AND ${group.sql} AND ${search.sql}`,
     )
-    .all({
-      search: search || null,
-      like: `%${search ?? ''}%`,
-      digits: digits ?? '',
-      dlike: `%${digits ?? ''}%`,
-      grouped: grouped ? 1 : 0,
-      counties: JSON.stringify(counties),
-      codes: JSON.stringify(codes),
-    }) as any[];
+    .all({ ...group.params, ...search.params }) as any[];
 
   const items: (QueueItem & { _sort: (string | number)[] })[] = [];
   for (const r of rows) {

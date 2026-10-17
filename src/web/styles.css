@@ -208,3 +208,10 @@ table.shortcuts .chip { margin-right: 6px; }
 .modal.qr canvas { background: #fff; border-radius: 6px; }
 .card textarea { width: 100%; box-sizing: border-box; font: inherit; }
 .card .field { margin-bottom: 10px; }
+
+/* ---------- working list ---------- */
+.list-head { justify-content: space-between; margin-top: 6px; font-size: 13px; }
+.queue-list li.done { opacity: .55; }
+.queue-list li.done.selected { opacity: .85; }
+.queue-list li.done .name { text-decoration: line-through; text-decoration-thickness: 1px; }
+.badge.done { color: var(--muted); border-color: var(--border); }

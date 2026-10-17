@@ -9,7 +9,9 @@ export const SHORTCUT_ACTIONS = {
   dial: { label: 'Dial / copy the number and start the timer', keys: ['c'] },
   dials_up: { label: 'One more dial', keys: ['ArrowRight', '>', '.'] },
   dials_down: { label: 'One less dial', keys: ['ArrowLeft', '<', ','] },
-  next: { label: 'Next lead', keys: ['n'] },
+  list_down: { label: 'Move down the list', keys: ['ArrowDown'] },
+  list_up: { label: 'Move up the list', keys: ['ArrowUp'] },
+  next: { label: 'Next lead you haven\'t worked yet', keys: ['n'] },
   skip: { label: 'Skip this lead', keys: ['s'] },
   undo: { label: 'Undo the last saved call (10 seconds)', keys: ['z'] },
   note: { label: 'Write a note', keys: ['a'] },
@@ -24,8 +26,8 @@ const key = z.string().min(1).max(20);
 export const CallingSettings = z.object({
   /** Minutes before an unanswered lead comes back. 0 means right away. */
   retry_gap_minutes: z.number().int().min(0).max(60 * 24 * 60).default(240),
-  /** Go to the next lead by itself after saving. */
-  auto_advance: z.boolean().default(false),
+  /** From this hour on, a new appointment or callback defaults to tomorrow morning instead of today. */
+  late_cutoff_hour: z.number().int().min(0).max(24).default(21),
   /** How "dial" works: copy the number, show a QR code for your phone, or send it to your phone with KDE Connect. */
   dial_method: z.enum(['copy', 'qr', 'kdeconnect']).default('copy'),
   kdeconnect_device: z.string().max(100).nullable().default(null),

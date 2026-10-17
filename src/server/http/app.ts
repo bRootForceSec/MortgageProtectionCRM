@@ -22,6 +22,7 @@ import { Secrets } from '../ai/settings.js';
 import { registerCallingRoutes } from './callingRoutes.js';
 import { KdeConnect } from '../dialer.js';
 import { loadCallingSettings } from '../domain/callingSettings.js';
+import { groupWhere, searchWhere, parseList } from '../domain/groupFilter.js';
 
 export interface AppDeps {
   db: DB;
@@ -136,8 +137,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       counties: z.string().max(4000).optional(),
       area_codes: z.string().max(400).optional(),
     }).parse(req.query);
-    const list = (v?: string) => (v ? v.split(',').map((x) => x.trim()).filter(Boolean) : undefined);
-    return getQueue(db, { ...q, counties: list(q.counties), areaCodes: list(q.area_codes) });
+    return getQueue(db, { ...q, counties: parseList(q.counties), areaCodes: parseList(q.area_codes) });
   });
 
   app.get('/api/leads', async (req) => {
@@ -145,20 +145,21 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       status: z.enum(['dead', 'invalid', 'sold', 'appointment_set', 'callback', 'retry', 'new', 'all']).default('all'),
       search: z.string().max(100).optional(),
       batch_id: z.string().max(64).optional(),
+      counties: z.string().max(4000).optional(),
+      area_codes: z.string().max(400).optional(),
     }).parse(req.query);
-    const s = q.search?.trim().toLowerCase() ?? '';
-    const digits = s.replace(/\D/g, '');
+    const group = groupWhere('l.county_key', { counties: parseList(q.counties), areaCodes: parseList(q.area_codes) });
+    const search = searchWhere(q.search);
     return db
       .prepare(
-        `SELECT l.id, l.first_name, l.last_name, l.phone_e164, l.state, l.city, b.name batch_name, s.status, s.attempts_total,
+        `SELECT l.id, l.first_name, l.last_name, l.phone_e164, l.state, l.city, l.county, b.name batch_name, s.status, s.attempts_total,
                 s.last_call_at, s.last_outcome_code, s.next_due_at
          FROM lead l JOIN lead_state s ON s.lead_id = l.id JOIN import_batch b ON b.id = l.batch_id
          WHERE (@status = 'all' OR s.status = @status) AND (@batch IS NULL OR l.batch_id = @batch)
-           AND (@s = '' OR lower(coalesce(l.first_name,'') || ' ' || coalesce(l.last_name,'')) LIKE @like
-                OR (@digits <> '' AND l.phone_e164 LIKE @dlike))
+           AND ${group.sql} AND ${search.sql}
          ORDER BY coalesce(s.last_call_at, l.created_at) DESC LIMIT 500`,
       )
-      .all({ status: q.status, batch: q.batch_id ?? null, s, like: `%${s}%`, digits, dlike: `%${digits}%` });
+      .all({ status: q.status, batch: q.batch_id ?? null, ...group.params, ...search.params });
   });
 
   app.get('/api/leads/:id', async (req) => {
@@ -277,19 +278,25 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       from: z.string().max(40).optional(),
       to: z.string().max(40).optional(),
       outcome: z.string().max(40).optional(),
+      search: z.string().max(100).optional(),
+      counties: z.string().max(4000).optional(),
+      area_codes: z.string().max(400).optional(),
     }).parse(req.query);
+    const group = groupWhere('l.county_key', { counties: parseList(q.counties), areaCodes: parseList(q.area_codes) });
+    const search = searchWhere(q.search);
     return db
       .prepare(
         `SELECT c.id, c.lead_id, c.channel, c.from_e164, c.to_e164, c.requested_at, c.state, c.talk_seconds, c.dial_count, c.voided_at,
                 c.time_known,
-                trim(coalesce(l.first_name,'') || ' ' || coalesce(l.last_name,'')) lead_name, n.label from_label,
+                trim(coalesce(l.first_name,'') || ' ' || coalesce(l.last_name,'')) lead_name, l.county, n.label from_label,
                 (SELECT o.outcome_code FROM call_outcome o WHERE o.call_id = c.id
                    AND NOT EXISTS (SELECT 1 FROM call_outcome x WHERE x.supersedes_id = o.id) ORDER BY o.entered_at DESC LIMIT 1) outcome_code
          FROM call c LEFT JOIN lead l ON l.id = c.lead_id LEFT JOIN caller_number n ON n.id = c.from_number_id
          WHERE (@from IS NULL OR c.requested_at >= @from) AND (@to IS NULL OR c.requested_at < @to)
+           AND ${group.sql} AND ${search.sql}
          ORDER BY c.requested_at DESC LIMIT 2000`,
       )
-      .all({ from: q.from ?? null, to: q.to ?? null })
+      .all({ from: q.from ?? null, to: q.to ?? null, ...group.params, ...search.params })
       .filter((r: any) => !q.outcome || r.outcome_code === q.outcome);
   });
 

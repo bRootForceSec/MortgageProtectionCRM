@@ -68,26 +68,38 @@ test('import a sheet, log calls by keyboard, and move a lead to the dead pile', 
   await expect(page.getByLabel('Queue').locator('li')).toHaveCount(4);
   await page.screenshot({ path: 'test-results/calling.png', fullPage: true });
 
-  // Voicemail left: press 2 then Enter.
+  // Voicemail left: press 2 then Enter. Enter saves and moves straight on to the next lead.
   await page.keyboard.press('2');
   await page.keyboard.press('Enter');
-  await expect(page.getByText(/^Saved: Voicemail, message left/).first()).toBeVisible();
-  await expect(page.getByLabel('History').getByText('Voicemail, message left')).toBeVisible();
-  await expect(page.getByLabel('History').getByText('from Sideline')).toBeVisible();
-  await expect(page.locator('.topbar .stats')).toContainText('Calls 1');
-
-  // Next lead.
-  await page.keyboard.press('n');
+  await expect(page.locator('.undo-bar')).toContainText(`Saved for ${first}`);
+  await expect(page.locator('.undo-bar')).toContainText('Voicemail, message left');
   await expect(page.locator('.lead-name')).not.toHaveText(first);
   const second = await page.locator('.lead-name').innerText();
+  await expect(page.locator('.topbar .stats')).toContainText('Calls 1');
+  // The worked lead stays in the list, greyed out.
+  await expect(page.getByLabel('Queue').locator('li')).toHaveCount(4);
+  await expect(page.getByLabel('Queue').locator('li.done')).toHaveCount(1);
 
-  // Do-not-call request → dead pile (confirm dialog auto-accepted).
+  // Up arrow goes back to it and shows the call; down comes back.
+  await page.keyboard.press('ArrowUp');
+  await expect(page.locator('.lead-name')).toHaveText(first);
+  await expect(page.getByLabel('History').getByText('Voicemail, message left')).toBeVisible();
+  await expect(page.getByLabel('History').getByText('from Sideline')).toBeVisible();
+  await page.keyboard.press('ArrowDown');
+  await expect(page.locator('.lead-name')).toHaveText(second);
+
+  // Do-not-call request → dead pile (confirm dialog auto-accepted), then on to the next lead.
   await page.keyboard.press('d');
   await expect(page.getByRole('button', { name: /Do-not-call request/ })).toHaveClass(/active/);
   await page.keyboard.press('Enter');
+  await expect(page.locator('.lead-name')).not.toHaveText(second);
+  await expect(page.getByLabel('Queue')).toContainText('2 to go · 2 done');
+  await expect(page.getByLabel('Queue').locator('li')).toHaveCount(4);
+  await page.keyboard.press('ArrowUp');
   await expect(page.getByText('This lead is in the dead pile.')).toBeVisible();
-  // Jane waits 4 hours for a retry and Robert is dead, so two leads remain.
-  await expect(page.getByLabel('Queue').locator('li')).toHaveCount(2);
+  await page.keyboard.press('ArrowDown');
+  await expect(page.locator('.lead-name')).not.toHaveText(second);
+  const current = await page.locator('.lead-name').innerText();
 
   // The dead pile lists it.
   await page.getByRole('button', { name: 'Leads' }).click();
@@ -95,10 +107,11 @@ test('import a sheet, log calls by keyboard, and move a lead to the dead pile', 
   await expect(page.locator('table.grid tbody tr')).toHaveCount(1);
   await expect(page.locator('table.grid tbody tr')).toContainText(second);
 
-  // Refresh keeps the selected lead.
+  // Refresh keeps the list and the selected lead.
   await page.getByRole('button', { name: 'Calling' }).click();
   await page.reload();
-  await expect(page.locator('.lead-name')).toHaveText(second);
+  await expect(page.locator('.lead-name')).toHaveText(current);
+  await expect(page.getByLabel('Queue').locator('li.done')).toHaveCount(2);
 });
 
 test('dial counter, undo, remapped keys, QR dialing, scripts and lead edits', async ({ page }) => {
@@ -119,11 +132,12 @@ test('dial counter, undo, remapped keys, QR dialing, scripts and lead edits', as
   await page.keyboard.press('1');
   await page.keyboard.press('Enter');
   await expect(page.locator('.undo-bar')).toContainText('No answer · 2 dials');
-  await expect(page.getByLabel('History').getByText('2 dials')).toBeVisible();
+  await expect(page.locator('.lead-name')).not.toHaveText(lead);
   await expect(page.locator('.topbar .stats')).toContainText('Dials 4');
 
-  // Undo puts it back to fix.
+  // Undo goes back to that lead and puts the outcome back to fix.
   await page.keyboard.press('z');
+  await expect(page.locator('.lead-name')).toHaveText(lead);
   await expect(page.getByLabel('History').getByText(/^Undone/)).toBeVisible();
   await expect(counter).toContainText('2 dials');
   await expect(page.getByRole('button', { name: /No answer/ })).toHaveClass(/active/);
@@ -132,6 +146,8 @@ test('dial counter, undo, remapped keys, QR dialing, scripts and lead edits', as
   await page.keyboard.press('3');
   await page.keyboard.press('Enter');
   await expect(page.locator('.undo-bar')).toContainText('Voicemail, no message · 2 dials');
+  await expect(page.locator('.lead-name')).not.toHaveText(lead);
+  const next = await page.locator('.lead-name').innerText();
 
   // Settings: "next" moves to J, dialing shows a QR code, a script and a daily goal.
   await page.getByRole('button', { name: 'Settings' }).click();
@@ -150,7 +166,7 @@ test('dial counter, undo, remapped keys, QR dialing, scripts and lead edits', as
   await page.screenshot({ path: 'test-results/settings.png', fullPage: true });
 
   await page.getByRole('button', { name: 'Calling' }).click();
-  await expect(page.locator('.lead-name')).toHaveText(lead);
+  await expect(page.locator('.lead-name')).toHaveText(next);
   await page.keyboard.press('c');
   await expect(page.getByRole('dialog', { name: 'Scan to dial' }).locator('canvas')).toBeVisible();
   await page.screenshot({ path: 'test-results/qr.png' });
@@ -171,9 +187,9 @@ test('dial counter, undo, remapped keys, QR dialing, scripts and lead edits', as
   await expect(page.locator('.card.script')).toContainText('Hi Zed,');
   await page.screenshot({ path: 'test-results/calling-refined.png', fullPage: true });
 
-  // J is now "next".
+  // J is now "next": every other lead in this list has been worked, so it says so.
   await page.keyboard.press('j');
-  await expect(page.locator('.lead-name')).not.toContainText('Zed');
+  await expect(page.getByText(/worked the whole list/)).toBeVisible();
 
   await page.getByRole('button', { name: 'Today' }).click();
   await expect(page.getByRole('heading', { name: 'Today' })).toBeVisible();

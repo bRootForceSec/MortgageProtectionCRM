@@ -5,6 +5,7 @@ import { DomainError, voidCall } from '../domain/calls.js';
 import { loadCallingSettings, saveCallingSettings, SHORTCUT_ACTIONS } from '../domain/callingSettings.js';
 import { rebuildLeadState } from '../domain/leadState.js';
 import { KdeConnect } from '../dialer.js';
+import { groupWhere, parseList } from '../domain/groupFilter.js';
 
 const idParam = z.object({ id: z.string().max(64) });
 
@@ -62,26 +63,33 @@ export function registerCallingRoutes(app: FastifyInstance, deps: { db: DB; kde?
 
   // ---------- agenda: callbacks and appointments ----------
   app.get('/api/agenda', async (req) => {
-    const q = z.object({ from: z.string().max(40), to: z.string().max(40) }).parse(req.query);
+    const q = z.object({
+      from: z.string().max(40),
+      to: z.string().max(40),
+      counties: z.string().max(4000).optional(),
+      area_codes: z.string().max(400).optional(),
+    }).parse(req.query);
+    const group = groupWhere('l.county_key', { counties: parseList(q.counties), areaCodes: parseList(q.area_codes) });
     const name = `trim(coalesce(l.first_name,'') || ' ' || coalesce(l.last_name,''))`;
     // Callbacks still due before the end of the range, including ones you missed earlier and ones with no time yet.
     const callbacks = db
       .prepare(
         `SELECT l.id lead_id, ${name} name, l.phone_e164, l.time_zone, l.county, l.state, s.next_due_at due_at
          FROM lead_state s JOIN lead l ON l.id = s.lead_id
-         WHERE s.status = 'callback' AND (s.next_due_at IS NULL OR s.next_due_at < @to)
+         WHERE s.status = 'callback' AND (s.next_due_at IS NULL OR s.next_due_at < @to) AND ${group.sql}
          ORDER BY s.next_due_at IS NULL, s.next_due_at`,
       )
-      .all({ to: q.to });
+      .all({ to: q.to, ...group.params });
     const appointments = db
       .prepare(
         `SELECT a.id, a.lead_id, ${name} name, l.phone_e164, l.time_zone, l.county, l.state, a.scheduled_for, a.notes
          FROM appointment a JOIN lead l ON l.id = a.lead_id JOIN lead_state s ON s.lead_id = l.id
          WHERE a.internal_status <> 'canceled' AND a.official_status IS NULL
            AND ((a.scheduled_for >= @from AND a.scheduled_for < @to) OR (a.scheduled_for IS NULL AND s.status = 'appointment_set'))
+           AND ${group.sql}
          ORDER BY a.scheduled_for IS NULL, a.scheduled_for`,
       )
-      .all({ from: q.from, to: q.to });
+      .all({ from: q.from, to: q.to, ...group.params });
     return { callbacks, appointments };
   });
 }

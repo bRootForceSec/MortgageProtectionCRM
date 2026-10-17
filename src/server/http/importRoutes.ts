@@ -17,6 +17,7 @@ import { countyKey, countyDisplayName } from '../domain/county.js';
 import { rebuildLeadState } from '../domain/leadState.js';
 import { uuidv7, nowIso } from '../ids.js';
 import { editLeadDetails, EDITABLE_FIELDS } from '../domain/leadEdit.js';
+import { seedCountyAreaCodes, builtInAreaCodes } from '../domain/areaCodes.js';
 
 // Routes for PDF and spreadsheet imports with review, AI settings, lead types and prices, and county groups.
 
@@ -227,6 +228,7 @@ export function registerImportRoutes(
 
   // ---------- counties and their area codes ----------
   app.get('/api/counties', async () => {
+    seedCountyAreaCodes(db);
     const rows = db
       .prepare(
         `SELECT l.county_key, max(l.county) county, max(l.state) state, COUNT(*) leads,
@@ -235,11 +237,6 @@ export function registerImportRoutes(
       )
       .all() as { county_key: string; county: string; state: string; leads: number; workable: number }[];
     const codes = db.prepare('SELECT county_key, area_code FROM county_area_code ORDER BY area_code').all() as { county_key: string; area_code: string }[];
-    // Suggestion only: the area code most of this county's leads have. You confirm it.
-    const common = db.prepare(
-      `SELECT substr(phone_e164, 3, 3) code, COUNT(*) n FROM lead WHERE county_key = ? AND phone_e164 LIKE '+1%'
-       GROUP BY code ORDER BY n DESC LIMIT 3`,
-    );
     const known = new Set(rows.map((r) => r.county_key));
     const extra = [...new Set(codes.map((c) => c.county_key))].filter((k) => !known.has(k));
     return [
@@ -247,14 +244,12 @@ export function registerImportRoutes(
         ...r,
         name: countyDisplayName(r.county_key),
         area_codes: codes.filter((c) => c.county_key === r.county_key).map((c) => c.area_code),
-        // Only codes shared by a good part of the county's leads; a few out-of-area numbers aren't a hint.
-        suggested: (common.all(r.county_key) as { code: string; n: number }[])
-          .filter((c) => c.n >= 3 && c.n / r.leads >= 0.25)
-          .map((c) => ({ area_code: c.code, leads: c.n })),
+        // The county's built-in area codes (from the county's location, never the leads' own numbers).
+        built_in: builtInAreaCodes(r.county_key),
       })),
       ...extra.map((k) => ({
         county_key: k, county: countyDisplayName(k), name: countyDisplayName(k), state: k.split('|')[0], leads: 0, workable: 0,
-        area_codes: codes.filter((c) => c.county_key === k).map((c) => c.area_code), suggested: [],
+        area_codes: codes.filter((c) => c.county_key === k).map((c) => c.area_code), built_in: builtInAreaCodes(k),
       })),
     ];
   });
