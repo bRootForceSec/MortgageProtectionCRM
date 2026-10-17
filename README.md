@@ -6,7 +6,10 @@ A small calling CRM that runs on your own computer. It imports your lead spreads
 
 ## What works now
 
-- **Import** Excel (.xlsx) or CSV lead sheets. Columns are matched automatically and the match is remembered for next time. A preview shows every problem row with the reason before anything is saved. Re-importing the same file adds nothing. Rejected rows are kept in the import record and can be downloaded.
+- **Import lead PDFs** (one lead per page). Typed pages are read straight from the page. Scanned cards are read by AI: your Claude account through Claude Code, an Anthropic API key, or a local model (Ollama, LM Studio). Anything missing or uncertain opens in a review window next to the page image, with **OK**, **Discard** and **Cancel**. Cancel keeps the import as a draft to finish later.
+- **Import** Excel (.xlsx) or CSV lead sheets. Columns are matched automatically and the match is remembered for next time. Rows with something missing open in the same review window. Rows that were blanked out to take them off the call list are discarded. A Status column becomes call history, dated "on or before" the day the file was saved, because the real time isn't known. Re-importing the same file adds nothing.
+- **Lead types and prices** (FE-A to E, editable in Settings). Pick the type per order, and change it for some leads when an order is mixed. Each lead keeps its own price.
+- **Counties**: every lead is grouped by the county it was bought for, taken from the lead page or else the address. In Settings, link each county to one or more area codes. On the Calling page, pick counties, area codes, or both.
 - **Calling queue**: due callbacks first, then past appointments, then new leads (newest batch first), then retries 4 hours after the last attempt. Skip moves a lead to the end for today.
 - **Logging a call**: press the outcome key (`1`–`9`, `0`, `H`, `D`) then `Enter`. Each call is its own record with the caller ID you used. Changing an outcome later keeps the earlier one.
 - **Dead pile**: a do-not-call request moves the lead out of the queue. Everything else goes back into rotation. "Disconnected / invalid" and "wrong person" go to an invalid pile. Both piles can be restored.
@@ -55,13 +58,17 @@ Put these in `~/.config/mpcrm/env` (one `NAME=value` per line, mode 600), then r
 | `MPCRM_BACKUP_KEEP` | `30` | How many backups to keep |
 | `MPCRM_BACKUP_AGE_RECIPIENT` | none | An [age](https://github.com/FiloSottile/age) public key; backups are then encrypted |
 
+### AI for scanned pages
+
+Choose it in **Settings**. The default is **Claude with your Claude account**: install [Claude Code](https://claude.com/claude-code) and sign in once (`claude`), and the app uses it to read each scanned page, which costs a fraction of a cent of your usage per page. Haiku is the default model. API keys for the other options are kept in `<data dir>/secrets.json` (mode 600). They are never shown in the app and never included in exports or backups. The local-model option needs `pdftoppm` (`sudo dnf install poppler-utils`).
+
 ### Running by hand (development)
 
 `npm ci && npm run build && npm start` prints a link like `http://127.0.0.1:5170/?t=…`. The link contains your access key, so don't share it. To make a new key, run `npm run cli -- rotate-token` and restart. A copy started this way doesn't update itself.
 
 ## Daily use
 
-1. **Import** a batch: Import → choose the file → check the column matches → Preview → fill in the batch name and cost → Import.
+1. **Import** a batch: Import → pick the lead type → choose the PDF or spreadsheet → (spreadsheet: check the column matches → Continue) → check any leads that need a look → set types for mixed orders → Import.
 2. **Numbers**: add your Sideline number once, so each call records which caller ID you used.
 3. **Calling**: the current lead's details are in the middle. Press `C` to copy the phone number, dial on your phone, then press the outcome key and `Enter`. Press `N` for the next lead.
 

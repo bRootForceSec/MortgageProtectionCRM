@@ -16,6 +16,9 @@ import { createBackup, listBackups } from '../backup.js';
 import { uuidv7, nowIso } from '../ids.js';
 import { normalizeUsPhone } from '../domain/normalize.js';
 import { Updates } from '../updates.js';
+import { registerImportRoutes } from './importRoutes.js';
+import { DraftWorker } from '../domain/drafts.js';
+import { Secrets } from '../ai/settings.js';
 
 export interface AppDeps {
   db: DB;
@@ -27,6 +30,9 @@ export interface AppDeps {
   logStream?: NodeJS.WritableStream;
   /** Version info and the self-updater. Defaults to an unmanaged "dev" copy. */
   updates?: Updates;
+  /** Reads PDF imports in the background. Defaults to one made here. */
+  drafts?: DraftWorker;
+  secrets?: Secrets;
 }
 
 interface Upload {
@@ -80,6 +86,10 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     while (uploads.size > 5) uploads.delete(uploads.keys().next().value!);
   };
 
+  const secrets = deps.secrets ?? Secrets.inDataDir(config.dataDir);
+  const drafts = deps.drafts ?? new DraftWorker(db, secrets);
+  registerImportRoutes(app, { db, config, worker: drafts, secrets, getUpload, dropUpload: (id) => uploads.delete(id) });
+
   // ---------- version & updates ----------
   const updates = deps.updates ?? new Updates(null, { commit: 'dev', built_at: null });
   // No token needed: the updater uses this to confirm the new version came up. It reveals only the version.
@@ -117,13 +127,16 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       bucket: z.enum(['callback_due', 'appointment_passed', 'new', 'retry']).optional(),
       search: z.string().max(100).optional(),
       limit: z.coerce.number().int().optional(),
+      counties: z.string().max(4000).optional(),
+      area_codes: z.string().max(400).optional(),
     }).parse(req.query);
-    return getQueue(db, q);
+    const list = (v?: string) => (v ? v.split(',').map((x) => x.trim()).filter(Boolean) : undefined);
+    return getQueue(db, { ...q, counties: list(q.counties), areaCodes: list(q.area_codes) });
   });
 
   app.get('/api/leads', async (req) => {
     const q = z.object({
-      status: z.enum(['dead', 'invalid', 'appointment_set', 'callback', 'retry', 'new', 'all']).default('all'),
+      status: z.enum(['dead', 'invalid', 'sold', 'appointment_set', 'callback', 'retry', 'new', 'all']).default('all'),
       search: z.string().max(100).optional(),
       batch_id: z.string().max(64).optional(),
     }).parse(req.query);
@@ -193,6 +206,8 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
         )
         .all(id),
       linked,
+      changes: db.prepare('SELECT * FROM lead_change WHERE lead_id = ? ORDER BY created_at DESC').all(id),
+      lead_type: lead.lead_type ? db.prepare('SELECT * FROM lead_type WHERE code = ?').get(lead.lead_type) : null,
     };
   });
 

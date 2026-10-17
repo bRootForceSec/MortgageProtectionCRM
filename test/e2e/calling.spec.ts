@@ -45,12 +45,19 @@ test('import a sheet, log calls by keyboard, and move a lead to the dead pile', 
   const file = path.join(dataDir, 'October leads.csv');
   fs.copyFileSync('test/fixtures/sample-leads.csv', file);
   await page.locator('input[type=file]').setInputFiles(file);
-  await expect(page.getByText('2. Match the columns')).toBeVisible();
+  await expect(page.getByText('Match the columns')).toBeVisible();
   await expect(page.getByLabel('Column for Phone')).toHaveValue('Phone');
-  await page.getByRole('button', { name: 'Preview' }).click();
-  await expect(page.getByText('3. Check the preview')).toBeVisible();
-  await expect(page.getByText('no phone number')).toBeVisible();
+  await page.getByRole('button', { name: 'Continue' }).click();
+  // The rows with no usable phone open in the review window; discard both.
+  await expect(page.getByText('2 leads need a look')).toBeVisible();
   await page.screenshot({ path: 'test-results/import-preview.png', fullPage: true });
+  await page.getByRole('button', { name: 'Check them now' }).click();
+  await expect(page.getByRole('dialog', { name: 'Check this lead' })).toBeVisible();
+  await expect(page.getByRole('dialog').getByText('no phone number')).toBeVisible();
+  await page.getByRole('button', { name: 'Discard' }).click();
+  await expect(page.getByRole('dialog', { name: 'Check this lead' })).toContainText('row 6');
+  await page.getByRole('button', { name: 'Discard' }).click();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
   await page.getByRole('button', { name: 'Import 4 leads' }).click();
   await expect(page.getByText('Import finished')).toBeVisible();
   await page.getByRole('button', { name: 'Start calling' }).click();
