@@ -6,7 +6,7 @@ import { GroupPicker, useGroups } from '../components/GroupPicker';
 
 const STATUSES = [
   { key: 'all', label: 'All' }, { key: 'new', label: 'New' }, { key: 'retry', label: 'Retry' }, { key: 'callback', label: 'Callbacks' },
-  { key: 'appointment_set', label: 'Appointments' }, { key: 'invalid', label: 'Invalid' }, { key: 'dead', label: 'Dead pile' },
+  { key: 'appointment_set', label: 'Appointment set' }, { key: 'invalid', label: 'Invalid' }, { key: 'dead', label: 'Dead pile' },
 ];
 
 export function LeadsPage() {

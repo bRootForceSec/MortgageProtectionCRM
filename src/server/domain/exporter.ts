@@ -4,7 +4,7 @@ import type { DB } from '../db/connection.js';
 // Exports read straight from the tables so nothing is lost or reinterpreted.
 // Health columns are excluded unless explicitly requested.
 
-export const EXPORT_TABLES = ['leads', 'calls', 'outcomes', 'events', 'notes', 'batches', 'import_rows', 'appointments', 'numbers'] as const;
+export const EXPORT_TABLES = ['leads', 'calls', 'outcomes', 'events', 'notes', 'batches', 'import_rows', 'numbers'] as const;
 export type ExportTable = (typeof EXPORT_TABLES)[number];
 
 const HEALTH_COLS = ['tobacco_raw', 'health_heart_raw', 'health_stroke_raw', 'health_cancer_raw', 'health_diabetes_raw'];
@@ -21,7 +21,6 @@ export function exportRows(db: DB, table: ExportTable, opts: { includeHealth?: b
     notes: 'SELECT * FROM note ORDER BY created_at',
     batches: 'SELECT * FROM import_batch ORDER BY imported_at',
     import_rows: 'SELECT * FROM import_row ORDER BY batch_id, row_number',
-    appointments: 'SELECT * FROM appointment ORDER BY created_at',
     numbers: 'SELECT * FROM caller_number ORDER BY created_at',
   };
   let rows = db.prepare(q[table]).all() as Record<string, unknown>[];

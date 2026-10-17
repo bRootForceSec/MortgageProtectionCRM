@@ -21,7 +21,6 @@ import { DraftWorker } from '../domain/drafts.js';
 import { Secrets } from '../ai/settings.js';
 import { registerCallingRoutes } from './callingRoutes.js';
 import { registerReportRoutes } from './reportRoutes.js';
-import { CURRENT_RESULT_SQL } from '../domain/leadState.js';
 import { KdeConnect } from '../dialer.js';
 import { loadCallingSettings } from '../domain/callingSettings.js';
 import { groupWhere, searchWhere, parseList } from '../domain/groupFilter.js';
@@ -134,7 +133,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   // ---------- queue & leads ----------
   app.get('/api/queue', async (req) => {
     const q = z.object({
-      bucket: z.enum(['callback_due', 'appointment_passed', 'new', 'retry']).optional(),
+      bucket: z.enum(['callback_due', 'new', 'retry']).optional(),
       search: z.string().max(100).optional(),
       limit: z.coerce.number().int().optional(),
       counties: z.string().max(4000).optional(),
@@ -145,7 +144,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
 
   app.get('/api/leads', async (req) => {
     const q = z.object({
-      status: z.enum(['dead', 'invalid', 'sold', 'appointment_set', 'callback', 'retry', 'new', 'all']).default('all'),
+      status: z.enum(['dead', 'invalid', 'appointment_set', 'callback', 'retry', 'new', 'all']).default('all'),
       search: z.string().max(100).optional(),
       batch_id: z.string().max(64).optional(),
       counties: z.string().max(4000).optional(),
@@ -212,12 +211,6 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
         .prepare('SELECT n.* FROM note n LEFT JOIN call c ON c.id = n.call_id WHERE n.lead_id = ? AND c.voided_at IS NULL ORDER BY n.created_at DESC')
         .all(id),
       actions: db.prepare('SELECT * FROM lead_action WHERE lead_id = ? ORDER BY created_at DESC').all(id),
-      appointments: db
-        .prepare(
-          `SELECT a.*, ${CURRENT_RESULT_SQL} result, n.e164 from_e164, n.label from_label FROM appointment a LEFT JOIN caller_number n ON n.id = a.set_from_number_id
-           WHERE a.lead_id = ? ORDER BY a.scheduled_for DESC`,
-        )
-        .all(id),
       linked,
       changes: db.prepare('SELECT * FROM lead_change WHERE lead_id = ? ORDER BY created_at DESC').all(id),
       lead_type: lead.lead_type ? db.prepare('SELECT * FROM lead_type WHERE code = ?').get(lead.lead_type) : null,
@@ -238,7 +231,6 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       dial_count: z.number().int().min(1).max(1000).nullish(),
       outcome_code: z.string().max(40),
       callback_due_at: z.string().max(40).nullish(),
-      appointment_at: z.string().max(40).nullish(),
       note: z.string().max(10000).nullish(),
     }).parse(req.body);
     return logManualCall(db, { ...b, lead_id: id });

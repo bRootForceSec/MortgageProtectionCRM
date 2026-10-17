@@ -2,7 +2,7 @@ import * as z from 'zod/v4';
 import type { DB } from '../db/connection.js';
 import { getSetting, setSetting } from '../ai/settings.js';
 import { groupWhere } from './groupFilter.js';
-import { CURRENT_RESULT_SQL } from './leadState.js';
+import { BOOKED_CODES } from './leadState.js';
 
 // Reports. Every number is computed from a group of rows (calls or leads), and the same group answers
 // "show me the calls behind this number", so a total and its drill-down can never disagree.
@@ -57,14 +57,10 @@ interface LeadRow {
   attempts_total: number;
   reached: boolean;
   booked: boolean;
-  sat: boolean;
-  sold: boolean;
-  /** Booked, and you've said how it went (sat, sold, no-show or canceled). */
-  resolved: boolean;
 }
 
 type CallMetric = 'attempts' | 'dials' | 'leads_called' | 'contacts' | 'conversations' | 'talk_minutes' | 'appointments' | 'callbacks' | 'dnc_requests';
-type LeadMetric = 'leads' | 'cost' | 'never_called' | 'reached' | 'booked' | 'sat' | 'sold' | 'awaiting_result';
+type LeadMetric = 'leads' | 'cost' | 'never_called' | 'reached' | 'booked';
 
 const CALL_METRICS: Record<CallMetric, { pred: (c: CallRow) => boolean; val: (cs: CallRow[]) => number }> = {
   attempts: { pred: () => true, val: (cs) => cs.length },
@@ -83,9 +79,6 @@ const LEAD_METRICS: Record<LeadMetric, { pred: (l: LeadRow) => boolean; val: (ls
   never_called: { pred: (l) => l.attempts_total === 0, val: (ls) => ls.length },
   reached: { pred: (l) => l.reached, val: (ls) => ls.length },
   booked: { pred: (l) => l.booked, val: (ls) => ls.length },
-  sat: { pred: (l) => l.sat, val: (ls) => ls.length },
-  sold: { pred: (l) => l.sold, val: (ls) => ls.length },
-  awaiting_result: { pred: (l) => l.booked && !l.resolved, val: (ls) => ls.length },
 };
 
 function callMetrics(cs: CallRow[], keys: CallMetric[]) {
@@ -103,8 +96,6 @@ export const ReportTargets = z.object({
   booked_per_contact: z.record(z.string(), z.number().min(0).max(1)).default({
     'FE-A': 0.8, 'CI-A': 0.8, 'DM-A': 0.8, 'CI-A1': 0.25, 'CI-AA': 0.25, 'DM-AA': 0.25, B: 0.2, C: 0.125, D: 0.1,
   }),
-  sits_per_booked: z.number().min(0).max(1).default(0.8),
-  apps_per_sit: z.number().min(0).max(1).default(0.5),
 });
 export type ReportTargets = z.infer<typeof ReportTargets>;
 const TARGETS = 'report_targets';
@@ -150,27 +141,13 @@ function loadLeads(db: DB, f: ReportFilter, calls: CallRow[]): LeadRow[] {
        FROM lead l JOIN import_batch b ON b.id = l.batch_id LEFT JOIN lead_state s ON s.lead_id = l.id
        WHERE ${g.sql} ORDER BY b.imported_at, l.created_at`,
     )
-    .all(g.params) as Omit<LeadRow, 'reached' | 'booked' | 'sat' | 'sold' | 'resolved'>[];
-  // Appointments that still stand: not ones whose call you undid.
-  const appts = db
-    .prepare(
-      `SELECT a.lead_id, ${CURRENT_RESULT_SQL} result FROM appointment a
-       LEFT JOIN call c ON c.id = a.set_on_call_id
-       WHERE c.id IS NULL OR c.voided_at IS NULL`,
-    )
-    .all() as { lead_id: string; result: string | null }[];
-  const byLead = groupBy(appts, (a) => a.lead_id);
+    .all(g.params) as Omit<LeadRow, 'reached' | 'booked'>[];
   const callsBy = groupBy(calls, (c) => c.lead_id);
   return rows.map((l) => {
     const cs = callsBy.get(l.lead_id) ?? [];
-    const as = byLead.get(l.lead_id) ?? [];
-    const outs = new Set(cs.map((c) => c.outcome_code));
-    const results = new Set(as.map((a) => a.result));
-    const sold = outs.has('sold') || results.has('sold');
-    const sat = sold || outs.has('sat_no_sale') || results.has('sat_no_sale');
-    const booked = sat || outs.has('appointment') || as.length > 0;
-    const resolved = sat || results.has('no_show') || results.has('canceled');
-    return { ...l, reached: cs.some((c) => c.contact === 1), booked, sat, sold, resolved };
+    // Booked: a call ended with "appointment set" (older history may say sat or sold, which also means it was booked).
+    const booked = cs.some((c) => c.outcome_code != null && BOOKED_CODES.has(c.outcome_code));
+    return { ...l, reached: cs.some((c) => c.contact === 1), booked };
   });
 }
 
@@ -205,7 +182,7 @@ interface Group {
 const ACTIVITY: CallMetric[] = ['dials', 'attempts', 'leads_called', 'contacts', 'conversations', 'talk_minutes', 'appointments', 'callbacks', 'dnc_requests'];
 const HOURLY: CallMetric[] = ['dials', 'attempts', 'contacts', 'appointments'];
 const COUNTY_CALLS: CallMetric[] = ['dials', 'attempts', 'contacts', 'appointments'];
-const BATCH_LEADS: LeadMetric[] = ['leads', 'cost', 'never_called', 'reached', 'booked', 'sat', 'sold', 'awaiting_result'];
+const BATCH_LEADS: LeadMetric[] = ['leads', 'cost', 'never_called', 'reached', 'booked'];
 
 function groupBy<T>(xs: T[], key: (x: T) => string): Map<string, T[]> {
   const m = new Map<string, T[]>();
@@ -269,7 +246,6 @@ export function buildReport(db: DB, f: ReportFilter) {
   const leadRatios = (m: Record<LeadMetric, number>) => ({
     cost_per_reached: ratio(m.cost, m.reached),
     cost_per_booked: ratio(m.cost, m.booked),
-    cost_per_sale: ratio(m.cost, m.sold),
   });
 
   return {
@@ -319,7 +295,6 @@ export function buildReport(db: DB, f: ReportFilter) {
     benchmarks: g.typeGroups
       .map((t) => {
         const m = leadMetrics(t.leads, BATCH_LEADS);
-        const resolved = t.leads.filter((l) => l.booked && l.resolved).length;
         return {
           key: t.key,
           label: t.key ? types.get(t.key) ?? t.key : 'No lead type',
@@ -327,10 +302,6 @@ export function buildReport(db: DB, f: ReportFilter) {
           dials: CALL_METRICS.dials.val(t.calls),
           booked_per_reached: ratio(m.booked, m.reached),
           booked_target: targets.booked_per_contact[t.key] ?? null,
-          sits_per_booked: ratio(m.sat, resolved),
-          sits_target: targets.sits_per_booked,
-          apps_per_sit: ratio(m.sold, m.sat),
-          apps_target: targets.apps_per_sit,
           ...leadRatios(m),
         };
       })
@@ -441,18 +412,16 @@ export function reportSheets(r: ReturnType<typeof buildReport>) {
       name: 'By batch',
       rows: r.by_batch.map((b) => ({
         batch: b.name, imported: b.imported_at, lead_types: b.lead_types, leads: b.leads, cost: money(b.cost), never_called: b.never_called,
-        dials: b.dials, reached: b.reached, booked: b.booked, sat: b.sat, sold: b.sold,
-        cost_per_reached: money(b.cost_per_reached), cost_per_booked: money(b.cost_per_booked), cost_per_sale: money(b.cost_per_sale),
+        dials: b.dials, reached: b.reached, booked: b.booked,
+        cost_per_reached: money(b.cost_per_reached), cost_per_booked: money(b.cost_per_booked),
       })),
     },
     {
       name: 'Benchmarks',
       rows: r.benchmarks.map((b) => ({
-        lead_type: b.label, leads: b.leads, reached: b.reached, booked: b.booked, sat: b.sat, sold: b.sold,
+        lead_type: b.label, leads: b.leads, reached: b.reached, booked: b.booked,
         booked_per_reached_pct: pct(b.booked_per_reached), target_pct: pct(b.booked_target),
-        sits_per_booked_pct: pct(b.sits_per_booked), sits_target_pct: pct(b.sits_target),
-        apps_per_sit_pct: pct(b.apps_per_sit), apps_target_pct: pct(b.apps_target),
-        cost_per_booked: money(b.cost_per_booked), cost_per_sale: money(b.cost_per_sale),
+        cost_per_booked: money(b.cost_per_booked),
       })),
     },
   ];

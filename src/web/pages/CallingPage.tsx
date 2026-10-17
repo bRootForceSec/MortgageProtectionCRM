@@ -11,7 +11,6 @@ import { fillScript, isAction, isTyping, keyLabel, normKey, type KeyMap } from '
 const BUCKETS: { key: QueueItem['bucket'] | 'all'; label: string }[] = [
   { key: 'all', label: 'All' },
   { key: 'callback_due', label: 'Callbacks due' },
-  { key: 'appointment_passed', label: 'Past appointments' },
   { key: 'new', label: 'New' },
   { key: 'retry', label: 'Retry' },
 ];
@@ -159,13 +158,13 @@ export function CallingPage() {
     if (!keep) select(l.items[0]?.lead_id ?? null);
   }, [fetchQueue, listKey, selected, setList]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  /** Adds callbacks and past appointments that came due since the list was built, at the top. */
+  /** Adds callbacks that came due since the list was built, at the top. */
   const mergeDue = useCallback(async () => {
     const q = await fetchQueue();
     if (!q) return;
     updateList((items) => {
       const have = new Set(items.map((i) => i.lead_id));
-      const due = q.items.filter((i) => (i.bucket === 'callback_due' || i.bucket === 'appointment_passed') && !have.has(i.lead_id));
+      const due = q.items.filter((i) => i.bucket === 'callback_due' && !have.has(i.lead_id));
       setMore(q.items.filter((i) => !have.has(i.lead_id) && !due.includes(i)).length);
       return due.length ? [...due.map((i) => ({ ...i, due_now: true })), ...items] : items;
     });
@@ -299,10 +298,10 @@ export function CallingPage() {
     setSaved(null);
     try {
       const r = await api.post<{
-        lead_id: string; outcome_code: string | null; callback_due_at: string | null; appointment_at: string | null;
+        lead_id: string; outcome_code: string | null; callback_due_at: string | null;
         dial_count: number; talk_seconds: number | null; from_number_id: string | null; note: string | null;
       }>(`/calls/${s.callId}/void`, { reason: 'undo' });
-      const when = r.appointment_at ?? r.callback_due_at;
+      const when = r.callback_due_at;
       setRestore({
         leadId: s.leadId,
         n: Date.now(),
@@ -388,7 +387,7 @@ export function CallingPage() {
             title="A 3-digit number finds every county under that area code"
           />
           <GroupPicker groups={groups} onChange={setGroups} />
-          <div className="tabs" title={`Order: due callbacks, past appointments, new leads (newest batch first), then retries ${gapText} after the last attempt (change this in Settings). Skipped leads drop to the end for today.`}>
+          <div className="tabs" title={`Order: due callbacks, new leads (newest batch first), then retries ${gapText} after the last attempt (change this in Settings). Skipped leads drop to the end for today.`}>
             {BUCKETS.map((b) => (
               <button key={b.key} className={bucket === b.key ? 'active' : ''} onClick={() => setBucket(b.key)}>
                 {b.label}
@@ -423,7 +422,7 @@ export function CallingPage() {
                     <span className="badge done">{i.done.label}{i.done.dials > 1 ? ` · ${i.done.dials} dials` : ''}</span>
                   ) : (
                     <span className={`badge ${i.bucket}`}>
-                      {i.due_now ? 'due now' : i.bucket === 'callback_due' ? (i.needs_time ? 'callback, needs a time' : 'callback') : i.bucket === 'appointment_passed' ? (i.needs_time ? 'appt, needs a date' : 'appt passed') : i.bucket}
+                      {i.due_now ? 'due now' : i.bucket === 'callback_due' ? (i.needs_time ? 'callback, needs a time' : 'callback') : i.bucket}
                     </span>
                   )}
                   <span className="sub">
@@ -562,7 +561,7 @@ function LogCall({
   const defaultNumber = useMemo(() => {
     const pref = d.state?.preferred_number_id;
     if (pref && activeNumbers.some((n) => n.id === pref)) {
-      return { id: pref, why: d.appointments.length ? 'number this appointment was set from' : 'number last used with this lead', known: true };
+      return { id: pref, why: d.state?.status === 'appointment_set' ? 'number this appointment was set from' : 'number last used with this lead', known: true };
     }
     const last = store(LAST_NUMBER_KEY);
     if (last && activeNumbers.some((n) => n.id === last)) return { id: last, why: 'your last used number', known: false };
@@ -583,13 +582,13 @@ function LogCall({
   }, [defaultNumber.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const outcome = meta?.outcome_codes.find((o) => o.code === code) ?? null;
-  const needsWhen = outcome?.requires_callback_time || outcome?.code === 'appointment';
+  const needsWhen = !!outcome?.requires_callback_time;
   const changed = numberId !== defaultNumber.id;
 
   const choose = useCallback((c: string) => {
     setCode(c);
     const o = meta?.outcome_codes.find((x) => x.code === c);
-    if (o?.requires_callback_time || c === 'appointment') {
+    if (o?.requires_callback_time) {
       setWhen((w) => w || toLocalInput(defaultWhen(calling?.settings.late_cutoff_hour ?? 21)));
       setTimeout(() => whenRef.current?.focus(), 0);
     }
@@ -605,7 +604,7 @@ function LogCall({
     if (!code || saving) return;
     if (code === 'dnc_request' && !window.confirm('Move this lead to the dead pile? It will leave the queue.')) return;
     if (needsWhen && !when) {
-      toast(code === 'appointment' ? 'Enter the appointment time' : 'Enter when to call back', 'error');
+      toast('Enter when to call back', 'error');
       whenRef.current?.focus();
       return;
     }
@@ -618,7 +617,6 @@ function LogCall({
         to_e164: attempt.to,
         outcome_code: code,
         callback_due_at: outcome?.requires_callback_time ? iso : null,
-        appointment_at: code === 'appointment' ? iso : null,
         talk_seconds: minutes ? Number(minutes) * 60 : timerSeconds(),
         dial_count: attempt.dials,
         note: note || null,
@@ -694,7 +692,7 @@ function LogCall({
           const shown = n ? `${n.label ? `${n.label}, ` : ''}${fmtPhone(n.e164)}` : 'another number';
           return (
             <span className="warn">
-              {d.appointments.length
+              {d.state?.status === 'appointment_set'
                 ? `This lead's appointment was set from ${shown}. They may not pick up a number they don't know.`
                 : `You've reached this lead before from ${shown}. They may not pick up a number they don't know.`}
             </span>
@@ -730,7 +728,7 @@ function LogCall({
         <div className="row" style={{ alignItems: 'flex-end' }}>
           {needsWhen && (
             <label className="field">
-              <span>{code === 'appointment' ? 'Appointment time' : 'Call back at'} (your time)</span>
+              <span>Call back at (your time)</span>
               <input id="when-input" ref={whenRef} type="datetime-local" value={when} onChange={(e) => setWhen(e.target.value)} />
             </label>
           )}

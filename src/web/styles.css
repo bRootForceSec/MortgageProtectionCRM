@@ -74,7 +74,7 @@ a { color: var(--accent); }
 .badge.new { color: var(--accent); border-color: var(--accent); }
 .badge.callback_due, .badge.callback { color: var(--warn); border-color: var(--warn); }
 .badge.dead, .badge.invalid { color: var(--bad); border-color: var(--bad); }
-.badge.appointment_set, .badge.appointment_passed { color: var(--good); border-color: var(--good); }
+.badge.appointment_set { color: var(--good); border-color: var(--good); }
 
 .lead-head { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; flex-wrap: wrap; }
 .lead-head h2 { margin: 0 0 2px; font-size: 22px; }

@@ -80,15 +80,13 @@ describe('manual call logging', () => {
     expect((db.prepare('SELECT status FROM lead_state WHERE lead_id = ?').get(jane) as any).status).toBe('retry');
   });
 
-  it('appointment outcome stores the caller ID it was set from (T11 groundwork)', () => {
-    const at = new Date(Date.now() + 86_400_000).toISOString();
-    logManualCall(db, { lead_id: jane, idempotency_key: key(), outcome_code: 'appointment', appointment_at: at, from_number_id: num });
-    expect(db.prepare('SELECT set_from_number_id, scheduled_for FROM appointment WHERE lead_id = ?').get(jane)).toEqual({
-      set_from_number_id: num, scheduled_for: at,
+  it('appointment set has no date, leaves the queue, and remembers the caller ID it was set from', () => {
+    logManualCall(db, { lead_id: jane, idempotency_key: key(), outcome_code: 'appointment', from_number_id: num });
+    expect(db.prepare('SELECT count(*) n FROM appointment').get()).toEqual({ n: 0 });
+    expect(db.prepare('SELECT status, next_due_at, preferred_number_id FROM lead_state WHERE lead_id = ?').get(jane)).toEqual({
+      status: 'appointment_set', next_due_at: null, preferred_number_id: num,
     });
-    expect(db.prepare('SELECT status, preferred_number_id FROM lead_state WHERE lead_id = ?').get(jane)).toEqual({
-      status: 'appointment_set', preferred_number_id: num,
-    });
+    expect(getQueue(db).items.map((i) => i.lead_id)).not.toContain(jane);
   });
 
   it('queue: new leads first by batch, skipped leads drop to the end', () => {

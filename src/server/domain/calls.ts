@@ -20,7 +20,6 @@ export interface ManualCallInput {
   dial_count?: number | null;
   outcome_code: string;
   callback_due_at?: string | null;
-  appointment_at?: string | null;
   note?: string | null;
 }
 
@@ -67,7 +66,6 @@ export function logManualCall(db: DB, input: ManualCallInput) {
     const outcome = getOutcome(db, input.outcome_code);
     const callbackDue = checkIso(input.callback_due_at, 'callback time');
     if (outcome.requires_callback_time && !callbackDue) throw new DomainError('a callback needs a date and time');
-    const apptAt = checkIso(input.appointment_at, 'appointment time');
 
     let fromE164: string | null = null;
     if (input.from_number_id) {
@@ -102,12 +100,6 @@ export function logManualCall(db: DB, input: ManualCallInput) {
         uuidv7(), lead.id, callId, input.note.trim(), now,
       );
     }
-    if (outcome.code === 'appointment' && apptAt) {
-      db.prepare(
-        `INSERT INTO appointment (id, lead_id, scheduled_for, set_on_call_id, set_from_number_id, recorded_via, created_at)
-         VALUES (?,?,?,?,?, 'in_app_on_call', ?)`,
-      ).run(uuidv7(), lead.id, apptAt, callId, input.from_number_id ?? null, now);
-    }
     rebuildLeadState(db, [lead.id]);
     return { call_id: callId, duplicate: false };
   })();
@@ -115,7 +107,7 @@ export function logManualCall(db: DB, input: ManualCallInput) {
 
 /**
  * Undoes a logged call. The call, its events and outcomes stay in history marked as undone; it stops counting
- * toward the lead's state and your numbers. An appointment set on that call is canceled.
+ * toward the lead's state and your numbers.
  * Returns what was entered so the screen can put it back for you to fix.
  */
 export function voidCall(db: DB, callId: string, reason?: string | null) {
@@ -130,18 +122,13 @@ export function voidCall(db: DB, callId: string, reason?: string | null) {
       `INSERT INTO call_event (id, call_id, source, dedup_key, event_type_raw, event_type, occurred_at, received_at, payload_json)
        VALUES (?, ?, 'manual', ?, 'manual.voided', 'call.voided', ?, ?, ?)`,
     ).run(uuidv7(), callId, `void:${callId}`, now, now, JSON.stringify({ reason: reason ?? null }));
-    db.prepare(
-      "UPDATE appointment SET internal_status = 'canceled', notes = trim(coalesce(notes,'') || ' (call undone)') WHERE set_on_call_id = ? AND internal_status <> 'canceled'",
-    ).run(callId);
     const out = currentOutcome(db, callId) as any;
-    const appt = db.prepare('SELECT scheduled_for FROM appointment WHERE set_on_call_id = ?').get(callId) as { scheduled_for: string | null } | undefined;
     const note = db.prepare('SELECT body FROM note WHERE call_id = ? ORDER BY created_at LIMIT 1').get(callId) as { body: string } | undefined;
     if (call.lead_id) rebuildLeadState(db, [call.lead_id]);
     return {
       lead_id: call.lead_id as string | null,
       outcome_code: out?.outcome_code ?? null,
       callback_due_at: out?.callback_due_at ?? null,
-      appointment_at: appt?.scheduled_for ?? null,
       dial_count: call.dial_count as number,
       talk_seconds: call.talk_seconds as number | null,
       from_number_id: call.from_number_id as string | null,

@@ -8,7 +8,6 @@ import { commitImport } from '../../src/server/domain/importer.js';
 import { logManualCall, voidCall } from '../../src/server/domain/calls.js';
 import { seedCountyAreaCodes } from '../../src/server/domain/areaCodes.js';
 import { buildReport, drill, type ReportFilter } from '../../src/server/domain/reports.js';
-import { recordAppointmentResult } from '../../src/server/domain/appointments.js';
 import { buildApp } from '../../src/server/http/app.js';
 import { createBackup, checkLatestBackup, listBackups } from '../../src/server/backup.js';
 import type { DB } from '../../src/server/db/connection.js';
@@ -54,13 +53,13 @@ beforeEach(async () => {
   numberId = (await app.inject({ method: 'POST', url: '/api/numbers', headers: write, payload: { number: '614-555-0199', label: 'Sideline' } })).json().id;
 
   log('Amy', 'no_answer', { dial_count: 2 });
-  log('Amy', 'appointment', { talk_seconds: 300, appointment_at: new Date(Date.now() - 1800_000).toISOString() });
+  log('Amy', 'appointment', { talk_seconds: 300 });
   log('Ben', 'not_interested', { talk_seconds: 60 });
   log('Cal', 'vm_left');
-  log('Dee', 'appointment', { talk_seconds: 400, appointment_at: new Date(Date.now() + 86_400_000).toISOString() });
+  log('Dee', 'appointment', { talk_seconds: 400 });
   log('Eve', 'callback', { talk_seconds: 30, callback_due_at: new Date(Date.now() + 7200_000).toISOString() });
   // An undone call counts nowhere.
-  const undone = log('Eve', 'appointment', { appointment_at: new Date(Date.now() + 3600_000).toISOString() });
+  const undone = log('Eve', 'appointment');
   voidCall(db, undone.call_id);
   // A call recreated from a spreadsheet: no real time.
   const sheetCall = log('Cal', 'busy');
@@ -89,22 +88,16 @@ describe('reports', () => {
     expect(r.by_batch[0]).toMatchObject({ leads: 2, cost: 6800 });
   });
 
-  it('tracks booked, sat and sold against the targets, with cost per result', () => {
-    const appt = db.prepare('SELECT id FROM appointment WHERE lead_id = ?').get(id.Amy) as { id: string };
+  it('tracks booked against the targets, with cost per result', () => {
     let b = buildReport(db, range()).benchmarks.find((x) => x.key === 'B')!;
-    expect(b).toMatchObject({ leads: 3, reached: 2, booked: 1, sat: 0, awaiting_result: 1, booked_per_reached: 0.5, booked_target: 0.2, cost: 2100 });
-    expect(b.sits_per_booked).toBeNull();
-
-    recordAppointmentResult(db, appt.id, { result: 'sold' });
+    expect(b).toMatchObject({ leads: 3, reached: 2, booked: 1, booked_per_reached: 0.5, booked_target: 0.2, cost: 2100, cost_per_booked: 2100 });
+    expect(b).not.toHaveProperty('sat');
+    expect(b).not.toHaveProperty('sold');
+    // An older "sold" outcome still counts as booked.
+    const ben = log('Ben', 'no_answer');
+    db.prepare("UPDATE call_outcome SET outcome_code = 'sold' WHERE call_id = ?").run(ben.call_id); // retired, so it can't be entered any more
     b = buildReport(db, range()).benchmarks.find((x) => x.key === 'B')!;
-    expect(b).toMatchObject({ sat: 1, sold: 1, awaiting_result: 0, sits_per_booked: 1, apps_per_sit: 1, cost_per_sale: 2100 });
-    expect(db.prepare('SELECT status FROM lead_state WHERE lead_id = ?').get(id.Amy)).toEqual({ status: 'sold' });
-
-    // A correction is a new row; "cleared" takes the result back.
-    recordAppointmentResult(db, appt.id, { result: 'cleared' });
-    b = buildReport(db, range()).benchmarks.find((x) => x.key === 'B')!;
-    expect(b).toMatchObject({ sat: 0, sold: 0, awaiting_result: 1 });
-    expect(db.prepare('SELECT count(*) n FROM appointment_result').get()).toEqual({ n: 2 });
+    expect(b).toMatchObject({ booked: 2 });
   });
 
   it('every number matches the rows behind it', () => {
@@ -123,8 +116,8 @@ describe('reports', () => {
     }
     for (const h of r.by_hour) for (const m of ['dials', 'attempts', 'contacts', 'appointments']) check('by_hour', String(h.hour), m, (h as any)[m]);
     for (const c of r.by_county) for (const m of ['leads', 'dials', 'attempts', 'contacts', 'appointments']) check('by_county', c.key, m, (c as any)[m]);
-    for (const b of r.by_batch) for (const m of ['leads', 'cost', 'never_called', 'dials', 'reached', 'booked', 'sat', 'sold']) check('by_batch', b.key, m, (b as any)[m]);
-    for (const b of r.benchmarks) for (const m of ['leads', 'reached', 'booked', 'sat', 'sold', 'awaiting_result']) check('benchmarks', b.key, m, (b as any)[m]);
+    for (const b of r.by_batch) for (const m of ['leads', 'cost', 'never_called', 'dials', 'reached', 'booked']) check('by_batch', b.key, m, (b as any)[m]);
+    for (const b of r.benchmarks) for (const m of ['leads', 'reached', 'booked']) check('benchmarks', b.key, m, (b as any)[m]);
     for (const b of r.best_time) check('best_time', b.key, 'contacts', b.contacts);
   });
 
@@ -139,42 +132,21 @@ describe('reports', () => {
     const x = await app.inject({ url: `/api/reports/export.xlsx?${q}`, headers: auth });
     expect(x.statusCode).toBe(200);
     expect(x.headers['content-type']).toContain('spreadsheetml');
-    const t = await app.inject({ method: 'PUT', url: '/api/reports/targets', headers: write, payload: { booked_per_contact: { B: 0.3 }, sits_per_booked: 0.75, apps_per_sit: 0.5 } });
+    const t = await app.inject({ method: 'PUT', url: '/api/reports/targets', headers: write, payload: { booked_per_contact: { B: 0.3 } } });
     expect(t.statusCode).toBe(200);
     expect(buildReport(db, f).benchmarks.find((b) => b.key === 'B')!.booked_target).toBe(0.3);
-    const bad = await app.inject({ method: 'PUT', url: '/api/reports/targets', headers: write, payload: { sits_per_booked: 3 } });
+    const bad = await app.inject({ method: 'PUT', url: '/api/reports/targets', headers: write, payload: { booked_per_contact: { B: 3 } } });
     expect(bad.statusCode).toBe(400);
   });
 });
 
-describe('appointment results', () => {
-  it('lists appointments whose time has passed until you say how they went', async () => {
-    const due = async () => (await app.inject({ url: '/api/appointments/results-due', headers: auth })).json() as any[];
-    const list = await due();
-    expect(list.map((a) => a.name)).toEqual(['Amy One']);
-    const r = await app.inject({ method: 'POST', url: `/api/appointments/${list[0].id}/result`, headers: write, payload: { result: 'no_show' } });
-    expect(r.statusCode).toBe(200);
-    expect(await due()).toEqual([]);
-  });
-
-  it('rescheduling makes a new appointment and keeps the lead booked', async () => {
-    const appt = db.prepare('SELECT id FROM appointment WHERE lead_id = ?').get(id.Amy) as { id: string };
-    const missing = await app.inject({ method: 'POST', url: `/api/appointments/${appt.id}/result`, headers: write, payload: { result: 'rescheduled' } });
-    expect(missing.statusCode).toBe(400);
-    const when = new Date(Date.now() + 2 * 86_400_000).toISOString();
-    const r = (await app.inject({ method: 'POST', url: `/api/appointments/${appt.id}/result`, headers: write, payload: { result: 'rescheduled', rescheduled_for: when } })).json();
-    expect(r.new_appointment_id).toBeTruthy();
-    expect(db.prepare('SELECT status, next_due_at FROM lead_state WHERE lead_id = ?').get(id.Amy)).toEqual({ status: 'appointment_set', next_due_at: when });
-    expect(db.prepare('SELECT set_from_number_id FROM appointment WHERE id = ?').get(r.new_appointment_id)).toEqual({ set_from_number_id: numberId });
-  });
-});
-
 describe('caller ID numbers', () => {
-  it('shows calls, dials, pick-up rate and appointments still coming up', async () => {
+  it('shows calls, dials, pick-up rate and appointments set', async () => {
     const start = new Date();
     start.setHours(0, 0, 0, 0);
     const s = (await app.inject({ url: `/api/numbers/stats?today_from=${encodeURIComponent(new Date(Date.now() - 86_400_000).toISOString())}`, headers: auth })).json();
-    expect(s[0]).toMatchObject({ calls_7d: 6, dials_7d: 7, contacts_7d: 4, appointments: 2, open_appointments: 1 });
+    expect(s[0]).toMatchObject({ calls_7d: 6, dials_7d: 7, contacts_7d: 4, appointments: 2 });
+    expect(s[0]).not.toHaveProperty('open_appointments');
     expect(s[0].contact_rate_7d).toBeCloseTo(4 / 6);
   });
 

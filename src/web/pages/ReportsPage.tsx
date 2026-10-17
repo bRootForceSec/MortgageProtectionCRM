@@ -174,7 +174,7 @@ export function ReportsPage() {
           <h3>By batch <span className="muted">(all time)</span></h3>
           <div className="scroll-x">
             <table className="grid">
-              <thead><tr><th>Batch</th><th>Type</th><th>Leads</th><th>Cost</th><th>Never called</th><th>Dials</th><th>Reached</th><th>Booked</th><th>Sat</th><th>Sold</th><th>$/reached</th><th>$/booked</th><th>$/sale</th></tr></thead>
+              <thead><tr><th>Batch</th><th>Type</th><th>Leads</th><th>Cost</th><th>Never called</th><th>Dials</th><th>Reached</th><th>Booked</th><th>$/reached</th><th>$/booked</th></tr></thead>
               <tbody>
                 {r.by_batch.map((b: any) => {
                   const cell = (metric: string, label: string, v: React.ReactNode = b[metric]) => <td><N section="by_batch" k={b.key} metric={metric} title={`${label}: ${b.name}`}>{v}</N></td>;
@@ -184,17 +184,16 @@ export function ReportsPage() {
                       <td>{b.lead_types}</td>
                       {cell('leads', 'Leads')}
                       <td>{fmtMoney(b.cost)}{b.unpriced > 0 && <div className="warn small">{b.unpriced} with no price</div>}</td>
-                      {cell('never_called', 'Never called')}{cell('dials', 'Dials')}{cell('reached', 'Reached')}{cell('booked', 'Booked')}{cell('sat', 'Sat')}{cell('sold', 'Sold')}
+                      {cell('never_called', 'Never called')}{cell('dials', 'Dials')}{cell('reached', 'Reached')}{cell('booked', 'Booked')}
                       <td>{b.cost_per_reached == null ? '–' : fmtMoney(b.cost_per_reached)}</td>
                       <td>{b.cost_per_booked == null ? '–' : fmtMoney(b.cost_per_booked)}</td>
-                      <td>{b.cost_per_sale == null ? '–' : fmtMoney(b.cost_per_sale)}</td>
                     </tr>
                   );
                 })}
               </tbody>
             </table>
           </div>
-          <p className="help">Reached, booked, sat and sold count leads, not calls. Cost comes from each lead's own price.</p>
+          <p className="help">Reached and booked count leads, not calls. How appointments went is in Unitrust. Cost comes from each lead's own price.</p>
         </div>
       )}
 
@@ -299,7 +298,7 @@ function Benchmarks({ r, N, onSaved }: { r: Report; N: any; onSaved: () => void 
       </div>
       <div className="scroll-x">
         <table className="grid">
-          <thead><tr><th>Lead type</th><th>Leads</th><th>Reached</th><th>Booked</th><th>Booked per reached</th><th>Sat</th><th>Sits per booked</th><th>Sold</th><th>Apps per sit</th><th>$/booked</th><th>$/sale</th></tr></thead>
+          <thead><tr><th>Lead type</th><th>Leads</th><th>Reached</th><th>Booked</th><th>Booked per reached</th><th>$/booked</th></tr></thead>
           <tbody>
             {r.benchmarks.map((b: any) => {
               const cell = (metric: string, label: string) => <td><N section="benchmarks" k={b.key} metric={metric} title={`${label}: ${b.label}`}>{b[metric]}</N></td>;
@@ -315,28 +314,15 @@ function Benchmarks({ r, N, onSaved }: { r: Report; N: any; onSaved: () => void 
                       <span className="muted">target {pct(b.booked_target)}</span>
                     )}
                   </td>
-                  {cell('sat', 'Sat')}
-                  <td className={vs(b.sits_per_booked, b.sits_target)}>{pct(b.sits_per_booked)} <span className="muted">target {pct(b.sits_target)}</span>
-                    {b.awaiting_result > 0 && <div className="small muted"><N section="benchmarks" k={b.key} metric="awaiting_result" title={`Waiting for a result: ${b.label}`}>{b.awaiting_result}</N> waiting for a result</div>}
-                  </td>
-                  {cell('sold', 'Sold')}
-                  <td className={vs(b.apps_per_sit, b.apps_target)}>{pct(b.apps_per_sit)} <span className="muted">target {pct(b.apps_target)}</span></td>
                   <td>{b.cost_per_booked == null ? '–' : fmtMoney(b.cost_per_booked)}</td>
-                  <td>{b.cost_per_sale == null ? '–' : fmtMoney(b.cost_per_sale)}</td>
                 </tr>
               );
             })}
           </tbody>
         </table>
       </div>
-      {edit && (
-        <div className="row" style={{ marginTop: 8 }}>
-          <label className="field"><span>Sits per booked appointment (%)</span><P v={t.sits_per_booked} on={(n) => setT({ ...t, sits_per_booked: n ?? 0 })} /></label>
-          <label className="field"><span>Apps per sit (%)</span><P v={t.apps_per_sit} on={(n) => setT({ ...t, apps_per_sit: n ?? 0 })} /></label>
-        </div>
-      )}
       <p className="help">
-        Sits per booked counts only appointments you've given a result (Sat, Sold, No-show or Canceled) on the Today page. Targets start from the flier: A 4 of 5, A1 and AA 1 of 4, B 1 of 5, C 1 of 8, D 1 of 10, 80% sits and 50% apps.
+        Targets start from the flier: A 4 of 5, A1 and AA 1 of 4, B 1 of 5, C 1 of 8, D 1 of 10. Sits and apps are tracked in Unitrust.
       </p>
     </div>
   );

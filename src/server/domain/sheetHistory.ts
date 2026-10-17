@@ -8,8 +8,6 @@ import { uuidv7, nowIso } from '../ids.js';
 
 export interface SheetStatusMapping {
   outcome: string;
-  /** Appointment row to add: 'undated' needs a date; 'sat_no_sale' / 'sold' record how it went. */
-  appointment?: 'undated' | 'sat_no_sale' | 'sold';
 }
 
 const STATUS_MAP: Record<string, SheetStatusMapping> = {
@@ -17,12 +15,13 @@ const STATUS_MAP: Record<string, SheetStatusMapping> = {
   'no answer': { outcome: 'no_answer' },
   'picked up': { outcome: 'picked_up' },
   contacted: { outcome: 'picked_up' },
-  'appt set': { outcome: 'appointment', appointment: 'undated' },
-  'appointment set': { outcome: 'appointment', appointment: 'undated' },
-  'appt showed no sale': { outcome: 'sat_no_sale', appointment: 'sat_no_sale' },
-  'appt showed, no sale': { outcome: 'sat_no_sale', appointment: 'sat_no_sale' },
-  'showed no sale': { outcome: 'sat_no_sale', appointment: 'sat_no_sale' },
-  sold: { outcome: 'sold', appointment: 'sold' },
+  // How appointments went is kept in Unitrust; here they all mean "appointment set". The call's note keeps the original words.
+  'appt set': { outcome: 'appointment' },
+  'appointment set': { outcome: 'appointment' },
+  'appt showed no sale': { outcome: 'appointment' },
+  'appt showed, no sale': { outcome: 'appointment' },
+  'showed no sale': { outcome: 'appointment' },
+  sold: { outcome: 'appointment' },
   reschedule: { outcome: 'callback' },
   rescheduled: { outcome: 'callback' },
   callback: { outcome: 'callback' },
@@ -57,10 +56,6 @@ export function recordSheetHistory(
   const insOutcome = db.prepare(
     `INSERT INTO call_outcome (id, call_id, outcome_code, entered_at, callback_due_at, note) VALUES (?,?,?,?,NULL,?)`,
   );
-  const insAppt = db.prepare(
-    `INSERT INTO appointment (id, lead_id, scheduled_for, set_on_call_id, recorded_via, official_status, official_status_entered_at, notes, created_at)
-     VALUES (?,?,NULL,?, 'sheet_import', ?, ?, ?, ?)`,
-  );
   const result: SheetHistoryResult = { calls: 0, unknown: [] };
   for (const it of items) {
     const m = mapSheetStatus(it.status);
@@ -73,10 +68,6 @@ export function recordSheetHistory(
     insCall.run(callId, it.leadId, it.phone, at, `sheet:${it.leadId}`, now);
     insEvent.run(uuidv7(), callId, `sheet:${callId}`, at, now, JSON.stringify({ status: it.status }));
     insOutcome.run(uuidv7(), callId, m.outcome, now, note);
-    if (m.appointment) {
-      const official = m.appointment === 'undated' ? null : m.appointment;
-      insAppt.run(uuidv7(), it.leadId, callId, official, official ? now : null, note, now);
-    }
     result.calls++;
   }
   return result;

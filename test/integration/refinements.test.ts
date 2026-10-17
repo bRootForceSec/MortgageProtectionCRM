@@ -67,15 +67,13 @@ describe('dial counter', () => {
 describe('undo', () => {
   it('voids the call, puts the lead back where it was, and returns what was entered', () => {
     const before = db.prepare('SELECT status, attempts_total FROM lead_state WHERE lead_id = ?').get(jane);
-    const due = new Date(Date.now() + 86400_000).toISOString();
     const { call_id } = logManualCall(db, {
-      lead_id: jane, idempotency_key: key(), outcome_code: 'appointment', appointment_at: due, dial_count: 2, note: 'wife home after 6',
+      lead_id: jane, idempotency_key: key(), outcome_code: 'appointment', dial_count: 2, note: 'wife home after 6',
     });
     expect(db.prepare('SELECT status FROM lead_state WHERE lead_id = ?').get(jane)).toEqual({ status: 'appointment_set' });
     const back = voidCall(db, call_id);
-    expect(back).toMatchObject({ outcome_code: 'appointment', appointment_at: due, dial_count: 2, note: 'wife home after 6' });
+    expect(back).toMatchObject({ outcome_code: 'appointment', dial_count: 2, note: 'wife home after 6' });
     expect(db.prepare('SELECT status, attempts_total FROM lead_state WHERE lead_id = ?').get(jane)).toEqual(before);
-    expect(db.prepare('SELECT internal_status FROM appointment WHERE set_on_call_id = ?').get(call_id)).toEqual({ internal_status: 'canceled' });
     // History stays.
     expect(db.prepare('SELECT voided_at IS NOT NULL v FROM call WHERE id = ?').get(call_id)).toEqual({ v: 1 });
     expect(verifyLeadState(db)).toEqual([]);
@@ -147,16 +145,16 @@ describe('dial from the computer', () => {
 });
 
 describe('agenda', () => {
-  it('lists due callbacks and today\'s appointments', async () => {
+  it('lists due callbacks', async () => {
     const soon = new Date(Date.now() + 3600_000).toISOString();
     logManualCall(db, { lead_id: jane, idempotency_key: key(), outcome_code: 'callback', callback_due_at: soon });
     const ann = (db.prepare("SELECT id FROM lead WHERE first_name = 'Ann'").get() as any).id;
-    logManualCall(db, { lead_id: ann, idempotency_key: key(), outcome_code: 'appointment', appointment_at: soon });
+    logManualCall(db, { lead_id: ann, idempotency_key: key(), outcome_code: 'appointment' });
     const from = new Date(Date.now() - 3600_000).toISOString();
     const to = new Date(Date.now() + 86400_000).toISOString();
     const a = (await app.inject({ url: `/api/agenda?from=${from}&to=${to}`, headers: auth })).json();
     expect(a.callbacks.map((c: any) => c.lead_id)).toEqual([jane]);
-    expect(a.appointments.map((c: any) => c.lead_id)).toEqual([ann]);
+    expect(a.appointments).toBeUndefined(); // appointments live in Unitrust
     expect(a.callbacks[0].time_zone).toBe('America/New_York');
   });
 });

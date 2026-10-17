@@ -94,7 +94,7 @@ export interface Meta {
 
 export interface QueueItem {
   lead_id: string;
-  bucket: 'callback_due' | 'appointment_passed' | 'new' | 'retry';
+  bucket: 'callback_due' | 'new' | 'retry';
   name: string;
   phone_e164: string | null;
   state: string | null;
@@ -157,7 +157,6 @@ export interface LeadDetail {
   calls: Call[];
   notes: { id: string; body: string; created_at: string; call_id: string | null }[];
   actions: { id: string; action: string; reason: string | null; created_at: string }[];
-  appointments: { id: string; scheduled_for: string | null; recorded_via: string; from_e164: string | null; from_label: string | null; internal_status: string; official_status: string | null; result: string | null; notes: string | null }[];
   linked: { link_id: string; link_status: string; reason: string; id: string; first_name: string | null; last_name: string | null; batch_name: string; status: string }[];
   changes: { id: string; field: string; old_value: string | null; new_value: string | null; created_at: string }[];
   lead_type: { code: string; label: string; price_cents: number | null } | null;

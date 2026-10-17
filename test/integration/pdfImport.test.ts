@@ -194,7 +194,7 @@ describe('spreadsheet drafts and the Status column', () => {
       (db.prepare('SELECT l.first_name || l.last_name n, s.status, s.next_due_at, s.attempts_total FROM lead l JOIN lead_state s ON s.lead_id = l.id').all() as any[]).map((r) => [r.n, r]),
     );
     expect(st.PatOne).toMatchObject({ status: 'retry', next_due_at: null, attempts_total: 1 }); // not held back by the retry gap
-    expect(st.PatTwo).toMatchObject({ status: 'sold' });
+    expect(st.PatTwo).toMatchObject({ status: 'appointment_set', next_due_at: null }); // an old "sold" counts as booked
     expect(st.PatThree).toMatchObject({ status: 'appointment_set', next_due_at: null });
     expect(st.PatFour).toMatchObject({ status: 'callback', next_due_at: null });
     expect(st.PatSix).toMatchObject({ status: 'new' });
@@ -202,15 +202,10 @@ describe('spreadsheet drafts and the Status column', () => {
     const q = getQueue(db);
     expect(q.items.map((i) => [i.name, i.bucket, i.needs_time])).toEqual([
       ['Pat Four', 'callback_due', true],
-      ['Pat Three', 'appointment_passed', true],
       ['Pat Six', 'new', false],
       ['Pat One', 'retry', false],
-    ]); // sold is out of the queue
-    const appt = db.prepare('SELECT * FROM appointment ORDER BY created_at').all() as any[];
-    expect(appt.map((a) => [a.scheduled_for, a.recorded_via, a.official_status])).toEqual([
-      [null, 'sheet_import', 'sold'],
-      [null, 'sheet_import', null],
-    ]);
+    ]); // appointments set are out of the queue
+    expect(db.prepare('SELECT count(*) n FROM appointment').get()).toEqual({ n: 0 }); // appointments live in Unitrust
   });
 
   it('the queue can be limited to counties, or to area codes linked to counties (never the lead\'s own area code)', () => {
@@ -221,7 +216,7 @@ describe('spreadsheet drafts and the Status column', () => {
     const names = (o: Parameters<typeof getQueue>[1]) => getQueue(db, o).items.map((i) => i.name).sort();
     expect(names({ counties: ['IN|ELKHART'] })).toEqual(['Pat Four', 'Pat Six']);
     db.prepare("INSERT INTO county_area_code VALUES ('IN|ELKHART', '574', 'x'), ('IN|ST JOSEPH', '574', 'x')").run();
-    expect(names({ areaCodes: ['574'] })).toEqual(['Pat Four', 'Pat One', 'Pat Six', 'Pat Three']);
+    expect(names({ areaCodes: ['574'] })).toEqual(['Pat Four', 'Pat One', 'Pat Six']);
     expect(names({ areaCodes: ['312'] })).toEqual([]);
   });
 });

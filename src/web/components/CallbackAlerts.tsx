@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { api, fmtDateTime, fmtPhone } from '../api';
 import { useApp } from '../App';
 
-// Tells you when a callback or appointment comes due: a desktop notification, a short sound, and a bar in the app.
+// Tells you when a callback comes due: a desktop notification, a short sound, and a bar in the app.
 // Checks once a minute while the app is open.
 
 export interface AgendaItem {
@@ -13,13 +13,9 @@ export interface AgendaItem {
   county: string | null;
   state: string | null;
   due_at?: string | null;
-  scheduled_for?: string | null;
-  id?: string;
-  notes?: string | null;
 }
 export interface Agenda {
   callbacks: AgendaItem[];
-  appointments: AgendaItem[];
 }
 
 const SEEN_KEY = 'mpcrm.alerts.seen';
@@ -68,7 +64,7 @@ export function todayRange() {
 
 export function CallbackAlerts() {
   const { calling, openLead } = useApp();
-  const [due, setDue] = useState<{ key: string; kind: 'callback' | 'appointment'; item: AgendaItem; at: string }[]>([]);
+  const [due, setDue] = useState<{ key: string; kind: 'callback'; item: AgendaItem; at: string }[]>([]);
   const seen = useRef(loadSeen());
   const alerts = calling?.settings.alerts;
 
@@ -84,7 +80,7 @@ export function CallbackAlerts() {
       const now = Date.now();
       const ahead = alerts.minutes_before * 60_000;
       const fresh: typeof due = [];
-      const consider = (kind: 'callback' | 'appointment', item: AgendaItem, at: string | null | undefined) => {
+      const consider = (kind: 'callback', item: AgendaItem, at: string | null | undefined) => {
         if (!at) return;
         const t = Date.parse(at);
         // Only alert for things coming due now, not for ones missed hours ago (those are at the top of the queue).
@@ -95,14 +91,13 @@ export function CallbackAlerts() {
         fresh.push({ key, kind, item, at });
       };
       for (const c of a.callbacks) consider('callback', c, c.due_at);
-      for (const p of a.appointments) consider('appointment', p, p.scheduled_for);
       if (!fresh.length) return;
       saveSeen(seen.current);
       setDue((d) => [...d, ...fresh]);
       if (alerts.sound) chime();
       if (alerts.desktop && 'Notification' in window && Notification.permission === 'granted') {
         for (const f of fresh) {
-          const n = new Notification(f.kind === 'callback' ? `Callback due: ${f.item.name}` : `Appointment: ${f.item.name}`, {
+          const n = new Notification(`Callback due: ${f.item.name}`, {
             body: `${fmtDateTime(f.at)} · ${fmtPhone(f.item.phone_e164)}${f.item.county ? ` · ${f.item.county} Co.` : ''}`,
             tag: f.key,
           });
@@ -124,7 +119,7 @@ export function CallbackAlerts() {
     <div className="alert-bar" role="alert">
       {due.map((d) => (
         <div key={d.key} className="row">
-          <b>{d.kind === 'callback' ? 'Callback due' : 'Appointment'}:</b>
+          <b>Callback due:</b>
           <span>{d.item.name} · {fmtDateTime(d.at)} · {fmtPhone(d.item.phone_e164)}</span>
           <button className="btn small primary" onClick={() => { openLead(d.item.lead_id); setDue((x) => x.filter((y) => y.key !== d.key)); }}>Open</button>
           <button className="btn small" onClick={() => setDue((x) => x.filter((y) => y.key !== d.key))} aria-label="Dismiss">×</button>
