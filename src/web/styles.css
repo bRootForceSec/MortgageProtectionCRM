@@ -178,3 +178,33 @@ ul.plain { list-style: none; padding: 0; margin: 0; }
 .phones .alt { font-size: 15px; font-variant-numeric: tabular-nums; }
 .passphrase { padding: 6px 10px; border: 1px solid var(--accent); border-radius: 6px; margin-bottom: 8px; }
 table.grid td.nowrap { white-space: nowrap; }
+
+/* ---------- calling refinements ---------- */
+.stats .goal-met b { color: var(--good); }
+.alert-bar { position: fixed; top: 52px; right: 12px; z-index: 45; display: flex; flex-direction: column; gap: 6px; max-width: min(560px, calc(100vw - 24px)); }
+.alert-bar > .row { background: var(--panel); border: 1px solid var(--warn); border-left-width: 4px; border-radius: 8px; padding: 8px 10px; box-shadow: 0 4px 16px rgba(0,0,0,.2); }
+.undo-bar { display: flex; gap: 10px; align-items: center; padding: 6px 10px; margin-bottom: 10px; border: 1px solid var(--good); border-radius: 8px; background: var(--panel-2); }
+.dial-counter { display: inline-flex; align-items: center; gap: 8px; padding: 4px 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--panel-2); }
+.dial-counter b { font-size: 20px; min-width: 1.5em; text-align: center; font-variant-numeric: tabular-nums; }
+.timer { display: inline-flex; align-items: center; gap: 6px; font-variant-numeric: tabular-nums; font-weight: 600; }
+.card.script { margin: 10px 0; white-space: pre-wrap; }
+.card.script p { margin: 4px 0 10px; line-height: 1.5; }
+.lead-head h2 .btn { margin-left: 8px; vertical-align: middle; }
+.edit-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; }
+.edit-grid .wide { grid-column: 1 / -1; }
+.edit-grid input, .edit-grid select { width: 100%; box-sizing: border-box; }
+.settings-grid { display: grid; grid-template-columns: minmax(160px, 260px) 1fr; gap: 14px 16px; align-items: start; }
+.settings-grid > label { font-weight: 600; padding-top: 4px; }
+@media (max-width: 700px) { .settings-grid { grid-template-columns: 1fr; gap: 4px; } .settings-grid > label { padding-top: 10px; } }
+.choice-inline { display: inline-flex; gap: 6px; align-items: center; }
+.chip.clash { border-color: var(--warn); color: var(--warn); }
+.chip .keycap { font-family: ui-monospace, monospace; font-weight: 600; min-width: 1.4em; }
+table.shortcuts td:first-child { width: 55%; }
+table.shortcuts td { vertical-align: middle; }
+table.shortcuts .chip { margin-right: 6px; }
+.history li.voided { opacity: .6; }
+.history li.voided > div:not(.muted) { text-decoration: line-through; }
+.modal.qr { width: min(380px, 100%); }
+.modal.qr canvas { background: #fff; border-radius: 6px; }
+.card textarea { width: 100%; box-sizing: border-box; font: inherit; }
+.card .field { margin-bottom: 10px; }

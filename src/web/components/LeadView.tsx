@@ -22,15 +22,25 @@ export function StatusBadge({ status }: { status: string }) {
 }
 
 /** Header + key facts used on the calling screen and the lead modal. */
-export function LeadSummary({ d, onCopied }: { d: LeadDetail; onCopied?: () => void }) {
+export function LeadSummary({
+  d, onDial, dialLabel = 'Copy number', dialKey, onEdit, editKey,
+}: {
+  d: LeadDetail;
+  /** On the Calling screen: dial (or copy, or show a QR code, per Settings) and start the attempt. */
+  onDial?: (e164: string) => void;
+  dialLabel?: string;
+  dialKey?: string;
+  onEdit?: () => void;
+  editKey?: string;
+}) {
   const l = d.lead;
   const { toast } = useApp();
   const copy = async (e164: string | null = l.phone_e164) => {
     if (!e164) return;
+    if (onDial) return onDial(e164);
     try {
       await navigator.clipboard.writeText(e164.replace(/^\+1/, ''));
       toast('Phone number copied');
-      if (e164 === l.phone_e164) onCopied?.();
     } catch {
       toast('Could not copy; select the number instead', 'error');
     }
@@ -49,7 +59,10 @@ export function LeadSummary({ d, onCopied }: { d: LeadDetail; onCopied?: () => v
       {passphrase && <div className="passphrase">Passphrase: <b>{passphrase}</b></div>}
       <div className="lead-head">
         <div>
-          <h2><span className="lead-name">{fullName(l)}</span> {d.state && <StatusBadge status={d.state.status} />}</h2>
+          <h2>
+            <span className="lead-name">{fullName(l)}</span> {d.state && <StatusBadge status={d.state.status} />}
+            {onEdit && <button className="btn small" onClick={onEdit} title="Edit this lead's details">Edit {editKey && <kbd>{editKey}</kbd>}</button>}
+          </h2>
           <div className="where">
             {[l.city, l.state].filter(Boolean).join(', ')}
             {l.county && <> · <b>{l.county} County</b></>}
@@ -58,12 +71,12 @@ export function LeadSummary({ d, onCopied }: { d: LeadDetail; onCopied?: () => v
         </div>
         <div className="phones">
           <div className="phone-big">{l.phone_e164 ? fmtPhone(l.phone_e164) : <span className="error">no valid phone</span>}</div>
-          {l.phone_e164 && <button className="btn small" onClick={() => copy()} title="Copy number (C)">Copy number <kbd>C</kbd></button>}
+          {l.phone_e164 && <button className="btn small" onClick={() => copy()}>{dialLabel} {dialKey && <kbd>{dialKey}</kbd>}</button>}
           {others.map(([label, e164, raw]) => (
             <div key={label} className="row" style={{ justifyContent: 'flex-end' }}>
               <span className="muted">{label}</span>
               <span className="alt">{e164 ? fmtPhone(e164) : raw}</span>
-              {e164 && <button className="btn small" onClick={() => copy(e164)} title={`Copy ${label.toLowerCase()} number`}>Copy</button>}
+              {e164 && <button className="btn small" onClick={() => copy(e164)} title={`${dialLabel}: ${label.toLowerCase()} number`}>{onDial ? dialLabel.replace(' number', '') : 'Copy'}</button>}
             </div>
           ))}
         </div>
@@ -169,11 +182,22 @@ export function CallHistory({ calls, onChange }: { calls: Call[]; onChange: () =
       toast(e.message, 'error');
     }
   };
+  const remove = async (c: Call) => {
+    if (!window.confirm('Undo this call? It stays in the history, marked as undone, and stops counting toward the lead and your numbers.')) return;
+    try {
+      await api.post(`/calls/${c.id}/void`, { reason: 'undone from history' });
+      toast('Call undone');
+      bumpStats();
+      onChange();
+    } catch (e: any) {
+      toast(e.message, 'error');
+    }
+  };
   const needsTime = meta?.outcome_codes.find((o) => o.code === code)?.requires_callback_time;
   return (
     <ul className="history">
       {calls.map((c) => (
-        <li key={c.id}>
+        <li key={c.id} className={c.voided_at ? 'voided' : ''}>
           <div className="when">
             {c.time_known === 0 ? <>On or before {new Date(c.requested_at).toLocaleDateString()}</> : fmtDateTime(c.requested_at)}{' '}
             <span className="muted">{c.history_source === 'sheet' ? 'from your spreadsheet, exact time unknown' : c.channel === 'manual_log' ? 'logged' : c.state}</span>
@@ -181,7 +205,9 @@ export function CallHistory({ calls, onChange }: { calls: Call[]; onChange: () =
           <div className="meta">
             to {fmtPhone(c.to_e164)}{c.from_e164 && <> · from {c.from_label ?? ''} {fmtPhone(c.from_e164)}</>}
             {c.talk_seconds != null && <> · {Math.round(c.talk_seconds / 60)} min</>}
+            {c.dial_count > 1 && <> · <b>{c.dial_count} dials</b></>}
           </div>
+          {c.voided_at && <div className="muted">Undone {fmtDateTime(c.voided_at)}. Not counted anywhere.</div>}
           <div>
             {c.outcomes.map((o) => (
               <div key={o.id} className={o.superseded ? 'superseded' : ''}>
@@ -191,7 +217,7 @@ export function CallHistory({ calls, onChange }: { calls: Call[]; onChange: () =
               </div>
             ))}
           </div>
-          {editing === c.id ? (
+          {c.voided_at ? null : editing === c.id ? (
             <div className="row" style={{ marginTop: 4 }}>
               <select value={code} onChange={(e) => setCode(e.target.value)} aria-label="New outcome">
                 {meta?.outcome_codes.map((o) => <option key={o.code} value={o.code}>{o.label}</option>)}
@@ -201,9 +227,14 @@ export function CallHistory({ calls, onChange }: { calls: Call[]; onChange: () =
               <button className="btn small" onClick={() => setEditing(null)}>Cancel</button>
             </div>
           ) : (
-            <button className="btn small" onClick={() => { setEditing(c.id); setCode(c.current_outcome?.outcome_code ?? 'no_answer'); setDue(''); }}>
-              Change outcome
-            </button>
+            <div className="row">
+              <button className="btn small" onClick={() => { setEditing(c.id); setCode(c.current_outcome?.outcome_code ?? 'no_answer'); setDue(''); }}>
+                Change outcome
+              </button>
+              {c.channel === 'manual_log' && (
+                <button className="btn small" onClick={() => remove(c)} title="Logged by mistake? It stays in history but stops counting.">Undo call</button>
+              )}
+            </div>
           )}
         </li>
       ))}

@@ -1,5 +1,6 @@
 import type { DB } from '../db/connection.js';
 import { nowIso } from '../ids.js';
+import { retryGapMs } from './callingSettings.js';
 
 // lead_state is a derived projection. It is computed only from authoritative facts:
 // calls, current outcomes, lead actions (skip / dead / restore) and appointments.
@@ -7,6 +8,7 @@ import { nowIso } from '../ids.js';
 
 export type LeadStatus = 'new' | 'retry' | 'callback' | 'appointment_set' | 'invalid' | 'dead' | 'sold';
 
+/** Default gap before an unanswered lead comes back. You can change it in Settings. */
 export const RETRY_GAP_MS = 4 * 60 * 60 * 1000;
 
 export interface LeadFacts {
@@ -43,7 +45,7 @@ export interface DerivedLeadState {
 }
 
 /** Pure function: facts in, state out. */
-export function deriveLeadState(f: LeadFacts, now: string): DerivedLeadState {
+export function deriveLeadState(f: LeadFacts, now: string, retryGap = RETRY_GAP_MS): DerivedLeadState {
   const placed = f.calls.filter((c) => c.initiation_result === 'accepted').sort(byKey('requested_at'));
   const lastCall = placed.at(-1) ?? null;
   const callTime = new Map(placed.map((c) => [c.id, c.requested_at]));
@@ -96,7 +98,7 @@ export function deriveLeadState(f: LeadFacts, now: string): DerivedLeadState {
   }
   if (!lastCall) return { ...base, status: 'new', next_due_at: null };
   const lastTimed = timedCalls.at(-1);
-  const due = lastTimed ? new Date(Date.parse(lastTimed.requested_at) + RETRY_GAP_MS).toISOString() : null;
+  const due = lastTimed ? new Date(Date.parse(lastTimed.requested_at) + retryGap).toISOString() : null;
   return { ...base, status: 'retry', next_due_at: due };
 }
 
@@ -107,7 +109,7 @@ function byKey<K extends string>(k: K) {
 export function loadLeadFacts(db: DB, leadId: string): LeadFacts {
   return {
     calls: db
-      .prepare('SELECT id, requested_at, from_number_id, initiation_result, time_known FROM call WHERE lead_id = ?')
+      .prepare('SELECT id, requested_at, from_number_id, initiation_result, time_known FROM call WHERE lead_id = ? AND voided_at IS NULL')
       .all(leadId) as LeadFacts['calls'],
     outcomes: db
       .prepare(
@@ -115,7 +117,7 @@ export function loadLeadFacts(db: DB, leadId: string): LeadFacts {
          FROM call_outcome o
          JOIN call ON call.id = o.call_id
          JOIN outcome_code c ON c.code = o.outcome_code
-         WHERE call.lead_id = ? AND NOT EXISTS (SELECT 1 FROM call_outcome s WHERE s.supersedes_id = o.id)`,
+         WHERE call.lead_id = ? AND call.voided_at IS NULL AND NOT EXISTS (SELECT 1 FROM call_outcome s WHERE s.supersedes_id = o.id)`,
       )
       .all(leadId) as LeadFacts['outcomes'],
     actions: db.prepare('SELECT action, created_at FROM lead_action WHERE lead_id = ?').all(leadId) as LeadFacts['actions'],
@@ -137,8 +139,9 @@ const UPSERT = `INSERT INTO lead_state (lead_id, status, attempts_total, last_ca
 export function rebuildLeadState(db: DB, leadIds?: string[], now = nowIso()): number {
   const ids = leadIds ?? (db.prepare('SELECT id FROM lead').all() as { id: string }[]).map((r) => r.id);
   const up = db.prepare(UPSERT);
+  const gap = retryGapMs(db);
   db.transaction(() => {
-    for (const id of ids) up.run({ lead_id: id, ...deriveLeadState(loadLeadFacts(db, id), now), derived_at: now });
+    for (const id of ids) up.run({ lead_id: id, ...deriveLeadState(loadLeadFacts(db, id), now, gap), derived_at: now });
   })();
   return ids.length;
 }
@@ -148,8 +151,9 @@ export function verifyLeadState(db: DB, now = nowIso()): string[] {
   const rows = db.prepare('SELECT * FROM lead_state').all() as (DerivedLeadState & { lead_id: string })[];
   const keys: (keyof DerivedLeadState)[] = ['attempts_total', 'last_call_at', 'last_outcome_code', 'skipped_at', 'preferred_number_id'];
   const bad: string[] = [];
+  const gap = retryGapMs(db);
   for (const r of rows) {
-    const d = deriveLeadState(loadLeadFacts(db, r.lead_id), now);
+    const d = deriveLeadState(loadLeadFacts(db, r.lead_id), now, gap);
     // Status/next_due depend on "now" for appointments and retries, so compare the time-independent fields
     // plus status for leads whose status cannot change with time.
     const timeless = ['dead', 'invalid', 'new', 'callback', 'sold'].includes(d.status);

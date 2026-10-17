@@ -101,6 +101,84 @@ test('import a sheet, log calls by keyboard, and move a lead to the dead pile', 
   await expect(page.locator('.lead-name')).toHaveText(second);
 });
 
+test('dial counter, undo, remapped keys, QR dialing, scripts and lead edits', async ({ page }) => {
+  page.on('dialog', (d) => void d.accept());
+  await page.goto(launchUrl);
+  await page.getByRole('button', { name: 'Calling' }).click();
+  await expect(page.locator('.phone-big')).toBeVisible();
+  const lead = await page.locator('.lead-name').innerText();
+
+  // Two dials back to back, no answer: → → then ← takes one off.
+  const counter = page.getByLabel('Dials this attempt');
+  await expect(counter).toContainText('1 dial');
+  await page.keyboard.press('ArrowRight');
+  await page.keyboard.press('ArrowRight');
+  await expect(counter).toContainText('3 dials');
+  await page.keyboard.press('<');
+  await expect(counter).toContainText('2 dials');
+  await page.keyboard.press('1');
+  await page.keyboard.press('Enter');
+  await expect(page.locator('.undo-bar')).toContainText('No answer · 2 dials');
+  await expect(page.getByLabel('History').getByText('2 dials')).toBeVisible();
+  await expect(page.locator('.topbar .stats')).toContainText('Dials 4');
+
+  // Undo puts it back to fix.
+  await page.keyboard.press('z');
+  await expect(page.getByLabel('History').getByText(/^Undone/)).toBeVisible();
+  await expect(counter).toContainText('2 dials');
+  await expect(page.getByRole('button', { name: /No answer/ })).toHaveClass(/active/);
+  await expect(page.locator('.topbar .stats')).toContainText('Dials 2');
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('3');
+  await page.keyboard.press('Enter');
+  await expect(page.locator('.undo-bar')).toContainText('Voicemail, no message · 2 dials');
+
+  // Settings: "next" moves to J, dialing shows a QR code, a script and a daily goal.
+  await page.getByRole('button', { name: 'Settings' }).click();
+  const nextRow = page.locator('table.shortcuts tr', { hasText: 'Next lead' });
+  await nextRow.locator('.keycap').first().click();
+  await expect(nextRow).toContainText('press a key');
+  await page.keyboard.press('j');
+  await expect(nextRow.locator('.keycap').first()).toHaveText('J');
+  await page.getByText('Show a QR code').click();
+  await page.getByLabel('Your name, as you say it on calls').fill('Alex');
+  await page.getByLabel('Opener').fill('Hi {first_name}, this is {agent_name} about your {lender} mortgage.');
+  await page.getByRole('button', { name: 'Save scripts' }).click();
+  await page.locator('.settings-grid').getByText('Dials').locator('input').fill('200');
+  await page.locator('.settings-grid').getByText('Dials').locator('input').blur();
+  await expect(page.locator('.topbar .stats')).toContainText('/ 200');
+  await page.screenshot({ path: 'test-results/settings.png', fullPage: true });
+
+  await page.getByRole('button', { name: 'Calling' }).click();
+  await expect(page.locator('.lead-name')).toHaveText(lead);
+  await page.keyboard.press('c');
+  await expect(page.getByRole('dialog', { name: 'Scan to dial' }).locator('canvas')).toBeVisible();
+  await page.screenshot({ path: 'test-results/qr.png' });
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await expect(page.locator('.timer')).toBeVisible();
+
+  await page.keyboard.press('p');
+  await expect(page.locator('.card.script')).toContainText(`this is Alex about your`);
+
+  // Edit the lead's name.
+  await page.keyboard.press('e');
+  await expect(page.getByRole('dialog', { name: 'Edit lead' })).toBeVisible();
+  await page.getByLabel('First name').fill('Zed');
+  await page.getByRole('button', { name: /^Save/ }).click();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await expect(page.locator('.lead-name')).toContainText('Zed');
+  await expect(page.locator('.card.script')).toContainText('Hi Zed,');
+  await page.screenshot({ path: 'test-results/calling-refined.png', fullPage: true });
+
+  // J is now "next".
+  await page.keyboard.press('j');
+  await expect(page.locator('.lead-name')).not.toContainText('Zed');
+
+  await page.getByRole('button', { name: 'Today' }).click();
+  await expect(page.getByRole('heading', { name: 'Today' })).toBeVisible();
+});
+
 test('API refuses requests without the access cookie', async ({ request }) => {
   const r = await request.get(`http://127.0.0.1:${PORT}/api/meta`);
   expect(r.status()).toBe(401);

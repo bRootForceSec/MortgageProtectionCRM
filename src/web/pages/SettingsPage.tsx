@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { api } from '../api';
 import { useApp } from '../App';
 import { useLeadTypes } from './ImportPage';
+import { CallingCard, ShortcutsCard, ScriptsCard } from './CallingSettingsCards';
 
 // Settings: which AI reads scanned lead pages, lead types and prices, and the area codes each county is called under.
 
@@ -26,6 +27,9 @@ interface County {
 export function SettingsPage() {
   return (
     <>
+      <CallingCard />
+      <ShortcutsCard />
+      <ScriptsCard />
       <AiCard />
       <LeadTypesCard />
       <CountiesCard />

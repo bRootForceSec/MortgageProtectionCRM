@@ -16,6 +16,8 @@ export interface ManualCallInput {
   /** When the call happened; defaults to now. */
   occurred_at?: string | null;
   talk_seconds?: number | null;
+  /** Dials made for this one attempt (default 1). */
+  dial_count?: number | null;
   outcome_code: string;
   callback_due_at?: string | null;
   appointment_at?: string | null;
@@ -80,16 +82,18 @@ export function logManualCall(db: DB, input: ManualCallInput) {
     const at = checkIso(input.occurred_at, 'call time') ?? now;
     if (at > now) throw new DomainError('call time is in the future');
     const talk = input.talk_seconds == null ? null : Math.max(0, Math.round(input.talk_seconds));
+    const dials = input.dial_count == null ? 1 : Math.round(input.dial_count);
+    if (!(dials >= 1)) throw new DomainError('dial count must be at least 1');
     const callId = uuidv7();
     db.prepare(
       `INSERT INTO call (id, lead_id, direction, channel, from_number_id, from_e164, to_e164, requested_at, idempotency_key,
-        initiation_result, state, state_confirmed_by, started_at, talk_seconds, derived_at)
-       VALUES (?, ?, 'outbound', 'manual_log', ?, ?, ?, ?, ?, 'accepted', 'ended', 'manual', ?, ?, ?)`,
-    ).run(callId, lead.id, input.from_number_id ?? null, fromE164, to, at, input.idempotency_key, at, talk, now);
+        initiation_result, state, state_confirmed_by, started_at, talk_seconds, dial_count, derived_at)
+       VALUES (?, ?, 'outbound', 'manual_log', ?, ?, ?, ?, ?, 'accepted', 'ended', 'manual', ?, ?, ?, ?)`,
+    ).run(callId, lead.id, input.from_number_id ?? null, fromE164, to, at, input.idempotency_key, at, talk, dials, now);
     db.prepare(
       `INSERT INTO call_event (id, call_id, source, dedup_key, event_type_raw, event_type, occurred_at, received_at, payload_json)
        VALUES (?, ?, 'manual', ?, 'manual.logged', 'call.logged_manually', ?, ?, ?)`,
-    ).run(uuidv7(), callId, `manual:${callId}`, at, now, JSON.stringify({ talk_seconds: talk, from_e164: fromE164, to_e164: to }));
+    ).run(uuidv7(), callId, `manual:${callId}`, at, now, JSON.stringify({ talk_seconds: talk, dial_count: dials, from_e164: fromE164, to_e164: to }));
     db.prepare(
       `INSERT INTO call_outcome (id, call_id, outcome_code, entered_at, callback_due_at, note) VALUES (?,?,?,?,?,?)`,
     ).run(uuidv7(), callId, outcome.code, now, callbackDue, input.note?.trim() || null);
@@ -106,6 +110,43 @@ export function logManualCall(db: DB, input: ManualCallInput) {
     }
     rebuildLeadState(db, [lead.id]);
     return { call_id: callId, duplicate: false };
+  })();
+}
+
+/**
+ * Undoes a logged call. The call, its events and outcomes stay in history marked as undone; it stops counting
+ * toward the lead's state and your numbers. An appointment set on that call is canceled.
+ * Returns what was entered so the screen can put it back for you to fix.
+ */
+export function voidCall(db: DB, callId: string, reason?: string | null) {
+  return db.transaction(() => {
+    const call = db.prepare('SELECT * FROM call WHERE id = ?').get(callId) as any;
+    if (!call) throw new DomainError('call not found', 404);
+    if (call.voided_at) throw new DomainError('this call was already undone', 409);
+    if (call.channel !== 'manual_log') throw new DomainError('only calls you logged can be undone');
+    const now = nowIso();
+    db.prepare('UPDATE call SET voided_at = ?, void_reason = ? WHERE id = ?').run(now, reason?.trim() || 'undone', callId);
+    db.prepare(
+      `INSERT INTO call_event (id, call_id, source, dedup_key, event_type_raw, event_type, occurred_at, received_at, payload_json)
+       VALUES (?, ?, 'manual', ?, 'manual.voided', 'call.voided', ?, ?, ?)`,
+    ).run(uuidv7(), callId, `void:${callId}`, now, now, JSON.stringify({ reason: reason ?? null }));
+    db.prepare(
+      "UPDATE appointment SET internal_status = 'canceled', notes = trim(coalesce(notes,'') || ' (call undone)') WHERE set_on_call_id = ? AND internal_status <> 'canceled'",
+    ).run(callId);
+    const out = currentOutcome(db, callId) as any;
+    const appt = db.prepare('SELECT scheduled_for FROM appointment WHERE set_on_call_id = ?').get(callId) as { scheduled_for: string | null } | undefined;
+    const note = db.prepare('SELECT body FROM note WHERE call_id = ? ORDER BY created_at LIMIT 1').get(callId) as { body: string } | undefined;
+    if (call.lead_id) rebuildLeadState(db, [call.lead_id]);
+    return {
+      lead_id: call.lead_id as string | null,
+      outcome_code: out?.outcome_code ?? null,
+      callback_due_at: out?.callback_due_at ?? null,
+      appointment_at: appt?.scheduled_for ?? null,
+      dial_count: call.dial_count as number,
+      talk_seconds: call.talk_seconds as number | null,
+      from_number_id: call.from_number_id as string | null,
+      note: note?.body ?? null,
+    };
   })();
 }
 
@@ -130,8 +171,11 @@ export function changeOutcome(
   input: { outcome_code: string; expected_current_id: string | null; callback_due_at?: string | null; note?: string | null },
 ) {
   return db.transaction(() => {
-    const call = db.prepare('SELECT id, lead_id FROM call WHERE id = ?').get(callId) as { id: string; lead_id: string } | undefined;
+    const call = db.prepare('SELECT id, lead_id, voided_at FROM call WHERE id = ?').get(callId) as
+      | { id: string; lead_id: string; voided_at: string | null }
+      | undefined;
     if (!call) throw new DomainError('call not found', 404);
+    if (call.voided_at) throw new DomainError('this call was undone; log a new one instead', 409);
     const cur = currentOutcome(db, callId) ?? null;
     if ((cur?.id ?? null) !== (input.expected_current_id ?? null)) {
       throw new DomainError('outcome was changed elsewhere; reload and try again', 409);
