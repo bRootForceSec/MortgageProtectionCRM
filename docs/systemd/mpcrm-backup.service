@@ -1,8 +1,0 @@
-[Unit]
-Description=Mortgage Protection CRM nightly backup
-
-[Service]
-Type=oneshot
-WorkingDirectory=%h/MortgageProtectionCRM
-EnvironmentFile=-%h/.config/mpcrm/env
-ExecStart=/usr/bin/node dist/server/cli.js backup

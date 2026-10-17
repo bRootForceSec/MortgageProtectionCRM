@@ -15,6 +15,7 @@ import { exportRows, toCsv, toXlsx, fullJsonDump, EXPORT_TABLES, type ExportTabl
 import { createBackup, listBackups } from '../backup.js';
 import { uuidv7, nowIso } from '../ids.js';
 import { normalizeUsPhone } from '../domain/normalize.js';
+import { Updates } from '../updates.js';
 
 export interface AppDeps {
   db: DB;
@@ -24,6 +25,8 @@ export interface AppDeps {
   logger?: boolean;
   /** Where logs go (defaults to stdout). Tests pass a buffer to check nothing sensitive is logged. */
   logStream?: NodeJS.WritableStream;
+  /** Version info and the self-updater. Defaults to an unmanaged "dev" copy. */
+  updates?: Updates;
 }
 
 interface Upload {
@@ -77,12 +80,35 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     while (uploads.size > 5) uploads.delete(uploads.keys().next().value!);
   };
 
+  // ---------- version & updates ----------
+  const updates = deps.updates ?? new Updates(null, { commit: 'dev', built_at: null });
+  // No token needed: the updater uses this to confirm the new version came up. It reveals only the version.
+  app.get('/healthz', async () => ({ ok: true, commit: updates.build.commit }));
+  app.get('/api/update', async () => updates.status());
+  app.post('/api/update/apply', async (_req, reply) => {
+    try {
+      await updates.apply();
+    } catch (e: any) {
+      throw new DomainError(e.message, 409);
+    }
+    return reply.code(202).send({ ok: true });
+  });
+  app.post('/api/update/check', async (_req, reply) => {
+    try {
+      await updates.check();
+    } catch (e: any) {
+      throw new DomainError(e.message, 409);
+    }
+    return reply.code(202).send({ ok: true });
+  });
+
   // ---------- meta ----------
   app.get('/api/meta', async () => ({
     outcome_codes: db.prepare('SELECT * FROM outcome_code WHERE active = 1 ORDER BY sort_order').all(),
     lead_fields: LEAD_FIELDS.map(({ key, label }) => ({ key, label })),
     numbers: db.prepare("SELECT * FROM caller_number ORDER BY status = 'retired', created_at").all(),
     data_dir: config.dataDir,
+    version: updates.build,
   }));
 
   // ---------- queue & leads ----------

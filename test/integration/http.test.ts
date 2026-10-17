@@ -2,6 +2,10 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { buildApp } from '../../src/server/http/app.js';
 import { Writable } from 'node:stream';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { Updates } from '../../src/server/updates.js';
 import { tempDb, sampleXlsx } from '../helpers.js';
 
 const TOKEN = 'test-token-0123456789abcdef0123456789abcdef';
@@ -52,9 +56,11 @@ describe('local access protections', () => {
 
 describe('import and work a lead over HTTP', () => {
   it('parse → preview → commit → queue → log call → export without health columns', async () => {
+    // One buffer for both uploads: a regenerated workbook carries a new timestamp, so it would be a different file.
+    const xlsxFile = await sampleXlsx();
     const parse = await app.inject({
       method: 'POST', url: '/api/imports/parse', headers: { ...write, 'content-type': 'application/octet-stream', 'x-file-name': 'leads.xlsx' },
-      payload: await sampleXlsx(),
+      payload: xlsxFile,
     });
     expect(parse.statusCode).toBe(200);
     const p = parse.json();
@@ -71,7 +77,7 @@ describe('import and work a lead over HTTP', () => {
     // The mapping is remembered for the next file with the same columns.
     const again = await app.inject({
       method: 'POST', url: '/api/imports/parse', headers: { ...write, 'content-type': 'application/octet-stream', 'x-file-name': 'leads2.xlsx' },
-      payload: await sampleXlsx(),
+      payload: xlsxFile,
     });
     expect(again.json().sheets[0].mapping_source).toBe('saved');
     expect(again.json().file_previously_imported).toHaveLength(1);
@@ -124,5 +130,42 @@ describe('logging', () => {
     expect(out).not.toContain('6145550199');
     expect(out).not.toContain('Jane');
     expect(out).not.toMatch(/cookie/i);
+  });
+});
+
+describe('version and updates', () => {
+  it('/healthz answers without the access cookie and reveals only the version', async () => {
+    const r = await app.inject({ url: '/healthz', headers: { host: HOST } });
+    expect(r.statusCode).toBe(200);
+    expect(r.json()).toEqual({ ok: true, commit: 'dev' });
+    const foreign = await app.inject({ url: '/healthz', headers: { host: 'evil.example:5170' } });
+    expect(foreign.statusCode).toBe(421);
+  });
+
+  it('a copy started by hand reports updates as not managed and refuses to apply', async () => {
+    expect((await app.inject({ url: '/api/update', headers: { host: HOST } })).statusCode).toBe(401);
+    expect((await app.inject({ url: '/api/update', headers: auth })).json()).toMatchObject({ managed: false });
+    const r = await app.inject({ method: 'POST', url: '/api/update/apply', headers: write, payload: {} });
+    expect(r.statusCode).toBe(409);
+  });
+
+  it('shows a staged update and starts the install service only when one is ready', async () => {
+    const appDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mpcrm-app-'));
+    fs.mkdirSync(path.join(appDir, 'state'));
+    const started: string[] = [];
+    const updates = new Updates(appDir, { commit: 'aaa1111', built_at: null }, async (u) => void started.push(u));
+    const { db, c } = tempDb();
+    const managed = await buildApp({ db, config: c, token: TOKEN, updates });
+
+    expect((await managed.inject({ method: 'POST', url: '/api/update/apply', headers: write, payload: {} })).statusCode).toBe(409);
+    fs.writeFileSync(path.join(appDir, 'state', 'staged.json'), JSON.stringify({ commit: 'bbb2222', from: 'aaa1111', changes: ['Dial counter'], at: 'x' }));
+    const s = (await managed.inject({ url: '/api/update', headers: auth })).json();
+    expect(s).toMatchObject({ managed: true, current: { commit: 'aaa1111' }, staged: { commit: 'bbb2222', changes: ['Dial counter'] } });
+
+    // Cross-origin pages can't trigger a restart.
+    expect((await managed.inject({ method: 'POST', url: '/api/update/apply', headers: { ...auth, origin: 'http://evil.example' }, payload: {} })).statusCode).toBe(403);
+    expect((await managed.inject({ method: 'POST', url: '/api/update/apply', headers: write, payload: {} })).statusCode).toBe(202);
+    expect((await managed.inject({ method: 'POST', url: '/api/update/check', headers: write, payload: {} })).statusCode).toBe(202);
+    expect(started).toEqual(['mpcrm-apply.service', 'mpcrm-update.service']);
   });
 });

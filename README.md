@@ -16,22 +16,36 @@ A small calling CRM that runs on your own computer. It imports your lead spreads
 
 ## Setup on Fedora
 
+Install once. After that the app runs in the background and updates itself.
+
 ```bash
-sudo dnf install nodejs npm gcc-c++ make python3   # Node 22 or newer
+sudo dnf install nodejs npm git gcc-c++ make python3   # Node 22 or newer
 git clone https://github.com/bRootForceSec/MortgageProtectionCRM.git
 cd MortgageProtectionCRM
-npm ci
-npm run build
-npm start
+bash scripts/install.sh
 ```
 
-`npm start` prints a link like `http://127.0.0.1:5170/?t=…`. Open it once in Chrome or Chromium; after that `http://127.0.0.1:5170` works on its own. The link contains your access key, so don't share it. To make a new one, run `npm run cli -- rotate-token` and restart.
+The script:
+- builds the app into `~/.local/share/mpcrm-app`;
+- sets it up as a background service that starts when you log in;
+- adds **Mortgage Protection CRM** to your app menu, which opens it in your browser.
+
+If you started the app before with `npm start`, stop that copy first (Ctrl+C). Your data carries over. You can delete the cloned folder afterwards.
 
 Your data lives in `~/.local/share/mpcrm/` (database, backups, copies of imported files). Folders are private to your user account (mode 700). Keep your disk encrypted (Fedora's default LUKS option) because the database itself is not encrypted.
 
+### Updates
+
+- The app checks GitHub for a new version every hour. It builds the new version and runs its tests next to the running copy, without touching it.
+- When a new version is ready, a bar appears at the top of the app: **Update ready · What's new · Restart now · Later**. The app never restarts while you're working. If you leave the bar, the update installs itself at 3 AM.
+- Every update takes a verified backup first. If the new version doesn't start, the app goes back to the previous version and the data as it was just before the update, and tells you so.
+- **Export & backup → Version and updates** shows the version you're running and lets you check for updates now.
+
+To remove the app (your data is kept): `bash ~/.local/share/mpcrm-app/repo/scripts/install.sh --uninstall`.
+
 ### Settings
 
-Set these as environment variables, or put them in `~/.config/mpcrm/env` (mode 600) for the backup timer:
+Put these in `~/.config/mpcrm/env` (one `NAME=value` per line, mode 600), then run `systemctl --user restart mpcrm`:
 
 | Variable | Default | Meaning |
 |---|---|---|
@@ -40,6 +54,10 @@ Set these as environment variables, or put them in `~/.config/mpcrm/env` (mode 6
 | `MPCRM_BACKUP_DIR` | `<data dir>/backups` | Put this on an external drive if you can |
 | `MPCRM_BACKUP_KEEP` | `30` | How many backups to keep |
 | `MPCRM_BACKUP_AGE_RECIPIENT` | none | An [age](https://github.com/FiloSottile/age) public key; backups are then encrypted |
+
+### Running by hand (development)
+
+`npm ci && npm run build && npm start` prints a link like `http://127.0.0.1:5170/?t=…`. The link contains your access key, so don't share it. To make a new key, run `npm run cli -- rotate-token` and restart. A copy started this way doesn't update itself.
 
 ## Daily use
 
@@ -64,24 +82,20 @@ Callbacks and appointments ask for a time. A do-not-call request asks you to con
 
 Back up any time from **Export & backup → Back up now**, or with `npm run cli -- backup`.
 
-Nightly backups with a systemd user timer (adjust the folder path in the service file if you cloned elsewhere):
-
-```bash
-mkdir -p ~/.config/systemd/user
-cp docs/systemd/mpcrm-backup.* ~/.config/systemd/user/
-systemctl --user daemon-reload
-systemctl --user enable --now mpcrm-backup.timer
-```
+A backup runs every night at 11:30 PM, and before every update.
 
 Restore (stop the app first):
 
 ```bash
-npm run cli -- backups                     # list
-npm run cli -- verify-backup <file>        # check it opens and is intact
-npm run cli -- restore <file>              # current database is kept as crm.sqlite.pre-restore-…
+systemctl --user stop mpcrm
+cd ~/.local/share/mpcrm-app/current
+node dist/server/cli.js backups                  # list
+node dist/server/cli.js verify-backup <file>     # check it opens and is intact
+node dist/server/cli.js restore <file>           # current database is kept as crm.sqlite.pre-restore-…
+systemctl --user start mpcrm
 ```
 
-Other commands: `npm run cli -- verify` checks that derived lead status matches the call history; `npm run cli -- rebuild` recomputes it.
+Other commands (same folder): `node dist/server/cli.js verify` checks that derived lead status matches the call history; `node dist/server/cli.js rebuild` recomputes it.
 
 ## How the data is kept
 
@@ -109,5 +123,6 @@ Code layout:
 | `src/server/domain/` | Import, normalization, queue, call logging, lead status, export. No HTTP in here |
 | `src/server/http/` | API routes and local-access security |
 | `src/server/backup.ts`, `cli.ts` | Backup, restore, rebuild |
+| `scripts/install.sh`, `scripts/mpcrm-update.mjs` | Install, background service, self-update and rollback |
 | `src/web/` | React UI |
 | `test/` | Unit, integration and end-to-end tests |

@@ -6,6 +6,7 @@ import { LeadsPage } from './pages/LeadsPage';
 import { CallsPage } from './pages/CallsPage';
 import { NumbersPage } from './pages/NumbersPage';
 import { DataPage } from './pages/DataPage';
+import { UpdateBar } from './components/UpdateBar';
 
 type Page = 'calling' | 'import' | 'leads' | 'calls' | 'numbers' | 'data';
 const PAGES: { key: Page; label: string }[] = [
@@ -68,7 +69,7 @@ export function App() {
       <div className="empty">
         <h2>Open the app from its start link</h2>
         <p>{authError}</p>
-        <p className="help">The link is printed in the terminal when the app starts (it looks like http://127.0.0.1:5170/?t=…).</p>
+        <p className="help">Open "Mortgage Protection CRM" from your app menu. If you started it with npm start, use the link printed in the terminal (it looks like http://127.0.0.1:5170/?t=…).</p>
       </div>
     );
   }
@@ -87,6 +88,7 @@ export function App() {
           </nav>
           <TodayStats />
         </div>
+        <UpdateBar />
         <div className="page" style={page === 'calling' ? { padding: 0, overflow: 'hidden' } : undefined}>
           {page === 'calling' && <CallingPage />}
           {page === 'import' && <ImportPage />}
