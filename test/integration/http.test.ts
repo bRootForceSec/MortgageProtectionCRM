@@ -56,9 +56,11 @@ describe('local access protections', () => {
 
 describe('import and work a lead over HTTP', () => {
   it('parse → preview → commit → queue → log call → export without health columns', async () => {
+    // One buffer for both uploads: a regenerated workbook carries a new timestamp, so it would be a different file.
+    const xlsxFile = await sampleXlsx();
     const parse = await app.inject({
       method: 'POST', url: '/api/imports/parse', headers: { ...write, 'content-type': 'application/octet-stream', 'x-file-name': 'leads.xlsx' },
-      payload: await sampleXlsx(),
+      payload: xlsxFile,
     });
     expect(parse.statusCode).toBe(200);
     const p = parse.json();
@@ -75,7 +77,7 @@ describe('import and work a lead over HTTP', () => {
     // The mapping is remembered for the next file with the same columns.
     const again = await app.inject({
       method: 'POST', url: '/api/imports/parse', headers: { ...write, 'content-type': 'application/octet-stream', 'x-file-name': 'leads2.xlsx' },
-      payload: await sampleXlsx(),
+      payload: xlsxFile,
     });
     expect(again.json().sheets[0].mapping_source).toBe('saved');
     expect(again.json().file_previously_imported).toHaveLength(1);

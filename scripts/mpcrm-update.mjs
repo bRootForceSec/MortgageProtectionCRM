@@ -117,7 +117,9 @@ function build(sha) {
   const logFile = path.join(p.state, 'build.log');
   const out = fs.openSync(logFile, 'w');
   log(`building ${sha.slice(0, 7)} (log: ${logFile})`);
-  const r = spawnSync('sh', ['-c', BUILD_CMD], { cwd: tmp, stdio: ['ignore', out, out], env: { ...env, MPCRM_COMMIT: sha } });
+  // The build runs the test suite, which must not see this install's settings (data folder, port, ...).
+  const buildEnv = Object.fromEntries(Object.entries(env).filter(([k]) => !k.startsWith('MPCRM_')));
+  const r = spawnSync('sh', ['-c', BUILD_CMD], { cwd: tmp, stdio: ['ignore', out, out], env: { ...buildEnv, MPCRM_COMMIT: sha } });
   fs.closeSync(out);
   if (r.status !== 0) {
     fs.rmSync(tmp, { recursive: true, force: true });

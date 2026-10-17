@@ -129,6 +129,8 @@ beforeAll(async () => {
     MPCRM_DATA_DIR: data,
     MPCRM_PORT: String(await freePort()),
     MPCRM_UPDATE_BUILD_CMD: 'sh build.sh',
+    MPCRM_UPDATE_BRANCH: 'main',
+    MPCRM_SERVICE: 'mpcrm.service',
     MPCRM_HEALTH_TIMEOUT_MS: '8000',
   };
 });
