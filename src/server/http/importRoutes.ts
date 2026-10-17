@@ -16,6 +16,7 @@ import { loadAiSettings, saveAiSettings, getSetting, type Secrets } from '../ai/
 import { countyKey, countyDisplayName } from '../domain/county.js';
 import { rebuildLeadState } from '../domain/leadState.js';
 import { uuidv7, nowIso } from '../ids.js';
+import { editLeadDetails, EDITABLE_FIELDS } from '../domain/leadEdit.js';
 
 // Routes for PDF and spreadsheet imports with review, AI settings, lead types and prices, and county groups.
 
@@ -276,12 +277,21 @@ export function registerImportRoutes(
   // ---------- change a lead's type or county later (the old value is kept) ----------
   app.patch('/api/leads/:id', async (req) => {
     const { id } = idParam.parse(req.params);
-    const b = z.object({ lead_type: typeCode.nullable().optional(), county: z.string().max(100).nullable().optional() }).parse(req.body);
+    const b = z.object({
+      lead_type: typeCode.nullable().optional(),
+      county: z.string().max(100).nullable().optional(),
+      details: z.partialRecord(z.enum(EDITABLE_FIELDS), z.string().max(500).nullable()).optional(),
+    }).parse(req.body);
     const now = nowIso();
     return db.transaction(() => {
       const lead = db.prepare('SELECT * FROM lead WHERE id = ?').get(id) as any;
       if (!lead) throw new DomainError('lead not found', 404);
       const change = db.prepare('INSERT INTO lead_change (id, lead_id, field, old_value, new_value, created_at) VALUES (?,?,?,?,?,?)');
+      if (b.details) {
+        editLeadDetails(db, id, b.details);
+        // A new state matters for the county below.
+        lead.state = (db.prepare('SELECT state FROM lead WHERE id = ?').get(id) as { state: string | null }).state;
+      }
       if (b.lead_type !== undefined && b.lead_type !== lead.lead_type) {
         const t = b.lead_type ? (db.prepare('SELECT price_cents FROM lead_type WHERE code = ?').get(b.lead_type) as { price_cents: number | null } | undefined) : null;
         if (b.lead_type && !t) throw new DomainError(`unknown lead type "${b.lead_type}"`);

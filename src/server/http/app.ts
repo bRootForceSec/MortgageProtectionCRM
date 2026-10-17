@@ -19,6 +19,9 @@ import { Updates } from '../updates.js';
 import { registerImportRoutes } from './importRoutes.js';
 import { DraftWorker } from '../domain/drafts.js';
 import { Secrets } from '../ai/settings.js';
+import { registerCallingRoutes } from './callingRoutes.js';
+import { KdeConnect } from '../dialer.js';
+import { loadCallingSettings } from '../domain/callingSettings.js';
 
 export interface AppDeps {
   db: DB;
@@ -33,6 +36,8 @@ export interface AppDeps {
   /** Reads PDF imports in the background. Defaults to one made here. */
   drafts?: DraftWorker;
   secrets?: Secrets;
+  /** Sends numbers to your phone. Tests pass a fake. */
+  kde?: KdeConnect;
 }
 
 interface Upload {
@@ -89,6 +94,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   const secrets = deps.secrets ?? Secrets.inDataDir(config.dataDir);
   const drafts = deps.drafts ?? new DraftWorker(db, secrets);
   registerImportRoutes(app, { db, config, worker: drafts, secrets, getUpload, dropUpload: (id) => uploads.delete(id) });
+  registerCallingRoutes(app, { db, kde: deps.kde });
 
   // ---------- version & updates ----------
   const updates = deps.updates ?? new Updates(null, { commit: 'dev', built_at: null });
@@ -197,7 +203,10 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       batch: db.prepare('SELECT * FROM import_batch WHERE id = ?').get(lead.batch_id),
       import_row: db.prepare('SELECT row_number, warnings_json FROM import_row WHERE id = ?').get(lead.import_row_id),
       calls,
-      notes: db.prepare('SELECT * FROM note WHERE lead_id = ? ORDER BY created_at DESC').all(id),
+      // Notes saved with a call you undid are left out (the undo puts the note back in the form).
+      notes: db
+        .prepare('SELECT n.* FROM note n LEFT JOIN call c ON c.id = n.call_id WHERE n.lead_id = ? AND c.voided_at IS NULL ORDER BY n.created_at DESC')
+        .all(id),
       actions: db.prepare('SELECT * FROM lead_action WHERE lead_id = ? ORDER BY created_at DESC').all(id),
       appointments: db
         .prepare(
@@ -218,6 +227,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       from_number_id: z.string().max(64).nullish(),
       occurred_at: z.string().max(40).nullish(),
       talk_seconds: z.number().min(0).max(36000).nullish(),
+      dial_count: z.number().int().min(1).max(1000).nullish(),
       outcome_code: z.string().max(40),
       callback_due_at: z.string().max(40).nullish(),
       appointment_at: z.string().max(40).nullish(),
@@ -270,7 +280,8 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     }).parse(req.query);
     return db
       .prepare(
-        `SELECT c.id, c.lead_id, c.channel, c.from_e164, c.to_e164, c.requested_at, c.state, c.talk_seconds,
+        `SELECT c.id, c.lead_id, c.channel, c.from_e164, c.to_e164, c.requested_at, c.state, c.talk_seconds, c.dial_count, c.voided_at,
+                c.time_known,
                 trim(coalesce(l.first_name,'') || ' ' || coalesce(l.last_name,'')) lead_name, n.label from_label,
                 (SELECT o.outcome_code FROM call_outcome o WHERE o.call_id = c.id
                    AND NOT EXISTS (SELECT 1 FROM call_outcome x WHERE x.supersedes_id = o.id) ORDER BY o.entered_at DESC LIMIT 1) outcome_code
@@ -291,15 +302,16 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
            FROM call c LEFT JOIN call_outcome o ON o.call_id = c.id
              AND NOT EXISTS (SELECT 1 FROM call_outcome x WHERE x.supersedes_id = o.id)
            LEFT JOIN outcome_code oc ON oc.code = o.outcome_code
-           WHERE c.requested_at >= @from AND c.requested_at < @to AND c.initiation_result = 'accepted')
+           WHERE c.requested_at >= @from AND c.requested_at < @to AND c.initiation_result = 'accepted' AND c.voided_at IS NULL)
          SELECT COUNT(DISTINCT id) attempts, COUNT(DISTINCT lead_id) unique_leads,
+                (SELECT coalesce(SUM(dial_count), 0) FROM call WHERE id IN (SELECT id FROM cur)) dials,
                 COUNT(DISTINCT CASE WHEN h = 1 THEN id END) human_contacts,
                 COUNT(DISTINCT CASE WHEN outcome_code = 'appointment' THEN id END) appointments,
                 COUNT(DISTINCT CASE WHEN outcome_code = 'callback' THEN id END) callbacks
          FROM cur`,
       )
-      .get({ from: q.from, to: q.to });
-    return row;
+      .get({ from: q.from, to: q.to }) as Record<string, number>;
+    return { ...row, goals: loadCallingSettings(db).goals };
   });
 
   // ---------- caller ID numbers ----------
