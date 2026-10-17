@@ -192,3 +192,26 @@ const STATE_NAMES: Record<string, string> = {
   VIRGINIA: 'VA', WASHINGTON: 'WA', 'WEST VIRGINIA': 'WV', WISCONSIN: 'WI', WYOMING: 'WY',
   'PUERTO RICO': 'PR',
 };
+
+const KEEP_UPPER = new Set(['LLC', 'LP', 'LLP', 'FSB', 'NA', 'USA', 'FCU', 'CU', 'II', 'III', 'IV', 'PO', 'N', 'S', 'E', 'W', 'NE', 'NW', 'SE', 'SW', 'MTG', 'HM', 'DHI', 'FHA', 'VA', 'USAA', 'PNC', 'TD', 'BMO']);
+
+/**
+ * Title Case for values printed in capitals ("12971 RAWLINGS CT" → "12971 Rawlings Ct"), as your lead
+ * sheets use. Values already in mixed case are left alone. Suffixes like LLC and directions like NW stay
+ * upper case; ordinals become "2nd".
+ */
+export function titleCaseIfShouting(v: string | null | undefined, opts: { keepUpper?: boolean } = {}): string | null {
+  if (!v) return v ?? null;
+  const letters = v.replace(/[^A-Za-z]/g, '');
+  if (!letters || letters !== letters.toUpperCase()) return v;
+  return v
+    .toLowerCase()
+    .replace(/[a-z0-9']+/g, (w) => {
+      const up = w.toUpperCase();
+      if (opts.keepUpper !== false && KEEP_UPPER.has(up)) return up;
+      if (/^\d+(st|nd|rd|th)$/.test(w)) return w;
+      return w.charAt(0).toUpperCase() + w.slice(1);
+    })
+    .replace(/\bMc([a-z])/g, (_, c: string) => `Mc${c.toUpperCase()}`)
+    .replace(/\b([A-Z])'([a-z])/g, (_, a: string, b: string) => `${a}'${b.toUpperCase()}`);
+}

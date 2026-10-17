@@ -6,6 +6,8 @@ import { openDatabase } from './db/connection.js';
 import { buildApp } from './http/app.js';
 import { rebuildLeadState } from './domain/leadState.js';
 import { Updates, readBuildInfo } from './updates.js';
+import { DraftWorker } from './domain/drafts.js';
+import { Secrets } from './ai/settings.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 
@@ -19,7 +21,9 @@ async function main() {
   const webDir = [path.resolve(here, '../web'), path.resolve(here, '../../dist/web')].find((d) => fs.existsSync(path.join(d, 'index.html'))) ?? null;
   const build = readBuildInfo(path.resolve(here, '../build-info.json'));
   const updates = new Updates(process.env.MPCRM_APP_DIR ? path.resolve(process.env.MPCRM_APP_DIR) : null, build);
-  const app = await buildApp({ db, config, token, webDir, logger: true, updates });
+  const secrets = Secrets.inDataDir(config.dataDir);
+  const drafts = new DraftWorker(db, secrets);
+  const app = await buildApp({ db, config, token, webDir, logger: true, updates, drafts, secrets });
 
   const pidFile = path.join(config.dataDir, 'server.pid');
   fs.writeFileSync(pidFile, String(process.pid), { mode: 0o600 });
@@ -33,6 +37,8 @@ async function main() {
   process.on('SIGTERM', shutdown);
 
   await app.listen({ host: config.host, port: config.port });
+  // Carry on reading any PDF import that was in progress when the app stopped.
+  drafts.resumeAll();
   const url = `http://127.0.0.1:${config.port}/?t=${token}`;
   // Printed to the terminal only (not to the log stream), so the token is not written to log files.
   process.stdout.write(`\nMortgage Protection CRM is running.\nOpen: ${url}\nData: ${config.dataDir}\n\n`);

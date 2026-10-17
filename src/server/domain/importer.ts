@@ -261,7 +261,7 @@ export function analyzeRows(db: DB, rows: SourceRow[], opts: ImportOptions = {})
     let status: RowStatus = 'accepted';
     if (src.discarded) {
       status = 'rejected';
-      errors.unshift(`discarded by you${src.discarded === true as unknown ? '' : `: ${src.discarded}`}`);
+      errors.unshift(`discarded by you: ${src.discarded}`);
     } else if (errors.length) status = 'rejected';
     else if (seenFp.has(fingerprint) || (lead.source_lead_id && seenId.has(lead.source_lead_id))) {
       status = 'duplicate_in_file';
