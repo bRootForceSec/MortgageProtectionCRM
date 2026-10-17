@@ -5,6 +5,7 @@ import { loadConfig, ensureDirs, loadOrCreateToken } from './config.js';
 import { openDatabase } from './db/connection.js';
 import { buildApp } from './http/app.js';
 import { rebuildLeadState } from './domain/leadState.js';
+import { Updates, readBuildInfo } from './updates.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 
@@ -16,7 +17,9 @@ async function main() {
   rebuildLeadState(db);
   const token = loadOrCreateToken(config);
   const webDir = [path.resolve(here, '../web'), path.resolve(here, '../../dist/web')].find((d) => fs.existsSync(path.join(d, 'index.html'))) ?? null;
-  const app = await buildApp({ db, config, token, webDir, logger: true });
+  const build = readBuildInfo(path.resolve(here, '../build-info.json'));
+  const updates = new Updates(process.env.MPCRM_APP_DIR ? path.resolve(process.env.MPCRM_APP_DIR) : null, build);
+  const app = await buildApp({ db, config, token, webDir, logger: true, updates });
 
   const pidFile = path.join(config.dataDir, 'server.pid');
   fs.writeFileSync(pidFile, String(process.pid), { mode: 0o600 });

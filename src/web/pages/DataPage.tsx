@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api, fmtDateTime } from '../api';
 import { useApp } from '../App';
+import { UpdatePanel } from '../components/UpdateBar';
 
 const TABLES = [
   ['leads', 'Leads'], ['calls', 'Calls'], ['outcomes', 'Outcomes (every change)'], ['events', 'Raw call events'], ['notes', 'Notes'],
@@ -55,7 +56,7 @@ export function DataPage() {
       <div className="card">
         <h2>Backups</h2>
         <p className="help">
-          Backups are verified copies of the whole database, saved in {meta?.data_dir}/backups. Set up the nightly backup timer from the README.
+          Backups are verified copies of the whole database, saved in {meta?.data_dir}/backups. A backup runs every night at 11:30 PM once the app is installed with scripts/install.sh, and before every update.
           To restore, stop the app and run <code>npm run cli -- restore &lt;file&gt;</code>; the current database is kept aside, not deleted.
         </p>
         <button className="btn primary" onClick={backupNow} disabled={busy}>Back up now</button>
@@ -67,6 +68,8 @@ export function DataPage() {
         </table>
         {backups.length === 0 && <div className="empty">No backups yet.</div>}
       </div>
+
+      <UpdatePanel />
     </>
   );
 }

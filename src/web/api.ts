@@ -74,6 +74,7 @@ export interface Meta {
   lead_fields: { key: string; label: string }[];
   numbers: CallerNumber[];
   data_dir: string;
+  version: { commit: string; built_at: string | null };
 }
 
 export interface QueueItem {
