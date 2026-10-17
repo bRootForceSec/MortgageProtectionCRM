@@ -1,0 +1,171 @@
+import type { DB } from '../db/connection.js';
+import { uuidv7, nowIso } from '../ids.js';
+import { rebuildLeadState } from './leadState.js';
+
+export class DomainError extends Error {
+  constructor(message: string, public status = 400) {
+    super(message);
+  }
+}
+
+export interface ManualCallInput {
+  lead_id: string;
+  idempotency_key: string;
+  from_number_id?: string | null;
+  to_e164?: string | null;
+  /** When the call happened; defaults to now. */
+  occurred_at?: string | null;
+  talk_seconds?: number | null;
+  outcome_code: string;
+  callback_due_at?: string | null;
+  appointment_at?: string | null;
+  note?: string | null;
+}
+
+interface OutcomeRow {
+  code: string;
+  requires_callback_time: number;
+  active: number;
+}
+
+function getOutcome(db: DB, code: string): OutcomeRow {
+  const o = db.prepare('SELECT code, requires_callback_time, active FROM outcome_code WHERE code = ?').get(code) as
+    | OutcomeRow
+    | undefined;
+  if (!o) throw new DomainError(`unknown outcome "${code}"`);
+  if (!o.active) throw new DomainError(`outcome "${code}" is retired`);
+  return o;
+}
+
+function checkIso(v: string | null | undefined, what: string): string | null {
+  if (v === null || v === undefined || v === '') return null;
+  const t = Date.parse(v);
+  if (Number.isNaN(t)) throw new DomainError(`${what} is not a valid date/time`);
+  return new Date(t).toISOString();
+}
+
+/**
+ * Records a call placed outside the app (e.g. on Sideline) together with its outcome.
+ * Idempotent: the same idempotency_key returns the existing call instead of creating a second one.
+ */
+export function logManualCall(db: DB, input: ManualCallInput) {
+  if (!input.idempotency_key || input.idempotency_key.length < 8) throw new DomainError('idempotency_key required');
+  return db.transaction(() => {
+    const existing = db.prepare('SELECT id FROM call WHERE idempotency_key = ?').get(input.idempotency_key) as
+      | { id: string }
+      | undefined;
+    if (existing) return { call_id: existing.id, duplicate: true };
+
+    const lead = db.prepare('SELECT id, phone_e164 FROM lead WHERE id = ?').get(input.lead_id) as
+      | { id: string; phone_e164: string | null }
+      | undefined;
+    if (!lead) throw new DomainError('lead not found', 404);
+    const to = input.to_e164 || lead.phone_e164;
+    if (!to) throw new DomainError('lead has no valid phone number');
+    const outcome = getOutcome(db, input.outcome_code);
+    const callbackDue = checkIso(input.callback_due_at, 'callback time');
+    if (outcome.requires_callback_time && !callbackDue) throw new DomainError('a callback needs a date and time');
+    const apptAt = checkIso(input.appointment_at, 'appointment time');
+
+    let fromE164: string | null = null;
+    if (input.from_number_id) {
+      const n = db.prepare('SELECT e164, status FROM caller_number WHERE id = ?').get(input.from_number_id) as
+        | { e164: string; status: string }
+        | undefined;
+      if (!n) throw new DomainError('caller ID number not found');
+      if (n.status === 'retired') throw new DomainError('that caller ID number is retired');
+      fromE164 = n.e164;
+    }
+    const now = nowIso();
+    const at = checkIso(input.occurred_at, 'call time') ?? now;
+    if (at > now) throw new DomainError('call time is in the future');
+    const talk = input.talk_seconds == null ? null : Math.max(0, Math.round(input.talk_seconds));
+    const callId = uuidv7();
+    db.prepare(
+      `INSERT INTO call (id, lead_id, direction, channel, from_number_id, from_e164, to_e164, requested_at, idempotency_key,
+        initiation_result, state, state_confirmed_by, started_at, talk_seconds, derived_at)
+       VALUES (?, ?, 'outbound', 'manual_log', ?, ?, ?, ?, ?, 'accepted', 'ended', 'manual', ?, ?, ?)`,
+    ).run(callId, lead.id, input.from_number_id ?? null, fromE164, to, at, input.idempotency_key, at, talk, now);
+    db.prepare(
+      `INSERT INTO call_event (id, call_id, source, dedup_key, event_type_raw, event_type, occurred_at, received_at, payload_json)
+       VALUES (?, ?, 'manual', ?, 'manual.logged', 'call.logged_manually', ?, ?, ?)`,
+    ).run(uuidv7(), callId, `manual:${callId}`, at, now, JSON.stringify({ talk_seconds: talk, from_e164: fromE164, to_e164: to }));
+    db.prepare(
+      `INSERT INTO call_outcome (id, call_id, outcome_code, entered_at, callback_due_at, note) VALUES (?,?,?,?,?,?)`,
+    ).run(uuidv7(), callId, outcome.code, now, callbackDue, input.note?.trim() || null);
+    if (input.note?.trim()) {
+      db.prepare('INSERT INTO note (id, lead_id, call_id, body, created_at) VALUES (?,?,?,?,?)').run(
+        uuidv7(), lead.id, callId, input.note.trim(), now,
+      );
+    }
+    if (outcome.code === 'appointment' && apptAt) {
+      db.prepare(
+        `INSERT INTO appointment (id, lead_id, scheduled_for, set_on_call_id, set_from_number_id, recorded_via, created_at)
+         VALUES (?,?,?,?,?, 'in_app_on_call', ?)`,
+      ).run(uuidv7(), lead.id, apptAt, callId, input.from_number_id ?? null, now);
+    }
+    rebuildLeadState(db, [lead.id]);
+    return { call_id: callId, duplicate: false };
+  })();
+}
+
+/** Current outcome of a call: the latest outcome that nothing supersedes. */
+export function currentOutcome(db: DB, callId: string) {
+  return db
+    .prepare(
+      `SELECT * FROM call_outcome o WHERE o.call_id = ?
+       AND NOT EXISTS (SELECT 1 FROM call_outcome s WHERE s.supersedes_id = o.id)
+       ORDER BY entered_at DESC LIMIT 1`,
+    )
+    .get(callId) as { id: string; outcome_code: string } | undefined;
+}
+
+/**
+ * Changes a call's outcome by adding a superseding record. The old outcome and all call events stay.
+ * `expected_current_id` guards against two edits racing (e.g. double submit).
+ */
+export function changeOutcome(
+  db: DB,
+  callId: string,
+  input: { outcome_code: string; expected_current_id: string | null; callback_due_at?: string | null; note?: string | null },
+) {
+  return db.transaction(() => {
+    const call = db.prepare('SELECT id, lead_id FROM call WHERE id = ?').get(callId) as { id: string; lead_id: string } | undefined;
+    if (!call) throw new DomainError('call not found', 404);
+    const cur = currentOutcome(db, callId) ?? null;
+    if ((cur?.id ?? null) !== (input.expected_current_id ?? null)) {
+      throw new DomainError('outcome was changed elsewhere; reload and try again', 409);
+    }
+    const o = getOutcome(db, input.outcome_code);
+    const due = checkIso(input.callback_due_at, 'callback time');
+    if (o.requires_callback_time && !due) throw new DomainError('a callback needs a date and time');
+    const id = uuidv7();
+    db.prepare(
+      `INSERT INTO call_outcome (id, call_id, outcome_code, entered_at, supersedes_id, callback_due_at, note) VALUES (?,?,?,?,?,?,?)`,
+    ).run(id, callId, o.code, nowIso(), cur?.id ?? null, due, input.note?.trim() || null);
+    if (call.lead_id) rebuildLeadState(db, [call.lead_id]);
+    return { outcome_id: id };
+  })();
+}
+
+export function addLeadAction(db: DB, leadId: string, action: 'skip' | 'mark_dead' | 'restore', reason?: string | null) {
+  return db.transaction(() => {
+    if (!db.prepare('SELECT 1 FROM lead WHERE id = ?').get(leadId)) throw new DomainError('lead not found', 404);
+    const id = uuidv7();
+    db.prepare('INSERT INTO lead_action (id, lead_id, action, reason, created_at) VALUES (?,?,?,?,?)').run(
+      id, leadId, action, reason?.trim() || null, nowIso(),
+    );
+    rebuildLeadState(db, [leadId]);
+    return { action_id: id };
+  })();
+}
+
+export function addNote(db: DB, leadId: string, body: string, callId?: string | null) {
+  const text = body?.trim();
+  if (!text) throw new DomainError('note is empty');
+  if (text.length > 10_000) throw new DomainError('note is too long');
+  if (!db.prepare('SELECT 1 FROM lead WHERE id = ?').get(leadId)) throw new DomainError('lead not found', 404);
+  const id = uuidv7();
+  db.prepare('INSERT INTO note (id, lead_id, call_id, body, created_at) VALUES (?,?,?,?,?)').run(id, leadId, callId ?? null, text, nowIso());
+  return { note_id: id };
+}

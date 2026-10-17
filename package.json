@@ -1,0 +1,55 @@
+{
+  "name": "mortgage-protection-crm",
+  "version": "0.1.0",
+  "description": "Local-first calling CRM for an independent life insurance agent",
+  "scripts": {
+    "dev": "concurrently -n api,web \"tsx watch src/server/main.ts\" \"vite\"",
+    "build": "tsc -p tsconfig.server.json && cp -r src/server/db/migrations dist/server/db/ && vite build",
+    "start": "node dist/server/main.js",
+    "cli": "node dist/server/cli.js",
+    "typecheck": "tsc -p tsconfig.server.json --noEmit && tsc -p tsconfig.web.json --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:e2e": "npm run build && playwright test"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/bRootForceSec/mortgageprotectioncrm.git"
+  },
+  "license": "UNLICENSED",
+  "bugs": {
+    "url": "https://github.com/bRootForceSec/mortgageprotectioncrm/issues"
+  },
+  "homepage": "https://github.com/bRootForceSec/mortgageprotectioncrm#readme",
+  "dependencies": {
+    "@fastify/static": "^10.1.6",
+    "better-sqlite3": "^13.0.3",
+    "csv-parse": "^7.0.3",
+    "exceljs": "^4.4.0",
+    "fastify": "^5.12.7",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.64.1",
+    "@types/better-sqlite3": "^9.6.0",
+    "@types/node": "^26.6.5",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.2",
+    "concurrently": "^10.0.6",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.4",
+    "vitest": "^5.0.5"
+  },
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "overrides": {
+    "uuid": "^11.1.1"
+  }
+}
