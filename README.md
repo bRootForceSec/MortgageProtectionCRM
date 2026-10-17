@@ -24,7 +24,6 @@ A small calling CRM that runs on your own computer. It imports your lead spreads
 - **Dead pile**: a do-not-call request moves the lead out of the queue. Everything else goes back into rotation. "Disconnected / invalid" and "wrong person" go to an invalid pile. Both piles can be restored.
 - **Duplicates**: leads with the same phone are linked (not merged), so co-borrowers and re-bought leads stay separate. Importing a phone number that's in the dead pile is flagged in the preview.
 - **Export** any table to CSV or Excel, or everything as one Excel file or a full JSON dump. Health fields are left out unless you tick the box.
-- **Google Calendar** (optional, Settings → Google Calendar): setting an appointment puts a 30-minute `#MP <lead ID> <LAST NAME>` event on your main calendar. Unitrust replaces it with its own event, and the app then adds your note at the top of Unitrust's event, leaving Unitrust's text as it was. The lead gets an **Open in Unitrust** button. Today warns you when Unitrust hasn't picked an event up, has a different time, or when you undid an appointment Unitrust had already booked. Details below.
 - **Backups** are verified copies of the database. Restore keeps the current database aside instead of deleting it. Once a week the app restores the newest backup into a scratch copy to check it works, and shows the result on Export & backup.
 
 ## Setup on Fedora
@@ -67,24 +66,6 @@ Put these in `~/.config/mpcrm/env` (one `NAME=value` per line, mode 600), then r
 | `MPCRM_BACKUP_DIR` | `<data dir>/backups` | Put this on an external drive if you can |
 | `MPCRM_BACKUP_KEEP` | `30` | How many backups to keep |
 | `MPCRM_BACKUP_AGE_RECIPIENT` | none | An [age](https://github.com/FiloSottile/age) public key; backups are then encrypted |
-
-### Google Calendar
-
-One-time setup, about 10 minutes. **Settings → Google Calendar** lists every click.
-
-1. In [Google Cloud](https://console.cloud.google.com/projectcreate), signed in as the Google account Unitrust uses, create a project and enable the **Google Calendar API**.
-2. Set up the consent screen (Audience: External), then **Publish app** so it says **In production**. In "Testing", Google signs you out every 7 days.
-3. Create an OAuth client of type **Desktop app**. Paste its client ID and secret into Settings, then click **Connect to Google**. Google warns that it hasn't verified the app; that's expected for your own app (Advanced → Go to …).
-
-What the app does:
-
-- The permission it asks for is your calendar's events only, plus your email address to show who is connected.
-- Google sends you back to the app on `127.0.0.1`; nothing is exposed to the internet. The client secret and sign-in are kept in `<data dir>/secrets.json` (mode 600), never shown, exported or backed up.
-- Booking (`7`): the note box becomes the calendar note. Untick **Google Calendar** to skip it. A lead without a lead ID asks for one, because Unitrust needs it.
-- The app checks the calendar once a minute for Unitrust's event, matched by its `LEAD ID:` line, and edits only that event's description. It tells Google not to email anyone. The borrower is a guest on Unitrust's event, so a borrower who uses Google Calendar may see the note.
-- If Unitrust rewrites its event and drops the note, the app adds it back up to 3 times, then stops and tells you.
-- Undo (`Z`) deletes the `#MP` event. If Unitrust already booked it, you're told to cancel it in Unitrust. Rescheduling from Today makes a new `#MP` event with the same note. Change a note later from the lead screen.
-- If the computer is offline, events wait and go out when it's back. Saving a call never waits on Google.
 
 ### AI for scanned pages
 

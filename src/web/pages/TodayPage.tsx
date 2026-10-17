@@ -4,7 +4,6 @@ import { defaultWhen } from '../when';
 import { useApp } from '../App';
 import { todayRange, type Agenda, type AgendaItem } from '../components/CallbackAlerts';
 import { GroupPicker, useGroups } from '../components/GroupPicker';
-import { CalendarBadge, CalendarProblems } from '../components/Calendar';
 
 // Today's callbacks and appointments, in your time and the lead's time.
 
@@ -42,7 +41,7 @@ export function TodayPage() {
       <td>{i.name || '(no name)'}</td>
       <td className="nowrap">{fmtPhone(i.phone_e164)}</td>
       <td>{i.county ? `${i.county} Co., ${i.state ?? ''}` : i.state ?? ''}</td>
-      <td>{extra}{i.calendar_state && <> <CalendarBadge state={i.calendar_state} /></>}</td>
+      <td>{extra}</td>
       <td><button className="btn small primary" onClick={() => openLead(i.lead_id)}>Open</button></td>
     </tr>
   );
@@ -61,7 +60,6 @@ export function TodayPage() {
   const empty = !a.callbacks.length && !a.appointments.length;
   return (
     <>
-    <CalendarProblems />
     <HowDidItGo groupParams={groupParams} />
     <div className="card">
       <div className="row" style={{ justifyContent: 'space-between' }}>

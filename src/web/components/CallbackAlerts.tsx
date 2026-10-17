@@ -16,8 +16,6 @@ export interface AgendaItem {
   scheduled_for?: string | null;
   id?: string;
   notes?: string | null;
-  calendar_state?: string | null;
-  unitrust_url?: string | null;
 }
 export interface Agenda {
   callbacks: AgendaItem[];

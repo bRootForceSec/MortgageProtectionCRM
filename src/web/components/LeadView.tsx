@@ -1,5 +1,4 @@
 import { useState } from 'react';
-import { AppointmentCalendar } from './Calendar';
 import { api, fmtDateTime, fmtMoney, fmtPhone, fullName, localTime, type LeadDetail, type Call } from '../api';
 import { useApp } from '../App';
 
@@ -24,11 +23,9 @@ export function StatusBadge({ status }: { status: string }) {
 
 /** Header + key facts used on the calling screen and the lead modal. */
 export function LeadSummary({
-  d, onDial, dialLabel = 'Copy number', dialKey, onEdit, editKey, onChange,
+  d, onDial, dialLabel = 'Copy number', dialKey, onEdit, editKey,
 }: {
   d: LeadDetail;
-  /** Something on the lead changed here (e.g. the calendar note); reload it. */
-  onChange?: () => void;
   /** On the Calling screen: dial (or copy, or show a QR code, per Settings) and start the attempt. */
   onDial?: (e164: string) => void;
   dialLabel?: string;
@@ -115,7 +112,6 @@ export function LeadSummary({
               {a.recorded_via === 'sheet_import' && <span className="muted"> (from your spreadsheet)</span>}
               {a.from_e164 && <> · set from <b>{a.from_label ?? fmtPhone(a.from_e164)}</b> ({fmtPhone(a.from_e164)})</>}
               {a.internal_status === 'canceled' && <span className="muted"> · canceled{a.notes ? ` ${a.notes}` : ''}</span>}
-              <AppointmentCalendar a={a} onChange={onChange ?? (() => {})} />
             </div>
           ))}
         </div>
@@ -218,9 +214,8 @@ export function CallHistory({ calls, onChange }: { calls: Call[]; onChange: () =
   const remove = async (c: Call) => {
     if (!window.confirm('Undo this call? It stays in the history, marked as undone, and stops counting toward the lead and your numbers.')) return;
     try {
-      const r = await api.post<{ calendar_unitrust_has_it?: boolean }>(`/calls/${c.id}/void`, { reason: 'undone from history' });
-      if (r.calendar_unitrust_has_it) toast('Call undone. Unitrust had already booked the appointment: cancel it in Unitrust.', 'error');
-      else toast('Call undone');
+      await api.post(`/calls/${c.id}/void`, { reason: 'undone from history' });
+      toast('Call undone');
       bumpStats();
       onChange();
     } catch (e: any) {
