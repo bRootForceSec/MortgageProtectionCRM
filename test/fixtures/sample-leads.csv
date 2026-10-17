@@ -1,0 +1,8 @@
+Lead Name,Phone,Lender,Loan Amount,Age,Co-Borrower,Address,City,State,Zip,Tobacco,Heart Attack,Stroke,Cancer,Diabetes,Lead Notes
+Jane Doe,(614) 555-0101,Rocket Mortgage,"$286,000",52,Yes,12 Elm St,Columbus,OH,43215,No,No,No,No,Yes,prefers evenings
+Robert Ray,614.555.0102,Chase,175000,61,No,4 Oak Ave,Dayton,Ohio,45402,Yes,No,No,No,No,
+Ann Lee,+1 312 555 0103,Wells Fargo,320k,45,,9 Pine Rd,Chicago,IL,60601,No,No,No,No,No,
+No Phone Person,,Chase,100000,40,,,,TX,,,,,,,
+Bad Phone,555-01,Chase,lots,forty,,,,Narnia,,,,,,,
+Jane Doe,(614) 555-0101,Rocket Mortgage,"$286,000",52,Yes,12 Elm St,Columbus,OH,43215,No,No,No,No,Yes,prefers evenings
+John Doe,(614) 555-0101,Rocket Mortgage,"$286,000",54,Yes,12 Elm St,Columbus,OH,43215,Yes,No,No,No,No,co-borrower
