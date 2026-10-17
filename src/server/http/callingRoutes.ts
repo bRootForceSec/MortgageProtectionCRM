@@ -6,10 +6,11 @@ import { loadCallingSettings, saveCallingSettings, SHORTCUT_ACTIONS } from '../d
 import { rebuildLeadState } from '../domain/leadState.js';
 import { KdeConnect } from '../dialer.js';
 import { groupWhere, parseList } from '../domain/groupFilter.js';
+import { cancelAppointment, type CalendarWorker } from '../calendar/sync.js';
 
 const idParam = z.object({ id: z.string().max(64) });
 
-export function registerCallingRoutes(app: FastifyInstance, deps: { db: DB; kde?: KdeConnect }) {
+export function registerCallingRoutes(app: FastifyInstance, deps: { db: DB; kde?: KdeConnect; calendar?: CalendarWorker }) {
   const { db } = deps;
   const kde = deps.kde ?? new KdeConnect();
 
@@ -37,7 +38,15 @@ export function registerCallingRoutes(app: FastifyInstance, deps: { db: DB; kde?
   app.post('/api/calls/:id/void', async (req) => {
     const { id } = idParam.parse(req.params);
     const b = z.object({ reason: z.string().max(500).nullish() }).parse(req.body ?? {});
-    return voidCall(db, id, b.reason);
+    const res = db.transaction(() => {
+      const r = voidCall(db, id, b.reason);
+      // Take the #MP event back off the calendar. If Unitrust already booked it, only Unitrust can cancel it.
+      const appt = db.prepare('SELECT id FROM appointment WHERE set_on_call_id = ?').get(id) as { id: string } | undefined;
+      const cal = appt ? cancelAppointment(db, appt.id) : { unitrust_has_it: false };
+      return { ...r, calendar_unitrust_has_it: cal.unitrust_has_it };
+    })();
+    deps.calendar?.kick();
+    return res;
   });
 
   // ---------- dial from the computer (KDE Connect) ----------
@@ -82,8 +91,10 @@ export function registerCallingRoutes(app: FastifyInstance, deps: { db: DB; kde?
       .all({ to: q.to, ...group.params });
     const appointments = db
       .prepare(
-        `SELECT a.id, a.lead_id, ${name} name, l.phone_e164, l.time_zone, l.county, l.state, a.scheduled_for, a.notes
+        `SELECT a.id, a.lead_id, ${name} name, l.phone_e164, l.time_zone, l.county, l.state, a.scheduled_for, a.notes,
+           cs.state calendar_state, cs.unitrust_url
          FROM appointment a JOIN lead l ON l.id = a.lead_id JOIN lead_state s ON s.lead_id = l.id
+         LEFT JOIN calendar_sync cs ON cs.appointment_id = a.id
          WHERE a.internal_status <> 'canceled' AND a.official_status IS NULL
            AND ((a.scheduled_for >= @from AND a.scheduled_for < @to) OR (a.scheduled_for IS NULL AND s.status = 'appointment_set'))
            AND ${group.sql}

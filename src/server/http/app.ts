@@ -25,6 +25,9 @@ import { CURRENT_RESULT_SQL } from '../domain/leadState.js';
 import { KdeConnect } from '../dialer.js';
 import { loadCallingSettings } from '../domain/callingSettings.js';
 import { groupWhere, searchWhere, parseList } from '../domain/groupFilter.js';
+import { GoogleCalendar } from '../calendar/google.js';
+import { CalendarWorker, queueAppointment, resolveSourceLeadId, saveSourceLeadId } from '../calendar/sync.js';
+import { registerCalendarRoutes } from './calendarRoutes.js';
 
 export interface AppDeps {
   db: DB;
@@ -41,6 +44,9 @@ export interface AppDeps {
   secrets?: Secrets;
   /** Sends numbers to your phone. Tests pass a fake. */
   kde?: KdeConnect;
+  /** Google Calendar sign-in and the worker that keeps appointments on it. Tests pass ones talking to a fake Google. */
+  google?: GoogleCalendar;
+  calendar?: CalendarWorker;
 }
 
 interface Upload {
@@ -97,8 +103,11 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   const secrets = deps.secrets ?? Secrets.inDataDir(config.dataDir);
   const drafts = deps.drafts ?? new DraftWorker(db, secrets);
   registerImportRoutes(app, { db, config, worker: drafts, secrets, getUpload, dropUpload: (id) => uploads.delete(id) });
-  registerCallingRoutes(app, { db, kde: deps.kde });
-  registerReportRoutes(app, { db, config });
+  const google = deps.google ?? new GoogleCalendar(db, secrets);
+  const calendar = deps.calendar ?? new CalendarWorker(db, google, { log: (msg, extra) => app.log.warn(extra as object, msg) });
+  registerCallingRoutes(app, { db, kde: deps.kde, calendar });
+  registerReportRoutes(app, { db, config, calendar });
+  registerCalendarRoutes(app, { db, config, google, worker: calendar });
 
   // ---------- version & updates ----------
   const updates = deps.updates ?? new Updates(null, { commit: 'dev', built_at: null });
@@ -214,7 +223,9 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       actions: db.prepare('SELECT * FROM lead_action WHERE lead_id = ? ORDER BY created_at DESC').all(id),
       appointments: db
         .prepare(
-          `SELECT a.*, ${CURRENT_RESULT_SQL} result, n.e164 from_e164, n.label from_label FROM appointment a LEFT JOIN caller_number n ON n.id = a.set_from_number_id
+          `SELECT a.*, ${CURRENT_RESULT_SQL} result, n.e164 from_e164, n.label from_label,
+             cs.state calendar_state, cs.note calendar_note, cs.title calendar_title, cs.unitrust_url, cs.unitrust_start, cs.last_error calendar_error
+           FROM appointment a LEFT JOIN caller_number n ON n.id = a.set_from_number_id LEFT JOIN calendar_sync cs ON cs.appointment_id = a.id
            WHERE a.lead_id = ? ORDER BY a.scheduled_for DESC`,
         )
         .all(id),
@@ -240,8 +251,24 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       callback_due_at: z.string().max(40).nullish(),
       appointment_at: z.string().max(40).nullish(),
       note: z.string().max(10000).nullish(),
+      /** Put the appointment on Google Calendar (default: yes, when connected). */
+      calendar: z.object({ add: z.boolean(), source_lead_id: z.string().max(40).nullish() }).nullish(),
     }).parse(req.body);
-    return logManualCall(db, { ...b, lead_id: id });
+    const { calendar: cal, ...input } = b;
+    const toCalendar = b.outcome_code === 'appointment' && !!b.appointment_at && cal?.add !== false && google.connected();
+    // Checked before saving the call, so a missing lead ID doesn't leave a booked call with no calendar event.
+    const sourceLeadId = toCalendar ? resolveSourceLeadId(db, id, cal?.source_lead_id) : null;
+    const r = db.transaction(() => {
+      const res = logManualCall(db, { ...input, lead_id: id });
+      if (!sourceLeadId || res.duplicate) return { ...res, calendar: null as string | null };
+      saveSourceLeadId(db, id, sourceLeadId);
+      const appt = db.prepare('SELECT id FROM appointment WHERE set_on_call_id = ?').get(res.call_id) as { id: string } | undefined;
+      if (!appt) return { ...res, calendar: null };
+      queueAppointment(db, appt.id, { note: b.note ?? null, sourceLeadId });
+      return { ...res, calendar: 'queued' };
+    })();
+    if (r.calendar) calendar.kick();
+    return r;
   });
 
   app.post('/api/calls/:id/outcomes', async (req) => {

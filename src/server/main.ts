@@ -9,6 +9,8 @@ import { Updates, readBuildInfo } from './updates.js';
 import { DraftWorker } from './domain/drafts.js';
 import { Secrets } from './ai/settings.js';
 import { runBackupCheckIfDue } from './http/reportRoutes.js';
+import { GoogleCalendar } from './calendar/google.js';
+import { CalendarWorker } from './calendar/sync.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 
@@ -24,11 +26,15 @@ async function main() {
   const updates = new Updates(process.env.MPCRM_APP_DIR ? path.resolve(process.env.MPCRM_APP_DIR) : null, build);
   const secrets = Secrets.inDataDir(config.dataDir);
   const drafts = new DraftWorker(db, secrets);
-  const app = await buildApp({ db, config, token, webDir, logger: true, updates, drafts, secrets });
+  const google = new GoogleCalendar(db, secrets);
+  let app: Awaited<ReturnType<typeof buildApp>>;
+  const calendar = new CalendarWorker(db, google, { log: (msg, extra) => app?.log.warn(extra as object, msg) });
+  app = await buildApp({ db, config, token, webDir, logger: true, updates, drafts, secrets, google, calendar });
 
   const pidFile = path.join(config.dataDir, 'server.pid');
   fs.writeFileSync(pidFile, String(process.pid), { mode: 0o600 });
   const shutdown = async () => {
+    calendar.stop();
     await app.close();
     db.close();
     fs.rmSync(pidFile, { force: true });
@@ -40,6 +46,8 @@ async function main() {
   await app.listen({ host: config.host, port: config.port });
   // Carry on reading any PDF import that was in progress when the app stopped.
   drafts.resumeAll();
+  // Keep appointments on Google Calendar and put your notes on Unitrust's events (checks once a minute).
+  calendar.start();
   // Once a week, check that the newest backup restores cleanly into a scratch copy.
   const checkBackups = () => {
     try {
