@@ -561,10 +561,12 @@ function LogCall({
   const activeNumbers = useMemo(() => (meta?.numbers ?? []).filter((n) => n.status !== 'retired'), [meta]);
   const defaultNumber = useMemo(() => {
     const pref = d.state?.preferred_number_id;
-    if (pref && activeNumbers.some((n) => n.id === pref)) return { id: pref, why: d.appointments.length ? 'number this appointment was set from' : 'number last used with this lead' };
+    if (pref && activeNumbers.some((n) => n.id === pref)) {
+      return { id: pref, why: d.appointments.length ? 'number this appointment was set from' : 'number last used with this lead', known: true };
+    }
     const last = store(LAST_NUMBER_KEY);
-    if (last && activeNumbers.some((n) => n.id === last)) return { id: last, why: 'your last used number' };
-    return { id: activeNumbers[0]?.id ?? '', why: activeNumbers[0] ? 'first active number' : '' };
+    if (last && activeNumbers.some((n) => n.id === last)) return { id: last, why: 'your last used number', known: false };
+    return { id: activeNumbers[0]?.id ?? '', why: activeNumbers[0] ? 'first active number' : '', known: false };
   }, [d, activeNumbers]);
 
   const [numberId, setNumberId] = useState(restore?.numberId ?? defaultNumber.id);
@@ -679,14 +681,25 @@ function LogCall({
       <div className="row">
         <label className="field">
           <span>Caller ID used {defaultNumber.why && !changed && <em>({defaultNumber.why})</em>}</span>
-          <select value={numberId} onChange={(e) => setNumberId(e.target.value)} style={changed ? { borderColor: 'var(--warn)' } : undefined}>
+          <select value={numberId} onChange={(e) => setNumberId(e.target.value)} style={changed && defaultNumber.known ? { borderColor: 'var(--warn)' } : undefined}>
             <option value="">Not recorded</option>
             {activeNumbers.map((n) => (
               <option key={n.id} value={n.id}>{n.label ? `${n.label} · ` : ''}{fmtPhone(n.e164)}{n.reputation_status === 'flagged' ? ' (flagged)' : ''}</option>
             ))}
           </select>
         </label>
-        {changed && <span className="warn">Different from the suggested number.</span>}
+        {changed && defaultNumber.known && (() => {
+          // Only worth a warning when this lead already knows you by another number.
+          const n = activeNumbers.find((x) => x.id === defaultNumber.id);
+          const shown = n ? `${n.label ? `${n.label}, ` : ''}${fmtPhone(n.e164)}` : 'another number';
+          return (
+            <span className="warn">
+              {d.appointments.length
+                ? `This lead's appointment was set from ${shown}. They may not pick up a number they don't know.`
+                : `You've reached this lead before from ${shown}. They may not pick up a number they don't know.`}
+            </span>
+          );
+        })()}
         {activeNumbers.length === 0 && <span className="help">Add your numbers on the Numbers page to record which one you used.</span>}
       </div>
       <div className="outcomes" role="group" aria-label="Outcome">
