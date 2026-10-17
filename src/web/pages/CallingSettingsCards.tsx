@@ -236,9 +236,12 @@ export function ScriptsCard() {
   const save = useSave();
   const s = calling?.settings;
   const [v, setV] = useState(s?.scripts ?? { agent_name: '', opener: '', voicemail: '' });
+  // Reload the boxes only when the saved scripts themselves change, so saving another setting
+  // never wipes what you're typing here.
+  const savedJson = JSON.stringify(s?.scripts ?? null);
   useEffect(() => {
     if (s) setV(s.scripts);
-  }, [s?.scripts]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [savedJson]); // eslint-disable-line react-hooks/exhaustive-deps
   if (!s) return null;
   const dirty = JSON.stringify(v) !== JSON.stringify(s.scripts);
   return (

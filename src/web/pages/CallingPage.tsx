@@ -278,7 +278,8 @@ export function CallingPage() {
   }, [saved, toast, bumpStats, loadQueue, loadDetail]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const modalOpen = editing || !!qr;
-  useEffect(() => {
+  // Layout effect, so the keys act on the lead you can see as soon as it's on screen.
+  useLayoutEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (modalOpen || isTyping(e) || e.ctrlKey || e.metaKey || e.altKey) return;
       const act = (a: Parameters<typeof isAction>[1]) => isAction(keys, a, e);
