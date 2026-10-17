@@ -9,6 +9,7 @@ import { groupWhere, searchWhere } from './groupFilter.js';
 // A lead skipped today drops to the end of its group. Dead, invalid and booked leads never appear
 // (appointments are followed up in Unitrust).
 // A callback from a spreadsheet has no time; it counts as due now ("needs a time").
+// A callback for a day with no set time ("any time") is due from the start of that day.
 // You can limit the queue to counties, to area codes (every county linked to that code), or both.
 
 export type QueueBucket = 'callback_due' | 'new' | 'retry';
@@ -30,6 +31,8 @@ export interface QueueItem {
   skipped_today: boolean;
   /** Callback with no time. */
   needs_time: boolean;
+  /** Callback for a day, any time that day. */
+  any_time: boolean;
 }
 
 export interface QueueFilter {
@@ -51,7 +54,7 @@ export function getQueue(
     .prepare(
       `SELECT l.id lead_id, trim(coalesce(l.first_name,'') || ' ' || coalesce(l.last_name,'')) name, l.phone_e164, l.state,
               l.time_zone, l.county, l.county_key, b.name batch_name, b.imported_at batch_imported_at, r.row_number,
-              s.status, s.attempts_total, s.last_call_at, s.last_outcome_code, s.next_due_at, s.skipped_at
+              s.status, s.attempts_total, s.last_call_at, s.last_outcome_code, s.next_due_at, s.due_any_time, s.skipped_at
        FROM lead l JOIN lead_state s ON s.lead_id = l.id JOIN import_batch b ON b.id = l.batch_id
        JOIN import_row r ON r.id = l.import_row_id
        WHERE s.status IN ('new','retry','callback') AND ${group.sql} AND ${search.sql}`,
@@ -79,6 +82,7 @@ export function getQueue(
       time_zone: r.time_zone, county: r.county, county_key: r.county_key, batch_name: r.batch_name, attempts_total: r.attempts_total, last_call_at: r.last_call_at,
       last_outcome_code: r.last_outcome_code, next_due_at: r.next_due_at, skipped_today: skippedToday,
       needs_time: undated && bucket === 'callback_due',
+      any_time: bucket === 'callback_due' && r.due_any_time === 1,
       _sort: [order, skippedToday ? 1 : 0, ...within],
     });
   }

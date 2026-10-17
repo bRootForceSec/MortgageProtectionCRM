@@ -54,15 +54,15 @@ beforeEach(async () => {
 
   log('Amy', 'no_answer', { dial_count: 2 });
   log('Amy', 'appointment', { talk_seconds: 300 });
-  log('Ben', 'not_interested', { talk_seconds: 60 });
-  log('Cal', 'vm_left');
+  log('Ben', 'no_appt', { talk_seconds: 60 });
+  log('Cal', 'no_answer');
   log('Dee', 'appointment', { talk_seconds: 400 });
   log('Eve', 'callback', { talk_seconds: 30, callback_due_at: new Date(Date.now() + 7200_000).toISOString() });
   // An undone call counts nowhere.
   const undone = log('Eve', 'appointment');
   voidCall(db, undone.call_id);
   // A call recreated from a spreadsheet: no real time.
-  const sheetCall = log('Cal', 'busy');
+  const sheetCall = log('Cal', 'no_answer');
   db.prepare("UPDATE call SET time_known = 0, history_source = 'sheet' WHERE id = ?").run(sheetCall.call_id);
 });
 
@@ -70,7 +70,7 @@ describe('reports', () => {
   it('counts activity, leaving out undone calls and calls with no real time', () => {
     const r = buildReport(db, range());
     expect(r.activity).toMatchObject({
-      attempts: 6, dials: 7, leads_called: 5, contacts: 4, conversations: 2, talk_minutes: 13, appointments: 2, callbacks: 1, dnc_requests: 0, untimed_calls: 1,
+      attempts: 6, dials: 7, leads_called: 5, contacts: 4, conversations: 2, talk_minutes: 13, appointments: 2, callbacks: 1, bad_numbers: 0, untimed_calls: 1,
     });
     expect(r.by_hour.reduce((n, h) => n + h.dials, 0)).toBe(7);
   });
@@ -111,7 +111,7 @@ describe('reports', () => {
             : d.rows.length;
       expect(got, `${section} ${key} ${metric}`).toBe(value);
     };
-    for (const m of ['attempts', 'dials', 'leads_called', 'contacts', 'conversations', 'talk_minutes', 'appointments', 'callbacks', 'dnc_requests']) {
+    for (const m of ['attempts', 'dials', 'leads_called', 'contacts', 'conversations', 'talk_minutes', 'appointments', 'callbacks', 'bad_numbers']) {
       check('activity', 'all', m, (r.activity as any)[m]);
     }
     for (const h of r.by_hour) for (const m of ['dials', 'attempts', 'contacts', 'appointments']) check('by_hour', String(h.hour), m, (h as any)[m]);

@@ -108,6 +108,7 @@ export interface QueueItem {
   county: string | null;
   county_key: string | null;
   needs_time: boolean;
+  any_time?: boolean;
 }
 
 export interface QueueResponse {
@@ -125,6 +126,8 @@ export interface Outcome {
   entered_at: string;
   superseded: number;
   callback_due_at: string | null;
+  /** 1 when the callback is for a day, any time that day. */
+  callback_any_time?: number;
   note: string | null;
 }
 

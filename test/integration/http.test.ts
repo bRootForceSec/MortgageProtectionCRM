@@ -89,13 +89,13 @@ describe('import and work a lead over HTTP', () => {
     const num = (await app.inject({ method: 'POST', url: '/api/numbers', headers: write, payload: { number: '(614) 555-0199', label: 'Sideline' } })).json();
     const log = await app.inject({
       method: 'POST', url: `/api/leads/${leadId}/calls`, headers: write,
-      payload: { idempotency_key: 'abc-12345678', outcome_code: 'vm_left', from_number_id: num.id, note: 'left VM' },
+      payload: { idempotency_key: 'abc-12345678', outcome_code: 'no_answer', from_number_id: num.id, note: 'left VM' },
     });
     expect(log.statusCode).toBe(200);
 
     const detail = (await app.inject({ url: `/api/leads/${leadId}`, headers: auth })).json();
     expect(detail.calls).toHaveLength(1);
-    expect(detail.calls[0].current_outcome.outcome_code).toBe('vm_left');
+    expect(detail.calls[0].current_outcome.outcome_code).toBe('no_answer');
     expect(detail.calls[0].from_label).toBe('Sideline');
     expect(detail.notes[0].body).toBe('left VM');
 

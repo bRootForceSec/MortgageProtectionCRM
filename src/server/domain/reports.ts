@@ -30,6 +30,7 @@ interface CallRow {
   outcome_code: string | null;
   outcome_label: string | null;
   contact: number;
+  outcome_group: string | null;
   from_label: string | null;
   county_key: string | null;
   county: string | null;
@@ -59,7 +60,7 @@ interface LeadRow {
   booked: boolean;
 }
 
-type CallMetric = 'attempts' | 'dials' | 'leads_called' | 'contacts' | 'conversations' | 'talk_minutes' | 'appointments' | 'callbacks' | 'dnc_requests';
+type CallMetric = 'attempts' | 'dials' | 'leads_called' | 'contacts' | 'conversations' | 'talk_minutes' | 'appointments' | 'callbacks' | 'bad_numbers';
 type LeadMetric = 'leads' | 'cost' | 'never_called' | 'reached' | 'booked';
 
 const CALL_METRICS: Record<CallMetric, { pred: (c: CallRow) => boolean; val: (cs: CallRow[]) => number }> = {
@@ -71,7 +72,7 @@ const CALL_METRICS: Record<CallMetric, { pred: (c: CallRow) => boolean; val: (cs
   talk_minutes: { pred: (c) => (c.talk_seconds ?? 0) > 0, val: (cs) => Math.round(cs.reduce((n, c) => n + (c.talk_seconds ?? 0), 0) / 60) },
   appointments: { pred: (c) => c.outcome_code === 'appointment', val: (cs) => cs.length },
   callbacks: { pred: (c) => c.outcome_code === 'callback', val: (cs) => cs.length },
-  dnc_requests: { pred: (c) => c.outcome_code === 'dnc_request', val: (cs) => cs.length },
+  bad_numbers: { pred: (c) => c.outcome_group === 'invalid', val: (cs) => cs.length },
 };
 const LEAD_METRICS: Record<LeadMetric, { pred: (l: LeadRow) => boolean; val: (ls: LeadRow[]) => number }> = {
   leads: { pred: () => true, val: (ls) => ls.length },
@@ -117,7 +118,7 @@ function loadCalls(db: DB, f: ReportFilter, range: boolean): CallRow[] {
   return db
     .prepare(
       `SELECT c.id, c.lead_id, c.requested_at, c.time_known, c.dial_count, c.talk_seconds, c.to_e164, c.channel,
-              o.outcome_code, oc.label outcome_label, coalesce(oc.counts_as_human_contact, 0) contact, n.label from_label,
+              o.outcome_code, oc.label outcome_label, coalesce(oc.counts_as_human_contact, 0) contact, oc.grp outcome_group, n.label from_label,
               l.county_key, l.county, l.state, l.lead_type, l.batch_id, l.time_zone,
               trim(coalesce(l.first_name,'') || ' ' || coalesce(l.last_name,'')) lead_name
        FROM call c JOIN lead l ON l.id = c.lead_id
@@ -179,7 +180,7 @@ interface Group {
   leads: LeadRow[];
 }
 
-const ACTIVITY: CallMetric[] = ['dials', 'attempts', 'leads_called', 'contacts', 'conversations', 'talk_minutes', 'appointments', 'callbacks', 'dnc_requests'];
+const ACTIVITY: CallMetric[] = ['dials', 'attempts', 'leads_called', 'contacts', 'conversations', 'talk_minutes', 'appointments', 'callbacks', 'bad_numbers'];
 const HOURLY: CallMetric[] = ['dials', 'attempts', 'contacts', 'appointments'];
 const COUNTY_CALLS: CallMetric[] = ['dials', 'attempts', 'contacts', 'appointments'];
 const BATCH_LEADS: LeadMetric[] = ['leads', 'cost', 'never_called', 'reached', 'booked'];
@@ -392,7 +393,7 @@ export function reportSheets(r: ReturnType<typeof buildReport>) {
         { item: 'Dials', value: a.dials }, { item: 'Attempts', value: a.attempts }, { item: 'Leads called', value: a.leads_called },
         { item: 'Contacts', value: a.contacts }, { item: 'Conversations (2+ min)', value: a.conversations },
         { item: 'Talk minutes', value: a.talk_minutes }, { item: 'Appointments', value: a.appointments },
-        { item: 'Callbacks', value: a.callbacks }, { item: 'Do-not-call requests', value: a.dnc_requests },
+        { item: 'Callbacks', value: a.callbacks }, { item: 'Bad numbers', value: a.bad_numbers },
         { item: 'Attempts per lead', value: a.attempts_per_lead == null ? '' : Math.round(a.attempts_per_lead * 100) / 100 },
         { item: 'Dials per contact', value: a.dials_per_contact == null ? '' : Math.round(a.dials_per_contact * 100) / 100 },
       ],

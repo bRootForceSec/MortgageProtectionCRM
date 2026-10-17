@@ -74,7 +74,7 @@ export function registerCallingRoutes(app: FastifyInstance, deps: { db: DB; kde?
     // Callbacks still due before the end of the range, including ones you missed earlier and ones with no time yet.
     const callbacks = db
       .prepare(
-        `SELECT l.id lead_id, ${name} name, l.phone_e164, l.time_zone, l.county, l.state, s.next_due_at due_at
+        `SELECT l.id lead_id, ${name} name, l.phone_e164, l.time_zone, l.county, l.state, s.next_due_at due_at, s.due_any_time = 1 any_time
          FROM lead_state s JOIN lead l ON l.id = s.lead_id
          WHERE s.status = 'callback' AND (s.next_due_at IS NULL OR s.next_due_at < @to) AND ${group.sql}
          ORDER BY s.next_due_at IS NULL, s.next_due_at`,

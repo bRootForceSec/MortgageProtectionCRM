@@ -28,7 +28,7 @@ test.afterAll(() => {
   server?.kill('SIGTERM');
 });
 
-test('import a sheet, log calls by keyboard, and move a lead to the dead pile', async ({ page }) => {
+test('import a sheet, log calls by keyboard, and set a callback', async ({ page }) => {
   page.on('dialog', (d) => void d.accept());
   await page.goto(launchUrl);
   await expect(page).toHaveURL(`http://127.0.0.1:${PORT}/`);
@@ -68,11 +68,11 @@ test('import a sheet, log calls by keyboard, and move a lead to the dead pile', 
   await expect(page.getByLabel('Queue').locator('li')).toHaveCount(4);
   await page.screenshot({ path: 'test-results/calling.png', fullPage: true });
 
-  // Voicemail left: press 2 then Enter. Enter saves and moves straight on to the next lead.
+  // Talked, no appt: press 2 then Enter. Enter saves and moves straight on to the next lead.
   await page.keyboard.press('2');
   await page.keyboard.press('Enter');
   await expect(page.locator('.undo-bar')).toContainText(`Saved for ${first}`);
-  await expect(page.locator('.undo-bar')).toContainText('Voicemail, message left');
+  await expect(page.locator('.undo-bar')).toContainText('Talked, no appt');
   await expect(page.locator('.lead-name')).not.toHaveText(first);
   const second = await page.locator('.lead-name').innerText();
   await expect(page.locator('.topbar .stats')).toContainText('Calls 1');
@@ -83,29 +83,36 @@ test('import a sheet, log calls by keyboard, and move a lead to the dead pile', 
   // Up arrow goes back to it and shows the call; down comes back.
   await page.keyboard.press('ArrowUp');
   await expect(page.locator('.lead-name')).toHaveText(first);
-  await expect(page.getByLabel('History').getByText('Voicemail, message left')).toBeVisible();
+  await expect(page.getByLabel('History').getByText('Talked, no appt')).toBeVisible();
   await expect(page.getByLabel('History').getByText('from Sideline')).toBeVisible();
   await page.keyboard.press('ArrowDown');
   await expect(page.locator('.lead-name')).toHaveText(second);
 
-  // Do-not-call request → dead pile (confirm dialog auto-accepted), then on to the next lead.
-  await page.keyboard.press('d');
-  await expect(page.getByRole('button', { name: /Do-not-call request/ })).toHaveClass(/active/);
+  // Callback: 5 opens the picker on "tomorrow"; a blank time means any time that day.
+  await page.keyboard.press('5');
+  await expect(page.locator('#callback-day')).toBeFocused();
+  await expect(page.locator('#callback-day')).toHaveValue('tomorrow');
+  await expect(page.locator('.callback-picker')).toContainText(/Tomorrow, .*any time/);
+  await page.keyboard.press('Enter');
+  await expect(page.locator('.undo-bar')).toContainText('Callback');
+  await expect(page.locator('.lead-name')).not.toHaveText(second);
+
+  // Undo brings the lead back with the callback filled in; change it to Friday at 2 and save again.
+  await page.keyboard.press('z');
+  await expect(page.locator('.lead-name')).toHaveText(second);
+  await expect(page.getByRole('group', { name: 'Outcome' }).getByRole('button', { name: /Callback/ })).toHaveClass(/active/);
+  await expect(page.locator('.callback-picker')).toContainText(/Tomorrow, .*any time/);
+  await page.locator('#callback-day').fill('fri');
+  await page.locator('#callback-time').fill('2');
+  await expect(page.locator('.callback-picker')).toContainText(/Fri.* at 2:00/);
   await page.keyboard.press('Enter');
   await expect(page.locator('.lead-name')).not.toHaveText(second);
   await expect(page.getByLabel('Queue')).toContainText('2 to go · 2 done');
-  await expect(page.getByLabel('Queue').locator('li')).toHaveCount(4);
   await page.keyboard.press('ArrowUp');
-  await expect(page.getByText('This lead is in the dead pile.')).toBeVisible();
+  await expect(page.getByLabel('History').getByText(/call back \w+ \d+, 2:00 PM/)).toBeVisible();
   await page.keyboard.press('ArrowDown');
   await expect(page.locator('.lead-name')).not.toHaveText(second);
   const current = await page.locator('.lead-name').innerText();
-
-  // The dead pile lists it.
-  await page.getByRole('button', { name: 'Leads' }).click();
-  await page.getByRole('button', { name: 'Dead pile' }).click();
-  await expect(page.locator('table.grid tbody tr')).toHaveCount(1);
-  await expect(page.locator('table.grid tbody tr')).toContainText(second);
 
   // Refresh keeps the list and the selected lead.
   await page.getByRole('button', { name: 'Calling' }).click();
@@ -145,7 +152,7 @@ test('dial counter, undo, remapped keys, QR dialing, scripts and lead edits', as
   await page.keyboard.press('Escape');
   await page.keyboard.press('3');
   await page.keyboard.press('Enter');
-  await expect(page.locator('.undo-bar')).toContainText('Voicemail, no message · 2 dials');
+  await expect(page.locator('.undo-bar')).toContainText('Appt set · 2 dials');
   await expect(page.locator('.lead-name')).not.toHaveText(lead);
   const next = await page.locator('.lead-name').innerText();
 

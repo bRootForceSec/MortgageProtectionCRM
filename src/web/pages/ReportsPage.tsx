@@ -125,7 +125,7 @@ export function ReportsPage() {
             <div><b><N section="activity" metric="talk_minutes" title="Calls with talk time">{a.talk_minutes}</N></b>Talk minutes</div>
             <div><b><N section="activity" metric="appointments" title="Appointments set">{a.appointments}</N></b>Appointments</div>
             <div><b><N section="activity" metric="callbacks" title="Callbacks">{a.callbacks}</N></b>Callbacks</div>
-            <div><b><N section="activity" metric="dnc_requests" title="Do-not-call requests">{a.dnc_requests}</N></b>Do-not-call</div>
+            <div><b><N section="activity" metric="bad_numbers" title="Bad numbers">{a.bad_numbers}</N></b>Bad numbers</div>
             <div><b>{num(a.attempts_per_lead)}</b>Attempts per lead</div>
             <div><b>{num(a.dials_per_contact)}</b>Dials per contact</div>
           </div>

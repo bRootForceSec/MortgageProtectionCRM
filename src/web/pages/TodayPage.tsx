@@ -27,14 +27,21 @@ export function TodayPage() {
   }, [toast, groupParams.counties, groupParams.area_codes]); // eslint-disable-line react-hooks/exhaustive-deps
   if (!a) return null;
   const now = new Date().toISOString();
-  const overdue = a.callbacks.filter((c) => c.due_at && c.due_at < now);
-  const later = a.callbacks.filter((c) => c.due_at && c.due_at >= now);
+  const startOfToday = new Date(new Date().setHours(0, 0, 0, 0)).toISOString();
+  const anyTimeToday = (c: AgendaItem) => !!c.any_time && !!c.due_at && c.due_at >= startOfToday;
+  const anyTime = a.callbacks.filter(anyTimeToday);
+  const overdue = a.callbacks.filter((c) => c.due_at && c.due_at < now && !anyTimeToday(c));
+  const later = a.callbacks.filter((c) => c.due_at && c.due_at >= now && !anyTimeToday(c));
   const noTime = a.callbacks.filter((c) => !c.due_at);
 
   const Row = ({ i, at }: { i: AgendaItem; at: string | null | undefined }) => (
     <tr>
-      <td className="nowrap">{at ? fmtDateTime(at) : <span className="warn">no time yet</span>}</td>
-      <td className="nowrap muted">{theirTime(at, i.time_zone) && `${theirTime(at, i.time_zone)} theirs`}</td>
+      <td className="nowrap">
+        {!at ? <span className="warn">no time yet</span>
+          : i.any_time ? (anyTimeToday(i) ? 'Any time today' : `${new Date(at).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}, any time`)
+            : fmtDateTime(at)}
+      </td>
+      <td className="nowrap muted">{!i.any_time && theirTime(at, i.time_zone) && `${theirTime(at, i.time_zone)} theirs`}</td>
       <td>{i.name || '(no name)'}</td>
       <td className="nowrap">{fmtPhone(i.phone_e164)}</td>
       <td>{i.county ? `${i.county} Co., ${i.state ?? ''}` : i.state ?? ''}</td>
@@ -62,9 +69,10 @@ export function TodayPage() {
       </div>
       {empty && <p className="muted">No callbacks today.</p>}
       <Section title="Callbacks you missed" items={overdue} />
+      <Section title="Callbacks any time today" items={anyTime} />
       <Section title="Callbacks later today" items={later} />
       <Section title="Callbacks that need a time" items={noTime} />
-      <p className="help">You get a desktop alert and a sound when a callback comes due, while the app is open. Change that in Settings. Appointments are followed up in Unitrust.</p>
+      <p className="help">You get a desktop alert and a sound when a callback with a time comes due, while the app is open. Change that in Settings. Appointments are followed up in Unitrust.</p>
     </div>
   );
 }

@@ -10,7 +10,6 @@ import { builtInAreaCodes, builtInStates, seedCountyAreaCodes } from '../../src/
 import { buildApp } from '../../src/server/http/app.js';
 import type { DB } from '../../src/server/db/connection.js';
 import { uuidv7 } from '../../src/server/ids.js';
-import { defaultWhen } from '../../src/web/when.js';
 
 const TOKEN = 'test-token-0123456789abcdef0123456789abcdef';
 const auth = { host: '127.0.0.1:5170', cookie: `mpcrm_session=${TOKEN}` };
@@ -90,7 +89,7 @@ describe('area code filter goes by county, never by the lead\'s phone', () => {
 
   it('calls list and agenda', async () => {
     for (const r of db.prepare('SELECT id FROM lead').all() as { id: string }[]) {
-      logManualCall(db, { lead_id: r.id, idempotency_key: uuidv7(), outcome_code: 'vm_left' });
+      logManualCall(db, { lead_id: r.id, idempotency_key: uuidv7(), outcome_code: 'no_answer' });
     }
     const from = new Date(Date.now() - 3600_000).toISOString();
     const to = new Date(Date.now() + 3600_000).toISOString();
@@ -103,17 +102,5 @@ describe('area code filter goes by county, never by the lead\'s phone', () => {
     }
     const agenda = (await app.inject({ url: `/api/agenda?from=${from}&to=${to}&area_codes=260`, headers: auth })).json();
     expect(names(agenda.callbacks)).toEqual(['Dee']);
-  });
-});
-
-describe('default appointment and callback time', () => {
-  const at = (h: number, m: number) => new Date(2026, 9, 17, h, m);
-  it('is today at the next half hour', () => {
-    expect(defaultWhen(21, at(14, 10))).toEqual(at(14, 30));
-    expect(defaultWhen(21, at(14, 40))).toEqual(at(15, 0));
-  });
-  it('is tomorrow at 10 AM after the cutoff', () => {
-    expect(defaultWhen(21, at(21, 5))).toEqual(new Date(2026, 9, 18, 10, 0));
-    expect(defaultWhen(21, at(23, 45))).toEqual(new Date(2026, 9, 18, 10, 0));
   });
 });

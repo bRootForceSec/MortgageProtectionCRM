@@ -46,7 +46,7 @@ describe('dial counter', () => {
       payload: { idempotency_key: key(), outcome_code: 'no_answer', dial_count: 3 },
     });
     expect(r.statusCode).toBe(200);
-    logManualCall(db, { lead_id: jane, idempotency_key: key(), outcome_code: 'vm_left' });
+    logManualCall(db, { lead_id: jane, idempotency_key: key(), outcome_code: 'no_answer' });
     const from = new Date(Date.now() - 3600_000).toISOString();
     const to = new Date(Date.now() + 3600_000).toISOString();
     const s = (await app.inject({ url: `/api/stats/today?from=${from}&to=${to}`, headers: auth })).json();

@@ -31,6 +31,7 @@ export interface LeadFacts {
     marks_dead: number;
     counts_as_human_contact: number;
     callback_due_at: string | null;
+    callback_any_time?: number;
     lead_effect?: string | null;
   }[];
   actions: { action: 'skip' | 'mark_dead' | 'restore'; created_at: string }[];
@@ -42,6 +43,8 @@ export interface DerivedLeadState {
   last_call_at: string | null;
   last_outcome_code: string | null;
   next_due_at: string | null;
+  /** A callback for a day with no set time: next_due_at is the start of that day. */
+  due_any_time: number;
   skipped_at: string | null;
   preferred_number_id: string | null;
 }
@@ -80,6 +83,7 @@ export function deriveLeadState(f: LeadFacts, now: string, retryGap = RETRY_GAP_
     last_outcome_code: lastOutcome?.outcome_code ?? null,
     skipped_at: skippedAt,
     preferred_number_id: preferred,
+    due_any_time: 0,
   };
 
   if (deadAt && deadAt > lastRestore) return { ...base, status: 'dead', next_due_at: null };
@@ -92,7 +96,8 @@ export function deriveLeadState(f: LeadFacts, now: string, retryGap = RETRY_GAP_
   }
   // A callback without a time (e.g. "reschedule" in a spreadsheet) is due now and listed as "needs a time".
   if (lastOutcome?.outcome_code === 'callback') {
-    return { ...base, status: 'callback', next_due_at: lastOutcome.callback_due_at ?? null };
+    const due = lastOutcome.callback_due_at ?? null;
+    return { ...base, status: 'callback', next_due_at: due, due_any_time: due && lastOutcome.callback_any_time ? 1 : 0 };
   }
   if (!lastCall) return { ...base, status: 'new', next_due_at: null };
   const lastTimed = timedCalls.at(-1);
@@ -111,7 +116,7 @@ export function loadLeadFacts(db: DB, leadId: string): LeadFacts {
       .all(leadId) as LeadFacts['calls'],
     outcomes: db
       .prepare(
-        `SELECT o.call_id, o.entered_at, o.outcome_code, c.grp, c.marks_dead, c.counts_as_human_contact, o.callback_due_at, c.lead_effect
+        `SELECT o.call_id, o.entered_at, o.outcome_code, c.grp, c.marks_dead, c.counts_as_human_contact, o.callback_due_at, o.callback_any_time, c.lead_effect
          FROM call_outcome o
          JOIN call ON call.id = o.call_id
          JOIN outcome_code c ON c.code = o.outcome_code
@@ -123,11 +128,12 @@ export function loadLeadFacts(db: DB, leadId: string): LeadFacts {
 }
 
 const UPSERT = `INSERT INTO lead_state (lead_id, status, attempts_total, last_call_at, last_outcome_code, next_due_at,
-    skipped_at, preferred_number_id, derived_at)
-  VALUES (@lead_id, @status, @attempts_total, @last_call_at, @last_outcome_code, @next_due_at, @skipped_at,
+    due_any_time, skipped_at, preferred_number_id, derived_at)
+  VALUES (@lead_id, @status, @attempts_total, @last_call_at, @last_outcome_code, @next_due_at, @due_any_time, @skipped_at,
     @preferred_number_id, @derived_at)
   ON CONFLICT(lead_id) DO UPDATE SET status = excluded.status, attempts_total = excluded.attempts_total,
     last_call_at = excluded.last_call_at, last_outcome_code = excluded.last_outcome_code, next_due_at = excluded.next_due_at,
+    due_any_time = excluded.due_any_time,
     skipped_at = excluded.skipped_at, preferred_number_id = excluded.preferred_number_id, derived_at = excluded.derived_at`;
 
 /** Recomputes lead_state for the given leads (all leads when omitted). */
