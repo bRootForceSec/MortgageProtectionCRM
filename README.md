@@ -10,8 +10,13 @@ A small calling CRM that runs on your own computer. It imports your lead spreads
 - **Import** Excel (.xlsx) or CSV lead sheets. Columns are matched automatically and the match is remembered for next time. Rows with something missing open in the same review window. Rows that were blanked out to take them off the call list are discarded. A Status column becomes call history, dated "on or before" the day the file was saved, because the real time isn't known. Re-importing the same file adds nothing.
 - **Lead types and prices** (FE-A to E, editable in Settings). Pick the type per order, and change it for some leads when an order is mixed. Each lead keeps its own price.
 - **Counties**: every lead is grouped by the county it was bought for, taken from the lead page or else the address. In Settings, link each county to one or more area codes. On the Calling page, pick counties, area codes, or both.
-- **Calling queue**: due callbacks first, then past appointments, then new leads (newest batch first), then retries 4 hours after the last attempt. Skip moves a lead to the end for today.
+- **Calling queue**: due callbacks first, then past appointments, then new leads (newest batch first), then retries after the gap you set (4 hours unless you change it). Skip moves a lead to the end for today.
 - **Logging a call**: press the outcome key (`1`–`9`, `0`, `H`, `D`) then `Enter`. Each call is its own record with the caller ID you used. Changing an outcome later keeps the earlier one.
+- **Dial counter**: dialed twice before giving up? Press `→` (or `>`) for each extra dial and `←` (or `<`) to take one off. It's still one attempt; your numbers count both attempts and dials.
+- **Undo**: press `Z` within 10 seconds of saving to take the call back and fix it. Older mistakes: "Undo call" in the history. An undone call stays in the history, marked, and stops counting.
+- **Dialing from the computer**: `C` copies the number, shows a QR code to scan with your phone (Android or iPhone), or sends the number to your phone with KDE Connect. It also starts a call timer that fills in talk minutes when someone picks up.
+- **Today page**: callbacks and appointments for the day, in your time and the lead's. A desktop alert and a sound when one comes due.
+- **Scripts** (`P`) with the lead's name, lender and address filled in, **daily goals** in the top bar, **edit a lead** (`E`) with the old values kept, and **keyboard shortcuts you can change** in Settings.
 - **Dead pile**: a do-not-call request moves the lead out of the queue. Everything else goes back into rotation. "Disconnected / invalid" and "wrong person" go to an invalid pile. Both piles can be restored.
 - **Duplicates**: leads with the same phone are linked (not merged), so co-borrowers and re-bought leads stay separate. Importing a phone number that's in the dead pile is flagged in the preview.
 - **Export** any table to CSV or Excel, or everything as one Excel file or a full JSON dump. Health fields are left out unless you tick the box.
@@ -70,18 +75,26 @@ Choose it in **Settings**. The default is **Claude with your Claude account**: i
 
 1. **Import** a batch: Import → pick the lead type → choose the PDF or spreadsheet → (spreadsheet: check the column matches → Continue) → check any leads that need a look → set types for mixed orders → Import.
 2. **Numbers**: add your Sideline number once, so each call records which caller ID you used.
-3. **Calling**: the current lead's details are in the middle. Press `C` to copy the phone number, dial on your phone, then press the outcome key and `Enter`. Press `N` for the next lead.
+3. **Calling**: the current lead's details are in the middle. Press `C` to dial (copy, QR code or KDE Connect, chosen in Settings), call on your phone, press `→` for each extra dial, then press the outcome key and `Enter`. Press `N` for the next lead, or turn on "go to the next lead by itself" in Settings.
+
+These are the starting keys. Change any of them in **Settings → Keyboard shortcuts**.
 
 | Key | Action |
 |---|---|
 | `N` | Next lead |
 | `S` | Skip this lead for today |
 | `/` | Search by name or phone |
-| `C` | Copy phone number |
+| `C` | Dial: copy the number, show a QR code, or send it to your phone |
+| `→` `>` / `←` `<` | One more / one less dial |
+| `Z` | Undo the call you just saved (10 seconds) |
 | `A` | Write a note |
+| `E` | Edit the lead |
+| `P` | Show or hide your script |
 | `1`–`9`, `0`, `H`, `D` | Pick an outcome |
 | `Enter` | Save the outcome |
 | `Esc` | Cancel |
+
+**KDE Connect** (optional): `sudo dnf install kdeconnectd`, install KDE Connect on your phone, pair them, then pick your phone in Settings → Calling. The phone opens its dialer with the number filled in. If the phone asks which app to use, pick Sideline.
 
 Callbacks and appointments ask for a time. A do-not-call request asks you to confirm before the lead moves to the dead pile.
 

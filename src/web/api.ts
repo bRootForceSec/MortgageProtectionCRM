@@ -140,6 +140,10 @@ export interface Call {
   /** 0 for history from a spreadsheet's Status column: the real time isn't known. */
   time_known: number;
   history_source: string | null;
+  /** Dials made for this one attempt. */
+  dial_count: number;
+  /** Set when you undid this call. */
+  voided_at: string | null;
   outcomes: Outcome[];
   current_outcome: Outcome | null;
   events: { id: string; source: string; event_type: string; occurred_at: string; received_at: string }[];
