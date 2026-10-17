@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { api, fmtDateTime, fmtPhone } from '../api';
 import { useApp } from '../App';
 import { LeadModal } from './LeadsPage';
+import { GroupPicker, useGroups } from '../components/GroupPicker';
 
 function dayRange(dateStr: string) {
   const start = new Date(`${dateStr}T00:00:00`);
@@ -15,11 +16,16 @@ export function CallsPage() {
   const [outcome, setOutcome] = useState('');
   const [rows, setRows] = useState<any[]>([]);
   const [open, setOpen] = useState<string | null>(null);
+  const [search, setSearch] = useState('');
+  const [groups, setGroups, groupParams] = useGroups();
   const label = (c: string | null) => meta?.outcome_codes.find((o) => o.code === c)?.label ?? c ?? 'no outcome';
 
   useEffect(() => {
-    api.get<any[]>('/calls', { ...dayRange(day), outcome: outcome || undefined }).then(setRows);
-  }, [day, outcome, open]);
+    const t = setTimeout(() => {
+      api.get<any[]>('/calls', { ...dayRange(day), outcome: outcome || undefined, search, ...groupParams }).then(setRows);
+    }, search ? 200 : 0);
+    return () => clearTimeout(t);
+  }, [day, outcome, open, search, groupParams.counties, groupParams.area_codes]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const counts = rows.reduce<Record<string, number>>((m, r) => ((m[r.outcome_code ?? 'none'] = (m[r.outcome_code ?? 'none'] ?? 0) + 1), m), {});
 
@@ -33,6 +39,8 @@ export function CallsPage() {
             {meta?.outcome_codes.map((o) => <option key={o.code} value={o.code}>{o.label}</option>)}
           </select>
         </label>
+        <label className="field"><span>Search</span><input placeholder="Name, county, phone, or area code" value={search} onChange={(e) => setSearch(e.target.value)} /></label>
+        <GroupPicker groups={groups} onChange={setGroups} />
         <span className="muted">{rows.length} call(s)</span>
         <a className="btn small" href="/api/export/calls.csv" style={{ marginLeft: 'auto' }}>Export all calls (CSV)</a>
       </div>
@@ -42,11 +50,11 @@ export function CallsPage() {
         </div>
       )}
       <table className="grid">
-        <thead><tr><th>Time</th><th>Lead</th><th>To</th><th>Caller ID</th><th>Outcome</th><th>Talk</th><th>Source</th></tr></thead>
+        <thead><tr><th>Time</th><th>Lead</th><th>County</th><th>To</th><th>Caller ID</th><th>Outcome</th><th>Talk</th><th>Source</th></tr></thead>
         <tbody>
           {rows.map((r) => (
             <tr key={r.id} className="click" onClick={() => r.lead_id && setOpen(r.lead_id)}>
-              <td>{fmtDateTime(r.requested_at)}</td><td>{r.lead_name}</td><td>{fmtPhone(r.to_e164)}</td>
+              <td>{fmtDateTime(r.requested_at)}</td><td>{r.lead_name}</td><td>{r.county ?? ''}</td><td>{fmtPhone(r.to_e164)}</td>
               <td>{r.from_label ?? ''} {fmtPhone(r.from_e164)}</td><td>{label(r.outcome_code)}</td>
               <td>{r.talk_seconds != null ? `${Math.round(r.talk_seconds / 60)} min` : ''}</td>
               <td className="muted">{r.channel === 'manual_log' ? 'logged by hand' : r.channel}</td>

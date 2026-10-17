@@ -1,0 +1,1117 @@
+{
+ "about": "Usual area codes for each county, by state. Codes are listed with the main one first and overlays after their base code. Built from Wikipedia's area-code articles, WorldAtlas and zip-codes.com county lists, checked town by town where counties are split. To add a state, add it under 'states' with every county's codes; per-state notes explain split or uncertain counties.",
+ "states": {
+  "IN": {
+   "Adams": [
+    "260"
+   ],
+   "Allen": [
+    "260"
+   ],
+   "Bartholomew": [
+    "812",
+    "930"
+   ],
+   "Benton": [
+    "765",
+    "219"
+   ],
+   "Blackford": [
+    "765"
+   ],
+   "Boone": [
+    "317",
+    "463",
+    "765"
+   ],
+   "Brown": [
+    "812",
+    "930"
+   ],
+   "Carroll": [
+    "765",
+    "574"
+   ],
+   "Cass": [
+    "574"
+   ],
+   "Clark": [
+    "812",
+    "930"
+   ],
+   "Clay": [
+    "812",
+    "930"
+   ],
+   "Clinton": [
+    "765"
+   ],
+   "Crawford": [
+    "812",
+    "930"
+   ],
+   "Daviess": [
+    "812",
+    "930"
+   ],
+   "DeKalb": [
+    "260"
+   ],
+   "Dearborn": [
+    "812",
+    "930"
+   ],
+   "Decatur": [
+    "812",
+    "930"
+   ],
+   "Delaware": [
+    "765"
+   ],
+   "Dubois": [
+    "812",
+    "930"
+   ],
+   "Elkhart": [
+    "574"
+   ],
+   "Fayette": [
+    "765"
+   ],
+   "Floyd": [
+    "812",
+    "930"
+   ],
+   "Fountain": [
+    "765"
+   ],
+   "Franklin": [
+    "765",
+    "812",
+    "930"
+   ],
+   "Fulton": [
+    "574"
+   ],
+   "Gibson": [
+    "812",
+    "930"
+   ],
+   "Grant": [
+    "765"
+   ],
+   "Greene": [
+    "812",
+    "930"
+   ],
+   "Hamilton": [
+    "317",
+    "463",
+    "765"
+   ],
+   "Hancock": [
+    "317",
+    "463",
+    "765"
+   ],
+   "Harrison": [
+    "812",
+    "930"
+   ],
+   "Hendricks": [
+    "317",
+    "463",
+    "765"
+   ],
+   "Henry": [
+    "765"
+   ],
+   "Howard": [
+    "765"
+   ],
+   "Huntington": [
+    "260"
+   ],
+   "Jackson": [
+    "812",
+    "930"
+   ],
+   "Jasper": [
+    "219"
+   ],
+   "Jay": [
+    "260",
+    "765"
+   ],
+   "Jefferson": [
+    "812",
+    "930"
+   ],
+   "Jennings": [
+    "812",
+    "930"
+   ],
+   "Johnson": [
+    "317",
+    "463",
+    "812",
+    "930"
+   ],
+   "Knox": [
+    "812",
+    "930"
+   ],
+   "Kosciusko": [
+    "574",
+    "260"
+   ],
+   "LaGrange": [
+    "260"
+   ],
+   "LaPorte": [
+    "219"
+   ],
+   "Lake": [
+    "219"
+   ],
+   "Lawrence": [
+    "812",
+    "930"
+   ],
+   "Madison": [
+    "765",
+    "317",
+    "463"
+   ],
+   "Marion": [
+    "317",
+    "463"
+   ],
+   "Marshall": [
+    "574"
+   ],
+   "Martin": [
+    "812",
+    "930"
+   ],
+   "Miami": [
+    "765",
+    "574"
+   ],
+   "Monroe": [
+    "812",
+    "930"
+   ],
+   "Montgomery": [
+    "765"
+   ],
+   "Morgan": [
+    "765",
+    "317",
+    "463",
+    "812",
+    "930"
+   ],
+   "Newton": [
+    "219"
+   ],
+   "Noble": [
+    "260"
+   ],
+   "Ohio": [
+    "812",
+    "930"
+   ],
+   "Orange": [
+    "812",
+    "930"
+   ],
+   "Owen": [
+    "812",
+    "930"
+   ],
+   "Parke": [
+    "765"
+   ],
+   "Perry": [
+    "812",
+    "930"
+   ],
+   "Pike": [
+    "812",
+    "930"
+   ],
+   "Porter": [
+    "219"
+   ],
+   "Posey": [
+    "812",
+    "930"
+   ],
+   "Pulaski": [
+    "574",
+    "219"
+   ],
+   "Putnam": [
+    "765"
+   ],
+   "Randolph": [
+    "765"
+   ],
+   "Ripley": [
+    "812",
+    "930"
+   ],
+   "Rush": [
+    "765"
+   ],
+   "Scott": [
+    "812",
+    "930"
+   ],
+   "Shelby": [
+    "317",
+    "463",
+    "765",
+    "812",
+    "930"
+   ],
+   "Spencer": [
+    "812",
+    "930"
+   ],
+   "St. Joseph": [
+    "574"
+   ],
+   "Starke": [
+    "574",
+    "219"
+   ],
+   "Steuben": [
+    "260"
+   ],
+   "Sullivan": [
+    "812",
+    "930"
+   ],
+   "Switzerland": [
+    "812",
+    "930"
+   ],
+   "Tippecanoe": [
+    "765"
+   ],
+   "Tipton": [
+    "765"
+   ],
+   "Union": [
+    "765"
+   ],
+   "Vanderburgh": [
+    "812",
+    "930"
+   ],
+   "Vermillion": [
+    "765"
+   ],
+   "Vigo": [
+    "812",
+    "930"
+   ],
+   "Wabash": [
+    "260",
+    "765"
+   ],
+   "Warren": [
+    "765"
+   ],
+   "Warrick": [
+    "812",
+    "930"
+   ],
+   "Washington": [
+    "812",
+    "930"
+   ],
+   "Wayne": [
+    "765"
+   ],
+   "Wells": [
+    "260"
+   ],
+   "White": [
+    "574",
+    "219",
+    "765"
+   ],
+   "Whitley": [
+    "260"
+   ]
+  },
+  "MI": {
+   "Alcona": [
+    "989"
+   ],
+   "Alger": [
+    "906"
+   ],
+   "Allegan": [
+    "269",
+    "616"
+   ],
+   "Alpena": [
+    "989"
+   ],
+   "Antrim": [
+    "231"
+   ],
+   "Arenac": [
+    "989"
+   ],
+   "Baraga": [
+    "906"
+   ],
+   "Barry": [
+    "269",
+    "616",
+    "517"
+   ],
+   "Bay": [
+    "989"
+   ],
+   "Benzie": [
+    "231"
+   ],
+   "Berrien": [
+    "269"
+   ],
+   "Branch": [
+    "517"
+   ],
+   "Calhoun": [
+    "269",
+    "517"
+   ],
+   "Cass": [
+    "269"
+   ],
+   "Charlevoix": [
+    "231"
+   ],
+   "Cheboygan": [
+    "231"
+   ],
+   "Chippewa": [
+    "906"
+   ],
+   "Clare": [
+    "989"
+   ],
+   "Clinton": [
+    "989",
+    "517"
+   ],
+   "Crawford": [
+    "989"
+   ],
+   "Delta": [
+    "906"
+   ],
+   "Dickinson": [
+    "906"
+   ],
+   "Eaton": [
+    "517",
+    "269"
+   ],
+   "Emmet": [
+    "231"
+   ],
+   "Genesee": [
+    "810"
+   ],
+   "Gladwin": [
+    "989"
+   ],
+   "Gogebic": [
+    "906"
+   ],
+   "Grand Traverse": [
+    "231"
+   ],
+   "Gratiot": [
+    "989"
+   ],
+   "Hillsdale": [
+    "517"
+   ],
+   "Houghton": [
+    "906"
+   ],
+   "Huron": [
+    "989"
+   ],
+   "Ingham": [
+    "517"
+   ],
+   "Ionia": [
+    "616",
+    "517",
+    "989"
+   ],
+   "Iosco": [
+    "989"
+   ],
+   "Iron": [
+    "906"
+   ],
+   "Isabella": [
+    "989"
+   ],
+   "Jackson": [
+    "517"
+   ],
+   "Kalamazoo": [
+    "269"
+   ],
+   "Kalkaska": [
+    "231"
+   ],
+   "Kent": [
+    "616"
+   ],
+   "Keweenaw": [
+    "906"
+   ],
+   "Lake": [
+    "231"
+   ],
+   "Lapeer": [
+    "810"
+   ],
+   "Leelanau": [
+    "231"
+   ],
+   "Lenawee": [
+    "517"
+   ],
+   "Livingston": [
+    "810",
+    "517",
+    "734"
+   ],
+   "Luce": [
+    "906"
+   ],
+   "Mackinac": [
+    "906",
+    "231"
+   ],
+   "Macomb": [
+    "586",
+    "810"
+   ],
+   "Manistee": [
+    "231"
+   ],
+   "Marquette": [
+    "906"
+   ],
+   "Mason": [
+    "231"
+   ],
+   "Mecosta": [
+    "231",
+    "989"
+   ],
+   "Menominee": [
+    "906"
+   ],
+   "Midland": [
+    "989"
+   ],
+   "Missaukee": [
+    "231"
+   ],
+   "Monroe": [
+    "734"
+   ],
+   "Montcalm": [
+    "989",
+    "616",
+    "231"
+   ],
+   "Montmorency": [
+    "989"
+   ],
+   "Muskegon": [
+    "231",
+    "616"
+   ],
+   "Newaygo": [
+    "231"
+   ],
+   "Oakland": [
+    "248",
+    "947",
+    "810"
+   ],
+   "Oceana": [
+    "231"
+   ],
+   "Ogemaw": [
+    "989"
+   ],
+   "Ontonagon": [
+    "906"
+   ],
+   "Osceola": [
+    "231"
+   ],
+   "Oscoda": [
+    "989"
+   ],
+   "Otsego": [
+    "989"
+   ],
+   "Ottawa": [
+    "616"
+   ],
+   "Presque Isle": [
+    "989"
+   ],
+   "Roscommon": [
+    "989"
+   ],
+   "Saginaw": [
+    "989"
+   ],
+   "Sanilac": [
+    "810",
+    "989"
+   ],
+   "Schoolcraft": [
+    "906"
+   ],
+   "Shiawassee": [
+    "989",
+    "517",
+    "810"
+   ],
+   "St. Clair": [
+    "810"
+   ],
+   "St. Joseph": [
+    "269"
+   ],
+   "Tuscola": [
+    "989"
+   ],
+   "Van Buren": [
+    "269"
+   ],
+   "Washtenaw": [
+    "734"
+   ],
+   "Wayne": [
+    "313",
+    "679",
+    "734",
+    "248",
+    "947"
+   ],
+   "Wexford": [
+    "231"
+   ]
+  },
+  "OH": {
+   "Adams": [
+    "937",
+    "326"
+   ],
+   "Allen": [
+    "419",
+    "567"
+   ],
+   "Ashland": [
+    "419",
+    "567"
+   ],
+   "Ashtabula": [
+    "440",
+    "436"
+   ],
+   "Athens": [
+    "740",
+    "220"
+   ],
+   "Auglaize": [
+    "419",
+    "567"
+   ],
+   "Belmont": [
+    "740",
+    "220"
+   ],
+   "Brown": [
+    "937",
+    "326"
+   ],
+   "Butler": [
+    "513",
+    "283"
+   ],
+   "Carroll": [
+    "330",
+    "234"
+   ],
+   "Champaign": [
+    "937",
+    "326"
+   ],
+   "Clark": [
+    "937",
+    "326"
+   ],
+   "Clermont": [
+    "513",
+    "283"
+   ],
+   "Clinton": [
+    "937",
+    "326"
+   ],
+   "Columbiana": [
+    "330",
+    "234"
+   ],
+   "Coshocton": [
+    "740",
+    "220"
+   ],
+   "Crawford": [
+    "419",
+    "567"
+   ],
+   "Cuyahoga": [
+    "216",
+    "440",
+    "436"
+   ],
+   "Darke": [
+    "937",
+    "326"
+   ],
+   "Defiance": [
+    "419",
+    "567"
+   ],
+   "Delaware": [
+    "740",
+    "220",
+    "614",
+    "380"
+   ],
+   "Erie": [
+    "419",
+    "567",
+    "440",
+    "436"
+   ],
+   "Fairfield": [
+    "740",
+    "220",
+    "614",
+    "380"
+   ],
+   "Fayette": [
+    "740",
+    "220"
+   ],
+   "Franklin": [
+    "614",
+    "380"
+   ],
+   "Fulton": [
+    "419",
+    "567"
+   ],
+   "Gallia": [
+    "740",
+    "220"
+   ],
+   "Geauga": [
+    "440",
+    "436"
+   ],
+   "Greene": [
+    "937",
+    "326"
+   ],
+   "Guernsey": [
+    "740",
+    "220"
+   ],
+   "Hamilton": [
+    "513",
+    "283"
+   ],
+   "Hancock": [
+    "419",
+    "567"
+   ],
+   "Hardin": [
+    "419",
+    "567",
+    "937",
+    "326"
+   ],
+   "Harrison": [
+    "740",
+    "220"
+   ],
+   "Henry": [
+    "419",
+    "567"
+   ],
+   "Highland": [
+    "937",
+    "326"
+   ],
+   "Hocking": [
+    "740",
+    "220"
+   ],
+   "Holmes": [
+    "330",
+    "234"
+   ],
+   "Huron": [
+    "419",
+    "567",
+    "440",
+    "436"
+   ],
+   "Jackson": [
+    "740",
+    "220"
+   ],
+   "Jefferson": [
+    "740",
+    "220"
+   ],
+   "Knox": [
+    "740",
+    "220"
+   ],
+   "Lake": [
+    "440",
+    "436"
+   ],
+   "Lawrence": [
+    "740",
+    "220"
+   ],
+   "Licking": [
+    "740",
+    "220"
+   ],
+   "Logan": [
+    "937",
+    "326"
+   ],
+   "Lorain": [
+    "440",
+    "436"
+   ],
+   "Lucas": [
+    "419",
+    "567"
+   ],
+   "Madison": [
+    "740",
+    "220",
+    "614",
+    "380",
+    "937",
+    "326"
+   ],
+   "Mahoning": [
+    "330",
+    "234"
+   ],
+   "Marion": [
+    "740",
+    "220"
+   ],
+   "Medina": [
+    "330",
+    "234"
+   ],
+   "Meigs": [
+    "740",
+    "220"
+   ],
+   "Mercer": [
+    "419",
+    "567"
+   ],
+   "Miami": [
+    "937",
+    "326"
+   ],
+   "Monroe": [
+    "740",
+    "220"
+   ],
+   "Montgomery": [
+    "937",
+    "326"
+   ],
+   "Morgan": [
+    "740",
+    "220"
+   ],
+   "Morrow": [
+    "419",
+    "567"
+   ],
+   "Muskingum": [
+    "740",
+    "220"
+   ],
+   "Noble": [
+    "740",
+    "220"
+   ],
+   "Ottawa": [
+    "419",
+    "567"
+   ],
+   "Paulding": [
+    "419",
+    "567"
+   ],
+   "Perry": [
+    "740",
+    "220"
+   ],
+   "Pickaway": [
+    "740",
+    "220"
+   ],
+   "Pike": [
+    "740",
+    "220"
+   ],
+   "Portage": [
+    "330",
+    "234"
+   ],
+   "Preble": [
+    "937",
+    "326"
+   ],
+   "Putnam": [
+    "419",
+    "567"
+   ],
+   "Richland": [
+    "419",
+    "567"
+   ],
+   "Ross": [
+    "740",
+    "220",
+    "937",
+    "326"
+   ],
+   "Sandusky": [
+    "419",
+    "567"
+   ],
+   "Scioto": [
+    "740",
+    "220"
+   ],
+   "Seneca": [
+    "419",
+    "567"
+   ],
+   "Shelby": [
+    "937",
+    "326"
+   ],
+   "Stark": [
+    "330",
+    "234"
+   ],
+   "Summit": [
+    "330",
+    "234"
+   ],
+   "Trumbull": [
+    "330",
+    "234",
+    "440",
+    "436"
+   ],
+   "Tuscarawas": [
+    "330",
+    "234",
+    "740",
+    "220"
+   ],
+   "Union": [
+    "937",
+    "326",
+    "614",
+    "380",
+    "740",
+    "220"
+   ],
+   "Van Wert": [
+    "419",
+    "567"
+   ],
+   "Vinton": [
+    "740",
+    "220"
+   ],
+   "Warren": [
+    "513",
+    "283",
+    "937",
+    "326"
+   ],
+   "Washington": [
+    "740",
+    "220"
+   ],
+   "Wayne": [
+    "330",
+    "234"
+   ],
+   "Williams": [
+    "419",
+    "567"
+   ],
+   "Wood": [
+    "419",
+    "567"
+   ],
+   "Wyandot": [
+    "419",
+    "567"
+   ]
+  }
+ },
+ "notes": {
+  "IN": {
+   "source": "Wikipedia: Area code 219 https://en.wikipedia.org/wiki/Area_code_219 ; Area codes 317 and 463 https://en.wikipedia.org/wiki/Area_codes_317_and_463 ; List of Indiana area codes https://en.wikipedia.org/wiki/List_of_Indiana_area_codes ; town infoboxes (e.g. Earl Park, Medaryville, San Pierre, Silver Lake, Flora, Macy, Monon, Brookston, LaFontaine, Dunkirk, Atlanta, Edinburgh, Oldenburg, Morristown, Martinsville, Mooresville, Lebanon, Zionsville, Ingalls, North Salem, Wilkinson, Rosedale, Ligonier); WorldAtlas https://www.worldatlas.com/na/us/in/area-code-765.html (and -260, -574, -317, -812); zip-codes.com https://www.zip-codes.com/area-code/area-code-765.asp (and -219, -260, -317, -574, -812, -930); town hall phone numbers bentoncounty.in.gov/earl-park, morgantown.in.gov",
+   "counties": {
+    "Benton": "Mostly 765 (Fowler, Oxford); Earl Park exchange is 219 (219-474).",
+    "Boone": "Zionsville/Whitestown are 317/463 (most population); Lebanon, Thorntown, Jamestown are 765.",
+    "Carroll": "Delphi/Burlington 765; Flora and Camden exchanges are 574.",
+    "Cass": "All 574 (Logansport, Galveston, Royal Center). zip-codes.com also lists Cass under 765 via ZIP overlap; treated as negligible.",
+    "Franklin": "Brookville/Laurel/Metamora 765; Oldenburg and the Batesville-area SE corner are 812.",
+    "Hamilton": "Almost all 317/463; Atlanta exchange (far north) is 765.",
+    "Hancock": "Almost all 317/463 (Greenfield, Fortville, New Palestine); Wilkinson/Shirley area is 765.",
+    "Hendricks": "Almost all 317/463; North Salem area (NW corner) is 765.",
+    "Jay": "Portland/Pennville 260; Dunkirk and Redkey are 765.",
+    "Johnson": "Mostly 317/463 (Greenwood, Franklin); Edinburgh (south edge) is 812.",
+    "Kosciusko": "Mostly 574 (Warsaw); Silver Lake area (SE) is 260.",
+    "LaPorte": "All 219 per sources checked (incl. Kingsford Heights). WorldAtlas/zip-codes.com also list LaPorte under 574, likely a ZIP spillover near New Carlisle; consider adding 574 if leads show it.",
+    "Madison": "Mostly 765 (Anderson, Elwood, Pendleton); Ingalls area (SW) is 317.",
+    "Miami": "Mostly 765 (Peru, Converse); Macy area (north) is 574.",
+    "Morgan": "Split roughly evenly: Martinsville and south/west 765; Mooresville/Monrovia (NE) 317/463; Morgantown (SE) 812. Main-code order is uncertain.",
+    "Noble": "All 260 (Ligonier confirmed 260). WorldAtlas lists Noble under 574 too; likely a ZIP spillover.",
+    "Parke": "All 765 (Rockville, Rosedale). WorldAtlas lists Parke under 812; possible sliver near Vigo line.",
+    "Pulaski": "Winamac/Monterey 574; Medaryville and Francesville (west) are 219.",
+    "Randolph": "All 765. zip-codes.com lists Randolph under 260 too (ZIP overlap near Jay line).",
+    "Shelby": "Shelbyville/Fairland 317/463; Morristown/Waldron 765; Edinburgh fringe 812.",
+    "Starke": "Knox/North Judson 574; San Pierre (SW) is 219.",
+    "Union": "All 765 (Liberty). zip-codes.com lists Union under 812 too (ZIP overlap).",
+    "Vigo": "Terre Haute 812/930. WorldAtlas lists Vigo under 765 too; possible sliver along the Parke/Clay line.",
+    "Wabash": "Wabash/North Manchester 260; LaFontaine (south) is 765.",
+    "White": "Monticello/Burnettsville 574; Monon, Reynolds, Wolcott, Chalmers 219; Brookston 765.",
+    "Marion": "463 and 930 are all-services overlays of 317 and 812; they apply wherever 317/812 do."
+   }
+  },
+  "MI": {
+   "source": "Wikipedia: List of Michigan area codes https://en.wikipedia.org/wiki/List_of_Michigan_area_codes ; Area code 616 https://en.wikipedia.org/wiki/Area_code_616 ; Area code 734 https://en.wikipedia.org/wiki/Area_code_734 ; Area codes 248 and 947 https://en.wikipedia.org/wiki/Area_codes_248_and_947 ; Area code 810 https://en.wikipedia.org/wiki/Area_code_810 ; Area code 586 https://en.wikipedia.org/wiki/Area_code_586 ; Area codes 313 and 679 https://en.wikipedia.org/wiki/Area_codes_313_and_679 ; Area code 906 https://en.wikipedia.org/wiki/Area_code_906 ; Area code 269/517/989/231 articles (city lists only). WorldAtlas county lists: https://www.worldatlas.com/na/us/mi/area-code-989.html , https://www.worldatlas.com/na/us/mi/area-code-231.html , https://www.worldatlas.com/na/us/mi/area-code-517.html , https://worldatlas.com/na/us/mi/area-code-810.html ; zip-codes.com per-county area-code lists, e.g. https://www.zip-codes.com/county/MI-BARRY.asp (ZIP-based, so cross-border ZIPs give spurious slivers; used as a cross-check only). Rate-centre-level assignments for split counties come from knowledge of individual exchanges and were not checked against NANPA rate-centre data.",
+   "counties": {
+    "Mackinac": "906 for the county; Bois Blanc Township (Bois Blanc Island) is served from Cheboygan on 231 (per Wikipedia 'Area code 906').",
+    "Muskegon": "Mostly 231; Wikipedia lists parts of Muskegon County in 616 (e.g. Casnovia/Ravenna-area rate centres near the Kent/Ottawa line).",
+    "Mecosta": "Mostly 231 (Big Rapids, Morley, Stanwood); eastern part (e.g. Remus, Barryton) is 989.",
+    "Clinton": "989 for St. Johns, Ovid, Elsie, Fowler, Westphalia; 517 for DeWitt, Bath and the Lansing/Grand Ledge fringe. Roughly even split; 989 covers more area.",
+    "Shiawassee": "989 for Owosso/Corunna/Durand; 517 for Laingsburg, Perry, Morrice; 810 for the Byron area in the southeast.",
+    "Montcalm": "Three-way split: 989 for Stanton, Edmore, Lakeview, Carson City, Sheridan; 616 for Greenville; 231 for Howard City. 989 has the most area, but Greenville is the largest city.",
+    "Ionia": "616 for Ionia, Belding, Lake Odessa, Saranac; 517 for Portland; 989 for the northeast corner (Muir/Lyons/Pewamo area).",
+    "Kent": "616 for the whole county per Wikipedia. zip-codes.com also lists 269 (cross-border ZIPs in the south) and worldatlas lists 231 (the northern edge); treat these as slivers at most.",
+    "Ottawa": "616 for the whole county per Wikipedia. zip-codes.com also lists 231 through a cross-border ZIP in the north; a sliver at most.",
+    "Allegan": "Mostly 269 (Allegan, Otsego, Plainwell, Wayland); the northern townships near Holland/Dorr are 616.",
+    "Barry": "Mostly 269 (Hastings, Delton); the north (Middleville, Freeport) is 616; Nashville/Woodland in the east is 517.",
+    "Calhoun": "269 for Battle Creek and Marshall; 517 for Albion, Homer, Tekonsha.",
+    "Eaton": "Mostly 517; the southwest (Bellevue, Olivet) is 269.",
+    "Livingston": "810 for Brighton/Hartland; 517 for Howell/Fowlerville; 734 for Pinckney (Pinckney is listed in Wikipedia 'Area code 734'). 810 and 517 are close in size.",
+    "Lenawee": "517 per Wikipedia. zip-codes.com also lists 734 through a cross-border ZIP near Manchester/Washtenaw; a sliver at most.",
+    "Genesee": "Wikipedia says all of Genesee County is 810. zip-codes.com also lists 248 and 989 through cross-border ZIPs; slivers at most.",
+    "Lapeer": "Wikipedia says all of Lapeer County is 810. worldatlas/zip-codes.com also list 989 (northern edge); a sliver at most.",
+    "St. Clair": "810 (Port Huron). The Wikipedia 810 article says only 'portions' of St. Clair County are 810. The southwest corner (Ira Twp/Anchorville/Fair Haven) may be in 586; unverified, and zip-codes.com lists only 810.",
+    "Sanilac": "Mostly 810 (Sandusky, Croswell, Brown City); the northwest (Marlette area) is 989.",
+    "Oakland": "248 with its 947 overlay for nearly the whole county; some north Oakland rate centres are 810 (parts of Holly, Groveland, Brandon, Addison, Oxford per Wikipedia 'Area code 810'). zip-codes.com also lists 313/586/734 through cross-border ZIPs; those are not added.",
+    "Macomb": "586 for the county; the northern rate centres (e.g. Memphis) are 810; a very small part of Shelby Twp is 248. zip-codes.com lists 586 and 810.",
+    "Wayne": "313 with its 679 overlay (679 added 2025) for Detroit and the inner suburbs; 734 for the western and Downriver areas (Livonia, Canton, Plymouth, Westland, Taylor, Romulus); 248/947 for parts of Livonia and Northville.",
+    "Osceola": "231 per Wikipedia and worldatlas. zip-codes.com also lists 989 through a cross-border ZIP on the east edge; a sliver at most.",
+    "Otsego": "989 (Gaylord). zip-codes.com also lists 231 on the western edge (Elmira area); a sliver.",
+    "Kalkaska": "231. zip-codes.com also lists 989 on the eastern edge; a sliver.",
+    "Cheboygan": "231. zip-codes.com also lists 989 (the Onaway-area southeast edge) and 906 (likely a Mackinac/Bois Blanc ZIP artifact); not added.",
+    "Emmet": "231. zip-codes.com also lists 906, probably an artifact of a ZIP that crosses the Straits; not added.",
+    "Charlevoix": "231. zip-codes.com also lists 906, probably a ZIP artifact; not added.",
+    "Branch": "517 (Coldwater, Bronson, Quincy, Union City).",
+    "Washtenaw": "734 for the whole county per Wikipedia.",
+    "Monroe": "734 for the whole county per Wikipedia."
+   }
+  },
+  "OH": {
+   "source": "Wikipedia: List of Ohio area codes (https://en.wikipedia.org/wiki/List_of_Ohio_area_codes); Area codes 937 and 326 (https://en.wikipedia.org/wiki/Area_codes_937_and_326); Area codes 440 and 436 (https://en.wikipedia.org/wiki/Area_codes_440_and_436); Area codes 614 and 380 (https://en.wikipedia.org/wiki/Area_codes_614_and_380); Area codes 740 and 220 (https://en.wikipedia.org/wiki/Area_codes_740_and_220); Area codes 330 and 234 (https://en.wikipedia.org/wiki/Area_codes_330_and_234); Area codes 419 and 567 (https://en.wikipedia.org/wiki/Area_codes_419_and_567); WorldAtlas county lists (https://www.worldatlas.com/na/us/oh/area-code-740.html, https://www.worldatlas.com/na/us/oh/area-code-330.html, https://www.worldatlas.com/na/us/oh/area-code-937.html); zip-codes.com ZIP-based county lists (https://www.zip-codes.com/area-code/area-code-{216,283,330,419,440,513,567,614,740,937}.asp); plus general knowledge of rate-center boundaries. Small slivers that only the ZIP-based lists show are mentioned in notes, not added to the county's codes.",
+   "counties": {
+    "Ashtabula": "Wikipedia says 'almost all' of Ashtabula is 440/436. The rest is a southern sliver (330). Not included.",
+    "Brown": "Main code 937/326. ZIP-based data also lists 513 for the western edge (near Clermont). Treat it as a sliver; not included.",
+    "Butler": "Main code 513/283. ZIP-based data lists 937 for a small northern edge. Not included.",
+    "Carroll": "Main code 330/234. WorldAtlas lists Carroll under 740 too, probably a southern sliver. Not included.",
+    "Clermont": "Main code 513/283. ZIP-based data lists 937 for a small eastern edge. Not included.",
+    "Clinton": "Main code 937/326. ZIP-based data lists 740 for a sliver. Not included.",
+    "Coshocton": "Main code 740/220. WorldAtlas lists Coshocton under 330 too, probably a northern sliver. Not included.",
+    "Cuyahoga": "Cleveland and inner-ring suburbs are 216; outer western, southern and far-eastern suburbs (e.g. Parma, Strongsville, Westlake, Solon) are 440/436.",
+    "Darke": "Main code 937/326. ZIP-based data lists 419/567 for the northern edge. Not included.",
+    "Delaware": "Delaware city, Sunbury, Galena and most of the county are 740/220; southern areas near Columbus (Powell, parts of Westerville and Dublin) are 614/380. By population the 614 share is large, so consider whether 614 should be listed first.",
+    "Erie": "Sandusky and most of the county are 419/567; Vermilion and the eastern edge are 440/436.",
+    "Fairfield": "Lancaster and most of the county are 740/220; Pickerington and the NW corner next to Columbus are 614/380.",
+    "Franklin": "All 614/380. Wikipedia notes that some Franklin County rate centers 'primarily use 614', so a few edge exchanges may be 740. Left out.",
+    "Hardin": "Kenton and Ada are 419/567; the SE corner (e.g. Mount Victory) is 937/326. Wikipedia lists Hardin among the 937 counties.",
+    "Holmes": "Main code 330/234. ZIP data lists 419/567 for the western edge (near Ashland County). Not included.",
+    "Huron": "Norwalk and most of the county are 419/567; the NE corner (Wakeman area) is 440/436.",
+    "Jefferson": "Main code 740/220. ZIP data lists 330 for the northern edge. Not included.",
+    "Knox": "Main code 740/220. ZIP-based data lists 419/567 for the northern edge. Not included.",
+    "Lorain": "Wikipedia says 'almost all' of Lorain is 440/436. The remainder is presumably a southern-edge sliver. Not included.",
+    "Madison": "London and Mount Sterling are 740/220; the NE (Plain City, West Jefferson) is 614/380. Wikipedia lists Madison as part of 937, probably a small western sliver. Uncertain.",
+    "Marion": "Main code 740/220. ZIP-based data lists 419/567 for the northern edge. Not included.",
+    "Medina": "Main code 330/234. ZIP data lists 440 for the northern edge. Not included.",
+    "Morrow": "Main code 419/567 (Mount Gilead, Cardington). Some southern/eastern exchanges may be 740. Uncertain.",
+    "Pickaway": "Main code 740/220. ZIP-based data lists 614 for the northern edge. Not included.",
+    "Portage": "Main code 330/234. ZIP data lists 440 for the northern edge. Not included.",
+    "Preble": "Main code 937/326. ZIP-based data lists 513/283 for the southern edge. Not included.",
+    "Ross": "Chillicothe and most of the county are 740/220. Wikipedia lists Ross in 937, so a small western edge exchange may be 937/326. Uncertain.",
+    "Scioto": "Main code 740/220. Wikipedia and WorldAtlas also list Scioto under 937, probably a western-edge exchange. Not included; uncertain.",
+    "Trumbull": "Warren and most of the county are 330/234; the NW part (e.g. Bristolville and Mesopotamia area) is 440/436.",
+    "Tuscarawas": "New Philadelphia and Dover are 330/234; the south and west (Newcomerstown, Gnadenhutten area) are 740/220.",
+    "Union": "Marysville and most of the county are 937/326; the SE edge (Plain City, Dublin/Jerome area) is 614/380, and Richwood in the NE is 740/220.",
+    "Warren": "Lebanon, Mason and the southern townships are 513/283; the north (Springboro, Franklin, Waynesville) is 937/326. The split is substantial.",
+    "Wayne": "Main code 330/234. ZIP data lists 419/567 for the western edge. Not included.",
+    "Wyandot": "Main code 419/567. WorldAtlas and ZIP data also list 740 (southern edge near Marion). Not included."
+   }
+  }
+ }
+}

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { api, fmtDateTime, fmtPhone } from '../api';
 import { useApp } from '../App';
 import { todayRange, type Agenda, type AgendaItem } from '../components/CallbackAlerts';
+import { GroupPicker, useGroups } from '../components/GroupPicker';
 
 // Today's callbacks and appointments, in your time and the lead's time.
 
@@ -17,12 +18,13 @@ function theirTime(iso: string | null | undefined, tz: string | null) {
 export function TodayPage() {
   const { openLead, toast } = useApp();
   const [a, setA] = useState<Agenda | null>(null);
+  const [groups, setGroups, groupParams] = useGroups();
   useEffect(() => {
-    const load = () => api.get<Agenda>('/agenda', todayRange()).then(setA).catch((e) => toast(e.message, 'error'));
+    const load = () => api.get<Agenda>('/agenda', { ...todayRange(), ...groupParams }).then(setA).catch((e) => toast(e.message, 'error'));
     void load();
     const t = setInterval(load, 60_000);
     return () => clearInterval(t);
-  }, [toast]);
+  }, [toast, groupParams.counties, groupParams.area_codes]); // eslint-disable-line react-hooks/exhaustive-deps
   if (!a) return null;
   const now = new Date().toISOString();
   const overdue = a.callbacks.filter((c) => c.due_at && c.due_at < now);
@@ -57,7 +59,10 @@ export function TodayPage() {
   const empty = !a.callbacks.length && !a.appointments.length;
   return (
     <div className="card">
-      <h2>Today</h2>
+      <div className="row" style={{ justifyContent: 'space-between' }}>
+        <h2>Today</h2>
+        <GroupPicker groups={groups} onChange={setGroups} />
+      </div>
       {empty && <p className="muted">No callbacks or appointments today.</p>}
       <Section title="Appointments today" items={dated} kind="appt" />
       <Section title="Callbacks you missed" items={overdue} kind="cb" />

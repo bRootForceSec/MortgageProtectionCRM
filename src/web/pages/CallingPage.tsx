@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { defaultWhen } from '../when';
 import { api, fmtMoney, fmtPhone, fmtRelative, newKey, toLocalInput, type LeadDetail, type QueueResponse, type QueueItem } from '../api';
 import { useApp } from '../App';
 import { LeadSummary, CallHistory, Notes } from '../components/LeadView';
 import { EditLead } from '../components/EditLead';
 import { DialQr } from '../components/DialQr';
+import { GroupPicker, useGroups } from '../components/GroupPicker';
 import { fillScript, isAction, isTyping, keyLabel, normKey, type KeyMap } from '../shortcuts';
 
 const BUCKETS: { key: QueueItem['bucket'] | 'all'; label: string }[] = [
@@ -15,74 +17,7 @@ const BUCKETS: { key: QueueItem['bucket'] | 'all'; label: string }[] = [
 ];
 
 const SELECTED_KEY = 'mpcrm.selectedLead';
-const GROUPS_KEY = 'mpcrm.queue.groups';
-
-interface Groups {
-  counties: string[];
-  areaCodes: string[];
-}
-interface CountyOption {
-  county_key: string;
-  name: string;
-  state: string;
-  workable: number;
-  area_codes: string[];
-}
-
-function loadGroups(): Groups {
-  try {
-    const g = JSON.parse(store(GROUPS_KEY) ?? 'null');
-    if (g && Array.isArray(g.counties) && Array.isArray(g.areaCodes)) return g;
-  } catch {
-    /* ignore */
-  }
-  return { counties: [], areaCodes: [] };
-}
-
-/** Pick which leads to work: by the county they were bought for, by area code (every county linked to it), or both. */
-function GroupPicker({ groups, onChange }: { groups: Groups; onChange: (g: Groups) => void }) {
-  const [counties, setCounties] = useState<CountyOption[]>([]);
-  useEffect(() => {
-    api.get<CountyOption[]>('/counties').then(setCounties).catch(() => {});
-  }, []);
-  if (!counties.length) return null;
-  const codes = [...new Set(counties.flatMap((c) => c.area_codes))].sort();
-  const name = (k: string) => {
-    const c = counties.find((x) => x.county_key === k);
-    return c ? `${c.name}, ${c.state}` : k.split('|').reverse().join(', ');
-  };
-  const add = (v: string) => {
-    if (v.startsWith('ac:')) onChange({ ...groups, areaCodes: [...new Set([...groups.areaCodes, v.slice(3)])] });
-    else if (v.startsWith('co:')) onChange({ ...groups, counties: [...new Set([...groups.counties, v.slice(3)])] });
-  };
-  const empty = !groups.counties.length && !groups.areaCodes.length;
-  return (
-    <div className="group-picker">
-      <select value="" onChange={(e) => add(e.target.value)} aria-label="Choose counties or area codes to call">
-        <option value="">{empty ? 'Calling: all counties' : 'Add a county or area code…'}</option>
-        {codes.length > 0 && (
-          <optgroup label="Area codes (counties linked in Settings)">
-            {codes.filter((c) => !groups.areaCodes.includes(c)).map((c) => (
-              <option key={c} value={`ac:${c}`}>{c}: {counties.filter((x) => x.area_codes.includes(c)).map((x) => x.name).join(', ')}</option>
-            ))}
-          </optgroup>
-        )}
-        <optgroup label="Counties">
-          {counties.filter((c) => !groups.counties.includes(c.county_key)).map((c) => (
-            <option key={c.county_key} value={`co:${c.county_key}`}>{c.name}, {c.state} ({c.workable})</option>
-          ))}
-        </optgroup>
-      </select>
-      {groups.areaCodes.map((c) => (
-        <span key={c} className="chip">{c}<button onClick={() => onChange({ ...groups, areaCodes: groups.areaCodes.filter((x) => x !== c) })} aria-label={`Remove ${c}`}>×</button></span>
-      ))}
-      {groups.counties.map((k) => (
-        <span key={k} className="chip">{name(k)}<button onClick={() => onChange({ ...groups, counties: groups.counties.filter((x) => x !== k) })} aria-label={`Remove ${name(k)}`}>×</button></span>
-      ))}
-      {!empty && <button className="btn small" onClick={() => onChange({ counties: [], areaCodes: [] })}>All counties</button>}
-    </div>
-  );
-}
+const LIST_KEY = 'mpcrm.worklist';
 const LAST_NUMBER_KEY = 'mpcrm.lastNumber';
 
 function store(k: string, v?: string | null) {
@@ -119,9 +54,34 @@ interface FormValues {
 interface Saved {
   callId: string;
   leadId: string;
+  name: string;
   label: string;
   dials: number;
   at: number;
+}
+
+/**
+ * Your working list: the queue as it was when you started (or last refreshed), in a fixed order.
+ * Worked leads stay in it, greyed out, so you see the list go down as you go.
+ */
+interface WorkItem extends QueueItem {
+  done?: { label: string; dials: number } | null;
+  /** A callback that came due while you were calling, added to the top. */
+  due_now?: boolean;
+}
+interface WorkList {
+  key: string;
+  items: WorkItem[];
+  built_at: string;
+}
+
+function loadList(key: string): WorkList | null {
+  try {
+    const l = JSON.parse(store(LIST_KEY) ?? 'null') as WorkList | null;
+    return l && l.key === key && Array.isArray(l.items) ? l : null;
+  } catch {
+    return null;
+  }
 }
 
 export function CallingPage() {
@@ -129,37 +89,102 @@ export function CallingPage() {
   const settings = calling?.settings;
   const [bucket, setBucket] = useState<QueueItem['bucket'] | 'all'>('all');
   const [search, setSearch] = useState('');
-  const [queue, setQueue] = useState<QueueResponse | null>(null);
+  const [debounced, setDebounced] = useState('');
+  const [counts, setCounts] = useState<QueueResponse['counts'] | null>(null);
+  const [waitingLater, setWaitingLater] = useState(0);
+  /** Leads in the queue that aren't in your list yet (new imports, retries come due). */
+  const [more, setMore] = useState(0);
+  const [groups, setGroups, groupParams] = useGroups();
+  const listKey = JSON.stringify({ bucket, search: debounced, ...groupParams });
+  const [list, setListState] = useState<WorkList | null>(() => loadList(listKey));
   const [selected, setSelected] = useState<string | null>(store(SELECTED_KEY));
   const [detail, setDetail] = useState<LeadDetail | null>(null);
-  const [groups, setGroupsState] = useState<Groups>(loadGroups);
   const [attempt, setAttempt] = useState<Attempt>(freshAttempt);
   const [restore, setRestore] = useState<{ leadId: string; values: FormValues; n: number } | null>(null);
   const [saved, setSaved] = useState<Saved | null>(null);
   const [showScript, setShowScript] = useState(store(SCRIPT_KEY) === '1');
   const [editing, setEditing] = useState(false);
   const [qr, setQr] = useState<string | null>(null);
-  const setGroups = (g: Groups) => {
-    setGroupsState(g);
-    store(GROUPS_KEY, JSON.stringify(g));
-  };
   const searchRef = useRef<HTMLInputElement>(null);
+  const listRef = useRef<HTMLUListElement>(null);
 
-  const loadQueue = useCallback(async () => {
+  useEffect(() => {
+    const t = setTimeout(() => setDebounced(search.trim()), 250);
+    return () => clearTimeout(t);
+  }, [search]);
+
+  const setList = useCallback((l: WorkList | null) => {
+    setListState(l);
+    store(LIST_KEY, l ? JSON.stringify(l) : null);
+  }, []);
+  const updateList = useCallback((f: (items: WorkItem[]) => WorkItem[]) => {
+    setListState((l) => {
+      if (!l) return l;
+      const next = { ...l, items: f(l.items) };
+      store(LIST_KEY, JSON.stringify(next));
+      return next;
+    });
+  }, []);
+
+  const select = (id: string | null) => {
+    setSelected(id);
+    store(SELECTED_KEY, id);
+  };
+
+  const fetchQueue = useCallback(async () => {
     try {
       const q = await api.get<QueueResponse>('/queue', {
         bucket: bucket === 'all' ? undefined : bucket,
-        search,
-        counties: groups.counties.join(','),
-        area_codes: groups.areaCodes.join(','),
+        search: debounced,
+        limit: '2000',
+        ...groupParams,
       });
-      setQueue(q);
+      setCounts(q.counts);
+      setWaitingLater(q.waiting_later);
       return q;
     } catch (e: any) {
       toast(e.message, 'error');
       return null;
     }
-  }, [bucket, search, toast, groups]);
+  }, [bucket, debounced, groupParams.counties, groupParams.area_codes, toast]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  /** Builds a fresh working list from the queue. Worked leads drop out; leads due again come in. */
+  const rebuild = useCallback(async () => {
+    const q = await fetchQueue();
+    if (!q) return;
+    const l: WorkList = { key: listKey, items: q.items, built_at: new Date().toISOString() };
+    setList(l);
+    setMore(0);
+    const keep = selected && l.items.some((i) => i.lead_id === selected);
+    if (!keep) select(l.items[0]?.lead_id ?? null);
+  }, [fetchQueue, listKey, selected, setList]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  /** Adds callbacks and past appointments that came due since the list was built, at the top. */
+  const mergeDue = useCallback(async () => {
+    const q = await fetchQueue();
+    if (!q) return;
+    updateList((items) => {
+      const have = new Set(items.map((i) => i.lead_id));
+      const due = q.items.filter((i) => (i.bucket === 'callback_due' || i.bucket === 'appointment_passed') && !have.has(i.lead_id));
+      setMore(q.items.filter((i) => !have.has(i.lead_id) && !due.includes(i)).length);
+      return due.length ? [...due.map((i) => ({ ...i, due_now: true })), ...items] : items;
+    });
+  }, [fetchQueue, updateList]);
+
+  // A new filter, tab or search makes a new list; the same one is kept across page changes and refreshes.
+  useEffect(() => {
+    const stored = loadList(listKey);
+    // A list with nothing left to call is rebuilt, so new imports show up without a refresh.
+    if (stored && stored.items.some((i) => !i.done)) {
+      setListState(stored);
+      void mergeDue();
+    } else void rebuild();
+  }, [listKey]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    const t = setInterval(() => void mergeDue(), 60_000);
+    return () => clearInterval(t);
+  }, [mergeDue]);
 
   const loadDetail = useCallback(async (id: string | null) => {
     if (!id) return setDetail(null);
@@ -171,17 +196,6 @@ export function CallingPage() {
       store(SELECTED_KEY, null);
     }
   }, []);
-
-  useEffect(() => {
-    const t = setTimeout(() => void loadQueue(), search ? 200 : 0);
-    return () => clearTimeout(t);
-  }, [loadQueue, search]);
-
-  useEffect(() => {
-    // Keep progress on refresh: reselect the stored lead, else the top of the queue.
-    if (!selected && queue?.items[0]) select(queue.items[0].lead_id);
-  }, [queue]); // eslint-disable-line react-hooks/exhaustive-deps
-
   useEffect(() => void loadDetail(selected), [selected, loadDetail]);
 
   // A new lead starts a new attempt, unless an undo is putting the last one back.
@@ -189,33 +203,65 @@ export function CallingPage() {
     if (restore && restore.leadId === selected) return;
     setRestore(null);
     setAttempt(freshAttempt());
+    // Keep the selected lead in view as you move with the arrow keys.
+    listRef.current?.querySelector(`[data-lead="${selected}"]`)?.scrollIntoView({ block: 'nearest' });
   }, [selected]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Opened from the Today page or a callback alert.
   useEffect(() => {
-    const f = (e: Event) => select((e as CustomEvent<string>).detail);
+    const f = (e: Event) => {
+      const id = (e as CustomEvent<string>).detail;
+      select(id);
+      void mergeDue();
+    };
     window.addEventListener('mpcrm:open-lead', f);
     return () => window.removeEventListener('mpcrm:open-lead', f);
-  }, []);
+  }, [mergeDue]);
 
-  const select = (id: string | null) => {
-    setSelected(id);
-    store(SELECTED_KEY, id);
-  };
+  const items = list?.items ?? [];
+  // Nothing selected yet (first visit, or the lead left the list): start at the top.
+  useEffect(() => {
+    if (list && (!selected || !list.items.some((i) => i.lead_id === selected)) && !detail) {
+      const first = list.items.find((i) => !i.done) ?? list.items[0];
+      if (first) select(first.lead_id);
+    }
+  }, [list]); // eslint-disable-line react-hooks/exhaustive-deps
+  const idx = items.findIndex((i) => i.lead_id === selected);
+  const left = items.filter((i) => !i.done).length;
 
-  const next = useCallback(async () => {
-    const q = await loadQueue();
-    const n = q?.items.find((i) => i.lead_id !== selected);
+  /** The next lead you haven't worked yet, below the current one first. */
+  const nextUnworked = useCallback(
+    (from = idx) => {
+      const after = items.slice(from + 1).find((i) => !i.done);
+      return after ?? items.slice(0, Math.max(0, from)).find((i) => !i.done) ?? null;
+    },
+    [items, idx],
+  );
+
+  const goNext = useCallback(() => {
+    const n = nextUnworked();
     if (n) select(n.lead_id);
-    else toast('Queue is empty');
-  }, [loadQueue, selected, toast]); // eslint-disable-line react-hooks/exhaustive-deps
+    else toast('You\'ve worked the whole list. Press "Refresh list" to load more.');
+  }, [nextUnworked, toast]);
+
+  const move = useCallback(
+    (step: 1 | -1) => {
+      if (!items.length) return;
+      const i = idx < 0 ? 0 : Math.min(items.length - 1, Math.max(0, idx + step));
+      select(items[i]!.lead_id);
+    },
+    [items, idx],
+  );
+
+  const markDone = (leadId: string, done: WorkItem['done']) =>
+    updateList((xs) => xs.map((i) => (i.lead_id === leadId ? { ...i, done, due_now: false } : i)));
 
   const skip = useCallback(async () => {
     if (!selected) return;
     await api.post(`/leads/${selected}/actions`, { action: 'skip' });
-    toast('Skipped');
-    await next();
-  }, [selected, next, toast]);
+    markDone(selected, { label: 'Skipped', dials: 0 });
+    goNext();
+  }, [selected, goNext]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const dial = useCallback(
     async (e164: string | null | undefined) => {
@@ -246,6 +292,7 @@ export function CallingPage() {
     [settings, toast],
   );
 
+  /** Takes back the last saved call: back to that lead, outcome removed, your entries put back to fix. */
   const undo = useCallback(async () => {
     if (!saved || Date.now() - saved.at > UNDO_MS) return;
     const s = saved;
@@ -268,14 +315,15 @@ export function CallingPage() {
         },
       });
       setAttempt({ dials: r.dial_count, timerStart: null, to: null });
+      markDone(s.leadId, null);
       select(s.leadId);
-      toast(`Undone. Fix it and save again.`);
+      toast(`Undone. Pick the right outcome for ${s.name} and press Enter.`);
       bumpStats();
-      await Promise.all([loadQueue(), loadDetail(s.leadId)]);
+      await loadDetail(s.leadId);
     } catch (e: any) {
       toast(e.message, 'error');
     }
-  }, [saved, toast, bumpStats, loadQueue, loadDetail]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [saved, toast, bumpStats, loadDetail]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const modalOpen = editing || !!qr;
   // Layout effect, so the keys act on the lead you can see as soon as it's on screen.
@@ -283,7 +331,9 @@ export function CallingPage() {
     const onKey = (e: KeyboardEvent) => {
       if (modalOpen || isTyping(e) || e.ctrlKey || e.metaKey || e.altKey) return;
       const act = (a: Parameters<typeof isAction>[1]) => isAction(keys, a, e);
-      if (act('next')) { e.preventDefault(); void next(); }
+      if (act('list_down')) { e.preventDefault(); move(1); }
+      else if (act('list_up')) { e.preventDefault(); move(-1); }
+      else if (act('next')) { e.preventDefault(); goNext(); }
       else if (act('skip')) { e.preventDefault(); void skip(); }
       else if (act('search')) { e.preventDefault(); searchRef.current?.focus(); }
       else if (act('note')) { e.preventDefault(); document.getElementById('note-input')?.focus(); }
@@ -296,19 +346,27 @@ export function CallingPage() {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [keys, next, skip, dial, undo, detail, modalOpen]);
+  }, [keys, move, goNext, skip, dial, undo, detail, modalOpen]);
 
-  const refresh = async () => {
-    await Promise.all([loadQueue(), loadDetail(selected)]);
+  const refreshDetail = async () => {
+    await loadDetail(selected);
   };
 
+  // Enter saves and moves straight on; the undo bar (or Z) brings you back.
   const onSaved = async (s: Saved) => {
     setSaved(s);
     setRestore(null);
     setAttempt(freshAttempt());
     bumpStats();
-    if (settings?.auto_advance) await next();
-    else await refresh();
+    markDone(s.leadId, { label: s.label, dials: s.dials });
+    const n = items.slice(Math.max(0, items.findIndex((i) => i.lead_id === s.leadId)) + 1).find((i) => !i.done && i.lead_id !== s.leadId)
+      ?? items.find((i) => !i.done && i.lead_id !== s.leadId);
+    if (n) select(n.lead_id);
+    else {
+      toast('That was the last lead in your list. Press "Refresh list" to load more.');
+      await refreshDetail();
+    }
+    void mergeDue();
   };
 
   const gap = settings?.retry_gap_minutes ?? 240;
@@ -322,39 +380,55 @@ export function CallingPage() {
         <header>
           <input
             ref={searchRef}
-            placeholder={`Search name or phone  ( ${k('search')} )`}
+            placeholder={`Search name, county, phone or area code  ( ${k('search')} )`}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             onKeyDown={(e) => e.key === 'Escape' && (setSearch(''), (e.target as HTMLInputElement).blur())}
             style={{ width: '100%' }}
+            title="A 3-digit number finds every county under that area code"
           />
           <GroupPicker groups={groups} onChange={setGroups} />
           <div className="tabs" title={`Order: due callbacks, past appointments, new leads (newest batch first), then retries ${gapText} after the last attempt (change this in Settings). Skipped leads drop to the end for today.`}>
             {BUCKETS.map((b) => (
               <button key={b.key} className={bucket === b.key ? 'active' : ''} onClick={() => setBucket(b.key)}>
                 {b.label}
-                {b.key !== 'all' && queue ? ` ${queue.counts[b.key]}` : ''}
+                {b.key !== 'all' && counts ? ` ${counts[b.key]}` : ''}
               </button>
             ))}
           </div>
+          <div className="row list-head">
+            <span><b>{left}</b> to go · {items.length - left} done</span>
+            <button className="btn small" onClick={() => void rebuild()} title="Load the queue again: worked leads leave the list, and leads due again come in">
+              Refresh list{more > 0 ? ` (+${more})` : ''}
+            </button>
+          </div>
         </header>
         <div className="body">
-          {!queue ? null : queue.items.length === 0 ? (
+          {!list ? null : items.length === 0 ? (
             <div className="empty">
               Nothing to call right now.
-              {queue.waiting_later > 0 && <div>{queue.waiting_later} lead(s) are waiting for a later callback or retry time.</div>}
+              {waitingLater > 0 && <div>{waitingLater} lead(s) are waiting for a later callback or retry time.</div>}
             </div>
           ) : (
-            <ul className="queue-list">
-              {queue.items.map((i) => (
-                <li key={i.lead_id} className={`${selected === i.lead_id ? 'selected' : ''} ${i.skipped_today ? 'skipped' : ''}`} onClick={() => select(i.lead_id)}>
+            <ul className="queue-list" ref={listRef}>
+              {items.map((i) => (
+                <li
+                  key={i.lead_id}
+                  data-lead={i.lead_id}
+                  className={`${selected === i.lead_id ? 'selected' : ''} ${i.done ? 'done' : ''} ${i.skipped_today ? 'skipped' : ''}`}
+                  onClick={() => select(i.lead_id)}
+                >
                   <span className="name">{i.name}</span>
-                  <span className={`badge ${i.bucket}`}>
-                    {i.bucket === 'callback_due' ? (i.needs_time ? 'callback, needs a time' : 'callback') : i.bucket === 'appointment_passed' ? (i.needs_time ? 'appt, needs a date' : 'appt passed') : i.bucket}
-                  </span>
+                  {i.done ? (
+                    <span className="badge done">{i.done.label}{i.done.dials > 1 ? ` · ${i.done.dials} dials` : ''}</span>
+                  ) : (
+                    <span className={`badge ${i.bucket}`}>
+                      {i.due_now ? 'due now' : i.bucket === 'callback_due' ? (i.needs_time ? 'callback, needs a time' : 'callback') : i.bucket === 'appointment_passed' ? (i.needs_time ? 'appt, needs a date' : 'appt passed') : i.bucket}
+                    </span>
+                  )}
                   <span className="sub">
                     {fmtPhone(i.phone_e164)} · {i.county ? `${i.county} Co.` : i.state ?? '?'} · {i.attempts_total ? `${i.attempts_total} attempt${i.attempts_total > 1 ? 's' : ''}, last ${fmtRelative(i.last_call_at)}` : 'never called'}
-                    {i.skipped_today && ' · skipped'}
+                    {i.skipped_today && !i.done && ' · skipped'}
                   </span>
                 </li>
               ))}
@@ -363,9 +437,9 @@ export function CallingPage() {
         </div>
         <header style={{ borderTop: '1px solid var(--border)', borderBottom: 0 }}>
           <span className="help">
-            <kbd>{k('next')}</kbd> next <kbd>{k('skip')}</kbd> skip <kbd>{k('search')}</kbd> search <kbd>{k('dial')}</kbd> {dialLabel.toLowerCase()}{' '}
-            <kbd>{k('dials_down')}</kbd><kbd>{k('dials_up')}</kbd> dials <kbd>{k('undo')}</kbd> undo <kbd>{k('note')}</kbd> note <kbd>{k('edit')}</kbd> edit{' '}
-            <kbd>{k('script')}</kbd> script
+            <kbd>{k('list_up')}</kbd><kbd>{k('list_down')}</kbd> move <kbd>{k('skip')}</kbd> skip <kbd>{k('search')}</kbd> search <kbd>{k('dial')}</kbd> {dialLabel.toLowerCase()}{' '}
+            <kbd>{k('dials_down')}</kbd><kbd>{k('dials_up')}</kbd> dials <kbd>Enter</kbd> save and next <kbd>{k('undo')}</kbd> undo <kbd>{k('note')}</kbd> note{' '}
+            <kbd>{k('edit')}</kbd> edit <kbd>{k('script')}</kbd> script
           </span>
         </header>
       </section>
@@ -374,7 +448,7 @@ export function CallingPage() {
         <div className="body">
           {saved && <UndoBar saved={saved} undoKey={k('undo')} onUndo={undo} onExpire={() => setSaved(null)} />}
           {!detail ? (
-            <div className="empty">Select a lead from the queue, or import leads first.</div>
+            <div className="empty">Select a lead from the list, or import leads first.</div>
           ) : (
             <>
               <LeadSummary d={detail} onDial={dial} dialLabel={dialLabel} dialKey={k('dial')} onEdit={() => setEditing(true)} editKey={k('edit')} />
@@ -387,7 +461,7 @@ export function CallingPage() {
                 resetTimer={() => setAttempt((a) => ({ ...a, timerStart: null }))}
                 restore={restore?.leadId === detail.lead.id ? restore.values : null}
                 onSaved={onSaved}
-                onRefresh={refresh}
+                onRefresh={refreshDetail}
               />
             </>
           )}
@@ -397,12 +471,12 @@ export function CallingPage() {
       <section className="panel" aria-label="History">
         <header><h3>Calls</h3></header>
         <div className="body">
-          {detail && <CallHistory calls={detail.calls} onChange={refresh} />}
+          {detail && <CallHistory calls={detail.calls} onChange={refreshDetail} />}
           <h3 style={{ marginTop: 16 }}>Notes</h3>
-          {detail && <Notes d={detail} onChange={() => loadDetail(selected)} />}
+          {detail && <Notes d={detail} onChange={refreshDetail} />}
         </div>
       </section>
-      {editing && detail && <EditLead d={detail} onClose={() => setEditing(false)} onSaved={async () => { setEditing(false); await refresh(); }} />}
+      {editing && detail && <EditLead d={detail} onClose={() => setEditing(false)} onSaved={async () => { setEditing(false); await refreshDetail(); }} />}
       {qr && <DialQr e164={qr} onClose={() => setQr(null)} />}
     </div>
   );
@@ -420,7 +494,7 @@ function UndoBar({ saved, undoKey, onUndo, onExpire }: { saved: Saved; undoKey: 
   }, [saved, onExpire]);
   return (
     <div className="undo-bar" role="status">
-      Saved: <b>{saved.label}</b>{saved.dials > 1 ? ` · ${saved.dials} dials` : ''}
+      Saved for {saved.name}: <b>{saved.label}</b>{saved.dials > 1 ? ` · ${saved.dials} dials` : ''}
       <button className="btn small" onClick={onUndo}>Undo <kbd>{undoKey}</kbd></button>
       <span className="muted">{left}s</span>
     </div>
@@ -514,9 +588,7 @@ function LogCall({
     setCode(c);
     const o = meta?.outcome_codes.find((x) => x.code === c);
     if (o?.requires_callback_time || c === 'appointment') {
-      const t = new Date(Date.now() + 86_400_000);
-      t.setMinutes(0, 0, 0);
-      setWhen((w) => w || toLocalInput(t));
+      setWhen((w) => w || toLocalInput(defaultWhen(calling?.settings.late_cutoff_hour ?? 21)));
       setTimeout(() => whenRef.current?.focus(), 0);
     }
   }, [meta]);
@@ -555,7 +627,10 @@ function LogCall({
       setMinutes('');
       setNote('');
       setKey(newKey());
-      await onSaved({ callId: r.call_id, leadId: d.lead.id, label: outcome?.label ?? code, dials: attempt.dials, at: Date.now() });
+      await onSaved({
+        callId: r.call_id, leadId: d.lead.id, name: [d.lead.first_name, d.lead.last_name].filter(Boolean).join(' ') || 'this lead',
+        label: outcome?.label ?? code, dials: attempt.dials, at: Date.now(),
+      });
     } catch (e: any) {
       toast(e.message, 'error');
     } finally {

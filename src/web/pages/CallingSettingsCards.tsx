@@ -66,10 +66,10 @@ export function CallingCard() {
         <label>Bring back an unanswered lead after</label>
         <span><NumberField value={s.retry_gap_minutes} onSave={(n) => set({ retry_gap_minutes: n ?? 0 })} /> minutes <span className="help">(0 = right away; default 240 = 4 hours)</span></span>
 
-        <label>After saving a call</label>
+        <label>Appointment and callback times</label>
         <span>
-          <label className="choice-inline"><input type="checkbox" checked={s.auto_advance} onChange={(e) => set({ auto_advance: e.target.checked })} /> go to the next lead by itself</label>
-          <span className="help"> You still get 10 seconds to undo.</span>
+          Suggest today at the next half hour. From <NumberField value={s.late_cutoff_hour} onSave={(n) => set({ late_cutoff_hour: Math.min(24, n ?? 21) })} width={70} />:00
+          on, suggest tomorrow at 10 AM. <span className="help">(24 = always today)</span>
         </span>
 
         <label>Dial button (<kbd>{keyLabel(calling.settings.shortcuts.actions.dial?.[0] ?? 'c')}</kbd>)</label>

@@ -21,7 +21,8 @@ interface County {
   leads: number;
   workable: number;
   area_codes: string[];
-  suggested: { area_code: string; leads: number }[];
+  /** Area codes for this county from the built-in table (empty when its state isn't in the table yet). */
+  built_in: string[];
 }
 
 export function SettingsPage() {
@@ -213,13 +214,14 @@ function CountiesCard() {
       <h2>Counties and their area codes</h2>
       <p className="help">
         Leads are grouped by the county you bought them for, never by the lead's own phone number. Link each county to the area code(s) you call it under;
-        a county can have more than one (Marion County, IN: 317 and 463). On the Calling page you can then pick counties, area codes, or both.
+        a county can have more than one (Marion County, IN: 317 and 463). New counties are linked to their usual area codes automatically
+        (Indiana, Michigan and Ohio so far); change them here any time. On the Calling page you can then pick counties, area codes, or both.
       </p>
       {!list?.length ? (
         <p className="muted">Counties appear here after you import leads.</p>
       ) : (
         <table className="grid" style={{ maxWidth: 860 }}>
-          <thead><tr><th>County</th><th>Leads</th><th>Area codes</th><th>Suggestion</th><th></th></tr></thead>
+          <thead><tr><th>County</th><th>Leads</th><th>Area codes</th><th>Usual codes</th><th></th></tr></thead>
           <tbody>
             {list.map((c) => {
               const text = edit[c.county_key] ?? c.area_codes.join(', ');
@@ -230,12 +232,13 @@ function CountiesCard() {
                   <td>{c.leads}{c.workable !== c.leads && <span className="muted"> ({c.workable} to call)</span>}</td>
                   <td><input value={text} placeholder="e.g. 574" onChange={(e) => setEdit({ ...edit, [c.county_key]: e.target.value })} style={{ width: 140 }} aria-label={`Area codes for ${c.name}`} /></td>
                   <td>
-                    {c.suggested.filter((s) => !c.area_codes.includes(s.area_code)).slice(0, 2).map((s) => (
-                      <button key={s.area_code} className="btn small" title={`${s.leads} of this county's leads have ${s.area_code} numbers. A suggestion only.`}
-                        onClick={() => setEdit({ ...edit, [c.county_key]: [...new Set([...text.split(/[\s,;]+/).filter(Boolean), s.area_code])].join(', ') })}>
-                        + {s.area_code} <span className="muted">({s.leads} leads)</span>
+                    {c.built_in.filter((code) => !c.area_codes.includes(code)).map((code) => (
+                      <button key={code} className="btn small" title={`${code} normally covers ${c.name} County`}
+                        onClick={() => setEdit({ ...edit, [c.county_key]: [...new Set([...text.split(/[\s,;]+/).filter(Boolean), code])].join(', ') })}>
+                        + {code}
                       </button>
                     ))}
+                    {!c.built_in.length && <span className="muted">not in the built-in list yet</span>}
                   </td>
                   <td>{dirty && <button className="btn small primary" onClick={() => save(c, text)}>Save</button>}</td>
                 </tr>
