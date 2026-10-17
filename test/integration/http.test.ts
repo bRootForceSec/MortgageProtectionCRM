@@ -169,3 +169,26 @@ describe('version and updates', () => {
     expect(started).toEqual(['mpcrm-apply.service', 'mpcrm-update.service']);
   });
 });
+
+describe('AI settings and PDF uploads over HTTP', () => {
+  it('saves an API key but never sends it back, and keeps it out of the database', async () => {
+    const { db, c } = tempDb();
+    const a = await buildApp({ db, config: c, token: TOKEN });
+    const put = await a.inject({ method: 'PUT', url: '/api/settings/ai/key', headers: write, payload: { name: 'anthropic_api_key', value: 'sk-ant-secret-xyz' } });
+    expect(put.statusCode).toBe(200);
+    expect(put.body).not.toContain('sk-ant-secret-xyz');
+    expect(put.json().keys).toEqual({ anthropic_api_key: true, openai_api_key: false });
+    const get = await a.inject({ url: '/api/settings/ai', headers: auth });
+    expect(get.body).not.toContain('sk-ant-secret-xyz');
+    const dump = JSON.stringify(db.prepare('SELECT * FROM app_setting').all());
+    expect(dump).not.toContain('sk-ant-secret-xyz');
+  });
+
+  it('refuses a file that is not a PDF', async () => {
+    const r = await app.inject({
+      method: 'POST', url: '/api/drafts/pdf', headers: { ...write, 'content-type': 'application/pdf', 'x-file-name': 'x.pdf' }, payload: Buffer.from('hello'),
+    });
+    expect(r.statusCode).toBe(400);
+    expect(r.json().error).toMatch(/not a PDF/);
+  });
+});

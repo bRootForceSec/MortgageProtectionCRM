@@ -3,23 +3,44 @@ import { api, fmtDateTime, fmtMoney, fmtPhone, fullName, localTime, type LeadDet
 import { useApp } from '../App';
 
 const STATUS_LABEL: Record<string, string> = {
-  new: 'New', retry: 'Retry', callback: 'Callback', appointment_set: 'Appointment', invalid: 'Invalid number', dead: 'Dead lead',
+  new: 'New', retry: 'Retry', callback: 'Callback', appointment_set: 'Appointment', invalid: 'Invalid number', dead: 'Dead lead', sold: 'Sold',
 };
+
+function leadAge(iso: string | null | undefined) {
+  if (!iso) return '';
+  const days = Math.floor((Date.now() - Date.parse(iso)) / 86_400_000);
+  if (days < 0) return '';
+  if (days < 60) return `${days} day${days === 1 ? '' : 's'} old`;
+  const months = Math.floor(days / 30.44);
+  return months < 24 ? `${months} months old` : `${(days / 365.25).toFixed(1)} years old`;
+}
+
+const COUNTY_SOURCE: Record<string, string> = { page: 'from the lead page', zip: 'from the ZIP code', city: 'from the city', manual: 'set by you' };
 
 export function StatusBadge({ status }: { status: string }) {
   return <span className={`badge ${status}`}>{STATUS_LABEL[status] ?? status}</span>;
 }
 
 /** Header + key facts used on the calling screen and the lead modal. */
-export function LeadSummary({ d, onCopied }: { d: LeadDetail; onCopied?: () => void }) {
+export function LeadSummary({
+  d, onDial, dialLabel = 'Copy number', dialKey, onEdit, editKey,
+}: {
+  d: LeadDetail;
+  /** On the Calling screen: dial (or copy, or show a QR code, per Settings) and start the attempt. */
+  onDial?: (e164: string) => void;
+  dialLabel?: string;
+  dialKey?: string;
+  onEdit?: () => void;
+  editKey?: string;
+}) {
   const l = d.lead;
   const { toast } = useApp();
-  const copy = async () => {
-    if (!l.phone_e164) return;
+  const copy = async (e164: string | null = l.phone_e164) => {
+    if (!e164) return;
+    if (onDial) return onDial(e164);
     try {
-      await navigator.clipboard.writeText(l.phone_e164.replace(/^\+1/, ''));
+      await navigator.clipboard.writeText(e164.replace(/^\+1/, ''));
       toast('Phone number copied');
-      onCopied?.();
     } catch {
       toast('Could not copy; select the number instead', 'error');
     }
@@ -28,25 +49,43 @@ export function LeadSummary({ d, onCopied }: { d: LeadDetail; onCopied?: () => v
     ['Heart attack', l.health_heart_raw], ['Stroke', l.health_stroke_raw], ['Cancer', l.health_cancer_raw], ['Diabetes', l.health_diabetes_raw],
   ].filter(([, v]) => v);
   const warnings: string[] = d.import_row?.warnings_json ? JSON.parse(d.import_row.warnings_json) : [];
+  const { Passphrase: passphrase, 'Import notes': importNotes, 'Page type': pageType, ...extra } = (l.extra ?? {}) as Record<string, string>;
+  const others = [
+    ['Alternate', l.phone2_e164, l.phone2_raw],
+    ['Called in from', l.phone3_e164, l.phone3_raw],
+  ].filter(([, e, r]) => e || r) as [string, string | null, string | null][];
   return (
     <>
+      {passphrase && <div className="passphrase">Passphrase: <b>{passphrase}</b></div>}
       <div className="lead-head">
         <div>
-          <h2><span className="lead-name">{fullName(l)}</span> {d.state && <StatusBadge status={d.state.status} />}</h2>
+          <h2>
+            <span className="lead-name">{fullName(l)}</span> {d.state && <StatusBadge status={d.state.status} />}
+            {onEdit && <button className="btn small" onClick={onEdit} title="Edit this lead's details">Edit {editKey && <kbd>{editKey}</kbd>}</button>}
+          </h2>
           <div className="where">
             {[l.city, l.state].filter(Boolean).join(', ')}
+            {l.county && <> · <b>{l.county} County</b></>}
             {l.time_zone && <> · <b>{localTime(l.time_zone)}</b> local</>}
           </div>
         </div>
-        <div style={{ textAlign: 'right' }}>
+        <div className="phones">
           <div className="phone-big">{l.phone_e164 ? fmtPhone(l.phone_e164) : <span className="error">no valid phone</span>}</div>
-          <div className="row" style={{ justifyContent: 'flex-end' }}>
-            {l.phone_e164 && <button className="btn small" onClick={copy} title="Copy number (C)">Copy number <kbd>C</kbd></button>}
-            {l.phone2_e164 && <span className="muted">alt {fmtPhone(l.phone2_e164)}</span>}
-          </div>
+          {l.phone_e164 && <button className="btn small" onClick={() => copy()}>{dialLabel} {dialKey && <kbd>{dialKey}</kbd>}</button>}
+          {others.map(([label, e164, raw]) => (
+            <div key={label} className="row" style={{ justifyContent: 'flex-end' }}>
+              <span className="muted">{label}</span>
+              <span className="alt">{e164 ? fmtPhone(e164) : raw}</span>
+              {e164 && <button className="btn small" onClick={() => copy(e164)} title={`${dialLabel}: ${label.toLowerCase()} number`}>{onDial ? dialLabel.replace(' number', '') : 'Copy'}</button>}
+            </div>
+          ))}
         </div>
       </div>
       <div className="facts">
+        <Fact label="County" v={l.county ? `${l.county}, ${l.state ?? ''}${l.county_source ? ` (${COUNTY_SOURCE[l.county_source] ?? l.county_source})` : ''}` : null} />
+        <Fact label="Lead type" v={l.lead_type ? `${l.lead_type}${l.price_cents != null ? ` · ${fmtMoney(l.price_cents)}` : ''}${pageType ? ` · ${pageType}` : ''}` : pageType} />
+        <Fact label="Called in" v={l.callin_at ? `${fmtDateTime(l.callin_at)} · ${leadAge(l.callin_at)}` : l.callin_raw} />
+        <Fact label="Lead ID" v={l.source_lead_id} />
         <Fact label="Age" v={l.age ?? l.age_raw} />
         <Fact label="Lender" v={l.lender} />
         <Fact label="Loan amount" v={l.loan_amount_cents != null ? fmtMoney(l.loan_amount_cents) : l.loan_amount_raw} />
@@ -61,13 +100,16 @@ export function LeadSummary({ d, onCopied }: { d: LeadDetail; onCopied?: () => v
             <span className="sensitive">{health.map(([k, v]) => `${k}: ${v}`).join(' · ')}</span>
           </div>
         )}
-        {Object.entries(l.extra ?? {}).map(([k, v]) => <Fact key={k} label={k} v={v} />)}
+        {Object.entries(extra).map(([k, v]) => <Fact key={k} label={k} v={v} />)}
+        {l.source_page != null && <Fact label="PDF page" v={l.source_page} />}
       </div>
       {d.appointments.length > 0 && (
         <div className="card" style={{ padding: 10 }}>
           {d.appointments.map((a) => (
             <div key={a.id}>
-              Appointment <b>{fmtDateTime(a.scheduled_for)}</b>
+              {a.official_status === 'sold' ? 'Sold' : a.official_status === 'sat_no_sale' ? 'Appointment sat, no sale' : 'Appointment'}{' '}
+              <b>{a.scheduled_for ? fmtDateTime(a.scheduled_for) : a.official_status ? '' : 'needs a date'}</b>
+              {a.recorded_via === 'sheet_import' && <span className="muted"> (from your spreadsheet)</span>}
               {a.from_e164 && <> · set from <b>{a.from_label ?? fmtPhone(a.from_e164)}</b> ({fmtPhone(a.from_e164)})</>}
               <span className="muted"> · {a.internal_status}. Official status lives on the IMO site.</span>
             </div>
@@ -75,7 +117,7 @@ export function LeadSummary({ d, onCopied }: { d: LeadDetail; onCopied?: () => v
         </div>
       )}
       {d.linked.length > 0 && <LinkedLeads d={d} />}
-      {warnings.length > 0 && <p className="help">Import notes: {warnings.join('; ')}</p>}
+      {(warnings.length > 0 || importNotes) && <p className="help">Import notes: {[importNotes, ...warnings].filter(Boolean).join(' ')}</p>}
     </>
   );
 }
@@ -140,25 +182,42 @@ export function CallHistory({ calls, onChange }: { calls: Call[]; onChange: () =
       toast(e.message, 'error');
     }
   };
+  const remove = async (c: Call) => {
+    if (!window.confirm('Undo this call? It stays in the history, marked as undone, and stops counting toward the lead and your numbers.')) return;
+    try {
+      await api.post(`/calls/${c.id}/void`, { reason: 'undone from history' });
+      toast('Call undone');
+      bumpStats();
+      onChange();
+    } catch (e: any) {
+      toast(e.message, 'error');
+    }
+  };
   const needsTime = meta?.outcome_codes.find((o) => o.code === code)?.requires_callback_time;
   return (
     <ul className="history">
       {calls.map((c) => (
-        <li key={c.id}>
-          <div className="when">{fmtDateTime(c.requested_at)} <span className="muted">{c.channel === 'manual_log' ? 'logged' : c.state}</span></div>
+        <li key={c.id} className={c.voided_at ? 'voided' : ''}>
+          <div className="when">
+            {c.time_known === 0 ? <>On or before {new Date(c.requested_at).toLocaleDateString()}</> : fmtDateTime(c.requested_at)}{' '}
+            <span className="muted">{c.history_source === 'sheet' ? 'from your spreadsheet, exact time unknown' : c.channel === 'manual_log' ? 'logged' : c.state}</span>
+          </div>
           <div className="meta">
             to {fmtPhone(c.to_e164)}{c.from_e164 && <> · from {c.from_label ?? ''} {fmtPhone(c.from_e164)}</>}
             {c.talk_seconds != null && <> · {Math.round(c.talk_seconds / 60)} min</>}
+            {c.dial_count > 1 && <> · <b>{c.dial_count} dials</b></>}
           </div>
+          {c.voided_at && <div className="muted">Undone {fmtDateTime(c.voided_at)}. Not counted anywhere.</div>}
           <div>
             {c.outcomes.map((o) => (
               <div key={o.id} className={o.superseded ? 'superseded' : ''}>
                 {o.label}
                 {o.callback_due_at && <> · call back {fmtDateTime(o.callback_due_at)}</>}
+                {!o.callback_due_at && o.outcome_code === 'callback' && !o.superseded && <span className="warn"> · needs a time</span>}
               </div>
             ))}
           </div>
-          {editing === c.id ? (
+          {c.voided_at ? null : editing === c.id ? (
             <div className="row" style={{ marginTop: 4 }}>
               <select value={code} onChange={(e) => setCode(e.target.value)} aria-label="New outcome">
                 {meta?.outcome_codes.map((o) => <option key={o.code} value={o.code}>{o.label}</option>)}
@@ -168,9 +227,14 @@ export function CallHistory({ calls, onChange }: { calls: Call[]; onChange: () =
               <button className="btn small" onClick={() => setEditing(null)}>Cancel</button>
             </div>
           ) : (
-            <button className="btn small" onClick={() => { setEditing(c.id); setCode(c.current_outcome?.outcome_code ?? 'no_answer'); setDue(''); }}>
-              Change outcome
-            </button>
+            <div className="row">
+              <button className="btn small" onClick={() => { setEditing(c.id); setCode(c.current_outcome?.outcome_code ?? 'no_answer'); setDue(''); }}>
+                Change outcome
+              </button>
+              {c.channel === 'manual_log' && (
+                <button className="btn small" onClick={() => remove(c)} title="Logged by mistake? It stays in history but stops counting.">Undo call</button>
+              )}
+            </div>
           )}
         </li>
       ))}

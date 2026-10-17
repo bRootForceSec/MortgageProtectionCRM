@@ -32,13 +32,28 @@ export const api = {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(body),
     }).then((r) => handle<T>(r)),
-  upload: <T>(path: string, file: File) =>
+  upload: <T>(path: string, file: File, contentType = 'application/octet-stream') =>
     fetch(`/api${path}`, {
       method: 'POST',
       credentials: 'same-origin',
-      headers: { 'content-type': 'application/octet-stream', 'x-file-name': encodeURIComponent(file.name) },
+      headers: { 'content-type': contentType, 'x-file-name': encodeURIComponent(file.name), 'x-file-modified': String(file.lastModified || '') },
       body: file,
     }).then((r) => handle<T>(r)),
+  put: <T>(path: string, body: unknown) =>
+    fetch(`/api${path}`, {
+      method: 'PUT',
+      credentials: 'same-origin',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    }).then((r) => handle<T>(r)),
+  patch: <T>(path: string, body: unknown) =>
+    fetch(`/api${path}`, {
+      method: 'PATCH',
+      credentials: 'same-origin',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    }).then((r) => handle<T>(r)),
+  del: <T>(path: string) => fetch(`/api${path}`, { method: 'DELETE', credentials: 'same-origin' }).then((r) => handle<T>(r)),
 };
 
 export function newKey(): string {
@@ -90,6 +105,9 @@ export interface QueueItem {
   last_outcome_code: string | null;
   next_due_at: string | null;
   skipped_today: boolean;
+  county: string | null;
+  county_key: string | null;
+  needs_time: boolean;
 }
 
 export interface QueueResponse {
@@ -119,6 +137,13 @@ export interface Call {
   requested_at: string;
   state: string;
   talk_seconds: number | null;
+  /** 0 for history from a spreadsheet's Status column: the real time isn't known. */
+  time_known: number;
+  history_source: string | null;
+  /** Dials made for this one attempt. */
+  dial_count: number;
+  /** Set when you undid this call. */
+  voided_at: string | null;
   outcomes: Outcome[];
   current_outcome: Outcome | null;
   events: { id: string; source: string; event_type: string; occurred_at: string; received_at: string }[];
@@ -132,8 +157,10 @@ export interface LeadDetail {
   calls: Call[];
   notes: { id: string; body: string; created_at: string; call_id: string | null }[];
   actions: { id: string; action: string; reason: string | null; created_at: string }[];
-  appointments: { id: string; scheduled_for: string; from_e164: string | null; from_label: string | null; internal_status: string; official_status: string | null; notes: string | null }[];
+  appointments: { id: string; scheduled_for: string | null; recorded_via: string; from_e164: string | null; from_label: string | null; internal_status: string; official_status: string | null; notes: string | null }[];
   linked: { link_id: string; link_status: string; reason: string; id: string; first_name: string | null; last_name: string | null; batch_name: string; status: string }[];
+  changes: { id: string; field: string; old_value: string | null; new_value: string | null; created_at: string }[];
+  lead_type: { code: string; label: string; price_cents: number | null } | null;
 }
 
 // ---------- formatting ----------

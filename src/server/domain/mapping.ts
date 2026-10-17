@@ -6,7 +6,8 @@ export const LEAD_FIELDS = [
   { key: 'first_name', label: 'First name', synonyms: ['first', 'first name', 'fname', 'given name', 'borrower first name'] },
   { key: 'last_name', label: 'Last name', synonyms: ['last', 'last name', 'lname', 'surname', 'family name', 'borrower last name'] },
   { key: 'phone', label: 'Phone', synonyms: ['phone', 'phone number', 'telephone', 'tel', 'cell', 'mobile', 'primary phone', 'home phone', 'phone 1'] },
-  { key: 'phone2', label: 'Second phone', synonyms: ['phone 2', 'alt phone', 'alternate phone', 'secondary phone', 'work phone', 'other phone'] },
+  { key: 'phone2', label: 'Second phone', synonyms: ['phone 2', 'alt phone', 'alternate phone', 'alternate phone number', 'secondary phone', 'work phone', 'other phone'] },
+  { key: 'phone3', label: 'Third phone', synonyms: ['phone 3', 'third phone', 'called in from', 'called from'] },
   { key: 'email', label: 'Email', synonyms: ['email', 'e-mail', 'email address'] },
   { key: 'lender', label: 'Lender', synonyms: ['lender', 'mortgage lender', 'bank', 'mortgage company', 'servicer'] },
   { key: 'loan_amount', label: 'Loan amount', synonyms: ['loan amount', 'loan', 'mortgage amount', 'amount', 'loan amt', 'mortgage'] },
@@ -16,6 +17,12 @@ export const LEAD_FIELDS = [
   { key: 'city', label: 'City', synonyms: ['city', 'town'] },
   { key: 'state', label: 'State', synonyms: ['state', 'st', 'province'] },
   { key: 'zip', label: 'ZIP', synonyms: ['zip', 'zip code', 'zipcode', 'postal code', 'postal'] },
+  { key: 'county', label: 'County', synonyms: ['county', 'county name', 'parish'] },
+  { key: 'source_lead_id', label: 'Lead ID', synonyms: ['lead id', 'mortgage identification number', 'mortgage id', 'lead number', 'lead no'] },
+  { key: 'callin_date', label: 'Call-in date', synonyms: ['call in date', 'callin date', 'call in date time', 'call in date & time', 'date called in', 'lead date'] },
+  { key: 'lead_type', label: 'Lead type', synonyms: ['lead type', 'lead level', 'lead tier'] },
+  { key: 'status', label: 'Status (becomes call history)', synonyms: ['status', 'call status', 'disposition', 'lead status'] },
+  { key: 'passphrase', label: 'Passphrase', synonyms: ['passphrase', 'pass phrase', 'password phrase'] },
   { key: 'tobacco', label: 'Tobacco', synonyms: ['tobacco', 'smoker', 'tobacco use', 'smoke', 'nicotine'] },
   { key: 'health_heart', label: 'Heart attack', synonyms: ['heart', 'heart attack', 'heart disease', 'heart condition'] },
   { key: 'health_stroke', label: 'Stroke', synonyms: ['stroke'] },
@@ -45,7 +52,7 @@ export function suggestMapping(headers: string[]): ColumnMapping {
           !used.has(h) &&
           f.synonyms.some((s) => {
             const cs = canonicalHeader(s);
-            return pass === 'exact' ? c === cs : cs.length >= 4 && c.includes(cs);
+            return pass === 'exact' ? c === cs : cs.length >= 4 && cs.includes(' ') ? ` ${c} `.includes(` ${cs} `) : cs.length >= 4 && c.split(' ').includes(cs);
           }),
       );
       if (hit) {
