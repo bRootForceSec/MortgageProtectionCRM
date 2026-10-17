@@ -4,7 +4,7 @@
   "description": "Local-first calling CRM for an independent life insurance agent",
   "scripts": {
     "dev": "concurrently -n api,web \"tsx watch src/server/main.ts\" \"vite\"",
-    "build": "tsc -p tsconfig.server.json && cp -r src/server/db/migrations dist/server/db/ && vite build && node scripts/build-info.mjs",
+    "build": "tsc -p tsconfig.server.json && cp -r src/server/db/migrations dist/server/db/ && cp -r src/server/data dist/server/ && vite build && node scripts/build-info.mjs",
     "start": "node dist/server/main.js",
     "cli": "node dist/server/cli.js",
     "typecheck": "tsc -p tsconfig.server.json --noEmit && tsc -p tsconfig.web.json --noEmit",
@@ -22,11 +22,14 @@
   },
   "homepage": "https://github.com/bRootForceSec/mortgageprotectioncrm#readme",
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.131.0",
     "@fastify/static": "^10.1.6",
     "better-sqlite3": "^13.0.3",
     "csv-parse": "^7.0.3",
     "exceljs": "^4.4.0",
     "fastify": "^5.12.7",
+    "pdf-lib": "^1.17.1",
+    "pdfjs-dist": "^6.3.289",
     "zod": "^4.6.7"
   },
   "devDependencies": {

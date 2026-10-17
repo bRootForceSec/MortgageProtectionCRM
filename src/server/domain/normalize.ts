@@ -99,7 +99,8 @@ export function splitName(raw: unknown): { first: string | null; last: string | 
 
 export function toText(raw: unknown): string {
   if (raw === null || raw === undefined) return '';
-  if (raw instanceof Date) return raw.toISOString().slice(0, 10);
+  // Spreadsheet dates arrive as UTC-encoded wall-clock times; keep the time when there is one.
+  if (raw instanceof Date) return raw.getUTCHours() || raw.getUTCMinutes() ? raw.toISOString().slice(0, 16) : raw.toISOString().slice(0, 10);
   if (typeof raw === 'object') {
     const o = raw as any;
     if (typeof o.text === 'string') return o.text.trim(); // exceljs rich text / hyperlink
@@ -108,6 +109,52 @@ export function toText(raw: unknown): string {
     return JSON.stringify(raw);
   }
   return String(raw).trim();
+}
+
+const TZ_ABBR: Record<string, number> = { EDT: -4, EST: -5, CDT: -5, CST: -6, MDT: -6, MST: -7, PDT: -7, PST: -8, AKDT: -8, AKST: -9, HST: -10 };
+
+/** Offset in minutes of an IANA zone at a given UTC instant. */
+function zoneOffsetMinutes(tz: string, at: Date): number {
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat('en-US', { timeZone: tz, hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
+      .formatToParts(at)
+      .map((p) => [p.type, p.value]),
+  );
+  const asUtc = Date.UTC(+parts.year!, +parts.month! - 1, +parts.day!, +parts.hour!, +parts.minute!);
+  return Math.round((asUtc - at.getTime()) / 60000);
+}
+
+/**
+ * Call-in dates as printed on lead pages: "7/15/2026 11:31 AM EDT", "04/01/26 9:21 am", "2026-07-15T11:31".
+ * Without a zone the time is read as local time in the lead's state. Returns UTC ISO.
+ */
+export function normalizeCallinDate(raw: unknown, state?: string | null): Normalized<string> {
+  const s = toText(raw).replace(/\s+/g, ' ');
+  if (!s) return { value: null };
+  let y: number, mo: number, d: number, h = 0, mi = 0;
+  let zone: string | undefined;
+  let m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2}|\d{4})(?: (\d{1,2}):(\d{2})(?::\d{2})? ?([AaPp][Mm])?)?(?: ([A-Z]{3,4}))?$/);
+  if (m) {
+    mo = +m[1]!; d = +m[2]!; y = +m[3]!; if (y < 100) y += 2000;
+    if (m[4]) {
+      h = +m[4]; mi = +m[5]!;
+      const ap = m[6]?.toLowerCase();
+      if (ap === 'pm' && h < 12) h += 12;
+      if (ap === 'am' && h === 12) h = 0;
+    }
+    zone = m[7];
+  } else if ((m = s.match(/^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2}))?/))) {
+    y = +m[1]!; mo = +m[2]!; d = +m[3]!;
+    if (m[4]) { h = +m[4]; mi = +m[5]!; }
+  } else {
+    return { value: null, problem: `call-in date not understood: "${s}"` };
+  }
+  if (mo < 1 || mo > 12 || d < 1 || d > 31 || h > 23 || mi > 59) return { value: null, problem: `call-in date not understood: "${s}"` };
+  const wall = Date.UTC(y, mo - 1, d, h, mi);
+  let offset: number;
+  if (zone && TZ_ABBR[zone] !== undefined) offset = TZ_ABBR[zone]! * 60;
+  else offset = zoneOffsetMinutes(STATE_TZ[state ?? '']?.tz ?? 'America/New_York', new Date(wall));
+  return { value: new Date(wall - offset * 60000).toISOString() };
 }
 
 // Primary IANA zone per state. States split across zones are flagged so calling-hour checks
