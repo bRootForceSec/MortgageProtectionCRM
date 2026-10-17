@@ -231,6 +231,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       dial_count: z.number().int().min(1).max(1000).nullish(),
       outcome_code: z.string().max(40),
       callback_due_at: z.string().max(40).nullish(),
+      callback_any_time: z.boolean().nullish(),
       note: z.string().max(10000).nullish(),
     }).parse(req.body);
     return logManualCall(db, { ...b, lead_id: id });
@@ -242,6 +243,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       outcome_code: z.string().max(40),
       expected_current_id: z.string().max(64).nullable(),
       callback_due_at: z.string().max(40).nullish(),
+      callback_any_time: z.boolean().nullish(),
       note: z.string().max(10000).nullish(),
     }).parse(req.body);
     return changeOutcome(db, id, b);

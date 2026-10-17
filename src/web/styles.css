@@ -239,3 +239,6 @@ table.heat td button.num { color: var(--text, inherit); }
 .result-keys { display: flex; gap: 4px; flex-wrap: wrap; }
 .checklist td { vertical-align: middle; }
 table.grid tr.selected { background: var(--selected); }
+
+.callback-picker { display: flex; gap: 8px; align-items: flex-end; flex-wrap: wrap; }
+.callback-picker .help { padding-bottom: 6px; }

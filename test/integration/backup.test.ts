@@ -15,14 +15,14 @@ describe('backup and restore', () => {
     const parsed = await parseSpreadsheet(sampleCsv(), 'a.csv');
     commitImport(db, parsed, parsed.sheets[0]!, suggestMapping(parsed.sheets[0]!.headers), { name: 'b1' });
     const lead = (db.prepare('SELECT id FROM lead LIMIT 1').get() as any).id;
-    logManualCall(db, { lead_id: lead, idempotency_key: 'k-12345678', outcome_code: 'vm_left' });
+    logManualCall(db, { lead_id: lead, idempotency_key: 'k-12345678', outcome_code: 'no_answer' });
     const original = { counts: tableCounts(db), checksum: contentChecksum(db) };
 
     const b = await createBackup(db, c);
     expect(fs.statSync(b.file).mode & 0o777).toBe(0o600);
 
     // Data changes after the backup are rolled back by the restore.
-    logManualCall(db, { lead_id: lead, idempotency_key: 'k-87654321', outcome_code: 'busy' });
+    logManualCall(db, { lead_id: lead, idempotency_key: 'k-87654321', outcome_code: 'no_answer' });
     db.close();
 
     const r = restoreBackup(c, b.file);
@@ -54,7 +54,7 @@ describe('backup and restore', () => {
     const parsed = await parseSpreadsheet(sampleCsv(), 'a.csv');
     commitImport(db, parsed, parsed.sheets[0]!, suggestMapping(parsed.sheets[0]!.headers), { name: 'b1' });
     const lead = (db.prepare('SELECT id FROM lead LIMIT 1').get() as any).id;
-    logManualCall(db, { lead_id: lead, idempotency_key: 'k-12345678', outcome_code: 'vm_left' });
+    logManualCall(db, { lead_id: lead, idempotency_key: 'k-12345678', outcome_code: 'no_answer' });
     db.close();
     const again = openDatabase(c.dbFile);
     expect((again.prepare('SELECT COUNT(*) n FROM call').get() as any).n).toBe(1);

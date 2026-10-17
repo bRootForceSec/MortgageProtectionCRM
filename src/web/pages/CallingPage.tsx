@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { defaultWhen } from '../when';
-import { api, fmtMoney, fmtPhone, fmtRelative, newKey, toLocalInput, type LeadDetail, type QueueResponse, type QueueItem } from '../api';
+import { callbackFields, describeCallback, readCallback } from '../when';
+import { api, fmtMoney, fmtPhone, fmtRelative, newKey, type LeadDetail, type QueueResponse, type QueueItem } from '../api';
 import { useApp } from '../App';
 import { LeadSummary, CallHistory, Notes } from '../components/LeadView';
 import { EditLead } from '../components/EditLead';
@@ -44,7 +44,9 @@ const freshAttempt = (): Attempt => ({ dials: 1, timerStart: null, to: null });
 /** What you had entered, put back after an undo. */
 interface FormValues {
   code: string | null;
-  when: string;
+  /** Callback picker: the day and the optional time, as typed. */
+  day: string;
+  time: string;
   minutes: string;
   note: string;
   numberId: string | null;
@@ -298,16 +300,17 @@ export function CallingPage() {
     setSaved(null);
     try {
       const r = await api.post<{
-        lead_id: string; outcome_code: string | null; callback_due_at: string | null;
+        lead_id: string; outcome_code: string | null; callback_due_at: string | null; callback_any_time: boolean;
         dial_count: number; talk_seconds: number | null; from_number_id: string | null; note: string | null;
       }>(`/calls/${s.callId}/void`, { reason: 'undo' });
-      const when = r.callback_due_at;
+      const cb = callbackFields(r.callback_due_at, r.callback_any_time);
       setRestore({
         leadId: s.leadId,
         n: Date.now(),
         values: {
           code: r.outcome_code,
-          when: when ? toLocalInput(new Date(when)) : '',
+          day: cb.day,
+          time: cb.time,
           minutes: r.talk_seconds ? String(Math.round(r.talk_seconds / 60)) : '',
           note: r.note ?? '',
           numberId: r.from_number_id,
@@ -422,7 +425,7 @@ export function CallingPage() {
                     <span className="badge done">{i.done.label}{i.done.dials > 1 ? ` · ${i.done.dials} dials` : ''}</span>
                   ) : (
                     <span className={`badge ${i.bucket}`}>
-                      {i.due_now ? 'due now' : i.bucket === 'callback_due' ? (i.needs_time ? 'callback, needs a time' : 'callback') : i.bucket}
+                      {i.due_now ? 'due now' : i.bucket === 'callback_due' ? (i.needs_time ? 'callback, needs a time' : i.any_time ? 'callback, any time' : 'callback') : i.bucket}
                     </span>
                   )}
                   <span className="sub">
@@ -570,12 +573,13 @@ function LogCall({
 
   const [numberId, setNumberId] = useState(restore?.numberId ?? defaultNumber.id);
   const [code, setCode] = useState<string | null>(restore?.code ?? null);
-  const [when, setWhen] = useState(restore?.when ?? '');
+  const [day, setDay] = useState(restore?.day ?? '');
+  const [time, setTime] = useState(restore?.time ?? '');
   const [minutes, setMinutes] = useState(restore?.minutes ?? '');
   const [note, setNote] = useState(restore?.note ?? '');
   const [saving, setSaving] = useState(false);
   const [key, setKey] = useState(newKey());
-  const whenRef = useRef<HTMLInputElement>(null);
+  const dayRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!numberId && defaultNumber.id) setNumberId(defaultNumber.id);
@@ -589,8 +593,8 @@ function LogCall({
     setCode(c);
     const o = meta?.outcome_codes.find((x) => x.code === c);
     if (o?.requires_callback_time) {
-      setWhen((w) => w || toLocalInput(defaultWhen(calling?.settings.late_cutoff_hour ?? 21)));
-      setTimeout(() => whenRef.current?.focus(), 0);
+      setDay((v) => v || 'tomorrow');
+      setTimeout(() => { dayRef.current?.focus(); dayRef.current?.select(); }, 0);
     }
   }, [meta]);
 
@@ -602,28 +606,29 @@ function LogCall({
 
   const save = useCallback(async () => {
     if (!code || saving) return;
-    if (code === 'dnc_request' && !window.confirm('Move this lead to the dead pile? It will leave the queue.')) return;
-    if (needsWhen && !when) {
-      toast('Enter when to call back', 'error');
-      whenRef.current?.focus();
+    const cb = needsWhen ? readCallback(day, time) : null;
+    if (cb && 'error' in cb) {
+      toast(cb.error, 'error');
+      dayRef.current?.focus();
       return;
     }
     setSaving(true);
     try {
-      const iso = when ? new Date(when).toISOString() : null;
       const r = await api.post<{ call_id: string }>(`/leads/${d.lead.id}/calls`, {
         idempotency_key: key,
         from_number_id: numberId || null,
         to_e164: attempt.to,
         outcome_code: code,
-        callback_due_at: outcome?.requires_callback_time ? iso : null,
+        callback_due_at: cb ? cb.at.toISOString() : null,
+        callback_any_time: cb ? cb.anyTime : null,
         talk_seconds: minutes ? Number(minutes) * 60 : timerSeconds(),
         dial_count: attempt.dials,
         note: note || null,
       });
       if (numberId) store(LAST_NUMBER_KEY, numberId);
       setCode(null);
-      setWhen('');
+      setDay('');
+      setTime('');
       setMinutes('');
       setNote('');
       setKey(newKey());
@@ -636,13 +641,13 @@ function LogCall({
     } finally {
       setSaving(false);
     }
-  }, [code, saving, needsWhen, when, key, numberId, outcome, minutes, note, d.lead.id, toast, onSaved, attempt]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [code, saving, needsWhen, day, time, key, numberId, outcome, minutes, note, d.lead.id, toast, onSaved, attempt]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Layout effect: the hotkeys are live as soon as the lead is on screen, so a fast keypress isn't lost.
   useLayoutEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (document.querySelector('.modal-back')) return;
-      if (e.key === 'Enter' && code && (!isTyping(e) || e.ctrlKey || e.metaKey || ['when-input', 'log-note', 'log-minutes'].includes((e.target as HTMLElement).id))) {
+      if (e.key === 'Enter' && code && (!isTyping(e) || e.ctrlKey || e.metaKey || ['callback-day', 'callback-time', 'log-note', 'log-minutes'].includes((e.target as HTMLElement).id))) {
         e.preventDefault();
         void save();
         return;
@@ -726,12 +731,23 @@ function LogCall({
       </div>
       {code && (
         <div className="row" style={{ alignItems: 'flex-end' }}>
-          {needsWhen && (
-            <label className="field">
-              <span>Call back at (your time)</span>
-              <input id="when-input" ref={whenRef} type="datetime-local" value={when} onChange={(e) => setWhen(e.target.value)} />
-            </label>
-          )}
+          {needsWhen && (() => {
+            const cb = readCallback(day, time);
+            return (
+              <div className="callback-picker">
+                <label className="field">
+                  <span>Call back on</span>
+                  <input id="callback-day" ref={dayRef} value={day} onChange={(e) => setDay(e.target.value)} onFocus={(e) => e.target.select()}
+                    placeholder="t, m, fri, 10/24" style={{ width: 120 }} autoComplete="off" />
+                </label>
+                <label className="field">
+                  <span>At (optional)</span>
+                  <input id="callback-time" value={time} onChange={(e) => setTime(e.target.value)} placeholder="any time" style={{ width: 90 }} autoComplete="off" />
+                </label>
+                <span className={'error' in cb ? 'help warn' : 'help'} aria-live="polite">{'error' in cb ? (day ? cb.error : '') : describeCallback(cb)}</span>
+              </div>
+            );
+          })()}
           <label className="field">
             <span>Talk minutes {attempt.timerStart && outcome?.counts_as_human_contact ? '(blank: from the timer)' : '(optional)'}</span>
             <input id="log-minutes" type="number" min={0} max={600} value={minutes} onChange={(e) => setMinutes(e.target.value)} style={{ width: 90 }} />
@@ -745,7 +761,7 @@ function LogCall({
         </div>
       )}
       {!code && <p className="help">After the call, press the outcome key, then Enter. Dialed more than once? Press <kbd>{k('dials_up')}</kbd> for each extra dial.</p>}
-      {d.state?.status === 'invalid' && <RestoreBox d={d} onSaved={onRefresh} label="Marked as an invalid number or wrong person." />}
+      {d.state?.status === 'invalid' && <RestoreBox d={d} onSaved={onRefresh} label="Marked as a bad number." />}
     </div>
   );
 }

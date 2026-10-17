@@ -3,7 +3,7 @@ import { api, fmtDateTime, fmtMoney, fmtPhone, fullName, localTime, type LeadDet
 import { useApp } from '../App';
 
 const STATUS_LABEL: Record<string, string> = {
-  new: 'New', retry: 'Retry', callback: 'Callback', appointment_set: 'Appointment set', invalid: 'Invalid number', dead: 'Dead lead',
+  new: 'New', retry: 'Retry', callback: 'Callback', appointment_set: 'Appointment set', invalid: 'Bad number', dead: 'Dead lead',
 };
 
 function leadAge(iso: string | null | undefined) {
@@ -147,6 +147,8 @@ function LinkedLeads({ d }: { d: LeadDetail }) {
   );
 }
 
+const fmtDay = (iso: string) => new Date(iso).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+
 /** Every call is its own entry; changed outcomes show the earlier ones struck through. */
 export function CallHistory({ calls, onChange }: { calls: Call[]; onChange: () => void }) {
   const { meta, toast, bumpStats } = useApp();
@@ -199,7 +201,7 @@ export function CallHistory({ calls, onChange }: { calls: Call[]; onChange: () =
             {c.outcomes.map((o) => (
               <div key={o.id} className={o.superseded ? 'superseded' : ''}>
                 {o.label}
-                {o.callback_due_at && <> · call back {fmtDateTime(o.callback_due_at)}</>}
+                {o.callback_due_at && <> · call back {o.callback_any_time ? `${fmtDay(o.callback_due_at)}, any time` : fmtDateTime(o.callback_due_at)}</>}
                 {!o.callback_due_at && o.outcome_code === 'callback' && !o.superseded && <span className="warn"> · needs a time</span>}
               </div>
             ))}

@@ -13,6 +13,8 @@ export interface AgendaItem {
   county: string | null;
   state: string | null;
   due_at?: string | null;
+  /** A callback for a day, any time that day (due_at is the start of the day). */
+  any_time?: number | boolean;
 }
 export interface Agenda {
   callbacks: AgendaItem[];
@@ -90,7 +92,8 @@ export function CallbackAlerts() {
         seen.current.add(key);
         fresh.push({ key, kind, item, at });
       };
-      for (const c of a.callbacks) consider('callback', c, c.due_at);
+      // "Any time" callbacks have no moment to alert for; they wait at the top of Today and the queue.
+      for (const c of a.callbacks) if (!c.any_time) consider('callback', c, c.due_at);
       if (!fresh.length) return;
       saveSeen(seen.current);
       setDue((d) => [...d, ...fresh]);
