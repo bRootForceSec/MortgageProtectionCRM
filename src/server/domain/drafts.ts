@@ -47,6 +47,8 @@ export interface DraftSettings {
   mapping?: ColumnMapping;
   default_lead_type?: string | null;
   batch?: Partial<BatchInput>;
+  /** Import leads identical to ones imported before as new leads (you bought the same lead again). */
+  import_repeats_as_new?: boolean;
 }
 
 export interface Progress {
@@ -93,12 +95,12 @@ export function assessRow(data: DraftRowData, edits: FieldValues | null): ReadIs
   const issues: ReadIssue[] = [];
   const has = (field: string) => issues.some((i) => i.field === field && i.blocking);
   for (const r of data.reader_issues) if (!edited.has(r.field)) issues.push(r);
-  for (const e of errors) issues.push({ field: e.includes('name') ? 'full_name' : 'phone', message: e, blocking: true });
-  if (!lead.address_line) issues.push({ field: 'address', message: 'no street address', blocking: true });
+  for (const e of errors) issues.push({ field: e.includes('name') ? 'full_name' : 'phone', message: e, blocking: true, kind: 'missing' });
+  if (!lead.address_line) issues.push({ field: 'address', message: 'no street address', blocking: true, kind: 'missing' });
   if (!lead.county_key) {
-    issues.push({ field: 'county', message: 'Which county was this lead bought for? It isn\'t on the page and the address didn\'t settle it.', blocking: true });
+    issues.push({ field: 'county', message: 'Which county was this lead bought for? It isn\'t on the page and the address didn\'t settle it.', blocking: true, kind: 'missing' });
   } else if (lead.county_source === 'page' && !isKnownCounty(lead.county_key)) {
-    issues.push({ field: 'county', message: `"${lead.county}" isn't a county in ${lead.state}. Check the spelling.`, blocking: true });
+    issues.push({ field: 'county', message: `"${lead.county}" isn't a county in ${lead.state}. Check the spelling.`, blocking: true, kind: 'missing' });
   }
   for (const u of data.uncertain) {
     const field = (AI_FIELD as Record<string, string>)[u.field] ?? u.field;
@@ -111,11 +113,12 @@ export function assessRow(data: DraftRowData, edits: FieldValues | null): ReadIs
     }
     issues.push({
       field,
+      kind: 'uncertain',
       message: `Not sure of this: ${why}`,
       blocking: ['full_name', 'phone', 'address', 'city', 'state', 'zip', 'county'].includes(field),
     });
   }
-  for (const w of warnings) issues.push({ field: '', message: w, blocking: false });
+  for (const w of warnings) issues.push({ field: '', message: w, blocking: false, kind: 'note' });
   return issues;
 }
 
@@ -442,11 +445,12 @@ export function getDraftView(db: DB, id: string) {
   const d = getDraft(db, id);
   const rows = rowsOf(db, id);
   const source = sourceRowsOf(db, d, rows);
-  const { summary, rows: analyzed } = previewRows(db, d.file_sha256, source, {});
+  const settings = JSON.parse(d.settings_json) as DraftSettings;
+  const { summary, rows: analyzed } = previewRows(db, d.file_sha256, source, { importRepeatsAsNew: settings.import_repeats_as_new });
   const byRow = new Map(analyzed.map((a) => [a.rowNumber, a]));
   return {
     id: d.id, kind: d.kind, file_name: d.file_name, file_modified: d.file_modified, status: d.status,
-    settings: JSON.parse(d.settings_json) as DraftSettings,
+    settings,
     progress: d.progress_json ? (JSON.parse(d.progress_json) as Progress) : null,
     summary,
     needs_review: rows.filter((r) => r.review === 'needs_review' && r.extractor !== 'pending').length,
@@ -499,7 +503,8 @@ export function reviewRow(
     const issues = assessRow(data, edits);
     let review: Review = r.review;
     if (input.action === 'ok') {
-      const missing = issues.filter((i) => i.blocking && ['full_name', 'phone', 'address', 'county'].includes(i.field));
+      // Your OK confirms anything the reader wasn't sure of; only missing essentials stop it.
+      const missing = issues.filter((i) => i.kind === 'missing');
       if (missing.length) throw new DomainError(`Fill in first: ${missing.map((m) => m.message).join('; ')}`);
       review = 'ok';
     } else if (input.action === 'discard') review = 'discarded';
@@ -583,7 +588,10 @@ export function commitDraft(db: DB, importsDir: string, id: string, batch: Batch
     default_lead_type: settings.default_lead_type, prompt_version: d.kind === 'pdf' ? PROMPT_VERSION : undefined,
     readers: [...new Set(rows.map((r) => r.extractor).filter(Boolean))],
   };
-  const result = commitRows(db, { fileName: d.file_name, sha256: d.file_sha256 }, source, batch, meta, { fileModified: d.file_modified });
+  const result = commitRows(db, { fileName: d.file_name, sha256: d.file_sha256 }, source, batch, meta, {
+    fileModified: d.file_modified,
+    importRepeatsAsNew: settings.import_repeats_as_new,
+  });
   const safe = d.file_name.replace(/[^\w.\- ]/g, '_');
   fs.copyFileSync(d.file_path, path.join(importsDir, `${result.batchId}-${safe}`));
   fs.chmodSync(path.join(importsDir, `${result.batchId}-${safe}`), 0o600);

@@ -12,7 +12,7 @@ import {
   createPdfDraft, createSheetDraft, DraftWorker, getDraftView, listDrafts, reviewRow, setRowsType, updateDraftSettings,
   deleteDraft, draftFile, commitDraft,
 } from '../domain/drafts.js';
-import { loadAiSettings, saveAiSettings, type Secrets } from '../ai/settings.js';
+import { loadAiSettings, saveAiSettings, getSetting, type Secrets } from '../ai/settings.js';
 import { countyKey, countyDisplayName } from '../domain/county.js';
 import { rebuildLeadState } from '../domain/leadState.js';
 import { uuidv7, nowIso } from '../ids.js';
@@ -130,7 +130,7 @@ export function registerImportRoutes(
 
   app.post('/api/drafts/:id/settings', async (req) => {
     const { id } = idParam.parse(req.params);
-    const b = z.object({ default_lead_type: typeCode.nullish(), batch: batchSchema.partial().optional() }).parse(req.body);
+    const b = z.object({ default_lead_type: typeCode.nullish(), batch: batchSchema.partial().optional(), import_repeats_as_new: z.boolean().optional() }).parse(req.body);
     return updateDraftSettings(db, id, b);
   });
 
@@ -187,6 +187,7 @@ export function registerImportRoutes(
   });
 
   // ---------- lead types and prices ----------
+  app.get('/api/import-defaults', async () => ({ lead_type: getSetting<string>(db, 'import.last_lead_type') ?? 'D' }));
   app.get('/api/lead-types', async () => db.prepare('SELECT * FROM lead_type ORDER BY sort_order, code').all());
   app.put('/api/lead-types/:code', async (req) => {
     const { code } = z.object({ code: typeCode }).parse(req.params);
@@ -245,7 +246,10 @@ export function registerImportRoutes(
         ...r,
         name: countyDisplayName(r.county_key),
         area_codes: codes.filter((c) => c.county_key === r.county_key).map((c) => c.area_code),
-        suggested: (common.all(r.county_key) as { code: string; n: number }[]).map((c) => ({ area_code: c.code, leads: c.n })),
+        // Only codes shared by a good part of the county's leads; a few out-of-area numbers aren't a hint.
+        suggested: (common.all(r.county_key) as { code: string; n: number }[])
+          .filter((c) => c.n >= 3 && c.n / r.leads >= 0.25)
+          .map((c) => ({ area_code: c.code, leads: c.n })),
       })),
       ...extra.map((k) => ({
         county_key: k, county: countyDisplayName(k), name: countyDisplayName(k), state: k.split('|')[0], leads: 0, workable: 0,

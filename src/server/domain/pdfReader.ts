@@ -10,7 +10,10 @@ import type { LeadFieldKey } from './mapping.js';
 export interface ReadIssue {
   field: string;
   message: string;
+  /** Holds the lead for review (it can't be imported without a look). */
   blocking: boolean;
+  /** missing: OK stays refused until it's filled in. Anything else is cleared by your OK. */
+  kind?: 'missing' | 'uncertain' | 'conflict' | 'note';
 }
 
 export interface PageRead {

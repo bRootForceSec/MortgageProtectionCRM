@@ -6,9 +6,10 @@ import { LeadsPage } from './pages/LeadsPage';
 import { CallsPage } from './pages/CallsPage';
 import { NumbersPage } from './pages/NumbersPage';
 import { DataPage } from './pages/DataPage';
+import { SettingsPage } from './pages/SettingsPage';
 import { UpdateBar } from './components/UpdateBar';
 
-type Page = 'calling' | 'import' | 'leads' | 'calls' | 'numbers' | 'data';
+export type Page = 'calling' | 'import' | 'leads' | 'calls' | 'numbers' | 'data' | 'settings';
 const PAGES: { key: Page; label: string }[] = [
   { key: 'calling', label: 'Calling' },
   { key: 'leads', label: 'Leads' },
@@ -16,6 +17,7 @@ const PAGES: { key: Page; label: string }[] = [
   { key: 'import', label: 'Import' },
   { key: 'numbers', label: 'Numbers' },
   { key: 'data', label: 'Export & backup' },
+  { key: 'settings', label: 'Settings' },
 ];
 
 interface Ctx {
@@ -96,6 +98,7 @@ export function App() {
           {page === 'calls' && <CallsPage />}
           {page === 'numbers' && <NumbersPage />}
           {page === 'data' && <DataPage />}
+          {page === 'settings' && <SettingsPage />}
         </div>
         {toastMsg && <div className={`toast ${toastMsg.kind === 'error' ? 'error' : ''}`} role="status">{toastMsg.msg}</div>}
       </div>

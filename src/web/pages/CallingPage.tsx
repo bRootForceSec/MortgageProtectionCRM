@@ -12,6 +12,74 @@ const BUCKETS: { key: QueueItem['bucket'] | 'all'; label: string }[] = [
 ];
 
 const SELECTED_KEY = 'mpcrm.selectedLead';
+const GROUPS_KEY = 'mpcrm.queue.groups';
+
+interface Groups {
+  counties: string[];
+  areaCodes: string[];
+}
+interface CountyOption {
+  county_key: string;
+  name: string;
+  state: string;
+  workable: number;
+  area_codes: string[];
+}
+
+function loadGroups(): Groups {
+  try {
+    const g = JSON.parse(store(GROUPS_KEY) ?? 'null');
+    if (g && Array.isArray(g.counties) && Array.isArray(g.areaCodes)) return g;
+  } catch {
+    /* ignore */
+  }
+  return { counties: [], areaCodes: [] };
+}
+
+/** Pick which leads to work: by the county they were bought for, by area code (every county linked to it), or both. */
+function GroupPicker({ groups, onChange }: { groups: Groups; onChange: (g: Groups) => void }) {
+  const [counties, setCounties] = useState<CountyOption[]>([]);
+  useEffect(() => {
+    api.get<CountyOption[]>('/counties').then(setCounties).catch(() => {});
+  }, []);
+  if (!counties.length) return null;
+  const codes = [...new Set(counties.flatMap((c) => c.area_codes))].sort();
+  const name = (k: string) => {
+    const c = counties.find((x) => x.county_key === k);
+    return c ? `${c.name}, ${c.state}` : k.split('|').reverse().join(', ');
+  };
+  const add = (v: string) => {
+    if (v.startsWith('ac:')) onChange({ ...groups, areaCodes: [...new Set([...groups.areaCodes, v.slice(3)])] });
+    else if (v.startsWith('co:')) onChange({ ...groups, counties: [...new Set([...groups.counties, v.slice(3)])] });
+  };
+  const empty = !groups.counties.length && !groups.areaCodes.length;
+  return (
+    <div className="group-picker">
+      <select value="" onChange={(e) => add(e.target.value)} aria-label="Choose counties or area codes to call">
+        <option value="">{empty ? 'Calling: all counties' : 'Add a county or area code…'}</option>
+        {codes.length > 0 && (
+          <optgroup label="Area codes (counties linked in Settings)">
+            {codes.filter((c) => !groups.areaCodes.includes(c)).map((c) => (
+              <option key={c} value={`ac:${c}`}>{c}: {counties.filter((x) => x.area_codes.includes(c)).map((x) => x.name).join(', ')}</option>
+            ))}
+          </optgroup>
+        )}
+        <optgroup label="Counties">
+          {counties.filter((c) => !groups.counties.includes(c.county_key)).map((c) => (
+            <option key={c.county_key} value={`co:${c.county_key}`}>{c.name}, {c.state} ({c.workable})</option>
+          ))}
+        </optgroup>
+      </select>
+      {groups.areaCodes.map((c) => (
+        <span key={c} className="chip">{c}<button onClick={() => onChange({ ...groups, areaCodes: groups.areaCodes.filter((x) => x !== c) })} aria-label={`Remove ${c}`}>×</button></span>
+      ))}
+      {groups.counties.map((k) => (
+        <span key={k} className="chip">{name(k)}<button onClick={() => onChange({ ...groups, counties: groups.counties.filter((x) => x !== k) })} aria-label={`Remove ${name(k)}`}>×</button></span>
+      ))}
+      {!empty && <button className="btn small" onClick={() => onChange({ counties: [], areaCodes: [] })}>All counties</button>}
+    </div>
+  );
+}
 const LAST_NUMBER_KEY = 'mpcrm.lastNumber';
 
 function store(k: string, v?: string | null) {
@@ -37,18 +105,28 @@ export function CallingPage() {
   const [queue, setQueue] = useState<QueueResponse | null>(null);
   const [selected, setSelected] = useState<string | null>(store(SELECTED_KEY));
   const [detail, setDetail] = useState<LeadDetail | null>(null);
+  const [groups, setGroupsState] = useState<Groups>(loadGroups);
+  const setGroups = (g: Groups) => {
+    setGroupsState(g);
+    store(GROUPS_KEY, JSON.stringify(g));
+  };
   const searchRef = useRef<HTMLInputElement>(null);
 
   const loadQueue = useCallback(async () => {
     try {
-      const q = await api.get<QueueResponse>('/queue', { bucket: bucket === 'all' ? undefined : bucket, search });
+      const q = await api.get<QueueResponse>('/queue', {
+        bucket: bucket === 'all' ? undefined : bucket,
+        search,
+        counties: groups.counties.join(','),
+        area_codes: groups.areaCodes.join(','),
+      });
       setQueue(q);
       return q;
     } catch (e: any) {
       toast(e.message, 'error');
       return null;
     }
-  }, [bucket, search, toast]);
+  }, [bucket, search, toast, groups]);
 
   const loadDetail = useCallback(async (id: string | null) => {
     if (!id) return setDetail(null);
@@ -121,6 +199,7 @@ export function CallingPage() {
             onKeyDown={(e) => e.key === 'Escape' && (setSearch(''), (e.target as HTMLInputElement).blur())}
             style={{ width: '100%' }}
           />
+          <GroupPicker groups={groups} onChange={setGroups} />
           <div className="tabs" title="Order: due callbacks, past appointments, new leads (newest batch first), then retries 4 h after the last attempt. Skipped leads drop to the end for today.">
             {BUCKETS.map((b) => (
               <button key={b.key} className={bucket === b.key ? 'active' : ''} onClick={() => setBucket(b.key)}>
@@ -141,9 +220,11 @@ export function CallingPage() {
               {queue.items.map((i) => (
                 <li key={i.lead_id} className={`${selected === i.lead_id ? 'selected' : ''} ${i.skipped_today ? 'skipped' : ''}`} onClick={() => select(i.lead_id)}>
                   <span className="name">{i.name}</span>
-                  <span className={`badge ${i.bucket}`}>{i.bucket === 'callback_due' ? 'callback' : i.bucket === 'appointment_passed' ? 'appt passed' : i.bucket}</span>
+                  <span className={`badge ${i.bucket}`}>
+                    {i.bucket === 'callback_due' ? (i.needs_time ? 'callback, needs a time' : 'callback') : i.bucket === 'appointment_passed' ? (i.needs_time ? 'appt, needs a date' : 'appt passed') : i.bucket}
+                  </span>
                   <span className="sub">
-                    {fmtPhone(i.phone_e164)} · {i.state ?? '?'} · {i.attempts_total ? `${i.attempts_total} attempt${i.attempts_total > 1 ? 's' : ''}, last ${fmtRelative(i.last_call_at)}` : 'never called'}
+ {fmtPhone(i.phone_e164)} · {i.county ? `${i.county} Co.` : i.state ?? '?'} · {i.attempts_total ? `${i.attempts_total} attempt${i.attempts_total > 1 ? 's' : ''}, last ${fmtRelative(i.last_call_at)}` : 'never called'}
                     {i.skipped_today && ' · skipped'}
                   </span>
                 </li>
