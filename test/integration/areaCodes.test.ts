@@ -63,6 +63,9 @@ describe('built-in county area codes', () => {
     const allen = r.find((c) => c.county_key === 'IN|ALLEN');
     expect(allen.area_codes).toEqual(['260']);
     expect(allen.built_in).toEqual(['260']);
+    // The lead page carries its county's codes, so Calling can check the caller ID against them.
+    const dee = (db.prepare("SELECT id FROM lead WHERE first_name = 'Dee'").get() as { id: string }).id;
+    expect((await app.inject({ url: `/api/leads/${dee}`, headers: auth })).json().county_area_codes).toEqual(['260']);
   });
 });
 
