@@ -6,6 +6,14 @@ import { retryGapMs } from './callingSettings.js';
 // calls, current outcomes, lead actions (skip / dead / restore) and appointments.
 // `rebuildLeadState` can be run at any time and must produce the same result.
 
+/**
+ * SQL for an appointment's current result, aliased `a`: the newest result you entered, else the result
+ * a spreadsheet import recorded (official_status), else NULL. "cleared" means no result.
+ */
+export const CURRENT_RESULT_SQL = `coalesce(
+  (SELECT nullif(r.result, 'cleared') FROM appointment_result r WHERE r.appointment_id = a.id ORDER BY r.entered_at DESC, r.id DESC LIMIT 1),
+  CASE WHEN NOT EXISTS (SELECT 1 FROM appointment_result r WHERE r.appointment_id = a.id) THEN a.official_status END)`;
+
 export type LeadStatus = 'new' | 'retry' | 'callback' | 'appointment_set' | 'invalid' | 'dead' | 'sold';
 
 /** Default gap before an unanswered lead comes back. You can change it in Settings. */
@@ -31,6 +39,9 @@ export interface LeadFacts {
     set_from_number_id: string | null;
     created_at: string;
     official_status?: string | null;
+    /** How it went (see appointments.ts), if you've said. */
+    result?: string | null;
+    result_at?: string | null;
   }[];
 }
 
@@ -63,10 +74,13 @@ export function deriveLeadState(f: LeadFacts, now: string, retryGap = RETRY_GAP_
     ...outcomes.filter((o) => o.marks_dead).map((o) => o.entered_at),
   ].sort().at(-1);
 
-  const soldAt = outcomes.filter((o) => o.lead_effect === 'sold').map((o) => o.entered_at).sort().at(-1);
-
   const appts = [...f.appointments].sort(byKey('created_at'));
-  const live = appts.filter((a) => a.internal_status !== 'canceled' && !a.official_status);
+  const soldAt = [
+    ...outcomes.filter((o) => o.lead_effect === 'sold').map((o) => o.entered_at),
+    ...appts.filter((a) => a.result === 'sold').map((a) => a.result_at ?? a.created_at),
+  ].sort().at(-1);
+  // An appointment is open until it's canceled or you've said how it went.
+  const live = appts.filter((a) => a.internal_status !== 'canceled' && !a.result);
   const openAppt = live.filter((a) => a.scheduled_for !== null && a.scheduled_for >= now).at(-1);
   // An appointment from a spreadsheet has no date: it stays open ("needs a date") until a later call says otherwise.
   const undatedAppt = lastOutcome?.outcome_code === 'appointment' ? live.filter((a) => a.scheduled_for === null).at(-1) : undefined;
@@ -122,7 +136,12 @@ export function loadLeadFacts(db: DB, leadId: string): LeadFacts {
       .all(leadId) as LeadFacts['outcomes'],
     actions: db.prepare('SELECT action, created_at FROM lead_action WHERE lead_id = ?').all(leadId) as LeadFacts['actions'],
     appointments: db
-      .prepare('SELECT scheduled_for, internal_status, set_from_number_id, created_at, official_status FROM appointment WHERE lead_id = ?')
+      .prepare(
+        `SELECT a.scheduled_for, a.internal_status, a.set_from_number_id, a.created_at, a.official_status,
+                ${CURRENT_RESULT_SQL} result,
+                (SELECT r.entered_at FROM appointment_result r WHERE r.appointment_id = a.id ORDER BY r.entered_at DESC, r.id DESC LIMIT 1) result_at
+         FROM appointment a WHERE a.lead_id = ?`,
+      )
       .all(leadId) as LeadFacts['appointments'],
   };
 }

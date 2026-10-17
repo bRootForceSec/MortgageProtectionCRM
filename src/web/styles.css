@@ -215,3 +215,27 @@ table.shortcuts .chip { margin-right: 6px; }
 .queue-list li.done.selected { opacity: .85; }
 .queue-list li.done .name { text-decoration: line-through; text-decoration-thickness: 1px; }
 .badge.done { color: var(--muted); border-color: var(--border); }
+
+/* Reports */
+button.num { background: none; border: 0; padding: 0; font: inherit; color: var(--accent); cursor: pointer; text-decoration: underline dotted; text-underline-offset: 3px; }
+button.num:hover { text-decoration-style: solid; }
+.small { font-size: 12px; }
+.scroll-x { overflow-x: auto; }
+td.good { color: var(--good); }
+td.bad { color: var(--warn); }
+input.pct { width: 64px; }
+.hour-chart { display: flex; align-items: flex-end; gap: 4px; height: 190px; padding-bottom: 34px; position: relative; }
+.hour-chart .hour { flex: 1; display: flex; flex-direction: column; align-items: center; height: 100%; min-width: 26px; }
+.hour-chart .bars { flex: 1; width: 100%; display: flex; align-items: flex-end; justify-content: center; gap: 2px; }
+.hour-chart .bar { width: 42%; min-height: 1px; border: 0; padding: 0; border-radius: 3px 3px 0 0; cursor: pointer; }
+.hour-chart .bar.dials, .sw.dials { background: var(--accent); }
+.hour-chart .bar.contacts, .sw.contacts { background: var(--good); }
+.hour-chart .lbl { font-size: 11px; }
+.hour-chart .legend { position: absolute; right: 0; top: 0; font-size: 12px; display: flex; gap: 6px; align-items: center; }
+.sw { display: inline-block; width: 10px; height: 10px; border-radius: 2px; }
+table.heat { border-collapse: collapse; font-size: 12px; }
+table.heat th, table.heat td { padding: 3px 5px; text-align: center; border: 1px solid var(--border); min-width: 40px; }
+table.heat td button.num { color: var(--text, inherit); }
+.result-keys { display: flex; gap: 4px; flex-wrap: wrap; }
+.checklist td { vertical-align: middle; }
+table.grid tr.selected { background: var(--selected); }

@@ -20,6 +20,8 @@ import { registerImportRoutes } from './importRoutes.js';
 import { DraftWorker } from '../domain/drafts.js';
 import { Secrets } from '../ai/settings.js';
 import { registerCallingRoutes } from './callingRoutes.js';
+import { registerReportRoutes } from './reportRoutes.js';
+import { CURRENT_RESULT_SQL } from '../domain/leadState.js';
 import { KdeConnect } from '../dialer.js';
 import { loadCallingSettings } from '../domain/callingSettings.js';
 import { groupWhere, searchWhere, parseList } from '../domain/groupFilter.js';
@@ -96,6 +98,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   const drafts = deps.drafts ?? new DraftWorker(db, secrets);
   registerImportRoutes(app, { db, config, worker: drafts, secrets, getUpload, dropUpload: (id) => uploads.delete(id) });
   registerCallingRoutes(app, { db, kde: deps.kde });
+  registerReportRoutes(app, { db, config });
 
   // ---------- version & updates ----------
   const updates = deps.updates ?? new Updates(null, { commit: 'dev', built_at: null });
@@ -211,7 +214,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       actions: db.prepare('SELECT * FROM lead_action WHERE lead_id = ? ORDER BY created_at DESC').all(id),
       appointments: db
         .prepare(
-          `SELECT a.*, n.e164 from_e164, n.label from_label FROM appointment a LEFT JOIN caller_number n ON n.id = a.set_from_number_id
+          `SELECT a.*, ${CURRENT_RESULT_SQL} result, n.e164 from_e164, n.label from_label FROM appointment a LEFT JOIN caller_number n ON n.id = a.set_from_number_id
            WHERE a.lead_id = ? ORDER BY a.scheduled_for DESC`,
         )
         .all(id),

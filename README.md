@@ -17,11 +17,14 @@ A small calling CRM that runs on your own computer. It imports your lead spreads
 - **Undo**: press `Z` within 10 seconds of saving to go back to that lead and pick a different outcome. Older mistakes: "Undo call" in the history. An undone call stays in the history, marked, and stops counting.
 - **Dialing from the computer**: `C` copies the number, shows a QR code to scan with your phone (Android or iPhone), or sends the number to your phone with KDE Connect. It also starts a call timer that fills in talk minutes when someone picks up.
 - **Today page**: callbacks and appointments for the day, in your time and the lead's. A desktop alert and a sound when one comes due.
+- **How did it go?** Once an appointment's time passes, the Today page asks for its result: `1` Sat, no sale · `2` Sold · `3` No-show · `4` Rescheduled (asks for the new time) · `5` Canceled. These are your own notes for your numbers; the IMO site stays the official record.
+- **Reports**: today or any dates, for the counties or area codes you pick. Activity (dials, attempts, contacts, talks of 2+ minutes, appointments), by hour, best time to call by the lead's local time, by county, by batch (cost per lead reached, booked and sold, from each lead's own price) and against the flier's benchmarks by lead type (booked per contact, 80% sits, 50% apps; edit the targets on the page). Click any number to see the calls or leads behind it. "Export to Excel" saves the whole report.
+- **Numbers page**: calls, dials and pick-up rate for each caller ID (today, 7 and 30 days), appointments set from it, a warning before retiring a number with appointments still coming up, and a reputation checklist with the dates you did each check. The app never switches numbers by itself.
 - **Scripts** (`P`) with the lead's name, lender and address filled in, **daily goals** in the top bar, **edit a lead** (`E`) with the old values kept, and **keyboard shortcuts you can change** in Settings.
 - **Dead pile**: a do-not-call request moves the lead out of the queue. Everything else goes back into rotation. "Disconnected / invalid" and "wrong person" go to an invalid pile. Both piles can be restored.
 - **Duplicates**: leads with the same phone are linked (not merged), so co-borrowers and re-bought leads stay separate. Importing a phone number that's in the dead pile is flagged in the preview.
 - **Export** any table to CSV or Excel, or everything as one Excel file or a full JSON dump. Health fields are left out unless you tick the box.
-- **Backups** are verified copies of the database. Restore keeps the current database aside instead of deleting it.
+- **Backups** are verified copies of the database. Restore keeps the current database aside instead of deleting it. Once a week the app restores the newest backup into a scratch copy to check it works, and shows the result on Export & backup.
 
 ## Setup on Fedora
 

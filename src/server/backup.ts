@@ -146,3 +146,41 @@ function isAlive(pid: number) {
     return false;
   }
 }
+
+export interface RestoreCheck {
+  at: string;
+  file: string | null;
+  ok: boolean | null;
+  message: string;
+}
+
+/**
+ * Restores the newest backup into a scratch file and checks it opens cleanly and matches what was saved
+ * (integrity check, row counts and contents). The live database is never touched. Encrypted backups are
+ * skipped, since the key to open them isn't kept on this computer.
+ */
+export function checkLatestBackup(c: Config, now = new Date()): RestoreCheck {
+  const at = now.toISOString();
+  const file = listBackups(c).at(-1);
+  if (!file) return { at, file: null, ok: null, message: 'No backups yet.' };
+  const name = path.basename(file);
+  if (file.endsWith('.age')) return { at, file: name, ok: null, message: 'Skipped: this backup is encrypted, so it can only be checked with your key.' };
+  const scratch = path.join(c.backupDir, `.check-${at.replace(/[:.]/g, '-')}.sqlite`);
+  try {
+    const got = extractBackup(file, scratch);
+    const metaFile = `${file}.json`;
+    if (fs.existsSync(metaFile)) {
+      const meta = JSON.parse(fs.readFileSync(metaFile, 'utf8')) as { counts?: Record<string, number>; checksum?: string };
+      for (const [t, n] of Object.entries(meta.counts ?? {})) {
+        if (got.counts[t] !== n) throw new Error(`table ${t} has ${got.counts[t] ?? 0} rows, expected ${n}`);
+      }
+      if (meta.checksum && meta.checksum !== got.checksum) throw new Error('the contents differ from when it was saved');
+    }
+    const rows = Object.values(got.counts).reduce((a, b) => a + b, 0);
+    return { at, file: name, ok: true, message: `Restored cleanly into a scratch copy: ${rows} rows checked.` };
+  } catch (e: any) {
+    return { at, file: name, ok: false, message: `Restore check failed: ${e.message}` };
+  } finally {
+    for (const f of [scratch, `${scratch}-wal`, `${scratch}-shm`]) fs.rmSync(f, { force: true });
+  }
+}

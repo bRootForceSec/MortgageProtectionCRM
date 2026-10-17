@@ -8,6 +8,7 @@ import { rebuildLeadState } from './domain/leadState.js';
 import { Updates, readBuildInfo } from './updates.js';
 import { DraftWorker } from './domain/drafts.js';
 import { Secrets } from './ai/settings.js';
+import { runBackupCheckIfDue } from './http/reportRoutes.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 
@@ -39,6 +40,16 @@ async function main() {
   await app.listen({ host: config.host, port: config.port });
   // Carry on reading any PDF import that was in progress when the app stopped.
   drafts.resumeAll();
+  // Once a week, check that the newest backup restores cleanly into a scratch copy.
+  const checkBackups = () => {
+    try {
+      runBackupCheckIfDue(db, config);
+    } catch (e: any) {
+      app.log.error({ err: e.message }, 'backup restore check failed to run');
+    }
+  };
+  setTimeout(checkBackups, 60_000).unref();
+  setInterval(checkBackups, 6 * 3600_000).unref();
   const url = `http://127.0.0.1:${config.port}/?t=${token}`;
   // Printed to the terminal only (not to the log stream), so the token is not written to log files.
   process.stdout.write(`\nMortgage Protection CRM is running.\nOpen: ${url}\nData: ${config.dataDir}\n\n`);
