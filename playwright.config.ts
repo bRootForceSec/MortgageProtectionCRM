@@ -7,6 +7,8 @@ export default defineConfig({
   workers: 1,
   use: {
     headless: true,
+    // The browser runs on Eastern time, like the sample leads, so callback times read the same in their time and yours.
+    timezoneId: 'America/New_York',
     launchOptions: process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : {},
   },
 });

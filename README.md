@@ -11,18 +11,20 @@ A small calling CRM that runs on your own computer. It imports your lead spreads
 - **Lead types and prices** (FE-A to E, editable in Settings). Pick the type per order, and change it for some leads when an order is mixed. Each lead keeps its own price.
 - **Counties and area codes**: every lead is grouped by the county it was bought for, taken from the lead page or else the address. Each county is linked to its usual area codes automatically (built in for Indiana, Michigan and Ohio; change them in Settings). Picking an area code means every county under that code, never the lead's own phone number. The same county and area-code choice applies on Calling, Leads, Calls and Today, and typing a 3-digit area code in any search box works the same way.
 - **Calling queue**: due callbacks first, then new leads (newest batch first), then retries after the gap you set (4 hours unless you change it). Skip moves a lead to the end for today.
-- **Logging a call**: press one of five keys, then `Enter`: `1` No answer · `2` Talked, no appt · `3` Appt set · `4` Bad number (disconnected or wrong number) · `5` Callback. Each call is its own record with the caller ID you used. Changing an outcome later keeps the earlier one. Older outcomes (voicemail, busy, not interested and so on) are retired but stay in each lead's history.
+- **Logging a call**: press one of five keys: `1` No answer · `2` Talked, no appt · `3` Appt set · `4` Bad number (disconnected or wrong number) · `5` Callback. No answer and Bad number save as soon as you press them; the others save with `Enter` (Settings → Calling can make every outcome wait for `Enter`). Each call is its own record with the caller ID you used. Changing an outcome later keeps the earlier one. Older outcomes (voicemail, busy, not interested and so on) are retired but stay in each lead's history.
 - **Dial counter**: dialed twice before giving up? Press `→` (or `>`) for each extra dial and `←` (or `<`) to take one off. It's still one attempt; your numbers count both attempts and dials.
 - **Working list**: the Calling page keeps the list you started with. Worked leads stay in it, greyed out, so you see it go down; `↑`/`↓` move through it, and "Refresh list" brings in new leads. Callbacks that come due are added at the top.
 - **Undo**: press `Z` within 10 seconds of saving to go back to that lead and pick a different outcome. Older mistakes: "Undo call" in the history. An undone call stays in the history, marked, and stops counting.
-- **Dialing from the computer**: `C` copies the number, shows a QR code to scan with your phone (Android or iPhone), or sends the number to your phone with KDE Connect. It also starts a call timer that fills in talk minutes when someone picks up.
-- **Callbacks** (`5`) are for real "call me later" requests. Type the day (`t` today, `m` tomorrow, a weekday like `fri`, or a date like `10/24`) and, if you want, a time (`2`, `2:30`, `10am`; 1 to 7 means PM). Leave the time blank for any time that day: the lead goes to the top of the queue from the start of that day.
+- **Dialing from the computer**: `C` copies the number, shows a QR code to scan with your phone (Android or iPhone), or sends the number to your phone with KDE Connect. `X` does the same for the lead's other number. It also starts a call timer that fills in talk minutes when someone picks up. With KDE Connect, the next lead's number goes to your phone as soon as you save or skip, so you only tap call (turn this off in Settings → Calling).
+- **Callbacks** (`5`) are for real "call me later" requests. Type the day (`t` today, `m` tomorrow, a weekday like `fri`, or a date like `10/24`) and, if you want, a time (`2`, `2:30`, `10am`; 1 to 7 means PM). The time is the lead's own time, so "call me at 2" from a Central-time lead means 2 PM where they are; the picker shows it in your time too. Leave the time blank for any time that day: the lead goes to the top of the queue from the start of that day.
 - **Today page**: callbacks for the day, in your time and the lead's. A desktop alert and a sound when one with a time comes due.
 - **Appointment set** is a call outcome with no date or time. The lead leaves the calling queue. Appointment times and results (sat, sold, no-show) are tracked in Unitrust, not here.
 - **Reports**: today or any dates, for the counties or area codes you pick. Activity (dials, attempts, contacts, talks of 2+ minutes, appointments), by hour, best time to call by the lead's local time, by county, by batch (cost per lead reached and booked, from each lead's own price) and against the flier's benchmarks by lead type (booked per contact; edit the targets on the page). Click any number to see the calls or leads behind it. "Export to Excel" saves the whole report.
 - **Numbers page**: calls, dials and pick-up rate for each caller ID (today, 7 and 30 days), appointments set from it, a warning before retiring a number you set appointments from, and a reputation checklist with the dates you did each check. The app never switches numbers by itself.
 - **Scripts** (`P`) with the lead's name, lender and address filled in, **daily goals** in the top bar, **edit a lead** (`E`) with the old values kept, and **keyboard shortcuts you can change** in Settings.
-- **Dead pile**: when someone asks not to be called, use "Move to dead pile" on the lead page. "Bad number" goes to the bad-numbers pile. Everything else goes back into rotation. Both piles can be restored.
+- **Dead pile**: when someone asks not to be called, use "Move to dead pile" on the lead page. "Bad number" goes to the bad-numbers pile, unless the lead has another number: then it switches to that number and stays in rotation. Everything else goes back into rotation. Both piles can be restored.
+- **Shared numbers**: when leads share a phone number, a bad number or a dead-pile lead rules that number out on all of them, with the reason on each lead. Restoring the lead it came from brings the others back; restoring one of the others brings back just that one.
+- **Time zones** come from the lead's state, and from the county where a state has two (Indiana's and Michigan's Central-time counties).
 - **Duplicates**: leads with the same phone are linked (not merged), so co-borrowers and re-bought leads stay separate. Importing a phone number that's in the dead pile is flagged in the preview.
 - **Export** any table to CSV or Excel, or everything as one Excel file or a full JSON dump. Health fields are left out unless you tick the box.
 - **Backups** are verified copies of the database. Restore keeps the current database aside instead of deleting it. Once a week the app restores the newest backup into a scratch copy to check it works, and shows the result on Export & backup.
@@ -80,7 +82,7 @@ Choose it in **Settings**. The default is **Claude with your Claude account**: i
 
 1. **Import** a batch: Import → pick the lead type → choose the PDF or spreadsheet → (spreadsheet: check the column matches → Continue) → check any leads that need a look → set types for mixed orders → Import.
 2. **Numbers**: add your Sideline number once, so each call records which caller ID you used.
-3. **Calling**: the current lead's details are in the middle. Press `C` to dial (copy, QR code or KDE Connect, chosen in Settings), call on your phone, press `→` for each extra dial, then press the outcome key and `Enter`. `Enter` saves and moves straight on to the next lead. A callback suggests tomorrow; type `t` for today or any other day.
+3. **Calling**: the current lead's details are in the middle. Press `C` to dial (copy, QR code or KDE Connect, chosen in Settings), call on your phone, press `→` for each extra dial, then press the outcome key. `1` (No answer) and `4` (Bad number) save and move on by themselves; the others save with `Enter`. A callback suggests tomorrow; type `t` for today or any other day.
 
 These are the starting keys. Change any of them in **Settings → Keyboard shortcuts**.
 
@@ -91,12 +93,13 @@ These are the starting keys. Change any of them in **Settings → Keyboard short
 | `S` | Skip this lead for today |
 | `/` | Search by name, county, phone or area code |
 | `C` | Dial: copy the number, show a QR code, or send it to your phone |
+| `X` | Dial the lead's other number |
 | `→` `>` / `←` `<` | One more / one less dial |
 | `Z` | Undo the call you just saved (10 seconds) |
 | `A` | Write a note |
 | `E` | Edit the lead |
 | `P` | Show or hide your script |
-| `1`–`5` | Pick an outcome |
+| `1`–`5` | Pick an outcome (`1` and `4` save straight away) |
 | `Enter` | Save the outcome and go to the next lead |
 | `Esc` | Cancel |
 

@@ -55,3 +55,36 @@ describe('callback picker', () => {
     expect(readCallback(g.day, g.time, now)).toEqual({ at: new Date(2026, 9, 18), anyTime: true });
   });
 });
+
+describe('callback picker in the lead\'s time zone', () => {
+  const hourIn = (d: Date, tz: string) => d.toLocaleTimeString('en-US', { timeZone: tz, hour: 'numeric', minute: '2-digit' });
+
+  it('reads a typed time as the lead\'s own time', () => {
+    for (const tz of ['America/Chicago', 'America/New_York', 'America/Los_Angeles']) {
+      const cb = readCallback('m', '2', now, tz);
+      if ('error' in cb) throw new Error(cb.error);
+      expect(hourIn(cb.at, tz)).toBe('2:00 PM');
+      expect(cb.anyTime).toBe(false);
+    }
+  });
+
+  it('keeps "any time" as the start of your day', () => {
+    const cb = readCallback('m', '', now, 'America/Chicago');
+    if ('error' in cb) throw new Error(cb.error);
+    expect(cb.anyTime).toBe(true);
+    expect(cb.at.getHours()).toBe(0);
+  });
+
+  it('puts an undone callback back in the lead\'s time', () => {
+    const cb = readCallback('m', '2:30', now, 'America/Chicago');
+    if ('error' in cb) throw new Error(cb.error);
+    expect(callbackFields(cb.at.toISOString(), false, 'America/Chicago').time).toBe('2:30pm');
+  });
+
+  it('handles the day clocks change', () => {
+    // Nov 1 2026: US clocks go back an hour.
+    const cb = readCallback('11/1', '10am', now, 'America/Chicago');
+    if ('error' in cb) throw new Error(cb.error);
+    expect(hourIn(cb.at, 'America/Chicago')).toBe('10:00 AM');
+  });
+});

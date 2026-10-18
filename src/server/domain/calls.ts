@@ -63,7 +63,9 @@ export function logManualCall(db: DB, input: ManualCallInput) {
       | { id: string; phone_e164: string | null }
       | undefined;
     if (!lead) throw new DomainError('lead not found', 404);
-    const to = input.to_e164 || lead.phone_e164;
+    // Unless you dialed another of the lead's numbers, the call went to the number the lead is being called on.
+    const active = db.prepare('SELECT active_phone_e164 FROM lead_state WHERE lead_id = ?').get(lead.id) as { active_phone_e164: string | null } | undefined;
+    const to = input.to_e164 || active?.active_phone_e164 || lead.phone_e164;
     if (!to) throw new DomainError('lead has no valid phone number');
     const outcome = getOutcome(db, input.outcome_code);
     const callbackDue = checkIso(input.callback_due_at, 'callback time');

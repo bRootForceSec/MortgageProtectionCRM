@@ -1,3 +1,4 @@
+import type { Statement } from 'better-sqlite3';
 import type { DB } from '../db/connection.js';
 import { nowIso } from '../ids.js';
 import { retryGapMs } from './callingSettings.js';
@@ -20,8 +21,11 @@ export type LeadStatus = 'new' | 'retry' | 'callback' | 'appointment_set' | 'inv
 /** Default gap before an unanswered lead comes back. You can change it in Settings. */
 export const RETRY_GAP_MS = 4 * 60 * 60 * 1000;
 
+/** Stands for the lead's main number when the facts don't list its numbers. */
+const MAIN = '(main)';
+
 export interface LeadFacts {
-  calls: { id: string; requested_at: string; from_number_id: string | null; initiation_result: string; time_known?: number }[];
+  calls: { id: string; requested_at: string; from_number_id: string | null; initiation_result: string; time_known?: number; to_e164?: string | null }[];
   /** Current (non-superseded) outcome per call. */
   outcomes: {
     call_id: string;
@@ -35,6 +39,18 @@ export interface LeadFacts {
     lead_effect?: string | null;
   }[];
   actions: { action: 'skip' | 'mark_dead' | 'restore'; created_at: string }[];
+  /** The lead's numbers in order: main, alternate, called-in-from. Left out in some tests: then only the main number counts. */
+  phones?: string[];
+  /** Numbers ruled out on other leads that share them: marked bad there, or that lead is in the dead pile. */
+  blocks?: PhoneBlock[];
+}
+
+export interface PhoneBlock {
+  phone: string;
+  at: string;
+  kind: 'bad' | 'dead';
+  /** The other lead's name, for the reason shown on this one. */
+  who: string;
 }
 
 export interface DerivedLeadState {
@@ -47,6 +63,12 @@ export interface DerivedLeadState {
   due_any_time: number;
   skipped_at: string | null;
   preferred_number_id: string | null;
+  /** The number to call: the first of the lead's numbers that isn't ruled out. */
+  active_phone_e164: string | null;
+  /** Numbers on this lead that are ruled out (JSON list). */
+  blocked_phones_json: string | null;
+  /** Why a number is ruled out, when another lead ruled it out or the main number is bad. */
+  block_reason: string | null;
 }
 
 /** Pure function: facts in, state out. */
@@ -86,23 +108,59 @@ export function deriveLeadState(f: LeadFacts, now: string, retryGap = RETRY_GAP_
     due_any_time: 0,
   };
 
-  if (deadAt && deadAt > lastRestore) return { ...base, status: 'dead', next_due_at: null };
-  if (lastOutcome?.grp === 'invalid' && lastOutcome.entered_at > lastRestore) {
-    return { ...base, status: 'invalid', next_due_at: null };
+  // Which numbers are ruled out. A bad number counts for the number that was dialed, so a lead with an alternate
+  // stays in rotation on the alternate. Other leads with the same number pass on "bad" and "dead pile".
+  const realPhones = f.phones ?? [];
+  const phones = realPhones.length ? realPhones : [MAIN];
+  const calledNumber = new Map(placed.map((c) => [c.id, realPhones.length ? c.to_e164 ?? phones[0]! : MAIN]));
+  const blocked = new Map<string, { kind: 'bad' | 'dead'; who: string | null }>();
+  for (const o of outcomes) {
+    const n = calledNumber.get(o.call_id);
+    if (o.grp === 'invalid' && o.entered_at > lastRestore && n) blocked.set(n, { kind: 'bad', who: null });
   }
+  for (const b of f.blocks ?? []) {
+    if (b.at > lastRestore && phones.includes(b.phone) && blocked.get(b.phone)?.kind !== 'dead') blocked.set(b.phone, { kind: b.kind, who: b.who });
+  }
+  const active = phones.find((p) => !blocked.has(p)) ?? null;
+  const ruledOut = phones.filter((p) => blocked.has(p) && p !== MAIN);
+  const reasonFor = (p: string) => {
+    const b = blocked.get(p)!;
+    if (b.kind === 'dead') return `Same number as ${b.who}, who is in the dead pile`;
+    return b.who ? `Same number as ${b.who}, marked as a bad number` : null;
+  };
+  const firstBlocked = phones.find((p) => blocked.has(p));
+  let blockReason = firstBlocked ? reasonFor(firstBlocked) : null;
+  if (active && firstBlocked && realPhones.length) blockReason = `${blockReason ?? 'The main number is a bad number'}; calling the other number`;
+  const withPhones = {
+    ...base,
+    active_phone_e164: realPhones.length ? active : null,
+    blocked_phones_json: ruledOut.length ? JSON.stringify(ruledOut) : null,
+    block_reason: blockReason,
+  };
+
+  if (deadAt && deadAt > lastRestore) return { ...withPhones, status: 'dead', next_due_at: null, block_reason: null };
   // Booked: out of the queue until a later call says otherwise (or you restore it).
   if (lastOutcome && BOOKED_CODES.has(lastOutcome.outcome_code) && lastOutcome.entered_at > lastRestore) {
-    return { ...base, status: 'appointment_set', next_due_at: null };
+    return { ...withPhones, status: 'appointment_set', next_due_at: null };
+  }
+  if (!active) {
+    // Every number is ruled out. One that belongs to someone in the dead pile puts this lead there too.
+    const dead = phones.some((p) => blocked.get(p)?.kind === 'dead');
+    return { ...withPhones, status: dead ? 'dead' : 'invalid', next_due_at: null };
+  }
+  // The last call found a bad number but there's another one to try: due now, on the other number.
+  if (lastOutcome?.grp === 'invalid' && lastOutcome.entered_at > lastRestore) {
+    return { ...withPhones, status: 'retry', next_due_at: null };
   }
   // A callback without a time (e.g. "reschedule" in a spreadsheet) is due now and listed as "needs a time".
   if (lastOutcome?.outcome_code === 'callback') {
     const due = lastOutcome.callback_due_at ?? null;
-    return { ...base, status: 'callback', next_due_at: due, due_any_time: due && lastOutcome.callback_any_time ? 1 : 0 };
+    return { ...withPhones, status: 'callback', next_due_at: due, due_any_time: due && lastOutcome.callback_any_time ? 1 : 0 };
   }
-  if (!lastCall) return { ...base, status: 'new', next_due_at: null };
+  if (!lastCall) return { ...withPhones, status: 'new', next_due_at: null };
   const lastTimed = timedCalls.at(-1);
   const due = lastTimed ? new Date(Date.parse(lastTimed.requested_at) + retryGap).toISOString() : null;
-  return { ...base, status: 'retry', next_due_at: due };
+  return { ...withPhones, status: 'retry', next_due_at: due };
 }
 
 function byKey<K extends string>(k: K) {
@@ -110,12 +168,17 @@ function byKey<K extends string>(k: K) {
 }
 
 export function loadLeadFacts(db: DB, leadId: string): LeadFacts {
+  const lead = stmt(db, 'SELECT phone_e164, phone2_e164, phone3_e164 FROM lead WHERE id = ?').get(leadId) as
+    | { phone_e164: string | null; phone2_e164: string | null; phone3_e164: string | null }
+    | undefined;
+  const phones = [...new Set([lead?.phone_e164, lead?.phone2_e164, lead?.phone3_e164].filter((p): p is string => !!p))];
   return {
-    calls: db
-      .prepare('SELECT id, requested_at, from_number_id, initiation_result, time_known FROM call WHERE lead_id = ? AND voided_at IS NULL')
+    phones,
+    blocks: loadPhoneBlocks(db, leadId, phones),
+    calls: stmt(db, 'SELECT id, requested_at, from_number_id, initiation_result, time_known, to_e164 FROM call WHERE lead_id = ? AND voided_at IS NULL')
       .all(leadId) as LeadFacts['calls'],
-    outcomes: db
-      .prepare(
+    outcomes: stmt(
+        db,
         `SELECT o.call_id, o.entered_at, o.outcome_code, c.grp, c.marks_dead, c.counts_as_human_contact, o.callback_due_at, o.callback_any_time, c.lead_effect
          FROM call_outcome o
          JOIN call ON call.id = o.call_id
@@ -123,22 +186,114 @@ export function loadLeadFacts(db: DB, leadId: string): LeadFacts {
          WHERE call.lead_id = ? AND call.voided_at IS NULL AND NOT EXISTS (SELECT 1 FROM call_outcome s WHERE s.supersedes_id = o.id)`,
       )
       .all(leadId) as LeadFacts['outcomes'],
-    actions: db.prepare('SELECT action, created_at FROM lead_action WHERE lead_id = ?').all(leadId) as LeadFacts['actions'],
+    actions: stmt(db, 'SELECT action, created_at FROM lead_action WHERE lead_id = ?').all(leadId) as LeadFacts['actions'],
   };
 }
 
+const NAME = "trim(coalesce(l.first_name,'') || ' ' || coalesce(l.last_name,''))";
+
+// Prepared once per database: these run for every lead on a full rebuild.
+const prepared = new WeakMap<DB, Map<string, Statement>>();
+function stmt(db: DB, sql: string): Statement {
+  let m = prepared.get(db);
+  if (!m) prepared.set(db, (m = new Map()));
+  let st = m.get(sql);
+  if (!st) m.set(sql, (st = db.prepare(sql)));
+  return st;
+}
+
+/** Numbers this lead shares with other leads that ruled them out: marked bad there, or that lead is in the dead pile. */
+export function loadPhoneBlocks(db: DB, leadId: string, phones: string[]): PhoneBlock[] {
+  if (!phones.length) return [];
+  const p = { id: leadId, phones: JSON.stringify(phones) };
+  const blocks: PhoneBlock[] = [];
+  // A bad number found on another lead's call, unless that lead was restored afterwards.
+  const bad = stmt(
+    db,
+      `SELECT c.to_e164 phone, o.entered_at at, ${NAME} who,
+              (SELECT max(a.created_at) FROM lead_action a WHERE a.lead_id = c.lead_id AND a.action = 'restore') restored
+       FROM call c JOIN call_outcome o ON o.call_id = c.id JOIN outcome_code oc ON oc.code = o.outcome_code JOIN lead l ON l.id = c.lead_id
+       WHERE c.to_e164 IN (SELECT value FROM json_each(@phones)) AND c.lead_id != @id AND c.voided_at IS NULL AND oc.grp = 'invalid'
+         AND NOT EXISTS (SELECT 1 FROM call_outcome s WHERE s.supersedes_id = o.id)`,
+    )
+    .all(p) as { phone: string; at: string; who: string; restored: string | null }[];
+  for (const b of bad) if (b.at > (b.restored ?? '')) blocks.push({ phone: b.phone, at: b.at, kind: 'bad', who: b.who || 'another lead' });
+  // Another lead with the same number that is in the dead pile.
+  const others = stmt(
+    db,
+      `SELECT l.id, ${NAME} who, l.phone_e164, l.phone2_e164, l.phone3_e164,
+              (SELECT max(a.created_at) FROM lead_action a WHERE a.lead_id = l.id AND a.action = 'restore') restored,
+              (SELECT max(a.created_at) FROM lead_action a WHERE a.lead_id = l.id AND a.action = 'mark_dead') dead_action,
+              (SELECT max(o.entered_at) FROM call c JOIN call_outcome o ON o.call_id = c.id JOIN outcome_code oc ON oc.code = o.outcome_code
+                 WHERE c.lead_id = l.id AND c.voided_at IS NULL AND oc.marks_dead = 1
+                   AND NOT EXISTS (SELECT 1 FROM call_outcome s WHERE s.supersedes_id = o.id)) dead_outcome
+       FROM lead l
+       WHERE l.id != @id AND l.id IN (
+         SELECT id FROM lead WHERE phone_e164 IN (SELECT value FROM json_each(@phones))
+         UNION SELECT id FROM lead WHERE phone2_e164 IN (SELECT value FROM json_each(@phones))
+         UNION SELECT id FROM lead WHERE phone3_e164 IN (SELECT value FROM json_each(@phones)))`,
+    )
+    .all(p) as { who: string; phone_e164: string | null; phone2_e164: string | null; phone3_e164: string | null; restored: string | null; dead_action: string | null; dead_outcome: string | null }[];
+  for (const o of others) {
+    const deadAt = [o.dead_action, o.dead_outcome].filter((x): x is string => !!x).sort().at(-1);
+    if (!deadAt || deadAt <= (o.restored ?? '')) continue;
+    for (const ph of [o.phone_e164, o.phone2_e164, o.phone3_e164]) {
+      if (ph && phones.includes(ph)) blocks.push({ phone: ph, at: deadAt, kind: 'dead', who: o.who || 'another lead' });
+    }
+  }
+  return blocks;
+}
+
+/** Other leads that share a number with these leads (their own numbers, or numbers their calls went to). */
+export function leadsSharingPhones(db: DB, leadIds: string[]): string[] {
+  if (!leadIds.length) return [];
+  const ids = JSON.stringify(leadIds);
+  const phones = (
+    db
+      .prepare(
+        `SELECT phone_e164 p FROM lead WHERE id IN (SELECT value FROM json_each(@ids))
+         UNION SELECT phone2_e164 FROM lead WHERE id IN (SELECT value FROM json_each(@ids))
+         UNION SELECT phone3_e164 FROM lead WHERE id IN (SELECT value FROM json_each(@ids))
+         UNION SELECT to_e164 FROM call WHERE lead_id IN (SELECT value FROM json_each(@ids))`,
+      )
+      .all({ ids }) as { p: string | null }[]
+  )
+    .map((r) => r.p)
+    .filter((x): x is string => !!x);
+  if (!phones.length) return [];
+  const ph = JSON.stringify(phones);
+  return (
+    db
+      .prepare(
+        `SELECT id FROM lead WHERE phone_e164 IN (SELECT value FROM json_each(@ph))
+         UNION SELECT id FROM lead WHERE phone2_e164 IN (SELECT value FROM json_each(@ph))
+         UNION SELECT id FROM lead WHERE phone3_e164 IN (SELECT value FROM json_each(@ph))`,
+      )
+      .all({ ph }) as { id: string }[]
+  )
+    .map((r) => r.id)
+    .filter((id) => !leadIds.includes(id));
+}
+
 const UPSERT = `INSERT INTO lead_state (lead_id, status, attempts_total, last_call_at, last_outcome_code, next_due_at,
-    due_any_time, skipped_at, preferred_number_id, derived_at)
+    due_any_time, skipped_at, preferred_number_id, active_phone_e164, blocked_phones_json, block_reason, derived_at)
   VALUES (@lead_id, @status, @attempts_total, @last_call_at, @last_outcome_code, @next_due_at, @due_any_time, @skipped_at,
-    @preferred_number_id, @derived_at)
+    @preferred_number_id, @active_phone_e164, @blocked_phones_json, @block_reason, @derived_at)
   ON CONFLICT(lead_id) DO UPDATE SET status = excluded.status, attempts_total = excluded.attempts_total,
     last_call_at = excluded.last_call_at, last_outcome_code = excluded.last_outcome_code, next_due_at = excluded.next_due_at,
     due_any_time = excluded.due_any_time,
-    skipped_at = excluded.skipped_at, preferred_number_id = excluded.preferred_number_id, derived_at = excluded.derived_at`;
+    skipped_at = excluded.skipped_at, preferred_number_id = excluded.preferred_number_id,
+    active_phone_e164 = excluded.active_phone_e164, blocked_phones_json = excluded.blocked_phones_json,
+    block_reason = excluded.block_reason, derived_at = excluded.derived_at`;
 
-/** Recomputes lead_state for the given leads (all leads when omitted). */
+/**
+ * Recomputes lead_state for the given leads (all leads when omitted), and for every lead that shares a number with
+ * them, since a bad number or a dead-pile lead rules that number out on the others too.
+ */
 export function rebuildLeadState(db: DB, leadIds?: string[], now = nowIso()): number {
-  const ids = leadIds ?? (db.prepare('SELECT id FROM lead').all() as { id: string }[]).map((r) => r.id);
+  const ids = leadIds
+    ? [...new Set([...leadIds, ...leadsSharingPhones(db, leadIds)])]
+    : (db.prepare('SELECT id FROM lead').all() as { id: string }[]).map((r) => r.id);
   const up = db.prepare(UPSERT);
   const gap = retryGapMs(db);
   db.transaction(() => {
@@ -150,7 +305,9 @@ export function rebuildLeadState(db: DB, leadIds?: string[], now = nowIso()): nu
 /** Compares stored lead_state with a fresh derivation. Returns lead ids that differ. */
 export function verifyLeadState(db: DB, now = nowIso()): string[] {
   const rows = db.prepare('SELECT * FROM lead_state').all() as (DerivedLeadState & { lead_id: string })[];
-  const keys: (keyof DerivedLeadState)[] = ['attempts_total', 'last_call_at', 'last_outcome_code', 'skipped_at', 'preferred_number_id'];
+  const keys: (keyof DerivedLeadState)[] = [
+    'attempts_total', 'last_call_at', 'last_outcome_code', 'skipped_at', 'preferred_number_id', 'active_phone_e164', 'blocked_phones_json',
+  ];
   const bad: string[] = [];
   const gap = retryGapMs(db);
   for (const r of rows) {

@@ -7,6 +7,7 @@ import { getSetting, setSetting } from '../ai/settings.js';
 /** Actions that have keyboard shortcuts. Outcome keys are set per outcome. */
 export const SHORTCUT_ACTIONS = {
   dial: { label: 'Dial / copy the number and start the timer', keys: ['c'] },
+  dial_alt: { label: 'Dial the lead\'s other number', keys: ['x'] },
   dials_up: { label: 'One more dial', keys: ['ArrowRight', '>', '.'] },
   dials_down: { label: 'One less dial', keys: ['ArrowLeft', '<', ','] },
   list_down: { label: 'Move down the list', keys: ['ArrowDown'] },
@@ -33,6 +34,10 @@ export const CallingSettings = z.object({
   kdeconnect_device: z.string().max(100).nullable().default(null),
   /** Fill talk minutes from the timer when you save. */
   use_timer: z.boolean().default(true),
+  /** No answer and Bad number save as soon as you press the key, without Enter. */
+  instant_save: z.boolean().default(true),
+  /** With KDE Connect, send the next lead's number to your phone as soon as you save or skip. */
+  auto_send_next: z.boolean().default(true),
   shortcuts: z
     .object({
       actions: z.record(z.string(), z.array(key).max(5)).default({}),

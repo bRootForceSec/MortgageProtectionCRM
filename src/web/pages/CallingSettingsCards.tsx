@@ -96,9 +96,16 @@ export function CallingCard() {
               )}{' '}
               <button className="btn small" onClick={() => api.get<typeof devices>('/dial/devices').then(setDevices)}>Look again</button>{' '}
               {s.kdeconnect_device && <button className="btn small" onClick={testDial}>Test</button>}
+              <br />
+              <label className="choice-inline"><input type="checkbox" checked={s.auto_send_next} onChange={(e) => set({ auto_send_next: e.target.checked })} /> send the next lead's number to my phone as soon as I save or skip</label>
             </span>
           </>
         )}
+
+        <label>Saving</label>
+        <span>
+          <label className="choice-inline"><input type="checkbox" checked={s.instant_save} onChange={(e) => set({ instant_save: e.target.checked })} /> No answer and Bad number save as soon as I press the key (no Enter). Undo still works.</label>
+        </span>
 
         <label>Call timer</label>
         <span>
