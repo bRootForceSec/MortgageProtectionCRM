@@ -39,8 +39,10 @@ interface Attempt {
   dials: number;
   timerStart: number | null;
   to: string | null;
+  /** When this lead came on screen, for the time spent on it. */
+  shownAt: number;
 }
-const freshAttempt = (): Attempt => ({ dials: 1, timerStart: null, to: null });
+const freshAttempt = (): Attempt => ({ dials: 1, timerStart: null, to: null, shownAt: Date.now() });
 
 /** What you had entered, put back after an undo. */
 interface FormValues {
@@ -325,7 +327,7 @@ export function CallingPage() {
     try {
       const r = await api.post<{
         lead_id: string; outcome_code: string | null; callback_due_at: string | null; callback_any_time: boolean;
-        dial_count: number; talk_seconds: number | null; from_number_id: string | null; note: string | null;
+        dial_count: number; talk_seconds: number | null; lead_seconds: number | null; from_number_id: string | null; note: string | null;
       }>(`/calls/${s.callId}/void`, { reason: 'undo' });
       const cb = callbackFields(r.callback_due_at, r.callback_any_time, s.tz);
       setRestore({
@@ -340,7 +342,8 @@ export function CallingPage() {
           numberId: r.from_number_id,
         },
       });
-      setAttempt({ dials: r.dial_count, timerStart: null, to: null });
+      // The clock on this lead carries on from where it was when you saved.
+      setAttempt({ dials: r.dial_count, timerStart: null, to: null, shownAt: Date.now() - (r.lead_seconds ?? 0) * 1000 });
       markDone(s.leadId, null);
       select(s.leadId);
       toast(`Undone. Pick the right outcome for ${s.name}.`);
@@ -669,6 +672,7 @@ function LogCall({
         callback_any_time: cb ? cb.anyTime : null,
         talk_seconds: minutes ? Number(minutes) * 60 : timerSeconds(o),
         dial_count: attempt.dials,
+        lead_seconds: Math.round((Date.now() - attempt.shownAt) / 1000),
         note: note || null,
       });
       if (numberId) store(LAST_NUMBER_KEY, numberId);

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { api, fmtDateTime, fmtDob, fmtMoney, fmtPhone, fullName, localTime, personAge, type LeadDetail, type Call } from '../api';
+import { api, fmtDateTime, fmtDob, fmtDuration, fmtMoney, fmtPhone, fullName, localTime, personAge, type LeadDetail, type Call } from '../api';
 import { useApp } from '../App';
 
 const STATUS_LABEL: Record<string, string> = {
@@ -214,12 +214,14 @@ export function CallHistory({ calls, onChange }: { calls: Call[]; onChange: () =
             to {fmtPhone(c.to_e164)}{c.from_e164 && <> · from {c.from_label ?? ''} {fmtPhone(c.from_e164)}</>}
             {c.talk_seconds != null && <> · {Math.round(c.talk_seconds / 60)} min</>}
             {c.dial_count > 1 && <> · <b>{c.dial_count} dials</b></>}
+            {c.lead_seconds != null && <> · {fmtDuration(c.lead_seconds)} on lead</>}
           </div>
           {c.voided_at && <div className="muted">Undone {fmtDateTime(c.voided_at)}. Not counted anywhere.</div>}
           <div>
             {c.outcomes.map((o) => (
               <div key={o.id} className={o.superseded ? 'superseded' : ''}>
                 {o.label}
+                {c.outcomes.length > 1 && <span className="muted"> · set {fmtDateTime(o.entered_at)}</span>}
                 {o.callback_due_at && <> · call back {o.callback_any_time ? `${fmtDay(o.callback_due_at)}, any time` : fmtDateTime(o.callback_due_at)}</>}
                 {!o.callback_due_at && o.outcome_code === 'callback' && !o.superseded && <span className="warn"> · needs a time</span>}
               </div>

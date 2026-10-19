@@ -239,6 +239,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       occurred_at: z.string().max(40).nullish(),
       talk_seconds: z.number().min(0).max(36000).nullish(),
       dial_count: z.number().int().min(1).max(1000).nullish(),
+      lead_seconds: z.number().min(0).max(7 * 86400).nullish(),
       outcome_code: z.string().max(40),
       callback_due_at: z.string().max(40).nullish(),
       callback_any_time: z.boolean().nullish(),
@@ -297,7 +298,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     const search = searchWhere(q.search);
     return db
       .prepare(
-        `SELECT c.id, c.lead_id, c.channel, c.from_e164, c.to_e164, c.requested_at, c.state, c.talk_seconds, c.dial_count, c.voided_at,
+        `SELECT c.id, c.lead_id, c.channel, c.from_e164, c.to_e164, c.requested_at, c.state, c.talk_seconds, c.dial_count, c.lead_seconds, c.voided_at,
                 c.time_known,
                 trim(coalesce(l.first_name,'') || ' ' || coalesce(l.last_name,'')) lead_name, l.county, n.label from_label,
                 (SELECT o.outcome_code FROM call_outcome o WHERE o.call_id = c.id
