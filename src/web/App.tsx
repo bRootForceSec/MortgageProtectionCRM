@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { api, ApiError, type Meta } from './api';
-import { CallingPage } from './pages/CallingPage';
+import { CallingPage, OPENED_KEY } from './pages/CallingPage';
 import { ImportPage } from './pages/ImportPage';
 import { LeadsPage } from './pages/LeadsPage';
 import { CallsPage } from './pages/CallsPage';
@@ -83,6 +83,11 @@ export function App() {
   };
   const openLead = useCallback((leadId: string) => {
     try {
+      // Shown beside your calling list without changing it; "Back to list" returns to the lead you were on.
+      const was = localStorage.getItem('mpcrm.selectedLead');
+      const prev = JSON.parse(localStorage.getItem(OPENED_KEY) ?? 'null') as { leadId: string; backTo: string | null } | null;
+      const backTo = prev && prev.leadId === was ? prev.backTo : was;
+      localStorage.setItem(OPENED_KEY, JSON.stringify({ leadId, backTo: backTo === leadId ? null : backTo }));
       localStorage.setItem('mpcrm.selectedLead', leadId);
     } catch {
       /* storage unavailable */
