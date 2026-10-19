@@ -12,6 +12,7 @@ export const LEAD_FIELDS = [
   { key: 'lender', label: 'Lender', synonyms: ['lender', 'mortgage lender', 'bank', 'mortgage company', 'servicer'] },
   { key: 'loan_amount', label: 'Loan amount', synonyms: ['loan amount', 'loan', 'mortgage amount', 'amount', 'loan amt', 'mortgage'] },
   { key: 'age', label: 'Age', synonyms: ['age', 'borrower age', 'age of borrower'] },
+  { key: 'dob', label: 'Date of birth', synonyms: ['dob', 'd o b', 'date of birth', 'birth date', 'birthdate', 'birthday', 'borrower dob', 'borrower date of birth'] },
   { key: 'coborrower', label: 'Co-borrower', synonyms: ['co-borrower', 'coborrower', 'co borrower', 'co-borrower?', 'has co-borrower', 'cobor'] },
   { key: 'address', label: 'Street address', synonyms: ['address', 'street', 'street address', 'property address', 'loan address', 'address 1', 'mailing address'] },
   { key: 'city', label: 'City', synonyms: ['city', 'town'] },

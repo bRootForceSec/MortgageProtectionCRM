@@ -2,7 +2,7 @@ import type { DB } from '../db/connection.js';
 import { uuidv7, nowIso } from '../ids.js';
 import { DomainError } from './calls.js';
 import {
-  normalizeUsPhone, normalizeState, normalizeZip, normalizeMoneyToCents, normalizeAge, coborrowerSignal, toText, STATE_TZ,
+  normalizeUsPhone, normalizeState, normalizeZip, normalizeMoneyToCents, normalizeAge, normalizeDob, ageOn, coborrowerSignal, toText, STATE_TZ,
 } from './normalize.js';
 
 // Editing a lead's details by hand. The lead row holds the current value; every change is also written to
@@ -10,14 +10,14 @@ import {
 
 export const EDITABLE_FIELDS = [
   'first_name', 'last_name', 'phone', 'phone2', 'phone3', 'email', 'address_line', 'city', 'state', 'zip',
-  'lender', 'loan_amount', 'age', 'coborrower',
+  'lender', 'loan_amount', 'age', 'dob', 'coborrower',
 ] as const;
 export type EditableField = (typeof EDITABLE_FIELDS)[number];
 
 const LABEL: Record<EditableField, string> = {
   first_name: 'First name', last_name: 'Last name', phone: 'Phone', phone2: 'Alternate phone', phone3: 'Called-in-from phone',
   email: 'Email', address_line: 'Address', city: 'City', state: 'State', zip: 'ZIP', lender: 'Lender',
-  loan_amount: 'Mortgage amount', age: 'Age', coborrower: 'Co-borrower',
+  loan_amount: 'Mortgage amount', age: 'Age', dob: 'Date of birth', coborrower: 'Co-borrower',
 };
 
 /** Applies edits inside the caller's transaction. Returns how many fields changed. */
@@ -68,6 +68,13 @@ export function editLeadDetails(db: DB, leadId: string, edits: Partial<Record<Ed
         set.age_raw = v || null;
         break;
       }
+      case 'dob': {
+        const b = normalizeDob(v);
+        if (v && b.value == null) problems.push(`${LABEL[field]}: ${b.problem}`);
+        set.dob = b.value;
+        set.dob_raw = v || null;
+        break;
+      }
       case 'coborrower':
         set.coborrower_raw = v || null;
         set.coborrower_signal = coborrowerSignal(v);
@@ -77,6 +84,8 @@ export function editLeadDetails(db: DB, leadId: string, edits: Partial<Record<Ed
     }
   }
   if (problems.length) throw new DomainError(problems.join('; '));
+  // The age follows a new date of birth, even when an age was typed in the same edit.
+  if (typeof set.dob === 'string') set.age = ageOn(set.dob);
 
   const now = nowIso();
   const change = db.prepare('INSERT INTO lead_change (id, lead_id, field, old_value, new_value, created_at) VALUES (?,?,?,?,?,?)');

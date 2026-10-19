@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { callbackFields, describeCallback, differentZone, readCallback } from '../when';
-import { api, fmtMoney, fmtPhone, fmtRelative, newKey, type LeadDetail, type QueueResponse, type QueueItem } from '../api';
+import { api, personAge, fmtMoney, fmtPhone, fmtRelative, newKey, type LeadDetail, type QueueResponse, type QueueItem } from '../api';
 import { useApp } from '../App';
 import { LeadSummary, CallHistory, Notes } from '../components/LeadView';
 import { EditLead } from '../components/EditLead';
+import { LeadPage } from '../components/LeadPage';
 import { DialQr } from '../components/DialQr';
 import { GroupPicker, useGroups } from '../components/GroupPicker';
 import { fillScript, isAction, isTyping, keyLabel, normKey, type KeyMap } from '../shortcuts';
@@ -501,19 +502,22 @@ export function CallingPage() {
                 onSaved={onSaved}
                 onRefresh={refreshDetail}
               />
+              <section className="calls-notes" aria-label="History">
+                <div>
+                  <h3>Calls</h3>
+                  <CallHistory calls={detail.calls} onChange={refreshDetail} />
+                </div>
+                <div>
+                  <h3>Notes</h3>
+                  <Notes key={detail.lead.id} d={detail} onChange={refreshDetail} />
+                </div>
+              </section>
             </>
           )}
         </div>
       </section>
 
-      <section className="panel" aria-label="History">
-        <header><h3>Calls</h3></header>
-        <div className="body">
-          {detail && <CallHistory calls={detail.calls} onChange={refreshDetail} />}
-          <h3 style={{ marginTop: 16 }}>Notes</h3>
-          {detail && <Notes key={detail.lead.id} d={detail} onChange={refreshDetail} />}
-        </div>
-      </section>
+      {detail ? <LeadPage d={detail} /> : <section className="panel lead-page" aria-label="Lead page" />}
       {editing && detail && <EditLead d={detail} onClose={() => setEditing(false)} onSaved={async () => { setEditing(false); await refreshDetail(); }} />}
       {qr && <DialQr e164={qr} onClose={() => setQr(null)} />}
     </div>
@@ -547,7 +551,7 @@ function ScriptPanel({ d }: { d: LeadDetail }) {
   const values = {
     first_name: l.first_name, last_name: l.last_name, full_name: [l.first_name, l.last_name].filter(Boolean).join(' '),
     lender: l.lender, loan_amount: l.loan_amount_cents != null ? fmtMoney(l.loan_amount_cents) : l.loan_amount_raw,
-    address: l.address_line, city: l.city, state: l.state, county: l.county, age: l.age != null ? String(l.age) : null,
+    address: l.address_line, city: l.city, state: l.state, county: l.county, age: personAge(l) != null ? String(personAge(l)) : null,
     agent_name: sc?.agent_name,
   };
   if (!sc?.opener && !sc?.voicemail) {

@@ -109,7 +109,7 @@ describe('PDF import drafts', () => {
     expect(batch.cost_total_cents).toBe(900); // 2 D leads + 1 B lead
     // Enough is kept to rebuild a spreadsheet later: what was read, by what, and what you changed.
     const raw = JSON.parse((db.prepare('SELECT raw_json FROM import_row WHERE row_number = 2').get() as any).raw_json);
-    expect(raw).toMatchObject({ __page: '2', __extractor: 'ai:fake:test', __prompt_version: 'lead-page-v1', __edited: '{"phone":"(260) 555-0186"}' });
+    expect(raw).toMatchObject({ __page: '2', __extractor: 'ai:fake:test', __prompt_version: 'lead-page-v2', __edited: '{"phone":"(260) 555-0186"}' });
     expect(fs.readdirSync(c.importsDir).some((f) => f.endsWith('IN_574_1-4.pdf'))).toBe(true);
     expect(listDrafts(db)).toEqual([]);
   });

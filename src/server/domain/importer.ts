@@ -4,7 +4,7 @@ import { uuidv7, nowIso } from '../ids.js';
 import { type ColumnMapping, type LeadFieldKey, LEAD_FIELDS, validateMapping, headerKey } from './mapping.js';
 import type { ParsedSheet } from './spreadsheet.js';
 import {
-  coborrowerSignal, normalizeAge, normalizeCallinDate, normalizeMoneyToCents, normalizeState, normalizeUsPhone,
+  ageOn, coborrowerSignal, normalizeAge, normalizeDob, normalizeCallinDate, normalizeMoneyToCents, normalizeState, normalizeUsPhone,
   normalizeZip, splitName, toText, timeZoneFor,
 } from './normalize.js';
 import { resolveCounty, lookupZip } from './county.js';
@@ -29,6 +29,9 @@ export interface LeadDraft {
   loan_amount_raw: string | null;
   age: number | null;
   age_raw: string | null;
+  /** Date of birth, YYYY-MM-DD. When set, the age shown is worked out from it. */
+  dob: string | null;
+  dob_raw: string | null;
   coborrower_raw: string | null;
   coborrower_signal: 'yes' | 'unknown';
   address_line: string | null;
@@ -141,6 +144,17 @@ export function mapFields(f: FieldValues, extra: Record<string, string> = {}): {
   const ageRaw = txt(f.age);
   const age = normalizeAge(ageRaw);
   if (age.problem) warnings.push(age.problem);
+  // A date of birth wins over a printed age: it is exact, and the age it gives stays right as time passes.
+  const dobRaw = txt(f.dob);
+  const dob = normalizeDob(dobRaw);
+  if (dob.problem) warnings.push(dob.problem);
+  if (dob.value) {
+    const fromDob = ageOn(dob.value);
+    if (age.value != null && Math.abs(age.value - fromDob) > 1) {
+      warnings.push(`age ${age.value} doesn't match the date of birth (${fromDob}); using the date of birth`);
+    }
+    age.value = fromDob;
+  }
 
   const zip = normalizeZip(txt(f.zip));
   if (zip.problem) warnings.push(zip.problem);
@@ -182,6 +196,8 @@ export function mapFields(f: FieldValues, extra: Record<string, string> = {}): {
       loan_amount_raw: loanRaw,
       age: age.value,
       age_raw: ageRaw,
+      dob: dob.value,
+      dob_raw: dobRaw,
       coborrower_raw: coRaw,
       coborrower_signal: coborrowerSignal(coRaw),
       address_line: txt(f.address),
@@ -400,11 +416,11 @@ export function commitRows(
     );
     const insLead = db.prepare(
       `INSERT INTO lead (id, batch_id, import_row_id, first_name, last_name, full_name_raw, phone_raw, phone_e164, phone_valid,
-        phone2_raw, phone2_e164, phone3_raw, phone3_e164, email, lender, loan_amount_cents, loan_amount_raw, age, age_raw,
+        phone2_raw, phone2_e164, phone3_raw, phone3_e164, email, lender, loan_amount_cents, loan_amount_raw, age, age_raw, dob, dob_raw,
         coborrower_raw, coborrower_signal, address_line, city, state, zip, county, county_key, county_source, time_zone,
         tobacco_raw, health_heart_raw, health_stroke_raw, health_cancer_raw, health_diabetes_raw, extra_json,
         lead_type, price_cents, source_lead_id, callin_at, callin_raw, source_page, created_at)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     );
     const insLink = db.prepare(
       `INSERT OR IGNORE INTO lead_link (id, lead_a, lead_b, reason, created_at) VALUES (?,?,?,'same_phone',?)`,
@@ -426,7 +442,7 @@ export function commitRows(
       insLead.run(
         leadId, batchId, rowId, l.first_name, l.last_name, l.full_name_raw, l.phone_raw, l.phone_e164, l.phone_e164 ? 1 : 0,
         l.phone2_raw, l.phone2_e164, l.phone3_raw, l.phone3_e164, l.email, l.lender, l.loan_amount_cents, l.loan_amount_raw,
-        l.age, l.age_raw, l.coborrower_raw, l.coborrower_signal, l.address_line, l.city, l.state, l.zip,
+        l.age, l.age_raw, l.dob, l.dob_raw, l.coborrower_raw, l.coborrower_signal, l.address_line, l.city, l.state, l.zip,
         l.county, l.county_key, l.county_source, l.time_zone, l.tobacco_raw,
         l.health_heart_raw, l.health_stroke_raw, l.health_cancer_raw, l.health_diabetes_raw,
         Object.keys(l.extra).length ? JSON.stringify(l.extra) : null,

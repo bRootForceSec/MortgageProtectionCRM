@@ -1,5 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import type { FastifyInstance } from 'fastify';
+import fs from 'node:fs';
+import path from 'node:path';
 import { tempDb, sampleCsv } from '../helpers.js';
 import { parseSpreadsheet } from '../../src/server/domain/spreadsheet.js';
 import { suggestMapping } from '../../src/server/domain/mapping.js';
@@ -21,10 +23,12 @@ let db: DB;
 let app: FastifyInstance;
 let jane: string;
 let ran: string[][];
+let importsDir: string;
 
 beforeEach(async () => {
   const t = tempDb();
   db = t.db;
+  importsDir = t.c.importsDir;
   const parsed = await parseSpreadsheet(sampleCsv(), 'a.csv');
   const sheet = parsed.sheets[0]!;
   commitImport(db, parsed, sheet, suggestMapping(sheet.headers), { name: 'b1' });
@@ -172,5 +176,42 @@ describe('editing a lead', () => {
     const bad = await app.inject({ method: 'PATCH', url: `/api/leads/${jane}`, headers: write, payload: { details: { phone: '555-01' } } });
     expect(bad.statusCode).toBe(400);
     expect(bad.json().error).toMatch(/Phone/);
+  });
+});
+
+describe('date of birth and the lead page', () => {
+  it('a date of birth typed in sets the age from it', async () => {
+    const r = await app.inject({ method: 'PATCH', url: `/api/leads/${jane}`, headers: write, payload: { details: { dob: '3/14/1961', age: '20' } } });
+    expect(r.statusCode).toBe(200);
+    const lead = db.prepare('SELECT dob, dob_raw, age FROM lead WHERE id = ?').get(jane) as any;
+    const now = new Date();
+    const expected = now.getFullYear() - 1961 - (now.getMonth() < 2 || (now.getMonth() === 2 && now.getDate() < 14) ? 1 : 0);
+    expect(lead).toEqual({ dob: '1961-03-14', dob_raw: '3/14/1961', age: expected });
+    const bad = await app.inject({ method: 'PATCH', url: `/api/leads/${jane}`, headers: write, payload: { details: { dob: '2/30/1961' } } });
+    expect(bad.statusCode).toBe(400);
+  });
+
+  it('a spreadsheet lead has no PDF page, but its imported row comes with it', async () => {
+    const d = (await app.inject({ url: `/api/leads/${jane}`, headers: auth })).json();
+    expect(d.source_pdf).toBe(false);
+    expect(JSON.parse(d.import_row.raw_json)).toMatchObject({ 'Lead Name': 'Jane Doe', Lender: 'Rocket Mortgage' });
+  });
+
+  it("serves a batch's PDF, and only a PDF", async () => {
+    const batch = (db.prepare('SELECT batch_id FROM lead WHERE id = ?').get(jane) as any).batch_id;
+    fs.writeFileSync(path.join(importsDir, `${batch}-a.csv`), 'not a pdf');
+    expect((await app.inject({ url: `/api/batches/${batch}/file`, headers: auth })).statusCode).toBe(404);
+    expect((await app.inject({ url: `/api/batches/..%2F..%2Fetc/file`, headers: auth })).statusCode).toBe(404);
+
+    fs.writeFileSync(path.join(importsDir, `${batch}-Oct leads.pdf`), '%PDF-1.4 test');
+    db.prepare('UPDATE lead SET source_page = 2 WHERE id = ?').run(jane);
+    const r = await app.inject({ url: `/api/batches/${batch}/file`, headers: auth });
+    expect(r.statusCode).toBe(200);
+    expect(r.headers['content-type']).toBe('application/pdf');
+    expect(r.body).toBe('%PDF-1.4 test');
+    expect((await app.inject({ url: `/api/batches/${batch}/file`, headers: { host: auth.host } })).statusCode).toBe(401);
+    const d = (await app.inject({ url: `/api/leads/${jane}`, headers: auth })).json();
+    expect(d.source_pdf).toBe(true);
+    expect(d.lead.source_page).toBe(2);
   });
 });

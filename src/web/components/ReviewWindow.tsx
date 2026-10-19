@@ -21,6 +21,7 @@ const FIELDS: { key: string; label: string; required?: boolean; sheetOnly?: bool
   { key: 'lender', label: 'Lender' },
   { key: 'loan_amount', label: 'Mortgage amount' },
   { key: 'age', label: 'Age' },
+  { key: 'dob', label: 'Date of birth' },
   { key: 'coborrower', label: 'Co-borrower' },
   { key: 'source_lead_id', label: 'Lead ID' },
   { key: 'callin_date', label: 'Call-in date' },

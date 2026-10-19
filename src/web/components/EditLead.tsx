@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { api, fmtDateTime, fmtPhone, type LeadDetail } from '../api';
+import { api, fmtDateTime, fmtPhone, personAge, type LeadDetail } from '../api';
 import { useApp } from '../App';
 import { useLeadTypes } from '../pages/ImportPage';
 
@@ -19,6 +19,7 @@ const FIELDS: { key: string; label: string; wide?: boolean }[] = [
   { key: 'lender', label: 'Lender' },
   { key: 'loan_amount', label: 'Mortgage amount' },
   { key: 'age', label: 'Age' },
+  { key: 'dob', label: 'Date of birth' },
   { key: 'coborrower', label: 'Co-borrower' },
 ];
 
@@ -37,7 +38,8 @@ function initial(l: LeadDetail['lead']): Record<string, string> {
     zip: l.zip ?? '',
     lender: l.lender ?? '',
     loan_amount: l.loan_amount_raw ?? (l.loan_amount_cents != null ? String(l.loan_amount_cents / 100) : ''),
-    age: l.age != null ? String(l.age) : l.age_raw ?? '',
+    age: personAge(l) != null ? String(personAge(l)) : l.age_raw ?? '',
+    dob: l.dob_raw ?? l.dob ?? '',
     coborrower: l.coborrower_raw ?? '',
   };
 }
