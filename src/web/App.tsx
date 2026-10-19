@@ -16,7 +16,7 @@ import { buildKeyMap, type CallingSettingsResponse, type KeyMap } from './shortc
 export type Page = 'calling' | 'today' | 'reports' | 'import' | 'leads' | 'calls' | 'numbers' | 'data' | 'settings';
 const PAGES: { key: Page; label: string }[] = [
   { key: 'calling', label: 'Calling' },
-  { key: 'today', label: 'Today' },
+  { key: 'today', label: 'Callbacks' },
   { key: 'reports', label: 'Reports' },
   { key: 'leads', label: 'Leads' },
   { key: 'calls', label: 'Call history' },

@@ -63,9 +63,6 @@ export function CallingCard() {
     <div className="card">
       <h2>Calling</h2>
       <div className="settings-grid">
-        <label>Bring back an unanswered lead after</label>
-        <span><NumberField value={s.retry_gap_minutes} onSave={(n) => set({ retry_gap_minutes: n ?? 0 })} /> minutes <span className="help">(0 = right away; default 240 = 4 hours)</span></span>
-
         <label>Dial button (<kbd>{keyLabel(calling.settings.shortcuts.actions.dial?.[0] ?? 'c')}</kbd>)</label>
         <span className="choices">
           {([

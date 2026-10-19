@@ -92,30 +92,39 @@ export interface Meta {
   version: { commit: string; built_at: string | null };
 }
 
-export interface QueueItem {
+/** A lead on the call list (Calling page). */
+export interface CallListItem {
   lead_id: string;
-  bucket: 'callback_due' | 'new' | 'retry';
   name: string;
   phone_e164: string | null;
   state: string | null;
-  time_zone: string | null;
-  batch_name: string;
+  county: string | null;
+  status: string;
   attempts_total: number;
   last_call_at: string | null;
-  last_outcome_code: string | null;
-  next_due_at: string | null;
-  skipped_today: boolean;
-  county: string | null;
-  county_key: string | null;
-  needs_time: boolean;
-  any_time?: boolean;
+  added_at: string;
+  /** Set once the lead was worked: the outcome you gave it and how many dials. */
+  done: { label: string; dials: number; call_id?: string; at?: string } | null;
+  callback_due_at: string | null;
 }
 
-export interface QueueResponse {
-  items: QueueItem[];
-  counts: Record<QueueItem['bucket'], number>;
-  total: number;
-  waiting_later: number;
+export interface RecentOutcome {
+  call_id: string;
+  lead_id: string;
+  entered_at: string;
+  label: string;
+  name: string;
+}
+
+export interface CallListResponse {
+  items: CallListItem[];
+  recent: RecentOutcome[];
+}
+
+export interface AddResult {
+  added: number;
+  already: number;
+  not_callable: number;
 }
 
 export interface Outcome {

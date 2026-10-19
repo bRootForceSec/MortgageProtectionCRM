@@ -3,6 +3,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
+import { addBatchToCallList } from '../domain/callList.js';
 import type { DB } from '../db/connection.js';
 import type { Config } from '../config.js';
 import type { ParsedFile } from '../domain/spreadsheet.js';
@@ -144,9 +145,10 @@ export function registerImportRoutes(
 
   app.post('/api/drafts/:id/commit', async (req) => {
     const { id } = idParam.parse(req.params);
-    const b = z.object({ batch: batchSchema }).parse(req.body);
+    const b = z.object({ batch: batchSchema, add_to_call_list: z.boolean().optional() }).parse(req.body);
     const r = commitDraft(db, config.importsDir, id, b.batch);
-    return { batch_id: r.batchId, summary: r.summary, history: r.history };
+    const call_list = b.add_to_call_list ? addBatchToCallList(db, r.batchId) : null;
+    return { batch_id: r.batchId, summary: r.summary, history: r.history, call_list };
   });
 
   app.delete('/api/drafts/:id', async (req) => {

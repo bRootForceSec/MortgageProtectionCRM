@@ -286,3 +286,18 @@ table.grid tr.selected { background: var(--selected); }
   .lead-viewer { overflow: auto; }
   .lead-viewer .calling.no-list { grid-template-columns: 1fr; }
 }
+
+/* The call list */
+.icon-btn { border: 0; background: none; color: var(--muted); cursor: pointer; font-size: 15px; line-height: 1; padding: 0 3px; border-radius: 4px; visibility: hidden; }
+.queue-list li:hover .icon-btn, .queue-list li.selected .icon-btn { visibility: visible; }
+.icon-btn:hover { color: var(--bad); background: var(--panel-2); }
+button.link { border: 0; background: none; padding: 0; color: var(--accent); cursor: pointer; font: inherit; text-decoration: underline; }
+.list-done { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 8px 10px; margin-bottom: 8px; border: 1px solid var(--good); border-radius: 8px; background: var(--panel-2); }
+.list-done .btn { margin-left: auto; }
+.recent { margin-top: 12px; border-top: 1px solid var(--border); padding-top: 6px; font-size: 12px; }
+.recent summary { cursor: pointer; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; font-weight: 600; }
+.recent ul { list-style: none; margin: 4px 0 0; padding: 0; }
+.recent li { padding: 2px 0; }
+.leads-tools { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 10px; }
+.leads-tools .add-bar { margin-left: auto; display: flex; gap: 6px; align-items: center; }
+table.grid td.pick, table.grid th.pick { width: 28px; text-align: center; }
