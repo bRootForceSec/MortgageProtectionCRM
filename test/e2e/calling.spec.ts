@@ -264,6 +264,38 @@ test('reports: numbers open the calls behind them', async ({ page }) => {
   await page.screenshot({ path: 'test-results/reports.png', fullPage: true });
 });
 
+test('leads open full screen like the Calling page, and step through the list', async ({ page }) => {
+  await page.goto(launchUrl);
+  await page.getByRole('button', { name: 'Leads' }).click();
+  const rows = page.locator('table.grid tbody tr');
+  await expect(rows.first()).toBeVisible();
+  const first = (await rows.nth(0).locator('td').first().innerText()).trim();
+  const second = (await rows.nth(1).locator('td').first().innerText()).trim();
+  await rows.first().click();
+
+  const viewer = page.getByRole('dialog', { name: 'Lead' });
+  await expect(viewer).toBeVisible();
+  await expect(viewer.locator('.lead-name')).toHaveText(first);
+  await expect(viewer.getByLabel('Lead list').locator('li.selected')).toContainText(first);
+  // The page the lead came from, with the same zoom tools as Calling; no outcome buttons.
+  await expect(viewer.getByLabel('Lead page').getByRole('button', { name: 'Zoom in' })).toBeVisible();
+  await expect(viewer.locator('.outcomes')).toHaveCount(0);
+  await page.screenshot({ path: 'test-results/lead-viewer.png' });
+
+  await page.keyboard.press('ArrowDown');
+  await expect(viewer.locator('.lead-name')).toHaveText(second);
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+
+  // Call now takes the lead to the Calling page.
+  await rows.nth(1).click();
+  await expect(viewer.locator('.lead-name')).toHaveText(second);
+  const callNow = viewer.getByRole('button', { name: 'Call now' });
+  await callNow.click();
+  await expect(page.getByLabel('Queue')).toBeVisible();
+  await expect(page.getByLabel('Current lead').locator('.lead-name')).toHaveText(second);
+});
+
 test('API refuses requests without the access cookie', async ({ request }) => {
   const r = await request.get(`http://127.0.0.1:${PORT}/api/meta`);
   expect(r.status()).toBe(401);

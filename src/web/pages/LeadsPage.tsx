@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
-import { api, fmtDateTime, fmtPhone, fullName, type LeadDetail } from '../api';
-import { useApp } from '../App';
-import { LeadSummary, CallHistory, Notes, StatusBadge } from '../components/LeadView';
+import { api, fmtDateTime, fmtPhone, fullName } from '../api';
+import { StatusBadge } from '../components/LeadView';
+import { LeadViewer } from '../components/LeadViewer';
 import { GroupPicker, useGroups } from '../components/GroupPicker';
 
 const STATUSES = [
@@ -48,63 +48,13 @@ export function LeadsPage() {
         </tbody>
       </table>
       {rows.length === 0 && <div className="empty">No leads here.</div>}
-      {open && <LeadModal id={open} onClose={() => { setOpen(null); void load(); }} />}
+      {open && (
+        <LeadViewer
+          id={open}
+          list={rows.map((r) => ({ id: r.id, name: fullName(r), status: r.status, phone: r.phone_e164, county: r.county }))}
+          onClose={() => { setOpen(null); void load(); }}
+        />
+      )}
     </>
-  );
-}
-
-export function LeadModal({ id, onClose }: { id: string; onClose: () => void }) {
-  const { toast } = useApp();
-  const [d, setD] = useState<LeadDetail | null>(null);
-  const load = useCallback(() => api.get<LeadDetail>(`/leads/${id}`).then(setD).catch((e) => toast(e.message, 'error')), [id, toast]);
-  useEffect(() => void load(), [load]);
-  useEffect(() => {
-    const k = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
-    window.addEventListener('keydown', k);
-    return () => window.removeEventListener('keydown', k);
-  }, [onClose]);
-
-  const act = async (action: 'mark_dead' | 'restore') => {
-    const reason = action === 'mark_dead' ? window.prompt('Reason for moving to the dead pile (optional):') : 'restored from lead page';
-    if (reason === null) return;
-    await api.post(`/leads/${id}/actions`, { action, reason });
-    toast(action === 'mark_dead' ? 'Moved to dead pile' : 'Restored to queue');
-    await load();
-  };
-
-  return (
-    <div className="modal-back" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
-        <header>
-          <b>Lead</b>
-          <div className="row">
-            {d && (d.state?.status === 'dead' || d.state?.status === 'invalid'
-              ? <button className="btn small" onClick={() => act('restore')}>Restore to queue</button>
-              : <button className="btn small danger" onClick={() => act('mark_dead')}>Move to dead pile</button>)}
-            <button className="btn small" onClick={onClose}>Close <kbd>Esc</kbd></button>
-          </div>
-        </header>
-        <div className="body">
-          {d && (
-            <>
-              <LeadSummary d={d} />
-              <h3>Calls</h3>
-              <CallHistory calls={d.calls} onChange={load} />
-              <h3 style={{ marginTop: 14 }}>Notes</h3>
-              <Notes d={d} onChange={load} />
-              {d.actions.length > 0 && (
-                <>
-                  <h3 style={{ marginTop: 14 }}>Lead actions</h3>
-                  <ul className="history">
-                    {d.actions.map((a) => <li key={a.id}>{fmtDateTime(a.created_at)} · {a.action.replace('_', ' ')}{a.reason ? ` · ${a.reason}` : ''}</li>)}
-                  </ul>
-                </>
-              )}
-              <p className="help">Source: batch "{d.batch.name}", row {d.import_row?.row_number} of {d.batch.file_name}. Imported {fmtDateTime(d.batch.imported_at)}.</p>
-            </>
-          )}
-        </div>
-      </div>
-    </div>
   );
 }
