@@ -4,7 +4,7 @@ import * as z from 'zod/v4';
 // Adapted from Alistair's "AI Prompt Lead Conversion" rules: blank beats a guess, read handwriting digit
 // by digit, labelled fields only. The app does the spreadsheet, duplicate and formatting work itself.
 
-export const PROMPT_VERSION = 'lead-page-v1';
+export const PROMPT_VERSION = 'lead-page-v2';
 
 const val = z.string().nullable();
 
@@ -15,6 +15,7 @@ export const PageAnswer = z.object({
     full_name: val,
     coborrower: val.describe('co-borrower name, or Yes/No as printed'),
     age: val,
+    dob: val.describe('date of birth exactly as printed; null when the page has none'),
     lender: val,
     loan_amount: val,
     address: val,
@@ -44,7 +45,7 @@ export type PageAnswer = z.infer<typeof PageAnswer>;
 export const PAGE_PROMPT = `You are doing data entry for an insurance agent. The attached PDF is ONE page from a pack of mortgage protection leads. Read it and fill in the fields.
 
 Layouts you may see:
-- "Mortgage Protection Call-in Delivery Notice": typed, two columns. Left column has labelled fields (Mortgage Identification Number, Call-in Date & Time, Last Action, Borrower Name, Co-Borrower, Borrower Age, Lender, Mortgage Amount, Borrower Address, City, State, Zip Code, County). Right column has Called in From, Contact Phone Number, Alternate Phone Number. The paragraph text ("Our records indicate...", "THE REFERENCED MORTGAGE...") is boilerplate, never field data.
+- "Mortgage Protection Call-in Delivery Notice": typed, two columns. Left column has labelled fields (Mortgage Identification Number, Call-in Date & Time, Last Action, Borrower Name, Co-Borrower, Borrower Age, Date of Birth (some versions), Lender, Mortgage Amount, Borrower Address, City, State, Zip Code, County). Right column has Called in From, Contact Phone Number, Alternate Phone Number. The paragraph text ("Our records indicate...", "THE REFERENCED MORTGAGE...") is boilerplate, never field data.
 - Scanned mailer cards or postcards, often rotated, with handwritten phone numbers.
 - CRM note pages or online lead forms.
 

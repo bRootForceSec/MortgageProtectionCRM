@@ -47,6 +47,7 @@ const LABELS: LabelDef[] = [
   { re: /^borrower name:?$/i, slot: 'full_name', col: 'left', multiline: true, name: 'Borrower Name' },
   { re: /^co-?borrower:?$/i, slot: 'coborrower', col: 'left', multiline: true, name: 'Co-Borrower' },
   { re: /^borrower age:?$/i, slot: 'age', col: 'sub', name: 'Borrower Age' },
+  { re: /^(borrower )?(date of birth|dob|d\.o\.b\.?|birth ?date):?$/i, slot: 'dob', col: 'left', name: 'Date of Birth' },
   { re: /^lender:?$/i, slot: 'lender', col: 'left', multiline: true, name: 'Lender' },
   { re: /^mortgage amount:?$/i, slot: 'loan_amount', col: 'left', name: 'Mortgage Amount' },
   { re: /^borrower address:?$/i, slot: 'address', col: 'left', multiline: true, name: 'Borrower Address' },

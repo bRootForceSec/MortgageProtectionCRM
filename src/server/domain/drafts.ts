@@ -65,7 +65,7 @@ export interface Progress {
 
 /** Fields the AI reports by its own names. */
 const AI_FIELD: Record<keyof PageAnswer['fields'], LeadFieldKey> = {
-  full_name: 'full_name', coborrower: 'coborrower', age: 'age', lender: 'lender', loan_amount: 'loan_amount',
+  full_name: 'full_name', coborrower: 'coborrower', age: 'age', dob: 'dob', lender: 'lender', loan_amount: 'loan_amount',
   address: 'address', city: 'city', state: 'state', zip: 'zip', county: 'county', source_lead_id: 'source_lead_id',
   callin_date: 'callin_date', phone: 'phone', alt_phone: 'phone2', called_from: 'phone3',
 };

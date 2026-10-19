@@ -50,6 +50,45 @@ export function normalizeAge(raw: unknown): Normalized<number> {
   return { value: n };
 }
 
+const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+
+/** Whole years between a date of birth (YYYY-MM-DD) and `at`. */
+export function ageOn(dob: string, at: Date = new Date()): number {
+  const [y, m, d] = dob.split('-').map(Number) as [number, number, number];
+  let age = at.getFullYear() - y;
+  if (at.getMonth() + 1 < m || (at.getMonth() + 1 === m && at.getDate() < d)) age--;
+  return age;
+}
+
+/**
+ * Date of birth as printed: "3/14/1961", "03-14-61", "1961-03-14", "March 14, 1961", "14 Mar 1961".
+ * Two-digit years are read as the latest year that still makes the person at least 16. Returns YYYY-MM-DD.
+ */
+export function normalizeDob(raw: unknown, now: Date = new Date()): Normalized<string> {
+  const s = toText(raw).replace(/\s+/g, ' ').replace(/(\d)(st|nd|rd|th)\b/i, '$1');
+  if (!s) return { value: null };
+  let y: number, mo: number, d: number;
+  let m: RegExpMatchArray | null;
+  if ((m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})(?:[T ].*)?$/))) {
+    y = +m[1]!; mo = +m[2]!; d = +m[3]!;
+  } else if ((m = s.match(/^(\d{1,2})[/.-](\d{1,2})[/.-](\d{2}|\d{4})$/))) {
+    mo = +m[1]!; d = +m[2]!; y = +m[3]!;
+    if (m[3]!.length === 2) y = 2000 + y > now.getFullYear() - 16 ? 1900 + y : 2000 + y;
+  } else if ((m = s.match(/^([A-Za-z]{3,})\.? (\d{1,2}),? (\d{4})$/)) || (m = s.match(/^(\d{1,2}) ([A-Za-z]{3,})\.?,? (\d{4})$/))) {
+    const [name, day] = /^\d/.test(m[1]!) ? [m[2]!, m[1]!] : [m[1]!, m[2]!];
+    mo = MONTHS.indexOf(name.slice(0, 3).toLowerCase()) + 1;
+    d = +day; y = +m[3]!;
+  } else {
+    return { value: null, problem: `date of birth not understood: "${s}"` };
+  }
+  const date = new Date(Date.UTC(y, mo - 1, d));
+  if (mo < 1 || mo > 12 || d < 1 || date.getUTCMonth() !== mo - 1) return { value: null, problem: `date of birth not understood: "${s}"` };
+  const iso = date.toISOString().slice(0, 10);
+  const age = ageOn(iso, now);
+  if (age < 16 || age > 110) return { value: null, problem: `date of birth out of range: "${s}"` };
+  return { value: iso };
+}
+
 /** Interprets yes/no style flags. Returns null when blank or unrecognized. */
 export function parseYesNo(raw: unknown): boolean | null {
   if (typeof raw === 'boolean') return raw;

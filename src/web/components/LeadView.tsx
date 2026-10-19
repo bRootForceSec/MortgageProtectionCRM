@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { api, fmtDateTime, fmtMoney, fmtPhone, fullName, localTime, type LeadDetail, type Call } from '../api';
+import { api, fmtDateTime, fmtDob, fmtMoney, fmtPhone, fullName, localTime, personAge, type LeadDetail, type Call } from '../api';
 import { useApp } from '../App';
 
 const STATUS_LABEL: Record<string, string> = {
@@ -60,6 +60,7 @@ export function LeadSummary({
     ['Alternate', l.phone2_e164, l.phone2_raw],
     ['Called in from', l.phone3_e164, l.phone3_raw],
   ] as [string, string | null, string | null][]).filter(([label, e, r]) => (e || r) && !(e && e === main) && !(label === 'Main' && !e));
+  const age = personAge(l);
   const firstOther = others.find(([, e]) => e && !blocked.includes(e))?.[1] ?? null;
   return (
     <>
@@ -71,6 +72,7 @@ export function LeadSummary({
             {onEdit && <button className="btn small" onClick={onEdit} title="Edit this lead's details">Edit {editKey && <kbd>{editKey}</kbd>}</button>}
           </h2>
           <div className="where">
+            {age != null && <><b>Age {age}</b> · </>}
             {[l.city, l.state].filter(Boolean).join(', ')}
             {l.county && <> · <b>{l.county} County</b></>}
             {l.time_zone && <> · <b>{localTime(l.time_zone)}</b> local</>}
@@ -102,7 +104,8 @@ export function LeadSummary({
         <Fact label="Lead type" v={l.lead_type ? `${l.lead_type}${l.price_cents != null ? ` · ${fmtMoney(l.price_cents)}` : ''}${pageType ? ` · ${pageType}` : ''}` : pageType} />
         <Fact label="Called in" v={l.callin_at ? `${fmtDateTime(l.callin_at)} · ${leadAge(l.callin_at)}` : l.callin_raw} />
         <Fact label="Lead ID" v={l.source_lead_id} />
-        <Fact label="Age" v={l.age ?? l.age_raw} />
+        <Fact label="Age" v={l.dob ? `${age} (from date of birth)` : l.age ?? l.age_raw} />
+        <Fact label="Date of birth" v={l.dob ? fmtDob(l.dob) : l.dob_raw} />
         <Fact label="Lender" v={l.lender} />
         <Fact label="Loan amount" v={l.loan_amount_cents != null ? fmtMoney(l.loan_amount_cents) : l.loan_amount_raw} />
         <Fact label="Co-borrower" v={l.coborrower_signal === 'yes' ? 'Yes' : l.coborrower_raw ? `Unknown (sheet says "${l.coborrower_raw}")` : 'Unknown'} />

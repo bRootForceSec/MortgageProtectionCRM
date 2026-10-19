@@ -164,6 +164,14 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       .all({ status: q.status, batch: q.batch_id ?? null, ...group.params, ...search.params });
   });
 
+  // The PDF a batch was imported from (kept as "<batch id>-<file name>" in the imports folder).
+  app.get('/api/batches/:id/file', async (req, reply) => {
+    const { id } = z.object({ id: z.string().max(64) }).parse(req.params);
+    const file = batchPdf(config.importsDir, id);
+    if (!file) throw new DomainError('the PDF for this batch is not on this computer', 404);
+    return reply.type('application/pdf').send(fs.createReadStream(file));
+  });
+
   app.get('/api/leads/:id', async (req) => {
     const { id } = z.object({ id: z.string().max(64) }).parse(req.params);
     const lead = db.prepare('SELECT * FROM lead WHERE id = ?').get(id) as any;
@@ -204,7 +212,9 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       lead: { ...lead, extra: lead.extra_json ? JSON.parse(lead.extra_json) : {} },
       state: db.prepare('SELECT * FROM lead_state WHERE lead_id = ?').get(id),
       batch: db.prepare('SELECT * FROM import_batch WHERE id = ?').get(lead.batch_id),
-      import_row: db.prepare('SELECT row_number, warnings_json FROM import_row WHERE id = ?').get(lead.import_row_id),
+      import_row: db.prepare('SELECT row_number, warnings_json, raw_json FROM import_row WHERE id = ?').get(lead.import_row_id),
+      // The PDF this lead was imported from, when it is still on disk, so the calling screen can show its page.
+      source_pdf: lead.source_page != null && !!batchPdf(config.importsDir, lead.batch_id),
       calls,
       // Notes saved with a call you undid are left out (the undo puts the note back in the form).
       notes: db
@@ -542,4 +552,15 @@ function audit(db: DB, table: string, rowId: string, action: string, oldV: unkno
   db.prepare('INSERT INTO audit_log (id, at, table_name, row_id, action, old_json, new_json) VALUES (?,?,?,?,?,?,?)').run(
     uuidv7(), nowIso(), table, rowId, action, oldV ? JSON.stringify(oldV) : null, newV ? JSON.stringify(newV) : null,
   );
+}
+
+/** Path of the PDF a batch was imported from, or null when there is none. */
+export function batchPdf(importsDir: string, batchId: string): string | null {
+  if (!/^[\w-]+$/.test(batchId)) return null;
+  try {
+    const f = fs.readdirSync(importsDir).find((n) => n.startsWith(`${batchId}-`) && /\.pdf$/i.test(n));
+    return f ? path.join(importsDir, f) : null;
+  } catch {
+    return null;
+  }
 }

@@ -162,7 +162,9 @@ export interface LeadDetail {
     block_reason: string | null;
   } | null;
   batch: { id: string; name: string; imported_at: string; cost_per_lead_cents: number | null; lead_type: string | null; lead_age_label: string | null; file_name: string | null };
-  import_row: { row_number: number; warnings_json: string | null } | null;
+  import_row: { row_number: number; warnings_json: string | null; raw_json: string | null } | null;
+  /** The PDF this lead came from is on this computer: its page can be shown (source_page on the lead). */
+  source_pdf: boolean;
   calls: Call[];
   notes: { id: string; body: string; created_at: string; call_id: string | null }[];
   actions: { id: string; action: string; reason: string | null; created_at: string }[];
@@ -173,6 +175,24 @@ export interface LeadDetail {
 }
 
 // ---------- formatting ----------
+/** The lead's age today: from the date of birth when there is one, else the age as imported. */
+export function personAge(l: { dob?: string | null; age?: number | null } & Record<string, unknown>, at = new Date()): number | null {
+  if (l.dob && /^\d{4}-\d{2}-\d{2}$/.test(l.dob)) {
+    const [y, m, d] = l.dob.split('-').map(Number) as [number, number, number];
+    let a = at.getFullYear() - y;
+    if (at.getMonth() + 1 < m || (at.getMonth() + 1 === m && at.getDate() < d)) a--;
+    return a;
+  }
+  return l.age ?? null;
+}
+
+/** "Mar 14, 1961" from YYYY-MM-DD, without a time zone shift. */
+export function fmtDob(iso: string | null | undefined): string {
+  if (!iso) return '';
+  const [y, m, d] = iso.split('-').map(Number) as [number, number, number];
+  return new Date(y, m - 1, d).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
 export function fmtPhone(e164: string | null | undefined): string {
   if (!e164) return '';
   const m = e164.match(/^\+1(\d{3})(\d{3})(\d{4})$/);
