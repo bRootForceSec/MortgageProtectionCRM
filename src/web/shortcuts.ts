@@ -2,7 +2,7 @@ import type { OutcomeCode } from './api';
 
 // Keyboard shortcuts you can change in Settings. Each action can have several keys; each outcome has one.
 
-export type ShortcutAction = 'list_up' | 'list_down' | 'dial' | 'dial_alt' | 'dials_up' | 'dials_down' | 'next' | 'skip' | 'undo' | 'note' | 'search' | 'edit' | 'script';
+export type ShortcutAction = 'list_up' | 'list_down' | 'dial' | 'dial_alt' | 'dials_up' | 'dials_down' | 'next' | 'skip' | 'undo' | 'note' | 'search' | 'edit' | 'script' | 'lookup';
 
 export interface CallingSettings {
   retry_gap_minutes: number;

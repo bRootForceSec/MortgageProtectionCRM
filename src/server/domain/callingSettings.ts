@@ -19,6 +19,7 @@ export const SHORTCUT_ACTIONS = {
   search: { label: 'Search', keys: ['/'] },
   edit: { label: 'Edit the lead', keys: ['e'] },
   script: { label: 'Show or hide the script', keys: ['p'] },
+  lookup: { label: 'Look up an incoming caller by number', keys: ['l'] },
 } as const;
 export type ShortcutAction = keyof typeof SHORTCUT_ACTIONS;
 

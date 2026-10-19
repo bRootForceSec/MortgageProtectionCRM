@@ -206,6 +206,45 @@ test('dial counter, undo, remapped keys, QR dialing, scripts and lead edits', as
   await expect(page.getByRole('heading', { name: 'Today' })).toBeVisible();
 });
 
+test('incoming call: look up a number without losing the list; worked leads stay when you come back', async ({ page }) => {
+  await page.goto(launchUrl);
+  await page.getByRole('button', { name: 'Calling' }).click();
+  await expect(page.locator('.phone-big')).toBeVisible();
+  const queue = page.getByLabel('Queue');
+  const rows = await queue.locator('li').count();
+  const current = await page.locator('.lead-name').innerText();
+
+  // L jumps to the lookup box; part of the number finds the lead, any status. Enter opens the top match.
+  await page.keyboard.press('l');
+  await expect(page.getByLabel('Look up a caller by phone number')).toBeFocused();
+  await page.keyboard.type('614 555 0102');
+  await expect(page.locator('.lookup-results li').first()).toContainText('Robert Ray');
+  await page.keyboard.press('Enter');
+  await expect(page.locator('.lead-name')).toHaveText('Robert Ray');
+  await expect(page.locator('.lookup-bar')).toContainText('Your list on the left is unchanged');
+  await expect(queue.locator('li')).toHaveCount(rows);
+  await page.screenshot({ path: 'test-results/lookup.png', fullPage: true });
+
+  // Same outcome keys as always; saving goes back to where you were in the list.
+  await page.keyboard.press('2');
+  await page.keyboard.press('Enter');
+  await expect(page.locator('.undo-bar')).toContainText('Saved for Robert Ray');
+  await expect(page.locator('.lead-name')).toHaveText(current);
+  await expect(page.locator('.lookup-bar')).toHaveCount(0);
+  await expect(queue.locator('li')).toHaveCount(rows);
+
+  // Work the current lead, then leave the tab and switch filters: the crossed-out lead is still there.
+  await page.keyboard.press('1');
+  await expect(queue.locator('li.done')).toHaveCount(1);
+  await page.getByRole('button', { name: 'Today' }).click();
+  await page.getByRole('button', { name: 'Calling' }).click();
+  await expect(queue.locator('li.done')).toHaveCount(1);
+  await queue.getByRole('button', { name: /^New/ }).click();
+  await queue.getByRole('button', { name: /^All/ }).click();
+  await expect(queue.locator('li.done')).toHaveCount(1);
+  await expect(queue.locator('li.done')).toContainText(current);
+});
+
 test('reports: numbers open the calls behind them', async ({ page }) => {
   await page.goto(launchUrl);
   await page.getByRole('button', { name: 'Reports' }).click();

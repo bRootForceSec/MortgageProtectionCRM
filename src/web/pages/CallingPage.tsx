@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import { callbackFields, describeCallback, differentZone, readCallback } from '../when';
 import { api, personAge, fmtMoney, fmtPhone, fmtRelative, newKey, type LeadDetail, type QueueResponse, type QueueItem } from '../api';
 import { useApp } from '../App';
-import { LeadSummary, CallHistory, Notes } from '../components/LeadView';
+import { LeadSummary, CallHistory, Notes, StatusBadge } from '../components/LeadView';
 import { EditLead } from '../components/EditLead';
 import { LeadPage } from '../components/LeadPage';
 import { DialQr } from '../components/DialQr';
@@ -17,7 +17,13 @@ const BUCKETS: { key: QueueItem['bucket'] | 'all'; label: string }[] = [
 ];
 
 const SELECTED_KEY = 'mpcrm.selectedLead';
-const LIST_KEY = 'mpcrm.worklist';
+/** Before: one list. Now: your last few lists, one per tab/search/group choice, so switching back finds it as you left it. */
+const OLD_LIST_KEY = 'mpcrm.worklist';
+const LISTS_KEY = 'mpcrm.worklists';
+const KEEP_LISTS = 6;
+const BUCKET_KEY = 'mpcrm.calling.bucket';
+/** A lead opened outside the list (looked up for an incoming call, or from Today), and where to go back to. */
+export const OPENED_KEY = 'mpcrm.openedLead';
 const LAST_NUMBER_KEY = 'mpcrm.lastNumber';
 
 function store(k: string, v?: string | null) {
@@ -79,19 +85,56 @@ interface WorkList {
   built_at: string;
 }
 
-function loadList(key: string): WorkList | null {
+function loadLists(): WorkList[] {
   try {
-    const l = JSON.parse(store(LIST_KEY) ?? 'null') as WorkList | null;
-    return l && l.key === key && Array.isArray(l.items) ? l : null;
+    const ls = JSON.parse(store(LISTS_KEY) ?? 'null') as WorkList[] | null;
+    if (Array.isArray(ls)) return ls.filter((l) => l && typeof l.key === 'string' && Array.isArray(l.items));
+    const old = JSON.parse(store(OLD_LIST_KEY) ?? 'null') as WorkList | null;
+    return old && Array.isArray(old.items) ? [old] : [];
+  } catch {
+    return [];
+  }
+}
+
+function loadList(key: string): WorkList | null {
+  return loadLists().find((l) => l.key === key) ?? null;
+}
+
+/** Saves this list as the most recent one, keeping a few others. */
+function saveList(l: WorkList) {
+  const rest = loadLists().filter((x) => x.key !== l.key);
+  store(LISTS_KEY, JSON.stringify([l, ...rest].slice(0, KEEP_LISTS)));
+  store(OLD_LIST_KEY, null);
+}
+
+interface Opened {
+  leadId: string;
+  /** The list lead you were on, to go back to after the call. */
+  backTo: string | null;
+}
+
+function loadOpened(): Opened | null {
+  try {
+    const o = JSON.parse(store(OPENED_KEY) ?? 'null') as Opened | null;
+    return o && typeof o.leadId === 'string' ? o : null;
   } catch {
     return null;
   }
 }
 
+const BUCKET_KEYS = new Set<string>(BUCKETS.map((b) => b.key));
+
 export function CallingPage() {
   const { toast, keys, calling, bumpStats } = useApp();
   const settings = calling?.settings;
-  const [bucket, setBucket] = useState<QueueItem['bucket'] | 'all'>('all');
+  const [bucket, setBucketState] = useState<QueueItem['bucket'] | 'all'>(() => {
+    const b = store(BUCKET_KEY);
+    return b && BUCKET_KEYS.has(b) ? (b as QueueItem['bucket'] | 'all') : 'all';
+  });
+  const setBucket = (b: QueueItem['bucket'] | 'all') => {
+    setBucketState(b);
+    store(BUCKET_KEY, b);
+  };
   const [search, setSearch] = useState('');
   const [debounced, setDebounced] = useState('');
   const [counts, setCounts] = useState<QueueResponse['counts'] | null>(null);
@@ -102,6 +145,12 @@ export function CallingPage() {
   const listKey = JSON.stringify({ bucket, search: debounced, ...groupParams });
   const [list, setListState] = useState<WorkList | null>(() => loadList(listKey));
   const [selected, setSelected] = useState<string | null>(store(SELECTED_KEY));
+  const [opened, setOpenedState] = useState<Opened | null>(loadOpened);
+  const setOpened = (o: Opened | null) => {
+    setOpenedState(o);
+    store(OPENED_KEY, o ? JSON.stringify(o) : null);
+  };
+  const lookupRef = useRef<HTMLInputElement>(null);
   const [detail, setDetail] = useState<LeadDetail | null>(null);
   const [attempt, setAttempt] = useState<Attempt>(freshAttempt);
   const [restore, setRestore] = useState<{ leadId: string; values: FormValues; n: number } | null>(null);
@@ -119,15 +168,15 @@ export function CallingPage() {
     return () => clearTimeout(t);
   }, [search]);
 
-  const setList = useCallback((l: WorkList | null) => {
+  const setList = useCallback((l: WorkList) => {
     setListState(l);
-    store(LIST_KEY, l ? JSON.stringify(l) : null);
+    saveList(l);
   }, []);
   const updateList = useCallback((f: (items: WorkItem[]) => WorkItem[]) => {
     setListState((l) => {
       if (!l) return l;
       const next = { ...l, items: f(l.items) };
-      store(LIST_KEY, JSON.stringify(next));
+      saveList(next);
       return next;
     });
   }, []);
@@ -165,24 +214,31 @@ export function CallingPage() {
     if (!keep) select(l.items[0]?.lead_id ?? null);
   }, [fetchQueue, listKey, selected, setList]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  /** Adds callbacks that came due since the list was built, at the top. */
+  /**
+   * Adds callbacks that came due since the list was built, at the top. When everything in the list is worked,
+   * the rest of the queue (new imports, retries come due) is added below, so the crossed-out leads stay.
+   */
   const mergeDue = useCallback(async () => {
     const q = await fetchQueue();
     if (!q) return;
     updateList((items) => {
       const have = new Set(items.map((i) => i.lead_id));
       const due = q.items.filter((i) => i.bucket === 'callback_due' && !have.has(i.lead_id));
-      setMore(q.items.filter((i) => !have.has(i.lead_id) && !due.includes(i)).length);
-      return due.length ? [...due.map((i) => ({ ...i, due_now: true })), ...items] : items;
+      const rest = q.items.filter((i) => !have.has(i.lead_id) && !due.includes(i));
+      const allWorked = !items.some((i) => !i.done);
+      setMore(allWorked ? 0 : rest.length);
+      if (!due.length && !(allWorked && rest.length)) return items;
+      return [...due.map((i) => ({ ...i, due_now: true })), ...items, ...(allWorked ? rest : [])];
     });
   }, [fetchQueue, updateList]);
 
-  // A new filter, tab or search makes a new list; the same one is kept across page changes and refreshes.
+  // A new filter, tab or search makes a new list; the same one is kept, crossed-out leads and all,
+  // across page changes, refreshes and switching back. Only "Refresh list" clears the worked leads out.
   useEffect(() => {
     const stored = loadList(listKey);
-    // A list with nothing left to call is rebuilt, so new imports show up without a refresh.
-    if (stored && stored.items.some((i) => !i.done)) {
+    if (stored) {
       setListState(stored);
+      saveList(stored);
       void mergeDue();
     } else void rebuild();
   }, [listKey]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -200,6 +256,10 @@ export function CallingPage() {
       setDetail(null);
       setSelected(null);
       store(SELECTED_KEY, null);
+      if (loadOpened()?.leadId === id) {
+        setOpenedState(null);
+        store(OPENED_KEY, null);
+      }
     }
   }, []);
   useEffect(() => void loadDetail(selected), [selected, loadDetail]);
@@ -221,27 +281,54 @@ export function CallingPage() {
     if (phone && ['new', 'retry', 'callback'].includes(detail.state?.status ?? 'new')) void dial(phone);
   }, [detail]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Opened from the Today page or a callback alert.
+  /** Shows a lead (looked up for an incoming call, or from Today) without touching your list. */
+  const openOutside = useCallback((id: string) => {
+    setOpenedState((o) => {
+      // Already off on a looked-up lead: keep the list lead you started from.
+      const backTo = o && o.leadId === selected ? o.backTo : selected;
+      const next = { leadId: id, backTo: backTo === id ? o?.backTo ?? null : backTo };
+      store(OPENED_KEY, JSON.stringify(next));
+      return next;
+    });
+    select(id);
+  }, [selected]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Opened from the Today page or a callback alert while the Calling page is already showing.
   useEffect(() => {
     const f = (e: Event) => {
-      const id = (e as CustomEvent<string>).detail;
-      select(id);
+      openOutside((e as CustomEvent<string>).detail);
       void mergeDue();
     };
     window.addEventListener('mpcrm:open-lead', f);
     return () => window.removeEventListener('mpcrm:open-lead', f);
-  }, [mergeDue]);
+  }, [mergeDue, openOutside]);
 
   const items = list?.items ?? [];
+  const idx = items.findIndex((i) => i.lead_id === selected);
+  /** The lead on screen was opened on purpose outside the list (or is a looked-up lead that is also in it). */
+  const outside = !!selected && opened?.leadId === selected;
   // Nothing selected yet (first visit, or the lead left the list): start at the top.
   useEffect(() => {
-    if (list && (!selected || !list.items.some((i) => i.lead_id === selected)) && !detail) {
+    if (list && (!selected || (!list.items.some((i) => i.lead_id === selected) && !outside)) && !detail) {
       const first = list.items.find((i) => !i.done) ?? list.items[0];
       if (first) select(first.lead_id);
     }
   }, [list]); // eslint-disable-line react-hooks/exhaustive-deps
-  const idx = items.findIndex((i) => i.lead_id === selected);
   const left = items.filter((i) => !i.done).length;
+
+  /** Picking a lead in the list ends a lookup. */
+  const pick = (id: string) => {
+    if (opened) setOpened(null);
+    select(id);
+  };
+
+  /** Back to the list lead you were on before the lookup (or the next one to call). */
+  const backToList = () => {
+    const back = opened?.backTo && items.some((i) => i.lead_id === opened.backTo) ? opened.backTo : null;
+    setOpened(null);
+    const to = back ?? items.find((i) => !i.done && i.lead_id !== selected)?.lead_id ?? items[0]?.lead_id ?? null;
+    select(to);
+  };
 
   /** The next lead you haven't worked yet, below the current one first. */
   const nextUnworked = useCallback(
@@ -260,17 +347,17 @@ export function CallingPage() {
   const goNext = useCallback((send = false) => {
     const n = nextUnworked();
     if (send) queueAutoSend(n);
-    if (n) select(n.lead_id);
+    if (n) pick(n.lead_id);
     else toast('You\'ve worked the whole list. Press "Refresh list" to load more.');
-  }, [nextUnworked, toast, settings]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [nextUnworked, toast, settings, opened]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const move = useCallback(
     (step: 1 | -1) => {
       if (!items.length) return;
       const i = idx < 0 ? 0 : Math.min(items.length - 1, Math.max(0, idx + step));
-      select(items[i]!.lead_id);
+      pick(items[i]!.lead_id);
     },
-    [items, idx],
+    [items, idx, opened], // eslint-disable-line react-hooks/exhaustive-deps
   );
 
   const markDone = (leadId: string, done: WorkItem['done']) =>
@@ -342,6 +429,8 @@ export function CallingPage() {
       });
       setAttempt({ dials: r.dial_count, timerStart: null, to: null });
       markDone(s.leadId, null);
+      // A looked-up lead outside the list comes back as one, so the list stays as it is.
+      if (!items.some((i) => i.lead_id === s.leadId)) setOpened({ leadId: s.leadId, backTo: selected });
       select(s.leadId);
       toast(`Undone. Pick the right outcome for ${s.name}.`);
       bumpStats();
@@ -349,7 +438,7 @@ export function CallingPage() {
     } catch (e: any) {
       toast(e.message, 'error');
     }
-  }, [saved, toast, bumpStats, loadDetail]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [saved, toast, bumpStats, loadDetail, items, selected]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const modalOpen = editing || !!qr;
   /** The lead on screen is the one selected. Just after you move on, keys that act on a lead wait for it to load. */
@@ -368,6 +457,7 @@ export function CallingPage() {
       else if (act('next')) { e.preventDefault(); goNext(); }
       else if (act('skip')) { e.preventDefault(); void skip(); }
       else if (act('search')) { e.preventDefault(); searchRef.current?.focus(); }
+      else if (act('lookup')) { e.preventDefault(); lookupRef.current?.focus(); }
       else if (act('note')) { e.preventDefault(); document.getElementById('note-input')?.focus(); }
       else if (act('dial')) { e.preventDefault(); void dial(phoneNow); }
       else if (act('dial_alt')) {
@@ -396,6 +486,12 @@ export function CallingPage() {
     setAttempt(freshAttempt());
     bumpStats();
     markDone(s.leadId, { label: s.label, dials: s.dials });
+    // A looked-up lead (an incoming call): back to where you were in the list, nothing sent to the phone.
+    if (opened?.leadId === s.leadId) {
+      backToList();
+      void mergeDue();
+      return;
+    }
     const n = items.slice(Math.max(0, items.findIndex((i) => i.lead_id === s.leadId)) + 1).find((i) => !i.done && i.lead_id !== s.leadId)
       ?? items.find((i) => !i.done && i.lead_id !== s.leadId);
     queueAutoSend(n);
@@ -454,7 +550,7 @@ export function CallingPage() {
                   key={i.lead_id}
                   data-lead={i.lead_id}
                   className={`${selected === i.lead_id ? 'selected' : ''} ${i.done ? 'done' : ''} ${i.skipped_today ? 'skipped' : ''}`}
-                  onClick={() => select(i.lead_id)}
+                  onClick={() => pick(i.lead_id)}
                 >
                   <span className="name">{i.name}</span>
                   {i.done ? (
@@ -477,14 +573,23 @@ export function CallingPage() {
           <span className="help">
             <kbd>{k('list_up')}</kbd><kbd>{k('list_down')}</kbd> move <kbd>{k('skip')}</kbd> skip <kbd>{k('search')}</kbd> search <kbd>{k('dial')}</kbd> {dialLabel.toLowerCase()} <kbd>{k('dial_alt')}</kbd> other number{' '}
             <kbd>{k('dials_down')}</kbd><kbd>{k('dials_up')}</kbd> dials <kbd>Enter</kbd> save and next <kbd>{k('undo')}</kbd> undo <kbd>{k('note')}</kbd> note{' '}
-            <kbd>{k('edit')}</kbd> edit <kbd>{k('script')}</kbd> script
+            <kbd>{k('edit')}</kbd> edit <kbd>{k('script')}</kbd> script <kbd>{k('lookup')}</kbd> look up a caller
           </span>
         </header>
       </section>
 
       <section className="panel" aria-label="Current lead">
+        <header>
+          <CallerLookup inputRef={lookupRef} hotkey={k('lookup')} onOpen={openOutside} />
+        </header>
         <div className="body">
           {saved && <UndoBar saved={saved} undoKey={k('undo')} onUndo={undo} onExpire={() => setSaved(null)} />}
+          {detail && (outside || idx < 0) && detail.lead.id === selected && (
+            <div className="lookup-bar" role="status">
+              {idx < 0 ? 'Not in your calling list.' : 'Looked up. It\'s also in your list.'} Your list on the left is unchanged.
+              <button className="btn small" onClick={backToList}>Back to list</button>
+            </div>
+          )}
           {!detail ? (
             <div className="empty">Select a lead from the list, or import leads first.</div>
           ) : (
@@ -520,6 +625,97 @@ export function CallingPage() {
       {detail ? <LeadPage d={detail} /> : <section className="panel lead-page" aria-label="Lead page" />}
       {editing && detail && <EditLead d={detail} onClose={() => setEditing(false)} onSaved={async () => { setEditing(false); await refreshDetail(); }} />}
       {qr && <DialQr e164={qr} onClose={() => setQr(null)} />}
+    </div>
+  );
+}
+
+interface LookupRow {
+  id: string;
+  first_name: string | null;
+  last_name: string | null;
+  phone_e164: string | null;
+  city: string | null;
+  state: string | null;
+  county: string | null;
+  status: string;
+  attempts_total: number;
+  last_call_at: string | null;
+}
+
+/**
+ * Incoming call: type part of their number (or a name) and open the lead, any status, without touching the list.
+ * Enter opens the top match; the arrow keys pick another.
+ */
+function CallerLookup({ inputRef, hotkey, onOpen }: { inputRef: RefObject<HTMLInputElement | null>; hotkey: string; onOpen: (id: string) => void }) {
+  const { toast } = useApp();
+  const [q, setQ] = useState('');
+  const [rows, setRows] = useState<LookupRow[] | null>(null);
+  const [hi, setHi] = useState(0);
+  const seq = useRef(0);
+
+  useEffect(() => {
+    const s = q.trim();
+    const digits = s.replace(/\D/g, '');
+    // Four digits are enough for a number; two letters for a name.
+    if (digits.length < 4 && s.replace(/[^a-z]/gi, '').length < 2) {
+      setRows(null);
+      return;
+    }
+    const n = ++seq.current;
+    const t = setTimeout(async () => {
+      try {
+        const r = await api.get<LookupRow[]>('/leads', { search: digits.length >= 4 ? digits : s });
+        if (n === seq.current) {
+          setRows(r.slice(0, 8));
+          setHi(0);
+        }
+      } catch (e: any) {
+        toast(e.message, 'error');
+      }
+    }, 150);
+    return () => clearTimeout(t);
+  }, [q, toast]);
+
+  const open = (r: LookupRow | undefined) => {
+    if (!r) return;
+    onOpen(r.id);
+    setQ('');
+    setRows(null);
+    inputRef.current?.blur();
+  };
+
+  return (
+    <div className="lookup">
+      <input
+        ref={inputRef}
+        type="search"
+        placeholder={`Incoming call? Type their number to pull them up  ( ${hotkey} )`}
+        value={q}
+        onChange={(e) => setQ(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Escape') { setQ(''); setRows(null); (e.target as HTMLInputElement).blur(); }
+          else if (e.key === 'Enter') { e.preventDefault(); open(rows?.[hi]); }
+          else if (e.key === 'ArrowDown') { e.preventDefault(); setHi((h) => Math.min((rows?.length ?? 1) - 1, h + 1)); }
+          else if (e.key === 'ArrowUp') { e.preventDefault(); setHi((h) => Math.max(0, h - 1)); }
+        }}
+        onBlur={() => setTimeout(() => setRows(null), 150)}
+        aria-label="Look up a caller by phone number"
+        autoComplete="off"
+      />
+      {rows && (
+        <ul className="lookup-results" role="listbox">
+          {rows.length === 0 && <li className="muted">No lead has that number.</li>}
+          {rows.map((r, i) => (
+            <li key={r.id} role="option" aria-selected={i === hi} className={i === hi ? 'hi' : ''}
+              onMouseDown={(e) => { e.preventDefault(); open(r); }} onMouseEnter={() => setHi(i)}>
+              <b>{[r.first_name, r.last_name].filter(Boolean).join(' ') || 'No name'}</b> <StatusBadge status={r.status} />
+              <span className="sub">
+                {fmtPhone(r.phone_e164)} · {r.county ? `${r.county} Co.` : r.city ?? r.state ?? '?'} · {r.attempts_total ? `${r.attempts_total} attempt${r.attempts_total > 1 ? 's' : ''}, last ${fmtRelative(r.last_call_at)}` : 'never called'}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }
