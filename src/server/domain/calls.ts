@@ -18,6 +18,8 @@ export interface ManualCallInput {
   talk_seconds?: number | null;
   /** Dials made for this one attempt (default 1). */
   dial_count?: number | null;
+  /** Seconds the lead was on screen before you saved (Calling page). */
+  lead_seconds?: number | null;
   outcome_code: string;
   callback_due_at?: string | null;
   /** The callback is for a day, any time that day; callback_due_at is the start of that day. */
@@ -86,12 +88,13 @@ export function logManualCall(db: DB, input: ManualCallInput) {
     const talk = input.talk_seconds == null ? null : Math.max(0, Math.round(input.talk_seconds));
     const dials = input.dial_count == null ? 1 : Math.round(input.dial_count);
     if (!(dials >= 1)) throw new DomainError('dial count must be at least 1');
+    const onLead = input.lead_seconds == null ? null : Math.max(0, Math.round(input.lead_seconds));
     const callId = uuidv7();
     db.prepare(
       `INSERT INTO call (id, lead_id, direction, channel, from_number_id, from_e164, to_e164, requested_at, idempotency_key,
-        initiation_result, state, state_confirmed_by, started_at, talk_seconds, dial_count, derived_at)
-       VALUES (?, ?, 'outbound', 'manual_log', ?, ?, ?, ?, ?, 'accepted', 'ended', 'manual', ?, ?, ?, ?)`,
-    ).run(callId, lead.id, input.from_number_id ?? null, fromE164, to, at, input.idempotency_key, at, talk, dials, now);
+        initiation_result, state, state_confirmed_by, started_at, talk_seconds, dial_count, lead_seconds, derived_at)
+       VALUES (?, ?, 'outbound', 'manual_log', ?, ?, ?, ?, ?, 'accepted', 'ended', 'manual', ?, ?, ?, ?, ?)`,
+    ).run(callId, lead.id, input.from_number_id ?? null, fromE164, to, at, input.idempotency_key, at, talk, dials, onLead, now);
     db.prepare(
       `INSERT INTO call_event (id, call_id, source, dedup_key, event_type_raw, event_type, occurred_at, received_at, payload_json)
        VALUES (?, ?, 'manual', ?, 'manual.logged', 'call.logged_manually', ?, ?, ?)`,
@@ -136,6 +139,7 @@ export function voidCall(db: DB, callId: string, reason?: string | null) {
       callback_any_time: !!out?.callback_any_time,
       dial_count: call.dial_count as number,
       talk_seconds: call.talk_seconds as number | null,
+      lead_seconds: call.lead_seconds as number | null,
       from_number_id: call.from_number_id as string | null,
       note: note?.body ?? null,
     };

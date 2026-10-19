@@ -44,6 +44,14 @@ describe('manual call logging', () => {
     });
   });
 
+  it('keeps the time spent on the lead, and hands it back on undo', () => {
+    const { call_id } = logManualCall(db, { lead_id: jane, idempotency_key: key(), outcome_code: 'no_answer', lead_seconds: 74.6 });
+    expect((db.prepare('SELECT lead_seconds FROM call WHERE id = ?').get(call_id) as any).lead_seconds).toBe(75);
+    expect(voidCall(db, call_id).lead_seconds).toBe(75);
+    const other = logManualCall(db, { lead_id: jane, idempotency_key: key(), outcome_code: 'no_answer' });
+    expect((db.prepare('SELECT lead_seconds FROM call WHERE id = ?').get(other.call_id) as any).lead_seconds).toBeNull();
+  });
+
   it('a repeated submit with the same key does not create a second call', () => {
     const k = key();
     const a = logManualCall(db, { lead_id: jane, idempotency_key: k, outcome_code: 'no_answer' });

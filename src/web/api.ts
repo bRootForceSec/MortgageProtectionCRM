@@ -145,6 +145,8 @@ export interface Call {
   history_source: string | null;
   /** Dials made for this one attempt. */
   dial_count: number;
+  /** Seconds the lead was on the Calling screen before this call was saved. */
+  lead_seconds: number | null;
   /** Set when you undid this call. */
   voided_at: string | null;
   outcomes: Outcome[];
@@ -211,6 +213,15 @@ export function fmtRelative(iso: string | null | undefined): string {
   const s = a < 60 ? 'just now' : a < 3600 ? `${Math.round(a / 60)} min` : a < 86400 ? `${Math.round(a / 3600)} h` : `${Math.round(a / 86400)} d`;
   if (s === 'just now') return s;
   return d >= 0 ? `${s} ago` : `in ${s}`;
+}
+
+/** A short length of time: "45s", "3m 20s", "1h 5m". */
+export function fmtDuration(seconds: number | null | undefined): string {
+  if (seconds == null) return '';
+  const s = Math.max(0, Math.round(seconds));
+  if (s < 60) return `${s}s`;
+  if (s < 3600) return `${Math.floor(s / 60)}m${s % 60 ? ` ${s % 60}s` : ''}`;
+  return `${Math.floor(s / 3600)}h${Math.floor((s % 3600) / 60) ? ` ${Math.floor((s % 3600) / 60)}m` : ''}`;
 }
 
 export function localTime(tz: string | null | undefined): string {
