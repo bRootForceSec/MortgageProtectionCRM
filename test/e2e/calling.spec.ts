@@ -44,7 +44,8 @@ test('import a sheet, log calls by keyboard, and set a callback', async ({ page 
   await page.getByRole('button', { name: 'Import', exact: true }).click();
   const file = path.join(dataDir, 'October leads.csv');
   fs.copyFileSync('test/fixtures/sample-leads.csv', file);
-  await page.locator('input[type=file]').setInputFiles(file);
+  // The file picker, not the folder picker next to it.
+  await page.locator('input[type=file]:not([webkitdirectory])').setInputFiles(file);
   await expect(page.getByText('Match the columns')).toBeVisible();
   await expect(page.getByLabel('Column for Phone')).toHaveValue('Phone');
   await page.getByRole('button', { name: 'Continue' }).click();

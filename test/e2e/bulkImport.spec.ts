@@ -49,7 +49,8 @@ test('import a whole folder of lead files in one go', async ({ page }) => {
   fs.writeFileSync(path.join(folder, 'readme.docx'), 'not a lead file');
 
   await page.goto(launchUrl);
-  await page.getByRole('button', { name: 'Import', exact: true }).click();
+  // The empty call list has its own Import button too; use the one in the top bar.
+  await page.getByRole('button', { name: 'Import', exact: true }).first().click();
   await page.locator('input[type=file][webkitdirectory]').setInputFiles(folder);
   await expect(page.getByRole('heading', { name: 'Import 4 files' })).toBeVisible();
   await expect(page.getByText('1 other file was left out')).toBeVisible();
