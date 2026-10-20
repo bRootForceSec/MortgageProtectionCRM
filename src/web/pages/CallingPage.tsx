@@ -2,7 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, typ
 import { callbackFields, describeCallback, differentZone, readCallback } from '../when';
 import { api, personAge, fmtMoney, fmtPhone, fmtRelative, fmtDateTime, newKey, type LeadDetail, type CallListItem, type CallListResponse, type RecentOutcome } from '../api';
 import { useApp } from '../App';
-import { LeadSummary, CallHistory, Notes, StatusBadge } from '../components/LeadView';
+import { LeadSummary, CallHistory, Notes, StatusBadge, toggleCalledBack } from '../components/LeadView';
 import { EditLead } from '../components/EditLead';
 import { LeadPage } from '../components/LeadPage';
 import { DialQr } from '../components/DialQr';
@@ -409,11 +409,18 @@ export function CallingPage() {
       else if (act('dials_down')) { e.preventDefault(); setAttempt((a) => ({ ...a, dials: Math.max(1, a.dials - 1) })); }
       else if (act('undo')) { e.preventDefault(); void undo(); }
       else if (act('edit')) { if (detail) { e.preventDefault(); setEditing(true); } }
+      else if (act('called_back')) { if (ready && detail) { e.preventDefault(); void toggleCalledBack(detail, toast).then((at) => calledBack(detail.lead.id, at)); } }
       else if (act('script')) { e.preventDefault(); setShowScript((v) => { store(SCRIPT_KEY, v ? '0' : '1'); return !v; }); }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [keys, move, goNext, skip, dial, undo, detail, modalOpen, ready, phoneNow, otherPhone, toast]);
+
+  /** The "called me back" mark changed: shown at once on the lead and its list row. */
+  const calledBack = (leadId: string, at: string | null) => {
+    setDetail((d) => (d && d.lead.id === leadId ? { ...d, called_back_at: at } : d));
+    updateList((xs) => xs.map((i) => (i.lead_id === leadId ? { ...i, called_back_at: at } : i)));
+  };
 
   const refreshDetail = async () => {
     await Promise.all([loadDetail(selected), loadList()]);
@@ -517,6 +524,7 @@ export function CallingPage() {
                 >
                   <span className="name">{i.name}</span>
                   <span className="row" style={{ gap: 4 }}>
+                    {i.called_back_at && <span className="badge called-back" title={`Called you back ${fmtDateTime(i.called_back_at)}`}>✓ called back</span>}
                     {i.done ? (
                       <span className="badge done">{i.done.label}{i.done.dials > 1 ? ` · ${i.done.dials} dials` : ''}</span>
                     ) : i.status === 'callback' ? (
@@ -544,7 +552,7 @@ export function CallingPage() {
           <span className="help">
             <kbd>{k('list_up')}</kbd><kbd>{k('list_down')}</kbd> move <kbd>{k('skip')}</kbd> skip to the bottom <kbd>{k('dial')}</kbd> {dialLabel.toLowerCase()} <kbd>{k('dial_alt')}</kbd> other number{' '}
             <kbd>{k('dials_down')}</kbd><kbd>{k('dials_up')}</kbd> dials <kbd>Enter</kbd> save and next <kbd>{k('undo')}</kbd> undo <kbd>{k('note')}</kbd> note{' '}
-            <kbd>{k('edit')}</kbd> edit <kbd>{k('script')}</kbd> script <kbd>{k('lookup')}</kbd> look up a caller
+            <kbd>{k('edit')}</kbd> edit <kbd>{k('script')}</kbd> script <kbd>{k('lookup')}</kbd> look up a caller <kbd>{k('called_back')}</kbd> called me back
           </span>
         </header>
       </section>
@@ -565,7 +573,8 @@ export function CallingPage() {
             <div className="empty">Select a lead from the list, or import leads first.</div>
           ) : (
             <>
-              <LeadSummary d={detail} onDial={dial} dialLabel={dialLabel} dialKey={k('dial')} altKey={k('dial_alt')} onEdit={() => setEditing(true)} editKey={k('edit')} />
+              <LeadSummary d={detail} onDial={dial} dialLabel={dialLabel} dialKey={k('dial')} altKey={k('dial_alt')} onEdit={() => setEditing(true)} editKey={k('edit')}
+                calledBackKey={k('called_back')} onCalledBack={(at) => calledBack(detail.lead.id, at)} />
               {showScript && <ScriptPanel d={detail} />}
               <LogCall
                 key={`${detail.lead.id}-${restore?.leadId === detail.lead.id ? restore.n : 0}`}

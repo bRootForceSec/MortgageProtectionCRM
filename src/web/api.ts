@@ -106,6 +106,7 @@ export interface CallListItem {
   /** Set once the lead was worked: the outcome you gave it and how many dials. */
   done: { label: string; dials: number; call_id?: string; at?: string } | null;
   callback_due_at: string | null;
+  called_back_at: string | null;
 }
 
 export interface RecentOutcome {
@@ -188,6 +189,8 @@ export interface LeadDetail {
   import_row: { row_number: number; warnings_json: string | null; raw_json: string | null } | null;
   /** The PDF this lead came from is on this computer: its page can be shown (source_page on the lead). */
   source_pdf: boolean;
+  /** When you marked that this lead called you back (null if not). */
+  called_back_at: string | null;
   calls: Call[];
   notes: { id: string; body: string; created_at: string; call_id: string | null }[];
   actions: { id: string; action: string; reason: string | null; created_at: string }[];

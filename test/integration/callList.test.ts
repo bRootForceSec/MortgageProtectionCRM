@@ -6,7 +6,7 @@ import { commitImport } from '../../src/server/domain/importer.js';
 import { logManualCall, changeOutcome, voidCall, addLeadAction } from '../../src/server/domain/calls.js';
 import {
   addBatchToCallList, addMatchingToCallList, addToCallList, clearWorked, getCallList, moveToBottom, recentOutcomes, removeFromCallList,
-  callListName, clearCallList, deleteSavedList, listSavedLists, loadSavedList,
+  callListName, clearCallList, deleteSavedList, listSavedLists, loadSavedList, setCalledBack,
 } from '../../src/server/domain/callList.js';
 import { buildApp } from '../../src/server/http/app.js';
 import type { Config } from '../../src/server/config.js';
@@ -83,6 +83,21 @@ describe('call list', () => {
     const r = addMatchingToCallList(db, { status: 'new' });
     expect(r.added).toBeGreaterThan(0);
     expect(addMatchingToCallList(db, { status: 'new', not_on_list: true }).added).toBe(0);
+  });
+});
+
+describe('called me back', () => {
+  it('ticks and unticks a lead, and the list shows it', () => {
+    const jane = id('Jane');
+    addToCallList(db, [jane]);
+    expect(getCallList(db)[0]!.called_back_at).toBeNull();
+    const at = setCalledBack(db, jane, true);
+    expect(at).toBeTruthy();
+    // Ticking again keeps the first time.
+    expect(setCalledBack(db, jane, true, '2030-01-01T00:00:00.000Z')).toBe(at);
+    expect(getCallList(db)[0]!.called_back_at).toBe(at);
+    expect(setCalledBack(db, jane, false)).toBeNull();
+    expect(getCallList(db)[0]!.called_back_at).toBeNull();
   });
 });
 

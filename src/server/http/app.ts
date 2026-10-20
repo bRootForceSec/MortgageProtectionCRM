@@ -26,7 +26,7 @@ import { loadCallingSettings } from '../domain/callingSettings.js';
 import { groupWhere, searchWhere, parseList } from '../domain/groupFilter.js';
 import {
   addMatchingToCallList, addToCallList, addBatchToCallList, clearWorked, getCallList, leadFilterWhere, moveToBottom, onCallList,
-  recentOutcomes, removeFromCallList, type LeadFilter, callListName, listSavedLists, clearCallList, loadSavedList, deleteSavedList,
+  recentOutcomes, removeFromCallList, type LeadFilter, callListName, listSavedLists, clearCallList, loadSavedList, deleteSavedList, setCalledBack,
 } from '../domain/callList.js';
 
 export interface AppDeps {
@@ -283,6 +283,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       import_row: db.prepare('SELECT row_number, warnings_json, raw_json FROM import_row WHERE id = ?').get(lead.import_row_id),
       // The PDF this lead was imported from, when it is still on disk, so the calling screen can show its page.
       source_pdf: lead.source_page != null && !!batchPdf(config.importsDir, lead.batch_id),
+      called_back_at: (db.prepare('SELECT at FROM lead_called_back WHERE lead_id = ?').get(id) as { at: string } | undefined)?.at ?? null,
       calls,
       // Notes saved with a call you undid are left out (the undo puts the note back in the form).
       notes: db
@@ -332,6 +333,13 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     const { id } = z.object({ id: z.string().max(64) }).parse(req.params);
     const b = z.object({ action: z.enum(['skip', 'mark_dead', 'restore']), reason: z.string().max(500).nullish() }).parse(req.body);
     return addLeadAction(db, id, b.action, b.reason);
+  });
+
+  app.post('/api/leads/:id/called-back', async (req) => {
+    const { id } = z.object({ id: z.string().max(64) }).parse(req.params);
+    const b = z.object({ on: z.boolean() }).parse(req.body);
+    if (!db.prepare('SELECT 1 FROM lead WHERE id = ?').get(id)) throw new DomainError('lead not found', 404);
+    return { called_back_at: setCalledBack(db, id, b.on) };
   });
 
   app.post('/api/leads/:id/notes', async (req) => {

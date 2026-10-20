@@ -60,10 +60,11 @@ interface LeadRow {
   attempts_total: number;
   reached: boolean;
   booked: boolean;
+  called_back_at: string | null;
 }
 
 type CallMetric = 'attempts' | 'dials' | 'leads_called' | 'contacts' | 'conversations' | 'talk_minutes' | 'appointments' | 'callbacks' | 'bad_numbers';
-type LeadMetric = 'leads' | 'cost' | 'never_called' | 'reached' | 'booked';
+type LeadMetric = 'leads' | 'cost' | 'never_called' | 'reached' | 'booked' | 'called_back';
 
 const CALL_METRICS: Record<CallMetric, { pred: (c: CallRow) => boolean; val: (cs: CallRow[]) => number }> = {
   attempts: { pred: () => true, val: (cs) => cs.length },
@@ -82,6 +83,7 @@ const LEAD_METRICS: Record<LeadMetric, { pred: (l: LeadRow) => boolean; val: (ls
   never_called: { pred: (l) => l.attempts_total === 0, val: (ls) => ls.length },
   reached: { pred: (l) => l.reached, val: (ls) => ls.length },
   booked: { pred: (l) => l.booked, val: (ls) => ls.length },
+  called_back: { pred: (l) => l.called_back_at != null, val: (ls) => ls.length },
 };
 
 function callMetrics(cs: CallRow[], keys: CallMetric[]) {
@@ -140,8 +142,9 @@ function loadLeads(db: DB, f: ReportFilter, calls: CallRow[]): LeadRow[] {
     .prepare(
       `SELECT l.id lead_id, trim(coalesce(l.first_name,'') || ' ' || coalesce(l.last_name,'')) lead_name, l.phone_e164,
               l.county_key, l.county, l.state, l.lead_type, l.price_cents, l.batch_id, b.name batch_name,
-              s.status, coalesce(s.attempts_total, 0) attempts_total
+              s.status, coalesce(s.attempts_total, 0) attempts_total, cb.at called_back_at
        FROM lead l JOIN import_batch b ON b.id = l.batch_id LEFT JOIN lead_state s ON s.lead_id = l.id
+       LEFT JOIN lead_called_back cb ON cb.lead_id = l.id
        WHERE ${g.sql} ORDER BY b.imported_at, l.created_at`,
     )
     .all(g.params) as Omit<LeadRow, 'reached' | 'booked'>[];
@@ -251,7 +254,17 @@ function buildGroups(db: DB, f: ReportFilter) {
     countyCodes.set(r.county_key, set);
   }
   const byMatch = groupBy(inRange, (c) => callerMatch(c, countyCodes));
-  const callerGroups: Group[] = CALLER_MATCH_ORDER.filter((k) => byMatch.has(k)).map((k) => ({ key: k, calls: byMatch.get(k)!, leads: [] }));
+  // Leads that called you back in these dates count under the caller ID of your last call to them before that.
+  const callsByLead = groupBy(all, (c) => c.lead_id);
+  const backByMatch = groupBy(
+    leads.filter((l) => l.called_back_at && l.called_back_at >= f.from && l.called_back_at < f.to),
+    (l) => {
+      const last = (callsByLead.get(l.lead_id) ?? []).filter((c) => c.requested_at <= l.called_back_at!).at(-1);
+      return last ? callerMatch(last, countyCodes) : 'unknown';
+    },
+  );
+  const callerGroups: Group[] = CALLER_MATCH_ORDER.filter((k) => byMatch.has(k) || backByMatch.has(k))
+    .map((k) => ({ key: k, calls: byMatch.get(k) ?? [], leads: backByMatch.get(k) ?? [] }));
 
   return { activity, hourGroups, bestGroups, countyGroups, batchGroups, typeGroups, callerGroups, timedCount: timed.length, untimedInRange: inRange.length - timed.length };
 }
@@ -308,6 +321,8 @@ export function buildReport(db: DB, f: ReportFilter) {
       return {
         key: c.key,
         ...m,
+        called_back: c.leads.length,
+        called_back_rate: ratio(c.leads.length, m.leads_called),
         contact_rate: ratio(m.contacts, m.attempts),
         appt_rate: ratio(m.appointments, m.attempts),
         appts_per_contact: ratio(m.appointments, m.contacts),
@@ -452,7 +467,8 @@ export function reportSheets(r: ReturnType<typeof buildReport>) {
       name: 'Local vs out-of-area',
       rows: r.by_caller.map((c) => ({
         caller_id: CALLER_LABELS[c.key as CallerMatch], dials: c.dials, attempts: c.attempts, leads_called: c.leads_called, contacts: c.contacts,
-        appointments: c.appointments, callbacks: c.callbacks, contact_rate_pct: pct(c.contact_rate), appt_rate_pct: pct(c.appt_rate),
+        appointments: c.appointments, callbacks: c.callbacks, called_you_back: c.called_back,
+        contact_rate_pct: pct(c.contact_rate), appt_rate_pct: pct(c.appt_rate),
         appts_per_contact_pct: pct(c.appts_per_contact),
       })),
     },

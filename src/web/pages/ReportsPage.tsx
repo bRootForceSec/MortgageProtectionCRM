@@ -178,7 +178,7 @@ export function ReportsPage() {
           ) : (
             <table className="grid">
               <thead>
-                <tr><th>Caller ID</th><th>Dials</th><th>Attempts</th><th>Pickups</th><th>Pickup rate</th><th>Appointments</th><th>Appts per attempt</th><th>Appts per pickup</th><th>Callbacks</th></tr>
+                <tr><th>Caller ID</th><th>Dials</th><th>Attempts</th><th>Pickups</th><th>Pickup rate</th><th>Appointments</th><th>Appts per attempt</th><th>Appts per pickup</th><th>Callbacks set</th><th>Called you back</th></tr>
               </thead>
               <tbody>
                 {r.by_caller.map((c: any) => {
@@ -188,7 +188,8 @@ export function ReportsPage() {
                     <tr key={c.key}>
                       <td>{label}</td>
                       {cell('dials', 'Dials')}{cell('attempts', 'Attempts')}{cell('contacts', 'Pickups')}<td>{pct(c.contact_rate)}</td>
-                      {cell('appointments', 'Appointments')}<td>{pct(c.appt_rate)}</td><td>{pct(c.appts_per_contact)}</td>{cell('callbacks', 'Callbacks')}
+                      {cell('appointments', 'Appointments')}<td>{pct(c.appt_rate)}</td><td>{pct(c.appts_per_contact)}</td>{cell('callbacks', 'Callbacks set')}
+                      <td><N section="by_caller" k={c.key} metric="called_back" title={`Called you back: ${label}`}>{c.called_back}</N> <span className="muted">({pct(c.called_back_rate)} of leads called)</span></td>
                     </tr>
                   );
                 })}
@@ -198,6 +199,7 @@ export function ReportsPage() {
           <p className="help">
             Local means the number you called from has one of the area codes for the lead's county (Settings)
             (or the lead's own area code, for a county with none set). A pickup is any call where you reached a person.
+            Called you back counts leads you ticked "Called me back" in these dates, under the number you last called them from.
           </p>
         </div>
       )}

@@ -55,6 +55,8 @@ export interface CallListItem {
   done: { label: string; dials: number; call_id: string; at: string } | null;
   /** A callback with a time set (the time it's due), so you can see it on the list. */
   callback_due_at: string | null;
+  /** When you marked that this lead called you back. */
+  called_back_at: string | null;
 }
 
 export function getCallList(db: DB): CallListItem[] {
@@ -62,7 +64,7 @@ export function getCallList(db: DB): CallListItem[] {
     .prepare(
       `SELECT i.lead_id, i.added_at, trim(coalesce(l.first_name,'') || ' ' || coalesce(l.last_name,'')) name,
               coalesce(s.active_phone_e164, l.phone_e164) phone_e164, l.state, l.county, s.status, s.attempts_total, s.last_call_at,
-              CASE WHEN s.status = 'callback' THEN s.next_due_at END callback_due_at,
+              CASE WHEN s.status = 'callback' THEN s.next_due_at END callback_due_at, cb.at called_back_at,
               w.id call_id, w.requested_at worked_at, w.dial_count,
               (SELECT oc.label FROM call_outcome o JOIN outcome_code oc ON oc.code = o.outcome_code
                 WHERE o.call_id = w.id AND NOT EXISTS (SELECT 1 FROM call_outcome x WHERE x.supersedes_id = o.id)
@@ -70,6 +72,7 @@ export function getCallList(db: DB): CallListItem[] {
        FROM call_list_item i
        JOIN lead l ON l.id = i.lead_id
        JOIN lead_state s ON s.lead_id = l.id
+       LEFT JOIN lead_called_back cb ON cb.lead_id = l.id
        LEFT JOIN call w ON w.id = (
          SELECT c.id FROM call c WHERE c.lead_id = i.lead_id AND c.voided_at IS NULL AND c.requested_at >= i.added_at
          ORDER BY c.requested_at DESC LIMIT 1)
@@ -87,6 +90,7 @@ export function getCallList(db: DB): CallListItem[] {
     last_call_at: r.last_call_at,
     added_at: r.added_at,
     callback_due_at: r.callback_due_at,
+    called_back_at: r.called_back_at ?? null,
     done: r.call_id ? { label: r.label ?? 'Called', dials: r.dial_count ?? 1, call_id: r.call_id, at: r.worked_at } : null,
   }));
 }
@@ -258,4 +262,15 @@ export function loadSavedList(db: DB, listId: string, saveCurrentAs?: string | n
 
 export function deleteSavedList(db: DB, listId: string): boolean {
   return db.prepare('DELETE FROM saved_call_list WHERE id = ?').run(listId).changes > 0;
+}
+
+/** "They called me back": sets or clears the mark on a lead. Returns the time set, or null when cleared. */
+export function setCalledBack(db: DB, leadId: string, on: boolean, now = nowIso()): string | null {
+  if (!db.prepare('SELECT 1 FROM lead WHERE id = ?').get(leadId)) throw new Error('lead not found');
+  if (!on) {
+    db.prepare('DELETE FROM lead_called_back WHERE lead_id = ?').run(leadId);
+    return null;
+  }
+  db.prepare('INSERT INTO lead_called_back (lead_id, at) VALUES (?, ?) ON CONFLICT(lead_id) DO NOTHING').run(leadId, now);
+  return (db.prepare('SELECT at FROM lead_called_back WHERE lead_id = ?').get(leadId) as { at: string }).at;
 }

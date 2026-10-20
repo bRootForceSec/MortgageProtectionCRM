@@ -20,6 +20,7 @@ export const SHORTCUT_ACTIONS = {
   edit: { label: 'Edit the lead', keys: ['e'] },
   script: { label: 'Show or hide the script', keys: ['p'] },
   lookup: { label: 'Look up an incoming caller by number', keys: ['l'] },
+  called_back: { label: 'Mark (or unmark) that this lead called you back', keys: ['b'] },
 } as const;
 export type ShortcutAction = keyof typeof SHORTCUT_ACTIONS;
 

@@ -307,3 +307,6 @@ table.grid td.pick, table.grid th.pick { width: 28px; text-align: center; }
 .saved-lists li { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 8px 0; border-top: 1px solid var(--border); }
 .saved-lists li .sub { display: block; font-size: 12px; color: var(--muted); }
 .list-name { font-size: 12px; color: var(--muted); }
+.called-back { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; font-weight: 400; margin-left: 8px; padding: 2px 8px; border: 1px solid var(--border); border-radius: 999px; cursor: pointer; vertical-align: middle; }
+.called-back.on { border-color: var(--good); color: var(--good); font-weight: 600; }
+.badge.called-back { border-color: var(--good); color: var(--good); margin-left: 0; padding: 0 6px; font-size: 11px; }

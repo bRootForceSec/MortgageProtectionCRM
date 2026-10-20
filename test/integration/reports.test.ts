@@ -8,6 +8,7 @@ import { commitImport } from '../../src/server/domain/importer.js';
 import { logManualCall, voidCall } from '../../src/server/domain/calls.js';
 import { seedCountyAreaCodes } from '../../src/server/domain/areaCodes.js';
 import { buildReport, drill, type ReportFilter } from '../../src/server/domain/reports.js';
+import { setCalledBack } from '../../src/server/domain/callList.js';
 import { buildApp } from '../../src/server/http/app.js';
 import { createBackup, checkLatestBackup, listBackups } from '../../src/server/backup.js';
 import type { DB } from '../../src/server/db/connection.js';
@@ -135,6 +136,18 @@ describe('reports', () => {
     expect(r.by_caller[0]).toMatchObject({ attempts: 2, contacts: 1, appointments: 1, contact_rate: 0.5, appt_rate: 0.5, appts_per_contact: 1 });
     expect(r.by_caller[1]).toMatchObject({ attempts: 8, appointments: 2 });
     expect(r.by_caller[2]).toMatchObject({ attempts: 1, contacts: 0, contact_rate: 0 });
+
+    // A call-back counts under the number you last called them from: Cal (DeKalb) last got the 260 number, local;
+    // Dee (Marion, 317) got it too, which is out of area for her; Amy last got the 614 number.
+    setCalledBack(db, id.Cal!, true);
+    setCalledBack(db, id.Dee!, true);
+    setCalledBack(db, id.Amy!, true);
+    let back = buildReport(db, range()).by_caller;
+    expect(back.map((c) => [c.key, c.called_back])).toEqual([['local', 1], ['out_of_area', 2], ['unknown', 0]]);
+    expect(drill(db, range(), { section: 'by_caller', key: 'local', metric: 'called_back' }).rows.map((x: any) => x.lead_name).sort()).toEqual(['Cal Three']);
+    setCalledBack(db, id.Amy!, false);
+    back = buildReport(db, range()).by_caller;
+    expect(back[1]!.called_back).toBe(1);
   });
 
   it('serves the report, drill-down, Excel export and editable targets over HTTP', async () => {

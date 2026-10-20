@@ -366,3 +366,32 @@ test('clear the call list into a saved list, load it back, and replace it from L
   await expect(page.getByRole('dialog', { name: 'Saved lists' }).getByText('Old area')).toBeVisible();
   await page.screenshot({ path: 'test-results/saved-lists.png' });
 });
+
+test('"called me back": one key on the Calling screen, or the tick on any lead page', async ({ page }) => {
+  await page.goto(launchUrl);
+  await page.getByRole('button', { name: 'Calling', exact: true }).click();
+  const queue = page.getByLabel('Queue');
+  await expect(page.locator('.phone-big')).toBeVisible();
+  const name = (await page.locator('.lead-name').innerText()).trim();
+  const tick = page.getByLabel(/Called me back/);
+  await expect(tick).not.toBeChecked();
+  await page.keyboard.press('b');
+  await expect(tick).toBeChecked();
+  await expect(page.getByText(`${name} called you back ✓`)).toBeVisible();
+  await expect(queue.locator('li.selected').getByText('✓ called back')).toBeVisible();
+  await page.screenshot({ path: 'test-results/called-back.png' });
+  await page.keyboard.press('b');
+  await expect(tick).not.toBeChecked();
+  await expect(queue.locator('li.selected').getByText('✓ called back')).toHaveCount(0);
+
+  // On the Leads page lead view, the tick works too and shows back on the Calling screen.
+  await page.getByRole('button', { name: 'Leads', exact: true }).click();
+  await page.getByRole('button', { name: 'All', exact: true }).click();
+  await page.locator('table.grid tbody tr', { hasText: name }).first().click();
+  const viewer = page.getByRole('dialog', { name: 'Lead' });
+  await viewer.getByLabel(/Called me back/).check();
+  await expect(viewer.getByLabel(/Called me back/)).toBeChecked();
+  await page.keyboard.press('Escape');
+  await page.getByRole('button', { name: 'Calling', exact: true }).click();
+  await expect(queue.locator('li', { hasText: name }).getByText('✓ called back')).toBeVisible();
+});
