@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { api, fmtDateTime, fmtPhone, fullName, type AddResult } from '../api';
+import { api, fmtDateTime, fmtPhone, fullName, type AddResult, type CallListResponse } from '../api';
+import { ClearListDialog, suggestListName } from '../components/CallListDialogs';
 import { useApp } from '../App';
 import { StatusBadge } from '../components/LeadView';
 import { LeadViewer } from '../components/LeadViewer';
 import { GroupPicker, useGroups } from '../components/GroupPicker';
 
 // Where you pick who to call: filter the leads, tick the ones you want (or take every match),
-// and add them to the bottom of the call list on the Calling page.
+// and add them to the bottom of the call list on the Calling page, or put them in place of it.
 
 const STATUSES = [
   { key: 'all', label: 'All' }, { key: 'new', label: 'Never called' }, { key: 'retry', label: 'Tried' }, { key: 'callback', label: 'Callbacks' },
@@ -39,6 +40,14 @@ export function LeadsPage() {
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [open, setOpen] = useState<string | null>(null);
   const [groups, setGroups, groupParams] = useGroups();
+  const [callList, setCallList] = useState<CallListResponse | null>(null);
+  const [replace, setReplace] = useState(false);
+  /** Waiting on "keep the old list?" before replacing it with these leads. */
+  const [replacing, setReplacing] = useState<'picked' | 'all' | null>(null);
+  const loadCallList = useCallback(() => api.get<CallListResponse>('/call-list').then(setCallList).catch(() => setCallList(null)), []);
+  useEffect(() => void loadCallList(), [loadCallList]);
+  const onList = callList?.items.length ?? 0;
+  const replaceNow = replace && onList > 0;
   const outcomeLabel = (c: string | null) => (c ? meta?.outcome_codes.find((o) => o.code === c)?.label ?? c : '');
 
   useEffect(() => {
@@ -68,7 +77,7 @@ export function LeadsPage() {
   // A new filter starts a new choice.
   useEffect(() => setPicked(new Set()), [filters]);
 
-  const pickable = rows.filter((r) => CALLABLE.has(r.status) && !r.on_list);
+  const pickable = rows.filter((r) => CALLABLE.has(r.status) && (!r.on_list || replaceNow));
   const allPicked = pickable.length > 0 && pickable.every((r) => picked.has(r.id));
   const toggle = (id: string) => setPicked((p) => {
     const n = new Set(p);
@@ -77,7 +86,11 @@ export function LeadsPage() {
     return n;
   });
 
-  const report = (r: AddResult) => {
+  const report = (r: AddResult, replaced = false) => {
+    if (replaced) {
+      toast(`Call list replaced: ${r.added} lead${r.added === 1 ? '' : 's'} on it${r.not_callable ? `; ${r.not_callable} booked, bad or dead (not added)` : ''}`);
+      return;
+    }
     const extra = [
       r.already ? `${r.already} already on it` : '',
       r.not_callable ? `${r.not_callable} booked, bad or dead (not added)` : '',
@@ -85,24 +98,26 @@ export function LeadsPage() {
     toast(`${r.added} lead${r.added === 1 ? '' : 's'} added to the call list${extra ? `; ${extra}` : ''}`);
   };
 
-  const addPicked = async () => {
+  const addPicked = async (swap?: { save_current_as: string | null }) => {
     // In the order shown on screen.
     const ids = rows.filter((r) => picked.has(r.id)).map((r) => r.id);
     try {
-      report(await api.post<AddResult>('/call-list', { lead_ids: ids }));
+      report(await api.post<AddResult>('/call-list', { lead_ids: ids, ...(swap ? { replace: true, ...swap } : {}) }), !!swap);
       setPicked(new Set());
-      await load();
+      setReplacing(null);
+      await Promise.all([load(), loadCallList()]);
     } catch (e: any) {
       toast(e.message, 'error');
     }
   };
 
-  const addAll = async () => {
-    if (total > 50 && !window.confirm(`Add all ${total} matching leads to the call list?`)) return;
+  const addAll = async (swap?: { save_current_as: string | null }) => {
+    if (!swap && total > 50 && !window.confirm(`Add all ${total} matching leads to the call list?`)) return;
     try {
-      report(await api.post<AddResult>('/call-list/add-matching', filters));
+      report(await api.post<AddResult>('/call-list/add-matching', { ...filters, ...(swap ? { replace: true, ...swap } : {}) }), !!swap);
       setPicked(new Set());
-      await load();
+      setReplacing(null);
+      await Promise.all([load(), loadCallList()]);
     } catch (e: any) {
       toast(e.message, 'error');
     }
@@ -132,11 +147,21 @@ export function LeadsPage() {
       <div className="leads-tools">
         <span className="muted">{total} lead{total === 1 ? '' : 's'}{rows.length < total ? ` (showing the first ${rows.length})` : ''}</span>
         <div className="add-bar">
-          <button className="btn primary" disabled={!picked.size} onClick={() => void addPicked()}>
-            Add {picked.size || ''} ticked to call list
+          {onList > 0 && (
+            <label className="row" style={{ gap: 4 }} title="Empty the call list first, so only these leads are on it. You can keep the old list to call later.">
+              <input type="checkbox" checked={replace} onChange={(e) => setReplace(e.target.checked)} /> Replace the call list ({onList} on it now)
+            </label>
+          )}
+          <button className="btn primary" disabled={!picked.size} onClick={() => (replaceNow ? setReplacing('picked') : void addPicked())}>
+            {replaceNow ? `Replace with ${picked.size || ''} ticked` : `Add ${picked.size || ''} ticked to call list`}
           </button>
-          <button className="btn" disabled={!total} onClick={() => void addAll()} title="Every lead matching these filters, not just the ones shown. Booked, bad-number and dead leads are left out.">
-            Add all {total} matching
+          <button
+            className="btn"
+            disabled={!total}
+            onClick={() => (replaceNow ? setReplacing('all') : void addAll())}
+            title="Every lead matching these filters, not just the ones shown. Booked, bad-number and dead leads are left out."
+          >
+            {replaceNow ? `Replace with all ${total} matching` : `Add all ${total} matching`}
           </button>
           <button className="btn" onClick={() => go('calling')}>Go to Calling</button>
         </div>
@@ -158,11 +183,11 @@ export function LeadsPage() {
         </thead>
         <tbody>
           {rows.map((r) => {
-            const can = CALLABLE.has(r.status) && !r.on_list;
+            const can = CALLABLE.has(r.status) && (!r.on_list || replaceNow);
             return (
               <tr key={r.id} className="click" onClick={() => setOpen(r.id)}>
                 <td className="pick" onClick={(e) => e.stopPropagation()}>
-                  {r.on_list ? (
+                  {r.on_list && !replaceNow ? (
                     <span className="muted" title="Already on the call list">✓</span>
                   ) : (
                     <input
@@ -185,6 +210,16 @@ export function LeadsPage() {
         </tbody>
       </table>
       {rows.length === 0 && <div className="empty">No leads here.</div>}
+      {replacing && callList && (
+        <ClearListDialog
+          title={`Replace your call list with ${replacing === 'all' ? `all ${total} matching` : `${picked.size} ticked`} lead${(replacing === 'all' ? total : picked.size) === 1 ? '' : 's'}?`}
+          confirmLabel="Replace call list"
+          count={onList}
+          defaultName={suggestListName(callList.items, callList.name)}
+          onConfirm={(name) => (replacing === 'all' ? addAll({ save_current_as: name }) : addPicked({ save_current_as: name }))}
+          onCancel={() => setReplacing(null)}
+        />
+      )}
       {open && (
         <LeadViewer
           id={open}

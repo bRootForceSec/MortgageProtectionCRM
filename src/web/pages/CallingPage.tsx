@@ -2,10 +2,11 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, typ
 import { callbackFields, describeCallback, differentZone, readCallback } from '../when';
 import { api, personAge, fmtMoney, fmtPhone, fmtRelative, fmtDateTime, newKey, type LeadDetail, type CallListItem, type CallListResponse, type RecentOutcome } from '../api';
 import { useApp } from '../App';
-import { LeadSummary, CallHistory, Notes, StatusBadge } from '../components/LeadView';
+import { LeadSummary, CallHistory, Notes, StatusBadge, toggleCalledBack } from '../components/LeadView';
 import { EditLead } from '../components/EditLead';
 import { LeadPage } from '../components/LeadPage';
 import { DialQr } from '../components/DialQr';
+import { ClearListDialog, SavedListsDialog, suggestListName } from '../components/CallListDialogs';
 import { fillScript, isAction, isTyping, keyLabel, normKey, type KeyMap } from '../shortcuts';
 
 const SELECTED_KEY = 'mpcrm.selectedLead';
@@ -96,6 +97,7 @@ export function CallingPage() {
   const [showScript, setShowScript] = useState(store(SCRIPT_KEY) === '1');
   const [editing, setEditing] = useState(false);
   const [qr, setQr] = useState<string | null>(null);
+  const [listDialog, setListDialog] = useState<'clear' | 'saved' | null>(null);
   const listRef = useRef<HTMLUListElement>(null);
   /** After a save or skip with KDE Connect: the next lead's number goes to your phone once that lead is shown. */
   const autoSend = useRef<string | null>(null);
@@ -123,6 +125,45 @@ export function CallingPage() {
     try {
       const r = await api.post<{ removed: number }>('/call-list/clear-worked', {});
       toast(`Cleared ${r.removed} worked lead${r.removed === 1 ? '' : 's'}`);
+      await loadList();
+    } catch (e: any) {
+      toast(e.message, 'error');
+    }
+  };
+
+  /** After the whole list changed (cleared or a saved list loaded): start again at the top. */
+  const afterSwap = async () => {
+    setListDialog(null);
+    setOpened(null);
+    const l = await api.get<CallListResponse>('/call-list');
+    setListState(l);
+    select(l.items.find((i) => !i.done)?.lead_id ?? l.items[0]?.lead_id ?? null);
+  };
+
+  const clearList = async (saveAs: string | null) => {
+    try {
+      const r = await api.post<{ removed: number; saved: { name: string } | null }>('/call-list/clear', { save_as: saveAs });
+      toast(r.saved ? `Call list cleared. "${r.saved.name}" is in Saved lists.` : `Call list cleared (${r.removed} lead${r.removed === 1 ? '' : 's'})`);
+      await afterSwap();
+    } catch (e: any) {
+      toast(e.message, 'error');
+    }
+  };
+
+  const loadSaved = async (id: string, saveCurrentAs: string | null) => {
+    try {
+      const name = list?.saved_lists.find((l) => l.id === id)?.name ?? 'list';
+      const r = await api.post<{ loaded: number; saved: { name: string } | null }>(`/saved-lists/${id}/load`, { save_current_as: saveCurrentAs });
+      toast(`Loaded "${name}" (${r.loaded} lead${r.loaded === 1 ? '' : 's'})${r.saved ? `. "${r.saved.name}" is in Saved lists.` : ''}`);
+      await afterSwap();
+    } catch (e: any) {
+      toast(e.message, 'error');
+    }
+  };
+
+  const deleteSaved = async (id: string) => {
+    try {
+      await api.del(`/saved-lists/${id}`);
       await loadList();
     } catch (e: any) {
       toast(e.message, 'error');
@@ -339,7 +380,7 @@ export function CallingPage() {
     }
   }, [saved, toast, bumpStats, loadDetail, items, selected]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const modalOpen = editing || !!qr;
+  const modalOpen = editing || !!qr || !!listDialog;
   /** The lead on screen is the one selected. Just after you move on, keys that act on a lead wait for it to load. */
   const ready = !!detail && detail.lead.id === selected;
   const phoneNow = detail ? detail.state?.active_phone_e164 ?? detail.lead.phone_e164 : null;
@@ -368,11 +409,18 @@ export function CallingPage() {
       else if (act('dials_down')) { e.preventDefault(); setAttempt((a) => ({ ...a, dials: Math.max(1, a.dials - 1) })); }
       else if (act('undo')) { e.preventDefault(); void undo(); }
       else if (act('edit')) { if (detail) { e.preventDefault(); setEditing(true); } }
+      else if (act('called_back')) { if (ready && detail) { e.preventDefault(); void toggleCalledBack(detail, toast).then((at) => calledBack(detail.lead.id, at)); } }
       else if (act('script')) { e.preventDefault(); setShowScript((v) => { store(SCRIPT_KEY, v ? '0' : '1'); return !v; }); }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [keys, move, goNext, skip, dial, undo, detail, modalOpen, ready, phoneNow, otherPhone, toast]);
+
+  /** The "called me back" mark changed: shown at once on the lead and its list row. */
+  const calledBack = (leadId: string, at: string | null) => {
+    setDetail((d) => (d && d.lead.id === leadId ? { ...d, called_back_at: at } : d));
+    updateList((xs) => xs.map((i) => (i.lead_id === leadId ? { ...i, called_back_at: at } : i)));
+  };
 
   const refreshDetail = async () => {
     await Promise.all([loadDetail(selected), loadList()]);
@@ -415,7 +463,40 @@ export function CallingPage() {
             )}
             <button className="btn small" onClick={() => go('leads')} title="Pick leads to call on the Leads page">Add leads</button>
           </div>
+          <div className="row list-head">
+            <span className="list-name">{list?.name ? <>List: <b>{list.name}</b></> : null}</span>
+            <span className="row" style={{ gap: 4 }}>
+              {items.length > 0 && (
+                <button className="btn small" onClick={() => setListDialog('clear')} title="Empty the call list, keeping it as a saved list if you want">
+                  Clear list
+                </button>
+              )}
+              <button className="btn small" onClick={() => setListDialog('saved')} title="Lists you put away to call later">
+                Saved lists{list?.saved_lists.length ? ` (${list.saved_lists.length})` : ''}
+              </button>
+            </span>
+          </div>
         </header>
+        {listDialog === 'clear' && (
+          <ClearListDialog
+            title={`Clear the call list (${items.length} lead${items.length === 1 ? '' : 's'})?`}
+            confirmLabel="Clear list"
+            count={items.length}
+            defaultName={suggestListName(items, list?.name ?? null)}
+            onConfirm={clearList}
+            onCancel={() => setListDialog(null)}
+          />
+        )}
+        {listDialog === 'saved' && list && (
+          <SavedListsDialog
+            lists={list.saved_lists}
+            count={items.length}
+            defaultName={suggestListName(items, list.name)}
+            onLoad={loadSaved}
+            onDelete={deleteSaved}
+            onClose={() => setListDialog(null)}
+          />
+        )}
         <div className="body">
           {list && items.length > 0 && left === 0 && (
             <div className="list-done" role="status">
@@ -443,6 +524,7 @@ export function CallingPage() {
                 >
                   <span className="name">{i.name}</span>
                   <span className="row" style={{ gap: 4 }}>
+                    {i.called_back_at && <span className="badge called-back" title={`Called you back ${fmtDateTime(i.called_back_at)}`}>✓ called back</span>}
                     {i.done ? (
                       <span className="badge done">{i.done.label}{i.done.dials > 1 ? ` · ${i.done.dials} dials` : ''}</span>
                     ) : i.status === 'callback' ? (
@@ -470,7 +552,7 @@ export function CallingPage() {
           <span className="help">
             <kbd>{k('list_up')}</kbd><kbd>{k('list_down')}</kbd> move <kbd>{k('skip')}</kbd> skip to the bottom <kbd>{k('dial')}</kbd> {dialLabel.toLowerCase()} <kbd>{k('dial_alt')}</kbd> other number{' '}
             <kbd>{k('dials_down')}</kbd><kbd>{k('dials_up')}</kbd> dials <kbd>Enter</kbd> save and next <kbd>{k('undo')}</kbd> undo <kbd>{k('note')}</kbd> note{' '}
-            <kbd>{k('edit')}</kbd> edit <kbd>{k('script')}</kbd> script <kbd>{k('lookup')}</kbd> look up a caller
+            <kbd>{k('edit')}</kbd> edit <kbd>{k('script')}</kbd> script <kbd>{k('lookup')}</kbd> look up a caller <kbd>{k('called_back')}</kbd> called me back
           </span>
         </header>
       </section>
@@ -491,7 +573,8 @@ export function CallingPage() {
             <div className="empty">Select a lead from the list, or import leads first.</div>
           ) : (
             <>
-              <LeadSummary d={detail} onDial={dial} dialLabel={dialLabel} dialKey={k('dial')} altKey={k('dial_alt')} onEdit={() => setEditing(true)} editKey={k('edit')} />
+              <LeadSummary d={detail} onDial={dial} dialLabel={dialLabel} dialKey={k('dial')} altKey={k('dial_alt')} onEdit={() => setEditing(true)} editKey={k('edit')}
+                calledBackKey={k('called_back')} onCalledBack={(at) => calledBack(detail.lead.id, at)} />
               {showScript && <ScriptPanel d={detail} />}
               <LogCall
                 key={`${detail.lead.id}-${restore?.leadId === detail.lead.id ? restore.n : 0}`}

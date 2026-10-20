@@ -8,6 +8,7 @@ import { commitImport } from '../../src/server/domain/importer.js';
 import { logManualCall, voidCall } from '../../src/server/domain/calls.js';
 import { seedCountyAreaCodes } from '../../src/server/domain/areaCodes.js';
 import { buildReport, drill, type ReportFilter } from '../../src/server/domain/reports.js';
+import { setCalledBack } from '../../src/server/domain/callList.js';
 import { buildApp } from '../../src/server/http/app.js';
 import { createBackup, checkLatestBackup, listBackups } from '../../src/server/backup.js';
 import type { DB } from '../../src/server/db/connection.js';
@@ -119,6 +120,34 @@ describe('reports', () => {
     for (const b of r.by_batch) for (const m of ['leads', 'cost', 'never_called', 'dials', 'reached', 'booked']) check('by_batch', b.key, m, (b as any)[m]);
     for (const b of r.benchmarks) for (const m of ['leads', 'reached', 'booked']) check('benchmarks', b.key, m, (b as any)[m]);
     for (const b of r.best_time) check('best_time', b.key, 'contacts', b.contacts);
+    for (const c of r.by_caller) for (const m of ['dials', 'attempts', 'leads_called', 'contacts', 'appointments', 'callbacks']) check('by_caller', c.key, m, (c as any)[m]);
+  });
+
+  it('compares local and out-of-area caller ID', async () => {
+    const local = (await app.inject({ method: 'POST', url: '/api/numbers', headers: write, payload: { number: '260-555-0198', label: 'Fort Wayne' } })).json().id;
+    // 260 is local to Allen and DeKalb, out of area for Marion (317).
+    log('Ben', 'appointment', { from_number_id: local, talk_seconds: 200 });
+    log('Cal', 'no_answer', { from_number_id: local });
+    log('Dee', 'no_answer', { from_number_id: local });
+    // No caller ID recorded.
+    logManualCall(db, { lead_id: id.Eve!, idempotency_key: uuidv7(), outcome_code: 'no_answer', occurred_at: hourAgo() } as any);
+    const r = buildReport(db, range());
+    expect(r.by_caller.map((c) => c.key)).toEqual(['local', 'out_of_area', 'unknown']);
+    expect(r.by_caller[0]).toMatchObject({ attempts: 2, contacts: 1, appointments: 1, contact_rate: 0.5, appt_rate: 0.5, appts_per_contact: 1 });
+    expect(r.by_caller[1]).toMatchObject({ attempts: 8, appointments: 2 });
+    expect(r.by_caller[2]).toMatchObject({ attempts: 1, contacts: 0, contact_rate: 0 });
+
+    // A call-back counts under the number you last called them from: Cal (DeKalb) last got the 260 number, local;
+    // Dee (Marion, 317) got it too, which is out of area for her; Amy last got the 614 number.
+    setCalledBack(db, id.Cal!, true);
+    setCalledBack(db, id.Dee!, true);
+    setCalledBack(db, id.Amy!, true);
+    let back = buildReport(db, range()).by_caller;
+    expect(back.map((c) => [c.key, c.called_back])).toEqual([['local', 1], ['out_of_area', 2], ['unknown', 0]]);
+    expect(drill(db, range(), { section: 'by_caller', key: 'local', metric: 'called_back' }).rows.map((x: any) => x.lead_name).sort()).toEqual(['Cal Three']);
+    setCalledBack(db, id.Amy!, false);
+    back = buildReport(db, range()).by_caller;
+    expect(back[1]!.called_back).toBe(1);
   });
 
   it('serves the report, drill-down, Excel export and editable targets over HTTP', async () => {

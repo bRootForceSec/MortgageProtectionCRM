@@ -26,7 +26,7 @@ import { loadCallingSettings } from '../domain/callingSettings.js';
 import { groupWhere, searchWhere, parseList } from '../domain/groupFilter.js';
 import {
   addMatchingToCallList, addToCallList, addBatchToCallList, clearWorked, getCallList, leadFilterWhere, moveToBottom, onCallList,
-  recentOutcomes, removeFromCallList, type LeadFilter,
+  recentOutcomes, removeFromCallList, type LeadFilter, callListName, listSavedLists, clearCallList, loadSavedList, deleteSavedList, setCalledBack,
 } from '../domain/callList.js';
 
 export interface AppDeps {
@@ -182,13 +182,45 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   });
 
   // ---------- the call list ----------
-  app.get('/api/call-list', async () => ({ items: getCallList(db), recent: recentOutcomes(db) }));
+  const savedName = z.string().trim().max(120);
+  app.get('/api/call-list', async () => ({
+    items: getCallList(db), recent: recentOutcomes(db), name: callListName(db), saved_lists: listSavedLists(db),
+  }));
+  // `replace` empties the list first (kept as a saved list named `save_current_as`, if given).
+  const replaceOpts = z.object({ replace: z.boolean().optional(), save_current_as: savedName.nullish() });
   app.post('/api/call-list', async (req) => {
-    const b = z.object({ lead_ids: z.array(z.string().max(64)).max(20_000) }).parse(req.body);
-    return addToCallList(db, b.lead_ids);
+    const b = z.object({ lead_ids: z.array(z.string().max(64)).max(20_000) }).extend(replaceOpts.shape).parse(req.body);
+    return db.transaction(() => {
+      if (b.replace) clearCallList(db, b.save_current_as);
+      return addToCallList(db, b.lead_ids);
+    })();
   });
-  app.post('/api/call-list/add-matching', async (req) => addMatchingToCallList(db, toFilter(leadFilter.parse(req.body ?? {}))));
+  app.post('/api/call-list/add-matching', async (req) => {
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const o = replaceOpts.parse({ replace: body.replace, save_current_as: body.save_current_as });
+    const f = toFilter(leadFilter.parse(body));
+    return db.transaction(() => {
+      if (o.replace) clearCallList(db, o.save_current_as);
+      return addMatchingToCallList(db, f);
+    })();
+  });
   app.post('/api/call-list/clear-worked', async () => ({ removed: clearWorked(db) }));
+  app.post('/api/call-list/clear', async (req) => {
+    const b = z.object({ save_as: savedName.nullish() }).parse(req.body ?? {});
+    return clearCallList(db, b.save_as);
+  });
+  app.post('/api/saved-lists/:id/load', async (req) => {
+    const { id } = z.object({ id: z.string().max(64) }).parse(req.params);
+    const b = z.object({ save_current_as: savedName.nullish() }).parse(req.body ?? {});
+    const r = loadSavedList(db, id, b.save_current_as);
+    if (!r) throw new DomainError('that saved list is gone', 404);
+    return r;
+  });
+  app.delete('/api/saved-lists/:id', async (req) => {
+    const { id } = z.object({ id: z.string().max(64) }).parse(req.params);
+    deleteSavedList(db, id);
+    return { ok: true };
+  });
   app.post('/api/call-list/:leadId/skip', async (req) => {
     const { leadId } = z.object({ leadId: z.string().max(64) }).parse(req.params);
     if (!moveToBottom(db, leadId)) throw new DomainError('that lead is not on the call list', 404);
@@ -251,6 +283,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       import_row: db.prepare('SELECT row_number, warnings_json, raw_json FROM import_row WHERE id = ?').get(lead.import_row_id),
       // The PDF this lead was imported from, when it is still on disk, so the calling screen can show its page.
       source_pdf: lead.source_page != null && !!batchPdf(config.importsDir, lead.batch_id),
+      called_back_at: (db.prepare('SELECT at FROM lead_called_back WHERE lead_id = ?').get(id) as { at: string } | undefined)?.at ?? null,
       calls,
       // Notes saved with a call you undid are left out (the undo puts the note back in the form).
       notes: db
@@ -300,6 +333,13 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     const { id } = z.object({ id: z.string().max(64) }).parse(req.params);
     const b = z.object({ action: z.enum(['skip', 'mark_dead', 'restore']), reason: z.string().max(500).nullish() }).parse(req.body);
     return addLeadAction(db, id, b.action, b.reason);
+  });
+
+  app.post('/api/leads/:id/called-back', async (req) => {
+    const { id } = z.object({ id: z.string().max(64) }).parse(req.params);
+    const b = z.object({ on: z.boolean() }).parse(req.body);
+    if (!db.prepare('SELECT 1 FROM lead WHERE id = ?').get(id)) throw new DomainError('lead not found', 404);
+    return { called_back_at: setCalledBack(db, id, b.on) };
   });
 
   app.post('/api/leads/:id/notes', async (req) => {

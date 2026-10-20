@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { api, fmtDateTime, fmtDob, fmtDuration, fmtMoney, fmtPhone, fullName, localTime, personAge, type LeadDetail, type Call } from '../api';
 import { useApp } from '../App';
 
@@ -21,9 +21,21 @@ export function StatusBadge({ status }: { status: string }) {
   return <span className={`badge ${status}`}>{STATUS_LABEL[status] ?? status}</span>;
 }
 
+/** "They called me back": flips the mark on a lead and says so. Returns the new value. */
+export async function toggleCalledBack(d: LeadDetail, toast: (m: string, kind?: 'error') => void): Promise<string | null> {
+  try {
+    const r = await api.post<{ called_back_at: string | null }>(`/leads/${d.lead.id}/called-back`, { on: !d.called_back_at });
+    toast(r.called_back_at ? `${fullName(d.lead)} called you back ✓` : `Took off "called back" for ${fullName(d.lead)}`);
+    return r.called_back_at;
+  } catch (e: any) {
+    toast(e.message, 'error');
+    return d.called_back_at;
+  }
+}
+
 /** Header + key facts used on the calling screen and the lead modal. */
 export function LeadSummary({
-  d, onDial, dialLabel = 'Copy number', dialKey, altKey, onEdit, editKey,
+  d, onDial, dialLabel = 'Copy number', dialKey, altKey, onEdit, editKey, onCalledBack, calledBackKey,
 }: {
   d: LeadDetail;
   /** On the Calling screen: dial (or copy, or show a QR code, per Settings) and start the attempt. */
@@ -34,9 +46,21 @@ export function LeadSummary({
   altKey?: string;
   onEdit?: () => void;
   editKey?: string;
+  /** After the "called me back" mark changes, so the page can reload the lead. */
+  onCalledBack?: (at: string | null) => void;
+  calledBackKey?: string;
 }) {
   const l = d.lead;
   const { toast } = useApp();
+  // Shown ticked at once; the app's answer follows.
+  const [backAt, setBackAt] = useState(d.called_back_at);
+  useEffect(() => setBackAt(d.called_back_at), [d.lead.id, d.called_back_at]);
+  const flipBack = async () => {
+    setBackAt(backAt ? null : new Date().toISOString());
+    const at = await toggleCalledBack({ ...d, called_back_at: backAt }, toast);
+    setBackAt(at);
+    onCalledBack?.(at);
+  };
   const copy = async (e164: string | null = l.phone_e164) => {
     if (!e164) return;
     if (onDial) return onDial(e164);
@@ -70,6 +94,10 @@ export function LeadSummary({
           <h2>
             <span className="lead-name">{fullName(l)}</span> {d.state && <StatusBadge status={d.state.status} />}
             {onEdit && <button className="btn small" onClick={onEdit} title="Edit this lead's details">Edit {editKey && <kbd>{editKey}</kbd>}</button>}
+            <label className={`called-back ${backAt ? 'on' : ''}`} title={backAt ? `Marked ${fmtDateTime(backAt)}` : 'Tick when this lead calls you back'}>
+              <input type="checkbox" checked={!!backAt} onChange={() => void flipBack()} />
+              Called me back {calledBackKey && <kbd>{calledBackKey}</kbd>}
+            </label>
           </h2>
           <div className="where">
             {age != null && <><b>Age {age}</b> · </>}

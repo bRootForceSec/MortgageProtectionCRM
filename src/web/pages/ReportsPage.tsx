@@ -4,10 +4,10 @@ import { useApp } from '../App';
 import { GroupPicker, useGroups } from '../components/GroupPicker';
 import { LeadViewer, type ViewerItem } from '../components/LeadViewer';
 
-// Your numbers: activity, by hour, best time to call, by county, by batch, and against the flier's benchmarks.
+// Your numbers: activity, by hour, best time to call, by county, local vs out-of-area caller ID, by batch, and against the flier's benchmarks.
 // Every number opens the calls or leads behind it.
 
-type Section = 'activity' | 'by_hour' | 'best_time' | 'by_county' | 'by_batch' | 'benchmarks';
+type Section = 'activity' | 'by_hour' | 'best_time' | 'by_county' | 'by_caller' | 'by_batch' | 'benchmarks';
 interface Drill {
   section: Section;
   key: string;
@@ -50,6 +50,7 @@ function rangeFor(k: RangeKey, custom: { from: string; to: string }): { from: Da
 
 const pct = (x: number | null | undefined) => (x == null ? '–' : `${Math.round(x * 100)}%`);
 const num = (x: number | null | undefined, digits = 1) => (x == null ? '–' : x.toFixed(digits));
+const CALLER_LABELS: Record<string, string> = { local: 'Local number', out_of_area: 'Out-of-area number', unknown: 'No caller ID recorded' };
 const hourLabel = (h: number) => `${((h + 11) % 12) + 1}${h < 12 ? 'a' : 'p'}`;
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
@@ -166,6 +167,40 @@ export function ReportsPage() {
             </tbody>
           </table>
           <p className="help">Leads are every lead you have in the county; the call numbers are for these dates.</p>
+        </div>
+      )}
+
+      {r && (
+        <div className="card">
+          <h3>Local vs out-of-area caller ID</h3>
+          {r.by_caller.length === 0 ? (
+            <p className="muted">No calls in these dates.</p>
+          ) : (
+            <table className="grid">
+              <thead>
+                <tr><th>Caller ID</th><th>Dials</th><th>Attempts</th><th>Pickups</th><th>Pickup rate</th><th>Appointments</th><th>Appts per attempt</th><th>Appts per pickup</th><th>Callbacks set</th><th>Called you back</th></tr>
+              </thead>
+              <tbody>
+                {r.by_caller.map((c: any) => {
+                  const label = CALLER_LABELS[c.key] ?? c.key;
+                  const cell = (metric: string, title: string) => <td><N section="by_caller" k={c.key} metric={metric} title={`${title}: ${label}`}>{c[metric]}</N></td>;
+                  return (
+                    <tr key={c.key}>
+                      <td>{label}</td>
+                      {cell('dials', 'Dials')}{cell('attempts', 'Attempts')}{cell('contacts', 'Pickups')}<td>{pct(c.contact_rate)}</td>
+                      {cell('appointments', 'Appointments')}<td>{pct(c.appt_rate)}</td><td>{pct(c.appts_per_contact)}</td>{cell('callbacks', 'Callbacks set')}
+                      <td><N section="by_caller" k={c.key} metric="called_back" title={`Called you back: ${label}`}>{c.called_back}</N> <span className="muted">({pct(c.called_back_rate)} of leads called)</span></td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          )}
+          <p className="help">
+            Local means the number you called from has one of the area codes for the lead's county (Settings)
+            (or the lead's own area code, for a county with none set). A pickup is any call where you reached a person.
+            Called you back counts leads you ticked "Called me back" in these dates, under the number you last called them from.
+          </p>
         </div>
       )}
 

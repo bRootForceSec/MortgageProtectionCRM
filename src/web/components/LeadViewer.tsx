@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, fmtDateTime, fmtPhone, type LeadDetail } from '../api';
 import { useApp } from '../App';
-import { LeadSummary, CallHistory, Notes, StatusBadge } from './LeadView';
+import { LeadSummary, CallHistory, Notes, StatusBadge, toggleCalledBack } from './LeadView';
 import { LeadPage } from './LeadPage';
 import { EditLead } from './EditLead';
 import { isAction, isTyping, keyLabel } from '../shortcuts';
@@ -69,6 +69,9 @@ export function LeadViewer({ id, list = [], onClose }: { id: string; list?: View
       } else if (isAction(keys, 'edit', e) && d) {
         e.preventDefault();
         setEditing(true);
+      } else if (isAction(keys, 'called_back', e) && d) {
+        e.preventDefault();
+        void toggleCalledBack(d, toast).then((at) => setD((x) => (x && x.lead.id === d.lead.id ? { ...x, called_back_at: at } : x)));
       }
     };
     window.addEventListener('keydown', k, true);
@@ -132,7 +135,8 @@ export function LeadViewer({ id, list = [], onClose }: { id: string; list?: View
               <div className="empty">Loading…</div>
             ) : (
               <>
-                <LeadSummary d={d} onEdit={() => setEditing(true)} editKey={editKey} />
+                <LeadSummary d={d} onEdit={() => setEditing(true)} editKey={editKey} calledBackKey={keyLabel(keys.actions.called_back?.[0] ?? '')}
+                  onCalledBack={(at) => setD((x) => (x ? { ...x, called_back_at: at } : x))} />
                 <section className="calls-notes" aria-label="History">
                   <div>
                     <h3>Calls</h3>
