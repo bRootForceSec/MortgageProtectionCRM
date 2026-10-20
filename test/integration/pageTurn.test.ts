@@ -122,3 +122,27 @@ describe('turning lead pages upright', () => {
     expect(calls.length).toBe(1);
   });
 });
+
+describe('"Check all lead pages"', () => {
+  it('checks every imported PDF again, even ones checked before, and reports what it turned', async () => {
+    const { PageChecker } = await import('../../src/server/domain/pageTurnFix.js');
+    const { c, db } = tempDb();
+    const worker = new DraftWorker(db, Secrets.inDataDir(c.dataDir));
+    const { id } = createPdfDraft(db, c.importsDir, { fileName: 'a.pdf', bytes: Buffer.from(await makeLeadPdf([FAKE[0]!, FAKE[1]!])) });
+    worker.readerOverride = null;
+    await worker.run(id);
+    const { batchId } = commitDraft(db, c.importsDir, id, { name: 'A' });
+    const file = batchPdf(c.importsDir, batchId)!;
+    const checker = new PageChecker(db, c.importsDir, () => null);
+    await checker.start(false);
+    expect(checker.state).toMatchObject({ running: false, files_total: 1, pages_turned: 0 });
+
+    // Turned after the one-time check: only the button finds it.
+    fs.writeFileSync(file, await skew(new Uint8Array(fs.readFileSync(file)), { 2: 90 }));
+    await checker.start(false);
+    expect(checker.state).toMatchObject({ files_total: 0, pages_turned: 0 });
+    await checker.start(true);
+    expect(checker.state).toMatchObject({ files_total: 1, files_done: 1, pages_turned: 1, error: null });
+    expect(await rotations(file)).toEqual([0, 0]);
+  });
+});

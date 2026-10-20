@@ -10,7 +10,7 @@ import { rebuildLeadState } from './domain/leadState.js';
 import { Updates, readBuildInfo, type Runtime, type UpdateProvider } from './updates.js';
 import { DraftWorker } from './domain/drafts.js';
 import { BulkImporter } from './domain/bulkImport.js';
-import { fixImportedPageTurns } from './domain/pageTurnFix.js';
+import { PageChecker } from './domain/pageTurnFix.js';
 import { makeReader } from './ai/readers.js';
 import { loadAiSettings } from './ai/settings.js';
 import { Secrets } from './ai/settings.js';
@@ -103,7 +103,8 @@ export async function startServer(opts: StartOptions = {}): Promise<RunningServe
   const secrets = Secrets.inDataDir(config.dataDir);
   const drafts = new DraftWorker(db, secrets);
   const bulk = new BulkImporter(db, config.importsDir, drafts);
-  const app = await buildApp({ db, config, token, webDir, logger: true, logStream: opts.logStream, updates, drafts, bulk, secrets });
+  const pageChecker = new PageChecker(db, config.importsDir, () => makeReader(loadAiSettings(db), secrets), (m) => console.warn(m));
+  const app = await buildApp({ db, config, token, webDir, logger: true, logStream: opts.logStream, updates, drafts, bulk, secrets, pageChecker });
 
   const pidFile = path.join(config.dataDir, 'server.pid');
   fs.writeFileSync(pidFile, String(process.pid), { mode: 0o600 });
@@ -113,14 +114,7 @@ export async function startServer(opts: StartOptions = {}): Promise<RunningServe
   drafts.resumeAll();
   bulk.resume();
   // One time: turn upright the sideways or upside-down pages of leads imported before imports did it.
-  const t0 = setTimeout(() => {
-    fixImportedPageTurns(db, config.importsDir, makeReader(loadAiSettings(db), secrets), {
-      log: (m) => app.log.warn(m),
-      alive: () => !stopped,
-    })
-      .then((r) => r.pages_turned && app.log.info(r, 'turned lead pages upright'))
-      .catch((e) => app.log.error({ err: e?.message }, 'page turn fix failed'));
-  }, 5_000);
+  const t0 = setTimeout(() => void pageChecker.start(false), 5_000);
   t0.unref();
   // Once a week, check that the newest backup restores cleanly into a scratch copy.
   const checkBackups = () => {
@@ -149,6 +143,7 @@ export async function startServer(opts: StartOptions = {}): Promise<RunningServe
       clearTimeout(t1);
       clearInterval(t2);
       clearTimeout(t0);
+      pageChecker.stop();
       await app.close();
       db.close();
       fs.rmSync(pidFile, { force: true });
