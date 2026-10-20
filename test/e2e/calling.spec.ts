@@ -284,6 +284,9 @@ test('reports: numbers open the calls behind them', async ({ page }) => {
   await page.screenshot({ path: 'test-results/reports-drill.png', fullPage: true });
   await page.keyboard.press('Escape');
   await expect(page.getByRole('dialog')).toHaveCount(0);
+  await expect(page.getByRole('heading', { name: 'Local vs out-of-area caller ID' })).toBeVisible();
+  await page.getByRole('heading', { name: 'Local vs out-of-area caller ID' }).scrollIntoViewIfNeeded();
+  await page.screenshot({ path: 'test-results/reports-caller-id.png' });
   await expect(page.getByRole('heading', { name: /By batch/ })).toBeVisible();
   await expect(page.getByRole('heading', { name: /benchmarks/ })).toBeVisible();
   await page.screenshot({ path: 'test-results/reports.png', fullPage: true });

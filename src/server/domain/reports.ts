@@ -9,6 +9,7 @@ import { BOOKED_CODES } from './leadState.js';
 //
 // - Activity, by hour and by county use the date range. Activity and by hour leave out calls imported from a
 //   spreadsheet's Status column, since their real time isn't known; by county includes them.
+// - Local vs out-of-area caller ID uses the date range.
 // - Best time to call, batches and benchmarks are all-time, for the leads in your county / area-code filter.
 
 export interface ReportFilter {
@@ -40,6 +41,7 @@ interface CallRow {
   time_zone: string | null;
   lead_name: string;
   to_e164: string;
+  from_e164: string | null;
   channel: string;
 }
 
@@ -117,7 +119,7 @@ function loadCalls(db: DB, f: ReportFilter, range: boolean): CallRow[] {
   const g = groupWhere('l.county_key', f);
   return db
     .prepare(
-      `SELECT c.id, c.lead_id, c.requested_at, c.time_known, c.dial_count, c.talk_seconds, c.to_e164, c.channel,
+      `SELECT c.id, c.lead_id, c.requested_at, c.time_known, c.dial_count, c.talk_seconds, c.to_e164, c.from_e164, c.channel,
               o.outcome_code, oc.label outcome_label, coalesce(oc.counts_as_human_contact, 0) contact, oc.grp outcome_group, n.label from_label,
               l.county_key, l.county, l.state, l.lead_type, l.batch_id, l.time_zone,
               trim(coalesce(l.first_name,'') || ' ' || coalesce(l.last_name,'')) lead_name
@@ -183,6 +185,22 @@ interface Group {
 const ACTIVITY: CallMetric[] = ['dials', 'attempts', 'leads_called', 'contacts', 'conversations', 'talk_minutes', 'appointments', 'callbacks', 'bad_numbers'];
 const HOURLY: CallMetric[] = ['dials', 'attempts', 'contacts', 'appointments'];
 const COUNTY_CALLS: CallMetric[] = ['dials', 'attempts', 'contacts', 'appointments'];
+const CALLER_MATCH: CallMetric[] = ['dials', 'attempts', 'leads_called', 'contacts', 'appointments', 'callbacks'];
+const CALLER_MATCH_ORDER = ['local', 'out_of_area', 'unknown'] as const;
+type CallerMatch = (typeof CALLER_MATCH_ORDER)[number];
+
+const areaCode = (e164: string | null | undefined) => (e164 && /^\+1\d{10}$/.test(e164) ? e164.slice(2, 5) : null);
+
+/**
+ * Was the caller ID local to the lead? Local means its area code is one you set for the lead's county
+ * (Settings); for a county with none set, the lead's own area code. Unknown when no caller ID was recorded.
+ */
+function callerMatch(c: CallRow, countyCodes: Map<string, Set<string>>): CallerMatch {
+  const from = areaCode(c.from_e164);
+  if (!from) return 'unknown';
+  const codes = (c.county_key && countyCodes.get(c.county_key)) || new Set([areaCode(c.to_e164)].filter(Boolean) as string[]);
+  return codes.has(from) ? 'local' : 'out_of_area';
+}
 const BATCH_LEADS: LeadMetric[] = ['leads', 'cost', 'never_called', 'reached', 'booked'];
 
 function groupBy<T>(xs: T[], key: (x: T) => string): Map<string, T[]> {
@@ -226,7 +244,16 @@ function buildGroups(db: DB, f: ReportFilter) {
   const allByType = groupBy(all, (c) => c.lead_type ?? '');
   const typeGroups: Group[] = [...typeLeads].map(([k, ls]) => ({ key: k, calls: allByType.get(k) ?? [], leads: ls }));
 
-  return { activity, hourGroups, bestGroups, countyGroups, batchGroups, typeGroups, timedCount: timed.length, untimedInRange: inRange.length - timed.length };
+  const countyCodes = new Map<string, Set<string>>();
+  for (const r of db.prepare('SELECT county_key, area_code FROM county_area_code').all() as { county_key: string; area_code: string }[]) {
+    const set = countyCodes.get(r.county_key) ?? new Set<string>();
+    set.add(r.area_code);
+    countyCodes.set(r.county_key, set);
+  }
+  const byMatch = groupBy(inRange, (c) => callerMatch(c, countyCodes));
+  const callerGroups: Group[] = CALLER_MATCH_ORDER.filter((k) => byMatch.has(k)).map((k) => ({ key: k, calls: byMatch.get(k)!, leads: [] }));
+
+  return { activity, hourGroups, bestGroups, countyGroups, batchGroups, typeGroups, callerGroups, timedCount: timed.length, untimedInRange: inRange.length - timed.length };
 }
 
 export function buildReport(db: DB, f: ReportFilter) {
@@ -276,6 +303,16 @@ export function buildReport(db: DB, f: ReportFilter) {
         };
       })
       .sort((x, y) => y.dials - x.dials || y.leads - x.leads),
+    by_caller: g.callerGroups.map((c) => {
+      const m = callMetrics(c.calls, CALLER_MATCH);
+      return {
+        key: c.key,
+        ...m,
+        contact_rate: ratio(m.contacts, m.attempts),
+        appt_rate: ratio(m.appointments, m.attempts),
+        appts_per_contact: ratio(m.appointments, m.contacts),
+      };
+    }),
     by_batch: g.batchGroups
       .map((b) => {
         const m = leadMetrics(b.leads, BATCH_LEADS);
@@ -314,7 +351,7 @@ export function buildReport(db: DB, f: ReportFilter) {
 // ---------- drill-down ----------
 
 export const DrillSpec = z.object({
-  section: z.enum(['activity', 'by_hour', 'best_time', 'by_county', 'by_batch', 'benchmarks']),
+  section: z.enum(['activity', 'by_hour', 'best_time', 'by_county', 'by_caller', 'by_batch', 'benchmarks']),
   key: z.string().max(200).default('all'),
   metric: z.string().max(40),
 });
@@ -328,6 +365,7 @@ export function drill(db: DB, f: ReportFilter, spec: DrillSpec) {
     by_hour: g.hourGroups,
     best_time: g.bestGroups,
     by_county: g.countyGroups,
+    by_caller: g.callerGroups,
     by_batch: g.batchGroups,
     benchmarks: g.typeGroups,
   };
@@ -377,6 +415,7 @@ function leadRowsById(db: DB, ids: string[]) {
 
 // ---------- Excel ----------
 
+const CALLER_LABELS: Record<CallerMatch, string> = { local: 'Local number', out_of_area: 'Out-of-area number', unknown: 'No caller ID recorded' };
 const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const pct = (x: number | null) => (x == null ? '' : Math.round(x * 1000) / 10);
 const money = (c: number | null) => (c == null ? '' : Math.round(c) / 100);
@@ -408,6 +447,14 @@ export function reportSheets(r: ReturnType<typeof buildReport>) {
     {
       name: 'By county',
       rows: r.by_county.map((c) => ({ county: c.name, state: c.state, area_codes: c.area_codes, leads: c.leads, dials: c.dials, attempts: c.attempts, contacts: c.contacts, appointments: c.appointments })),
+    },
+    {
+      name: 'Local vs out-of-area',
+      rows: r.by_caller.map((c) => ({
+        caller_id: CALLER_LABELS[c.key as CallerMatch], dials: c.dials, attempts: c.attempts, leads_called: c.leads_called, contacts: c.contacts,
+        appointments: c.appointments, callbacks: c.callbacks, contact_rate_pct: pct(c.contact_rate), appt_rate_pct: pct(c.appt_rate),
+        appts_per_contact_pct: pct(c.appts_per_contact),
+      })),
     },
     {
       name: 'By batch',

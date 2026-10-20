@@ -119,6 +119,22 @@ describe('reports', () => {
     for (const b of r.by_batch) for (const m of ['leads', 'cost', 'never_called', 'dials', 'reached', 'booked']) check('by_batch', b.key, m, (b as any)[m]);
     for (const b of r.benchmarks) for (const m of ['leads', 'reached', 'booked']) check('benchmarks', b.key, m, (b as any)[m]);
     for (const b of r.best_time) check('best_time', b.key, 'contacts', b.contacts);
+    for (const c of r.by_caller) for (const m of ['dials', 'attempts', 'leads_called', 'contacts', 'appointments', 'callbacks']) check('by_caller', c.key, m, (c as any)[m]);
+  });
+
+  it('compares local and out-of-area caller ID', async () => {
+    const local = (await app.inject({ method: 'POST', url: '/api/numbers', headers: write, payload: { number: '260-555-0198', label: 'Fort Wayne' } })).json().id;
+    // 260 is local to Allen and DeKalb, out of area for Marion (317).
+    log('Ben', 'appointment', { from_number_id: local, talk_seconds: 200 });
+    log('Cal', 'no_answer', { from_number_id: local });
+    log('Dee', 'no_answer', { from_number_id: local });
+    // No caller ID recorded.
+    logManualCall(db, { lead_id: id.Eve!, idempotency_key: uuidv7(), outcome_code: 'no_answer', occurred_at: hourAgo() } as any);
+    const r = buildReport(db, range());
+    expect(r.by_caller.map((c) => c.key)).toEqual(['local', 'out_of_area', 'unknown']);
+    expect(r.by_caller[0]).toMatchObject({ attempts: 2, contacts: 1, appointments: 1, contact_rate: 0.5, appt_rate: 0.5, appts_per_contact: 1 });
+    expect(r.by_caller[1]).toMatchObject({ attempts: 8, appointments: 2 });
+    expect(r.by_caller[2]).toMatchObject({ attempts: 1, contacts: 0, contact_rate: 0 });
   });
 
   it('serves the report, drill-down, Excel export and editable targets over HTTP', async () => {
