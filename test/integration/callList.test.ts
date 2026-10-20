@@ -6,7 +6,7 @@ import { commitImport } from '../../src/server/domain/importer.js';
 import { logManualCall, changeOutcome, voidCall, addLeadAction } from '../../src/server/domain/calls.js';
 import {
   addBatchToCallList, addMatchingToCallList, addToCallList, clearWorked, getCallList, moveToBottom, recentOutcomes, removeFromCallList,
-  callListName, clearCallList, deleteSavedList, listSavedLists, loadSavedList, setCalledBack,
+  callListName, clearCallList, deleteSavedList, listSavedLists, loadSavedList, setCalledBack, leadFilterWhere,
 } from '../../src/server/domain/callList.js';
 import { buildApp } from '../../src/server/http/app.js';
 import type { Config } from '../../src/server/config.js';
@@ -143,6 +143,37 @@ describe('clearing, replacing and saved lists', () => {
     expect(loadSavedList(db, 'nope')).toBeNull();
     expect(deleteSavedList(db, listSavedLists(db)[0]!.id)).toBe(true);
     expect(listSavedLists(db)).toEqual([]);
+  });
+
+  it("filters: no answer vs talked, last call today; worked leads can go back on the list", async () => {
+    const jane = id('Jane');
+    const other = (db.prepare('SELECT id FROM lead WHERE id <> ? LIMIT 1').get(jane) as any).id as string;
+    addToCallList(db, [jane, other], new Date(Date.now() - 1000).toISOString());
+    logManualCall(db, { lead_id: jane, idempotency_key: key(), outcome_code: 'no_answer' });
+    logManualCall(db, { lead_id: other, idempotency_key: key(), outcome_code: 'no_appt' });
+    const start = new Date(Date.now() - 3600_000).toISOString();
+    const match = (f: object) =>
+      db.prepare(`SELECT l.id FROM lead l JOIN lead_state s ON s.lead_id = l.id WHERE ${leadFilterWhere(f).sql}`).all(leadFilterWhere(f).params).map((r: any) => r.id);
+    expect(match({ status: 'no_answer' })).toEqual([jane]);
+    expect(match({ status: 'talked' })).toEqual([other]);
+    expect(match({ status: 'retry' }).sort()).toEqual([jane, other].sort());
+    expect(match({ status: 'no_answer', tried_after: new Date(Date.now() + 60_000).toISOString() })).toEqual([]);
+    // Both were called from the list, so they count as off it and can be added back.
+    expect(match({ status: 'retry', not_on_list: true })).toHaveLength(2);
+
+    expect(addMatchingToCallList(db, { status: 'no_answer', tried_after: start })).toEqual({ added: 1, already: 0, not_callable: 0 });
+    const list = getCallList(db);
+    expect(list.at(-1)).toMatchObject({ lead_id: jane, done: null });
+    expect(list.find((i) => i.lead_id === other)!.done).not.toBeNull();
+    // Now waiting to be called, so adding it again does nothing.
+    expect(addToCallList(db, [jane])).toEqual({ added: 0, already: 1, not_callable: 0 });
+
+    const TOKEN = 'test-token-0123456789abcdef0123456789abcdef';
+    const headers = { host: '127.0.0.1:5170', cookie: `mpcrm_session=${TOKEN}`, origin: 'http://127.0.0.1:5170' };
+    const app = await buildApp({ db, config, token: TOKEN });
+    const r = await app.inject({ url: `/api/leads?status=no_answer&tried_after=${encodeURIComponent(start)}`, headers });
+    expect(r.json().rows.map((x: any) => x.id)).toEqual([jane]);
+    await app.close();
   });
 
   it('over HTTP: replace the list with ticked leads or every match, keeping the old one', async () => {

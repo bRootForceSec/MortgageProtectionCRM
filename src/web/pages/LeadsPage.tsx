@@ -9,19 +9,34 @@ import { GroupPicker, useGroups } from '../components/GroupPicker';
 // Where you pick who to call: filter the leads, tick the ones you want (or take every match),
 // and add them to the bottom of the call list on the Calling page, or put them in place of it.
 
+// One tab per way a lead can stand, matching the outcome keys on the Calling screen.
 const STATUSES = [
-  { key: 'all', label: 'All' }, { key: 'new', label: 'Never called' }, { key: 'retry', label: 'Tried' }, { key: 'callback', label: 'Callbacks' },
+  { key: 'all', label: 'All' }, { key: 'new', label: 'Never called' },
+  { key: 'no_answer', label: 'No answer', title: 'Called, but the last call didn\'t reach them' },
+  { key: 'talked', label: 'Talked, no appt' }, { key: 'callback', label: 'Callbacks' },
   { key: 'appointment_set', label: 'Appointment set' }, { key: 'invalid', label: 'Bad numbers' }, { key: 'dead', label: 'Dead pile' },
 ];
 
-/** "Last tried more than … ago". */
-const TRIED = [
-  { key: '', label: 'Any time' },
-  { key: '4h', label: 'Last tried 4+ hours ago', ms: 4 * 3600_000 },
-  { key: '1d', label: 'Last tried 1+ day ago', ms: 86_400_000 },
-  { key: '3d', label: 'Last tried 3+ days ago', ms: 3 * 86_400_000 },
-  { key: '7d', label: 'Last tried 1+ week ago', ms: 7 * 86_400_000 },
+/** Midnight at the start of today, your time, `days` days back. */
+function dayStart(days = 0): string {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  d.setDate(d.getDate() - days);
+  return d.toISOString();
+}
+
+/** When the last call was: a recent window, or long enough ago to try again. */
+const LAST_CALL: { key: string; label: string; range: () => { after?: string; before?: string } }[] = [
+  { key: '', label: 'Last call: any time', range: () => ({}) },
+  { key: 'today', label: 'Last call today', range: () => ({ after: dayStart() }) },
+  { key: 'yesterday', label: 'Last call yesterday', range: () => ({ after: dayStart(1), before: dayStart() }) },
+  { key: 'week', label: 'Last call in the past 7 days', range: () => ({ after: dayStart(6) }) },
+  { key: '4h', label: 'Last call 4+ hours ago', range: () => ({ before: ago(4 * 3600_000) }) },
+  { key: '1d', label: 'Last call 1+ day ago', range: () => ({ before: ago(86_400_000) }) },
+  { key: '3d', label: 'Last call 3+ days ago', range: () => ({ before: ago(3 * 86_400_000) }) },
+  { key: '7d', label: 'Last call 1+ week ago', range: () => ({ before: ago(7 * 86_400_000) }) },
 ];
+const ago = (ms: number) => new Date(Date.now() - ms).toISOString();
 
 const CALLABLE = new Set(['new', 'retry', 'callback']);
 
@@ -55,12 +70,13 @@ export function LeadsPage() {
   }, []);
 
   const filters = useMemo(() => {
-    const t = TRIED.find((x) => x.key === tried);
+    const r = (LAST_CALL.find((x) => x.key === tried) ?? LAST_CALL[0]!).range();
     return {
       status,
       search,
       batch_id: batch || undefined,
-      tried_before: t?.ms ? new Date(Date.now() - t.ms).toISOString() : undefined,
+      tried_before: r.before,
+      tried_after: r.after,
       not_on_list: notOnList ? '1' : undefined,
       ...groupParams,
     };
@@ -85,6 +101,15 @@ export function LeadsPage() {
     else n.add(id);
     return n;
   });
+
+  const filtered = status !== 'all' || !!search || !!batch || !!tried || notOnList;
+  const clearFilters = () => {
+    setStatus('all');
+    setSearch('');
+    setBatch('');
+    setTried('');
+    setNotOnList(false);
+  };
 
   const report = (r: AddResult, replaced = false) => {
     if (replaced) {
@@ -127,7 +152,9 @@ export function LeadsPage() {
     <>
       <div className="leads-tools">
         <div className="tabs">
-          {STATUSES.map((s) => <button key={s.key} className={status === s.key ? 'active' : ''} onClick={() => setStatus(s.key)}>{s.label}</button>)}
+          {STATUSES.map((s) => (
+            <button key={s.key} className={status === s.key ? 'active' : ''} title={s.title} onClick={() => setStatus(s.key)}>{s.label}</button>
+          ))}
         </div>
       </div>
       <div className="leads-tools">
@@ -137,12 +164,13 @@ export function LeadsPage() {
           <option value="">All batches</option>
           {batches.map((b) => <option key={b.id} value={b.id}>{b.name} · {fmtDateTime(b.imported_at)}</option>)}
         </select>
-        <select value={tried} onChange={(e) => setTried(e.target.value)} aria-label="Last tried">
-          {TRIED.map((t) => <option key={t.key} value={t.key}>{t.label}</option>)}
+        <select value={tried} onChange={(e) => setTried(e.target.value)} aria-label="Last call">
+          {LAST_CALL.map((t) => <option key={t.key} value={t.key}>{t.label}</option>)}
         </select>
-        <label className="row" style={{ gap: 4 }}>
+        <label className="row" style={{ gap: 4 }} title="Leaves out leads still waiting to be called on the list. Ones you already called from it can go back on.">
           <input type="checkbox" checked={notOnList} onChange={(e) => setNotOnList(e.target.checked)} /> Not on the call list
         </label>
+        {filtered && <button className="btn small" onClick={clearFilters}>Clear filters</button>}
       </div>
       <div className="leads-tools">
         <span className="muted">{total} lead{total === 1 ? '' : 's'}{rows.length < total ? ` (showing the first ${rows.length})` : ''}</span>
