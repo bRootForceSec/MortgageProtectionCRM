@@ -175,19 +175,21 @@ describe('bulk import', () => {
   });
 
   it('handles large files quickly', async () => {
+    // 10,000 leads in two files. Bigger runs hogged the Windows CI machine for a minute and a half,
+    // which made other test files time out and stopped the release from being published.
     const { db, bulk } = setup();
     const { id } = bulk.create({ lead_type: 'D' });
     const started = Date.now();
-    for (let f = 0; f < 4; f++) {
-      const r = (await bulk.addFile(id, { fileName: `big${f}.csv`, bytes: csv(leadRows(10_000, f * 10_000)) }))[0]!;
-      expect(r).toMatchObject({ state: 'imported', summary: { leads: 10_000 } });
+    for (let f = 0; f < 2; f++) {
+      const r = (await bulk.addFile(id, { fileName: `big${f}.csv`, bytes: csv(leadRows(5_000, f * 5_000)) }))[0]!;
+      expect(r).toMatchObject({ state: 'imported', summary: { leads: 5_000 } });
     }
     const ms = Date.now() - started;
-    expect((db.prepare('SELECT COUNT(*) n FROM lead').get() as { n: number }).n).toBe(40_000);
-    // Generous: about 40k leads, well under a minute even on a slow test machine.
-    expect(ms).toBeLessThan(90_000);
-    console.log(`bulk import: 40,000 leads in ${(ms / 1000).toFixed(1)}s`);
-  }, 120_000);
+    expect((db.prepare('SELECT COUNT(*) n FROM lead').get() as { n: number }).n).toBe(10_000);
+    // Generous: a couple of seconds on a normal computer, still well under this on a slow test machine.
+    expect(ms).toBeLessThan(45_000);
+    console.log(`bulk import: 10,000 leads in ${(ms / 1000).toFixed(1)}s`);
+  }, 60_000);
 });
 
 describe('bulk import over HTTP', () => {
