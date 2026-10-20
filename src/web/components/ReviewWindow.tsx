@@ -129,7 +129,7 @@ export function ReviewWindow({
         </header>
         <div className="review-body">
           <div className="review-source">
-            {isSheet ? <SheetCells raw={row.raw ?? {}} /> : <PageImage draftId={draft.id} page={row.page!} />}
+            {isSheet ? <SheetCells raw={row.raw ?? {}} /> : <PageImage draftId={draft.id} version={draft.status} page={row.page!} />}
           </div>
           <form
             className="review-form"
@@ -202,13 +202,14 @@ export function ReviewWindow({
   );
 }
 
-function PageImage({ draftId, page }: { draftId: string; page: number }) {
+function PageImage({ draftId, version, page }: { draftId: string; version: string; page: number }) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const box = useRef<HTMLDivElement>(null);
   const [rotate, setRotate] = useState(0);
   const [zoom, setZoom] = useState(1);
   const [err, setErr] = useState<string | null>(null);
-  const url = `/api/drafts/${draftId}/file`;
+  // Pages are turned upright when reading finishes, so the file is fetched again then.
+  const url = `/api/drafts/${draftId}/file?v=${encodeURIComponent(version)}`;
   useLayoutEffect(() => {
     if (!canvas.current || !box.current) return;
     setErr(null);

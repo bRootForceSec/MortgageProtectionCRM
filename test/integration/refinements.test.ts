@@ -13,6 +13,8 @@ import { buildApp } from '../../src/server/http/app.js';
 import { KdeConnect } from '../../src/server/dialer.js';
 import type { DB } from '../../src/server/db/connection.js';
 import { uuidv7 } from '../../src/server/ids.js';
+import { PDFDocument } from 'pdf-lib';
+import { makeLeadPdf, FAKE } from '../pdfFixtures.js';
 
 const TOKEN = 'test-token-0123456789abcdef0123456789abcdef';
 const auth = { host: '127.0.0.1:5170', cookie: `mpcrm_session=${TOKEN}` };
@@ -213,5 +215,21 @@ describe('date of birth and the lead page', () => {
     const d = (await app.inject({ url: `/api/leads/${jane}`, headers: auth })).json();
     expect(d.source_pdf).toBe(true);
     expect(d.lead.source_page).toBe(2);
+  });
+
+  it('"Keep this way" saves a turn of the lead\'s page into the batch PDF', async () => {
+    const batch = (db.prepare('SELECT batch_id FROM lead WHERE id = ?').get(jane) as any).batch_id;
+    for (const f of fs.readdirSync(importsDir)) if (f.startsWith(`${batch}-`)) fs.rmSync(path.join(importsDir, f));
+    const turn = (body: unknown) => app.inject({ method: 'POST', url: `/api/leads/${jane}/page-turn`, headers: write, payload: body as object });
+    expect((await turn({ turn: 90 })).statusCode).toBe(404); // no PDF kept
+    const file = path.join(importsDir, `${batch}-Oct leads.pdf`);
+    fs.writeFileSync(file, await makeLeadPdf([FAKE[0]!, FAKE[0]!]));
+    db.prepare('UPDATE lead SET source_page = 2 WHERE id = ?').run(jane);
+    expect((await turn({ turn: 'x' })).statusCode).toBe(400);
+    const r = await turn({ turn: 270 });
+    expect(r.statusCode).toBe(200);
+    expect(r.json()).toMatchObject({ turned: 1 });
+    const doc = await PDFDocument.load(fs.readFileSync(file));
+    expect(doc.getPages().map((p) => p.getRotation().angle)).toEqual([0, 270]);
   });
 });

@@ -10,6 +10,9 @@ import { rebuildLeadState } from './domain/leadState.js';
 import { Updates, readBuildInfo, type Runtime, type UpdateProvider } from './updates.js';
 import { DraftWorker } from './domain/drafts.js';
 import { BulkImporter } from './domain/bulkImport.js';
+import { fixImportedPageTurns } from './domain/pageTurnFix.js';
+import { makeReader } from './ai/readers.js';
+import { loadAiSettings } from './ai/settings.js';
 import { Secrets } from './ai/settings.js';
 import { runBackupCheckIfDue } from './http/reportRoutes.js';
 
@@ -109,6 +112,16 @@ export async function startServer(opts: StartOptions = {}): Promise<RunningServe
   // Carry on reading any PDF import that was in progress when the app stopped.
   drafts.resumeAll();
   bulk.resume();
+  // One time: turn upright the sideways or upside-down pages of leads imported before imports did it.
+  const t0 = setTimeout(() => {
+    fixImportedPageTurns(db, config.importsDir, makeReader(loadAiSettings(db), secrets), {
+      log: (m) => app.log.warn(m),
+      alive: () => !stopped,
+    })
+      .then((r) => r.pages_turned && app.log.info(r, 'turned lead pages upright'))
+      .catch((e) => app.log.error({ err: e?.message }, 'page turn fix failed'));
+  }, 5_000);
+  t0.unref();
   // Once a week, check that the newest backup restores cleanly into a scratch copy.
   const checkBackups = () => {
     try {
@@ -135,6 +148,7 @@ export async function startServer(opts: StartOptions = {}): Promise<RunningServe
       stopped = true;
       clearTimeout(t1);
       clearInterval(t2);
+      clearTimeout(t0);
       await app.close();
       db.close();
       fs.rmSync(pidFile, { force: true });
