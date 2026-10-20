@@ -22,6 +22,14 @@ jobs:
         with:
           node-version: 22
           cache: npm
+      # better-sqlite3 has no prebuilt binaries, so it compiles on install. The node-gyp bundled with npm 10
+      # doesn't recognise Visual Studio 2026 on the Windows runner; node-gyp 13 does.
+      - name: Use a node-gyp that knows Visual Studio 2026 (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          npm install -g node-gyp@13
+          echo "npm_config_node_gyp=$(npm root -g)/node-gyp/bin/node-gyp.js" >> "$GITHUB_ENV"
       - run: npm ci
       - run: npm run typecheck
       - run: npm test
