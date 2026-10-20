@@ -1,4 +1,4 @@
-import { getDocument, Util } from 'pdfjs-dist/legacy/build/pdf.mjs';
+import { getDocument, Util, type PDFPageProxy } from 'pdfjs-dist/legacy/build/pdf.mjs';
 import { PDFDocument } from 'pdf-lib';
 import type { FieldValues } from './importer.js';
 import type { LeadFieldKey } from './mapping.js';
@@ -26,6 +26,11 @@ export interface PageRead {
   /** Everything read, by the label printed on the page. */
   raw: Record<string, string>;
   issues: ReadIssue[];
+  /**
+   * Degrees to turn the page clockwise so its text reads left to right, from the direction the text runs.
+   * null when the page has too little text to tell (a scan): the AI reader decides those.
+   */
+  turn: 0 | 90 | 180 | 270 | null;
 }
 
 type Slot = LeadFieldKey | `extra:${string}`;
@@ -83,14 +88,29 @@ interface Item {
   angle?: number;
 }
 
-/** Turns the page so its text runs left to right, whatever the page's rotation or the scan's orientation. */
-function upright(items: Item[]): Item[] {
+/** The direction most of the page's text runs, as shown (0, 90, 180 or 270 degrees clockwise). */
+function textAngle(items: Item[]): number {
   const votes = new Map<number, number>();
   for (const it of items) {
     const a = ((Math.round((it.angle ?? 0) / 90) * 90) % 360 + 360) % 360;
     votes.set(a, (votes.get(a) ?? 0) + it.str.length);
   }
-  const angle = [...votes.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? 0;
+  return [...votes.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? 0;
+}
+
+/** Fewer characters than this and the page counts as a scan for turning it upright. */
+const MIN_TEXT_FOR_TURN = 20;
+
+/** Degrees to turn the page clockwise so its text reads left to right; null when there's too little text to tell. */
+export function textTurn(items: Item[]): 0 | 90 | 180 | 270 | null {
+  const texts = items.filter((i) => i.str.trim());
+  if (texts.reduce((n, t) => n + t.str.trim().length, 0) < MIN_TEXT_FOR_TURN) return null;
+  return ((360 - textAngle(texts)) % 360) as 0 | 90 | 180 | 270;
+}
+
+/** Turns the page so its text runs left to right, whatever the page's rotation or the scan's orientation. */
+function upright(items: Item[]): Item[] {
+  const angle = textAngle(items);
   if (!angle) return items;
   const t = (angle * Math.PI) / 180;
   const cos = Math.round(Math.cos(t));
@@ -102,7 +122,7 @@ function upright(items: Item[]): Item[] {
 const MIN_LABELS = 10;
 
 export function readPageItems(page: number, items: Item[]): PageRead {
-  const empty = { page, fields: {}, extra: {}, raw: {}, issues: [] };
+  const empty = { page, fields: {}, extra: {}, raw: {}, issues: [], turn: textTurn(items) };
   const texts = upright(items.filter((i) => i.str.trim()));
   if (texts.length === 0) return { ...empty, kind: 'no_text' };
   const xs = texts.map((t) => t.x);
@@ -197,17 +217,40 @@ export async function readPdfText(data: Uint8Array, onPage?: (n: number, total: 
     const out: PageRead[] = [];
     for (let n = 1; n <= doc.numPages; n++) {
       const page = await doc.getPage(n);
-      const vp = page.getViewport({ scale: 1 });
-      const tc = await page.getTextContent();
-      const items: Item[] = [];
-      for (const it of tc.items) {
-        if (!('str' in it)) continue;
-        const m = Util.transform(vp.transform, it.transform);
-        items.push({ str: it.str, x: m[4]!, y: m[5]!, h: Math.hypot(m[2]!, m[3]!) || it.height, angle: (Math.atan2(m[1]!, m[0]!) * 180) / Math.PI });
-      }
+      const items = await pageItems(page);
       out.push(readPageItems(n, items));
       page.cleanup();
       onPage?.(n, doc.numPages);
+    }
+    return out;
+  } finally {
+    await task.destroy();
+  }
+}
+
+/** The page's text pieces, placed as the page is shown (its own rotation applied). */
+async function pageItems(page: PDFPageProxy): Promise<Item[]> {
+  const vp = page.getViewport({ scale: 1 });
+  const tc = await page.getTextContent();
+  const items: Item[] = [];
+  for (const it of tc.items) {
+    if (!('str' in it)) continue;
+    const m = Util.transform(vp.transform, it.transform);
+    items.push({ str: it.str, x: m[4]!, y: m[5]!, h: Math.hypot(m[2]!, m[3]!) || it.height, angle: (Math.atan2(m[1]!, m[0]!) * 180) / Math.PI });
+  }
+  return items;
+}
+
+/** For each page: degrees to turn it clockwise so its text reads upright, or null for a page with too little text (a scan). */
+export async function pdfTextTurns(data: Uint8Array): Promise<(0 | 90 | 180 | 270 | null)[]> {
+  const task = getDocument({ data: new Uint8Array(data), verbosity: 0 });
+  const doc = await task.promise;
+  try {
+    const out: (0 | 90 | 180 | 270 | null)[] = [];
+    for (let n = 1; n <= doc.numPages; n++) {
+      const page = await doc.getPage(n);
+      out.push(textTurn(await pageItems(page)));
+      page.cleanup();
     }
     return out;
   } finally {

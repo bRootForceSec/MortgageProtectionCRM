@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
-import type { LeadDetail } from '../api';
+import { api, type LeadDetail } from '../api';
 
 // The page the lead came from, beside the call: the PDF page when the lead was imported from a PDF,
 // else the row as it was in the spreadsheet. Fitted to the panel's width so it can be read as is;
@@ -19,7 +19,7 @@ export function LeadPage({ d }: { d: LeadDetail }) {
   return (
     <section className="panel lead-page" aria-label="Lead page">
       {pdf ? (
-        <PdfPage key={d.lead.id} url={`/api/batches/${d.batch.id}/file`} page={page} />
+        <PdfPage key={d.lead.id} leadId={d.lead.id} file={`/api/batches/${d.batch.id}/file`} page={page} />
       ) : raw.length ? (
         <ZoomPan key={d.lead.id} title={d.batch.file_name ? `Row ${d.import_row?.row_number ?? ''} of ${d.batch.file_name}` : 'As imported'}>
           <table className="grid source-row">
@@ -50,7 +50,7 @@ function rawRow(d: LeadDetail): [string, string][] {
   }
 }
 
-function PdfPage({ url, page }: { url: string; page: number }) {
+function PdfPage({ leadId, file, page }: { leadId: string; file: string; page: number }) {
   const shown = useRef<HTMLCanvasElement>(null);
   // Drawn off screen first, then copied over, so the page doesn't blink when it sharpens after a zoom.
   const work = useRef<HTMLCanvasElement | null>(null);
@@ -58,6 +58,23 @@ function PdfPage({ url, page }: { url: string; page: number }) {
   const [width, setWidth] = useState(0);
   const [rotate, setRotate] = useState(0);
   const [quality, setQuality] = useState(1);
+  // Bumped after a turn is saved, so the changed PDF is fetched again.
+  const [version, setVersion] = useState(0);
+  const [saving, setSaving] = useState(false);
+  const url = version ? `${file}?v=${version}` : file;
+
+  const keepTurn = async () => {
+    setSaving(true);
+    try {
+      await api.post(`/leads/${leadId}/page-turn`, { turn: rotate });
+      setRotate(0);
+      setVersion(Date.now());
+    } catch (e: any) {
+      setErr(String(e?.message ?? e));
+    } finally {
+      setSaving(false);
+    }
+  };
 
   useEffect(() => {
     if (!width || !shown.current) return;
@@ -87,7 +104,16 @@ function PdfPage({ url, page }: { url: string; page: number }) {
       onScale={(s) => setQuality(s > 1.05 ? Math.min(3, Math.ceil(s)) : 1)}
       onRotate={() => setRotate((r) => (r + 90) % 360)}
       onReset={() => setRotate(0)}
-      extra={<a className="btn small" href={`${url}#page=${page}`} target="_blank" rel="noreferrer" title="Open the whole PDF in a new tab">Open PDF</a>}
+      extra={
+        <>
+          {rotate !== 0 && (
+            <button type="button" className="btn small primary" onClick={() => void keepTurn()} disabled={saving} title="Save this page turned this way, so it shows the right way up from now on">
+              {saving ? 'Saving…' : 'Keep this way'}
+            </button>
+          )}
+          <a className="btn small" href={`${url}#page=${page}`} target="_blank" rel="noreferrer" title="Open the whole PDF in a new tab">Open PDF</a>
+        </>
+      }
     >
       {err ? <p className="error">Couldn't show this page ({err}). Use "Open PDF".</p> : <canvas ref={shown} aria-label={`Lead page ${page}`} />}
     </ZoomPan>

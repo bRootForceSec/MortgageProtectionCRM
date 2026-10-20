@@ -4,13 +4,16 @@ import * as z from 'zod/v4';
 // Adapted from Alistair's "AI Prompt Lead Conversion" rules: blank beats a guess, read handwriting digit
 // by digit, labelled fields only. The app does the spreadsheet, duplicate and formatting work itself.
 
-export const PROMPT_VERSION = 'lead-page-v2';
+export const PROMPT_VERSION = 'lead-page-v3';
 
 const val = z.string().nullable();
 
 export const PageAnswer = z.object({
   is_lead: z.boolean().describe('false when the page holds no lead (blank, cover sheet, instructions)'),
   layout: z.enum(['call_in_notice', 'mailer_card', 'crm_notes', 'online_form', 'other']),
+  turn: z
+    .enum(['0', '90', '180', '270'])
+    .describe('degrees to turn the page clockwise so its printed text reads normally, left to right; "0" when it already does'),
   fields: z.object({
     full_name: val,
     coborrower: val.describe('co-borrower name, or Yes/No as printed'),
@@ -58,7 +61,8 @@ Rules:
 6. county: only when the page prints a county. Do not work it out from the city.
 7. Handwritten marks (X, "NO NEED", strike-throughs) do not change printed values. Mention them in notes.
 8. Put a field in "uncertain" whenever you were not fully sure of it, even if you returned a value.
-9. notes: null for a straightforward page.`;
+9. notes: null for a straightforward page.
+10. turn: look at the page as it is shown. If the printed text runs sideways or upside down, give how many degrees clockwise the page must be turned so it reads normally ("90" when the text runs bottom to top, "270" when it runs top to bottom, "180" when it is upside down). Otherwise "0".`;
 
 /** JSON Schema of the answer, for readers that take one directly (Claude Code CLI, OpenAI-compatible servers). */
 export function answerJsonSchema(): Record<string, unknown> {

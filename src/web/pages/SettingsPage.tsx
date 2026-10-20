@@ -32,6 +32,7 @@ export function SettingsPage() {
       <ShortcutsCard />
       <ScriptsCard />
       <AiCard />
+      <LeadPagesCard />
       <LeadTypesCard />
       <CountiesCard />
     </>
@@ -128,6 +129,59 @@ function AiCard() {
       <div className="row" style={{ marginTop: 10 }}>
         <button className="btn" onClick={async () => setTest(await api.post<{ ok: boolean; message: string }>('/settings/ai/test', {}))}>Check it works</button>
         {test && <span className={test.ok ? 'ok' : 'error'}>{test.message}</span>}
+      </div>
+    </div>
+  );
+}
+
+interface PageCheck {
+  running: boolean;
+  files_done: number;
+  files_total: number;
+  pages_turned: number;
+  left_for_later: number;
+  finished_at: string | null;
+  error: string | null;
+}
+
+/** Goes through every imported lead PDF and turns sideways or upside-down pages upright. */
+function LeadPagesCard() {
+  const { toast } = useApp();
+  const [c, setC] = useState<PageCheck | null>(null);
+  const load = useCallback(() => api.get<PageCheck>('/lead-pages/check').then(setC).catch(() => {}), []);
+  useEffect(() => { void load(); }, [load]);
+  // Follow along while it runs.
+  useEffect(() => {
+    if (!c?.running) return;
+    const t = setTimeout(() => void load(), 1500);
+    return () => clearTimeout(t);
+  }, [c, load]);
+  const start = async () => {
+    try {
+      setC(await api.post<PageCheck>('/lead-pages/check', {}));
+    } catch (e: any) {
+      toast(e.message, 'error');
+    }
+  };
+  return (
+    <div className="card">
+      <h2>Lead pages</h2>
+      <p className="help">
+        New imports turn sideways and upside-down pages the right way up by themselves. This checks every lead you've already
+        imported and does the same. Typed pages are checked from their text; scanned cards are sent to the AI above (one small read per scan).
+      </p>
+      <div className="row">
+        <button className="btn" onClick={() => void start()} disabled={!!c?.running}>
+          {c?.running ? 'Checking…' : 'Check all lead pages'}
+        </button>
+        {c?.running && <span className="muted">File {Math.min(c.files_done + 1, c.files_total || 1)} of {c.files_total || '…'} · {c.pages_turned} turned so far</span>}
+        {!c?.running && c?.finished_at && !c.error && (
+          <span className="ok">
+            Done: {c.pages_turned === 0 ? 'every page was already the right way up' : `${c.pages_turned} page${c.pages_turned === 1 ? '' : 's'} turned upright`}
+            {c.left_for_later > 0 && ` (${c.left_for_later} file${c.left_for_later === 1 ? '' : 's'} had scans the AI couldn't check; try again once it works)`}.
+          </span>
+        )}
+        {c?.error && <span className="error">{c.error}</span>}
       </div>
     </div>
   );

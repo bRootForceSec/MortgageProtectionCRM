@@ -10,6 +10,7 @@ import type { ParsedSheet } from './spreadsheet.js';
 import { isKnownCounty } from './county.js';
 import { titleCaseIfShouting } from './normalize.js';
 import { readPdfText, extractPage, type ReadIssue } from './pdfReader.js';
+import { turnPdfPages, normTurn } from './pageTurn.js';
 import { PROMPT_VERSION, type PageAnswer } from '../ai/prompt.js';
 import { makeReader, AiError, type PageReader } from '../ai/readers.js';
 import { loadAiSettings, getSetting, setSetting, type Secrets } from '../ai/settings.js';
@@ -25,6 +26,8 @@ export interface DraftRowData {
   raw: Record<string, string>;
   uncertain: { field: string; best_reading: string | null; reason: string }[];
   reader_issues: ReadIssue[];
+  /** Degrees the page still has to be turned clockwise in the draft's PDF to read upright (done when reading ends). */
+  turn?: number;
 }
 
 export type Review = 'auto' | 'needs_review' | 'ok' | 'discarded';
@@ -302,6 +305,7 @@ export class DraftWorker {
       db.transaction(() => {
         for (const p of pages) {
           const data: DraftRowData = { ...emptyData(), fields: p.fields, extra: p.extra, raw: p.raw, reader_issues: p.issues };
+          if (p.turn) data.turn = p.turn;
           const pending = p.kind !== 'text';
           const issues = pending ? [] : assessRow(data, null);
           up.run({
@@ -352,6 +356,8 @@ export class DraftWorker {
               fields, extra: {}, raw: Object.fromEntries(Object.entries(a.fields).filter(([, v]) => v)) as Record<string, string>,
               uncertain: a.uncertain, reader_issues: [],
             };
+            const turn = normTurn(Number(a.turn ?? 0) || 0);
+            if (turn) data.turn = turn;
             if (!a.is_lead) data.reader_issues.push({ field: '', message: "This page doesn't look like a lead. Discard it if so.", blocking: true });
             if (a.layout !== 'call_in_notice' && !fields.callin_date) data.extra['Page type'] = a.layout.replace(/_/g, ' ');
             const issues = assessRow(data, null);
@@ -374,8 +380,37 @@ export class DraftWorker {
     };
     await Promise.all(Array.from({ length: Math.max(1, this.concurrency) }, work));
     if (!this.alive(id)) return;
+    await this.turnUpright(id);
     progress.phase = 'done';
     setProgress(db, id, progress, 'review');
+  }
+
+  /** Turns sideways and upside-down pages upright in the draft's PDF, so the review and the lead page show them the right way. */
+  private async turnUpright(id: string) {
+    const draft = getDraft(this.db, id);
+    if (draft.kind !== 'pdf') return;
+    const rows = this.db.prepare('SELECT row_number, page, fields_json FROM import_draft_row WHERE draft_id = ? AND page IS NOT NULL').all(id) as {
+      row_number: number; page: number; fields_json: string;
+    }[];
+    const turns = new Map<number, number>();
+    const done: { row_number: number; data: DraftRowData }[] = [];
+    for (const r of rows) {
+      const data = JSON.parse(r.fields_json) as DraftRowData;
+      if (data.turn === undefined) continue;
+      if (normTurn(data.turn)) turns.set(r.page, data.turn);
+      delete data.turn;
+      done.push({ row_number: r.row_number, data });
+    }
+    if (!done.length) return;
+    try {
+      await turnPdfPages(draft.file_path, turns);
+    } catch {
+      return; // A PDF that can't be rewritten is shown as it came; the Turn button still works.
+    }
+    const upd = this.db.prepare('UPDATE import_draft_row SET fields_json = ? WHERE draft_id = ? AND row_number = ?');
+    this.db.transaction(() => {
+      for (const d of done) upd.run(JSON.stringify(d.data), id, d.row_number);
+    })();
   }
 
   /** Reads the pages the AI couldn't read again (e.g. after fixing Settings). */

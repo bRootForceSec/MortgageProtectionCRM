@@ -19,6 +19,10 @@ import { Updates } from '../updates.js';
 import { registerImportRoutes } from './importRoutes.js';
 import { DraftWorker } from '../domain/drafts.js';
 import { BulkImporter } from '../domain/bulkImport.js';
+import { batchPdf, turnPdfPages, normTurn } from '../domain/pageTurn.js';
+import { PageChecker } from '../domain/pageTurnFix.js';
+import { makeReader } from '../ai/readers.js';
+import { loadAiSettings } from '../ai/settings.js';
 import { Secrets } from '../ai/settings.js';
 import { registerCallingRoutes } from './callingRoutes.js';
 import { registerReportRoutes } from './reportRoutes.js';
@@ -47,6 +51,8 @@ export interface AppDeps {
   secrets?: Secrets;
   /** Sends numbers to your phone. Tests pass a fake. */
   kde?: KdeConnect;
+  /** Turns lead pages upright in imported PDFs. Defaults to one made here. */
+  pageChecker?: PageChecker;
 }
 
 interface Upload {
@@ -103,6 +109,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   const secrets = deps.secrets ?? Secrets.inDataDir(config.dataDir);
   const drafts = deps.drafts ?? new DraftWorker(db, secrets);
   const bulk = deps.bulk ?? new BulkImporter(db, config.importsDir, drafts);
+  const pageChecker = deps.pageChecker ?? new PageChecker(db, config.importsDir, () => makeReader(loadAiSettings(db), secrets));
   registerImportRoutes(app, { db, config, worker: drafts, bulk, secrets, getUpload, dropUpload: (id) => uploads.delete(id) });
   registerCallingRoutes(app, { db, kde: deps.kde });
   registerReportRoutes(app, { db, config });
@@ -246,6 +253,25 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     const file = batchPdf(config.importsDir, id);
     if (!file) throw new DomainError('the PDF for this batch is not on this computer', 404);
     return reply.type('application/pdf').send(fs.createReadStream(file));
+  });
+
+  // "Check all lead pages": goes through every imported PDF and turns sideways or upside-down pages upright.
+  app.get('/api/lead-pages/check', async () => pageChecker.state);
+  app.post('/api/lead-pages/check', async () => {
+    void pageChecker.start(true);
+    return pageChecker.state;
+  });
+
+  // Saves a turn of the lead's page in the batch PDF, so it shows the right way up from now on.
+  app.post('/api/leads/:id/page-turn', async (req) => {
+    const { id } = z.object({ id: z.string().max(64) }).parse(req.params);
+    const { turn } = z.object({ turn: z.number().int() }).parse(req.body);
+    const lead = db.prepare('SELECT batch_id, source_page FROM lead WHERE id = ?').get(id) as { batch_id: string; source_page: number | null } | undefined;
+    if (!lead) throw new DomainError('lead not found', 404);
+    const file = lead.source_page != null ? batchPdf(config.importsDir, lead.batch_id) : null;
+    if (!file) throw new DomainError('the PDF for this lead is not on this computer', 404);
+    const turned = await turnPdfPages(file, new Map([[lead.source_page!, normTurn(turn)]]));
+    return { ok: true, turned };
   });
 
   app.get('/api/leads/:id', async (req) => {
@@ -664,13 +690,4 @@ function audit(db: DB, table: string, rowId: string, action: string, oldV: unkno
   );
 }
 
-/** Path of the PDF a batch was imported from, or null when there is none. */
-export function batchPdf(importsDir: string, batchId: string): string | null {
-  if (!/^[\w-]+$/.test(batchId)) return null;
-  try {
-    const f = fs.readdirSync(importsDir).find((n) => n.startsWith(`${batchId}-`) && /\.pdf$/i.test(n));
-    return f ? path.join(importsDir, f) : null;
-  } catch {
-    return null;
-  }
-}
+export { batchPdf };

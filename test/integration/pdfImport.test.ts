@@ -27,6 +27,7 @@ const fakeReader = (calls: number[] = []): PageReader => ({
       answer: {
         is_lead: true,
         layout: 'mailer_card',
+        turn: '0',
         fields: {
           full_name: 'Casey Cardholder', coborrower: null, age: null, lender: 'HALLMARK HM MTG LLC', loan_amount: '$147,184',
           address: '2505 Sample Dr', city: 'Fort Wayne', state: 'IN', zip: '46809', county: null, source_lead_id: null,
@@ -109,7 +110,7 @@ describe('PDF import drafts', () => {
     expect(batch.cost_total_cents).toBe(900); // 2 D leads + 1 B lead
     // Enough is kept to rebuild a spreadsheet later: what was read, by what, and what you changed.
     const raw = JSON.parse((db.prepare('SELECT raw_json FROM import_row WHERE row_number = 2').get() as any).raw_json);
-    expect(raw).toMatchObject({ __page: '2', __extractor: 'ai:fake:test', __prompt_version: 'lead-page-v2', __edited: '{"phone":"(260) 555-0186"}' });
+    expect(raw).toMatchObject({ __page: '2', __extractor: 'ai:fake:test', __prompt_version: 'lead-page-v3', __edited: '{"phone":"(260) 555-0186"}' });
     expect(fs.readdirSync(c.importsDir).some((f) => f.endsWith('IN_574_1-4.pdf'))).toBe(true);
     expect(listDrafts(db)).toEqual([]);
   });
