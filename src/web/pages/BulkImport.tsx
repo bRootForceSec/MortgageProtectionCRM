@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, useSyncExternalStore } from 'react';
 import { api, ApiError, fmtDateTime } from '../api';
 import { useApp } from '../App';
+import { showImportedLeads } from './LeadsPage';
 
 // Bulk import: many lead files, or a whole folder, in one go. Files are sent one at a time; the app imports each
 // spreadsheet as it arrives and reads PDFs a few at a time in the background. Leads that need a look are put
@@ -325,8 +326,27 @@ export function BulkScreen({ id, onOpenDraft, onBack }: { id: string; onOpenDraf
           </details>
         )}
         <div className="row" style={{ marginTop: 8 }}>
-          <button className="btn" onClick={() => go('leads')}>Go to Leads</button>
+          <button
+            className="btn primary"
+            disabled={!t.leads}
+            onClick={() => {
+              showImportedLeads({ bulk: id });
+              go('leads');
+            }}
+            title="Opens Leads showing only the leads from this bulk import"
+          >
+            See the {fmtN(t.leads)} imported leads
+          </button>
+          {t.repeats + t.not_imported > 0 && (
+            <a className="btn" href={`/api/bulk-imports/${id}/problems.csv`} title="Repeats and leads missing details from the files that were imported, with the file each came from">
+              Download the leads not imported (CSV)
+            </a>
+          )}
         </div>
+        <p className="help">
+          On Leads you can open any lead to check it, narrow it down by county or status, and add them to the call list. Pick a single file with the
+          Leads button in the table below.
+        </p>
       </div>
 
       <div className="card">
@@ -349,8 +369,19 @@ export function BulkScreen({ id, onOpenDraft, onBack }: { id: string; onOpenDraf
                   <td>{fmtN(f.summary.not_imported)}</td>
                   <td>{f.summary.to_check ? fmtN(f.summary.to_check) : ''}</td>
                   <td className="help">{f.message}</td>
-                  <td>
+                  <td className="nowrap">
                     {f.state === 'needs_review' && f.draft_id && <button className="btn small primary" onClick={() => onOpenDraft(f.draft_id!)}>Check</button>}
+                    {f.batch_id && f.summary.leads > 0 && (
+                      <button
+                        className="btn small"
+                        onClick={() => {
+                          showImportedLeads({ batch: f.batch_id! });
+                          go('leads');
+                        }}
+                      >
+                        Leads
+                      </button>
+                    )}
                   </td>
                 </tr>
               ))}

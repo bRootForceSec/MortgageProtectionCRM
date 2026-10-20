@@ -6,6 +6,7 @@ import type { DraftListItem, DraftView, DraftRow, LeadType, DraftSummary } from 
 import {
   BulkConfirm, BulkList, BulkScreen, leadFilesOnly, pickedFromDrop, pickedFromInput, startSending, isSending, type PickedFile,
 } from './BulkImport';
+import { showImportedLeads } from './LeadsPage';
 
 // Import: a lead PDF (read page by page, scans by AI) or a spreadsheet. Every import goes through a draft
 // that is saved as you go: leads that need a look open in the review window, you set lead types,
@@ -684,10 +685,19 @@ function Done({ r, onAgain }: { r: { batch_id: string; summary: DraftSummary; ca
       {r.call_list ? (
         <p><b>{r.call_list.added}</b> lead{r.call_list.added === 1 ? '' : 's'} added to your call list.</p>
       ) : (
-        <p className="help">These leads aren't on your call list. Add them from the Leads page (pick this batch).</p>
+        <p className="help">These leads aren't on your call list. "See the imported leads" shows just this batch on Leads, where you can add them.</p>
       )}
       <div className="row">
-        <button className="btn primary" onClick={() => go(r.call_list ? 'calling' : 'leads')}>{r.call_list ? 'Start calling' : 'Go to Leads'}</button>
+        {r.call_list && <button className="btn primary" onClick={() => go('calling')}>Start calling</button>}
+        <button
+          className={r.call_list ? 'btn' : 'btn primary'}
+          onClick={() => {
+            showImportedLeads({ batch: r.batch_id });
+            go('leads');
+          }}
+        >
+          See the imported leads
+        </button>
         {r.summary.total - r.summary.accepted > 0 && <a className="btn" href={`/api/imports/${r.batch_id}/problems.csv`}>Download leads not imported (CSV)</a>}
         <button className="btn" onClick={() => go('settings')}>County area codes</button>
         <button className="btn" onClick={onAgain}>Import another file</button>
@@ -697,6 +707,7 @@ function Done({ r, onAgain }: { r: { batch_id: string; summary: DraftSummary; ca
 }
 
 function BatchList() {
+  const { go } = useApp();
   const [rows, setRows] = useState<any[] | null>(null);
   useEffect(() => {
     api.get<any[]>('/imports').then(setRows).catch(() => setRows([]));
@@ -713,7 +724,12 @@ function BatchList() {
               <td>{b.name}</td><td>{fmtDateTime(b.imported_at)}</td><td className="muted">{b.file_name}</td>
               <td>{b.rows_accepted}</td><td>{b.rows_rejected}</td><td>{b.rows_repeat}</td>
               <td>{b.cost_total_cents != null ? fmtMoney(b.cost_total_cents) : <span className="muted">unknown</span>}</td>
-              <td>{b.rows_total > b.rows_accepted && <a href={`/api/imports/${b.id}/problems.csv`}>leads not imported</a>}</td>
+              <td className="row" style={{ gap: 8 }}>
+                {b.rows_accepted > 0 && (
+                  <button className="btn small" onClick={() => { showImportedLeads({ batch: b.id }); go('leads'); }}>See leads</button>
+                )}
+                {b.rows_total > b.rows_accepted && <a href={`/api/imports/${b.id}/problems.csv`}>leads not imported</a>}
+              </td>
             </tr>
           ))}
         </tbody>

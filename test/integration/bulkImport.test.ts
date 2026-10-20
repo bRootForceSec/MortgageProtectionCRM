@@ -216,6 +216,20 @@ describe('bulk import over HTTP', () => {
     expect(s.json().totals).toMatchObject({ files: 2, leads: 20_000 });
     const list = await app.inject({ url: '/api/bulk-imports', headers });
     expect(list.json()).toHaveLength(1);
+    // The Leads page can show just this run's leads, and what it left out downloads as one CSV.
+    await app.inject({ method: 'POST', url: `/api/bulk-imports/${id}/files`, payload: csv(leadRows(6, 19_999)), headers: { ...headers, 'content-type': 'application/octet-stream', 'x-file-name': 'again.csv' } });
+    const other = (await app.inject({ method: 'POST', url: '/api/bulk-imports', headers, payload: {} })).json().id;
+    await app.inject({ method: 'POST', url: `/api/bulk-imports/${other}/files`, payload: csv(leadRows(3, 50_000)), headers: { ...headers, 'content-type': 'application/octet-stream', 'x-file-name': 'other.csv' } });
+    const leads = await app.inject({ url: `/api/leads?bulk_id=${id}`, headers });
+    expect(leads.json().total).toBe(20_005);
+    expect((await app.inject({ url: `/api/leads?bulk_id=${other}`, headers })).json().total).toBe(3);
+    expect((await app.inject({ url: '/api/leads', headers })).json().total).toBe(20_008);
+    const problems = await app.inject({ url: `/api/bulk-imports/${id}/problems.csv`, headers });
+    expect(problems.statusCode).toBe(200);
+    const lines = problems.body.trim().split(/\r?\n/);
+    expect(lines).toHaveLength(1 + 1);
+    expect(lines[0]).toMatch(/^file,batch,row_number,status,problems/);
+    expect(lines[1]).toMatch(/^again\.csv,again,\d+,already_imported,/);
     const missing = await app.inject({ url: '/api/bulk-imports/nope', headers });
     expect(missing.statusCode).toBe(404);
   }, 60_000);
