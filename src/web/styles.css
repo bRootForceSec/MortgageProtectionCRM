@@ -310,3 +310,4 @@ table.grid td.pick, table.grid th.pick { width: 28px; text-align: center; }
 .called-back { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; font-weight: 400; margin-left: 8px; padding: 2px 8px; border: 1px solid var(--border); border-radius: 999px; cursor: pointer; vertical-align: middle; }
 .called-back.on { border-color: var(--good); color: var(--good); font-weight: 600; }
 .badge.called-back { border-color: var(--good); color: var(--good); margin-left: 0; padding: 0 6px; font-size: 11px; }
+.drop-target { outline: 2px dashed var(--accent); outline-offset: -6px; }

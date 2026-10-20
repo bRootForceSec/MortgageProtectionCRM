@@ -18,6 +18,7 @@ import { normalizeUsPhone } from '../domain/normalize.js';
 import { Updates } from '../updates.js';
 import { registerImportRoutes } from './importRoutes.js';
 import { DraftWorker } from '../domain/drafts.js';
+import { BulkImporter } from '../domain/bulkImport.js';
 import { Secrets } from '../ai/settings.js';
 import { registerCallingRoutes } from './callingRoutes.js';
 import { registerReportRoutes } from './reportRoutes.js';
@@ -41,6 +42,8 @@ export interface AppDeps {
   updates?: Updates;
   /** Reads PDF imports in the background. Defaults to one made here. */
   drafts?: DraftWorker;
+  /** Bulk imports (many files at once). Defaults to one made here. */
+  bulk?: BulkImporter;
   secrets?: Secrets;
   /** Sends numbers to your phone. Tests pass a fake. */
   kde?: KdeConnect;
@@ -99,7 +102,8 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
 
   const secrets = deps.secrets ?? Secrets.inDataDir(config.dataDir);
   const drafts = deps.drafts ?? new DraftWorker(db, secrets);
-  registerImportRoutes(app, { db, config, worker: drafts, secrets, getUpload, dropUpload: (id) => uploads.delete(id) });
+  const bulk = deps.bulk ?? new BulkImporter(db, config.importsDir, drafts);
+  registerImportRoutes(app, { db, config, worker: drafts, bulk, secrets, getUpload, dropUpload: (id) => uploads.delete(id) });
   registerCallingRoutes(app, { db, kde: deps.kde });
   registerReportRoutes(app, { db, config });
 

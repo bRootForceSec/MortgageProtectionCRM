@@ -3,6 +3,9 @@ import { api, ApiError, fmtDateTime, fmtMoney, fmtPhone, type AddResult } from '
 import { useApp } from '../App';
 import { ReviewWindow } from '../components/ReviewWindow';
 import type { DraftListItem, DraftView, DraftRow, LeadType, DraftSummary } from '../importTypes';
+import {
+  BulkConfirm, BulkList, BulkScreen, leadFilesOnly, pickedFromDrop, pickedFromInput, startSending, isSending, type PickedFile,
+} from './BulkImport';
 
 // Import: a lead PDF (read page by page, scans by AI) or a spreadsheet. Every import goes through a draft
 // that is saved as you go: leads that need a look open in the review window, you set lead types,
@@ -43,12 +46,30 @@ export function useLeadTypes() {
   return { types, reload };
 }
 
+const BULK_KEY = 'mpcrm.import.bulk';
+function storeBulk(v?: string | null) {
+  try {
+    if (v === undefined) return sessionStorage.getItem(BULK_KEY);
+    if (v === null) sessionStorage.removeItem(BULK_KEY);
+    else sessionStorage.setItem(BULK_KEY, v);
+  } catch {
+    /* storage unavailable */
+  }
+  return null;
+}
+
 export function ImportPage() {
   const [draftId, setDraftId] = useState<string | null>(store());
+  // The bulk import you were looking at; checking one of its files comes back here.
+  const [bulkId, setBulkId] = useState<string | null>(storeBulk());
   const [done, setDone] = useState<{ batch_id: string; summary: DraftSummary; call_list?: AddResult | null } | null>(null);
   const open = (id: string | null) => {
     setDraftId(id);
     store(id);
+  };
+  const openBulk = (id: string | null) => {
+    setBulkId(id);
+    storeBulk(id);
   };
   if (done) return <Done r={done} onAgain={() => setDone(null)} />;
   if (draftId) {
@@ -60,24 +81,53 @@ export function ImportPage() {
         onGone={() => open(null)}
         onCommitted={(r) => {
           open(null);
-          setDone(r);
+          // From a bulk import, go back to its list of files.
+          if (!bulkId) setDone(r);
         }}
       />
     );
   }
-  return <Start onDraft={open} />;
+  if (bulkId) return <BulkScreen key={bulkId} id={bulkId} onOpenDraft={open} onBack={() => openBulk(null)} />;
+  return <Start onDraft={open} onBulk={openBulk} />;
 }
 
 // ---------------------------------------------------------------------------------------------
 
-function Start({ onDraft }: { onDraft: (id: string) => void }) {
+function Start({ onDraft, onBulk }: { onDraft: (id: string) => void; onBulk: (id: string) => void }) {
   const { toast } = useApp();
   const { types } = useLeadTypes();
   const [leadType, setLeadType] = useState('');
   const [busy, setBusy] = useState(false);
   const [parsed, setParsed] = useState<ParseResult | null>(null);
   const [file, setFile] = useState<File | null>(null);
+  const [picked, setPicked] = useState<{ files: PickedFile[]; skipped: number } | null>(null);
+  const [dragging, setDragging] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
+  const folderInput = useRef<HTMLInputElement>(null);
+
+  /** One file goes through the usual screens; several (or a folder) make a bulk import. */
+  const onPicked = (all: PickedFile[], fromFolder: boolean) => {
+    if (fileInput.current) fileInput.current.value = '';
+    if (folderInput.current) folderInput.current.value = '';
+    if (!all.length) return;
+    if (all.length === 1 && !fromFolder) return void onFile(all[0]!.file);
+    const r = leadFilesOnly(all);
+    if (!r.files.length) return toast('No PDFs or spreadsheets in what you picked.', 'error');
+    setPicked(r);
+  };
+
+  const startBulk = async (settings: { add_to_call_list: boolean; import_ready_now: boolean }) => {
+    if (!picked) return;
+    if (isSending()) return toast('Another bulk import is still sending its files. Wait for it to finish, or stop it.', 'error');
+    try {
+      const b = await api.post<{ id: string }>('/bulk-imports', { lead_type: leadType || null, ...settings });
+      startSending(b.id, picked.files);
+      setPicked(null);
+      onBulk(b.id);
+    } catch (e: any) {
+      toast(e.message, 'error');
+    }
+  };
 
   useEffect(() => {
     api.get<{ lead_type: string }>('/import-defaults').then((d) => setLeadType((t) => t || d.lead_type)).catch(() => {});
@@ -105,10 +155,26 @@ function Start({ onDraft }: { onDraft: (id: string) => void }) {
   if (parsed && file) {
     return <MapColumns parsed={parsed} file={file} leadType={leadType} onDraft={onDraft} onBack={() => setParsed(null)} />;
   }
+  if (picked) {
+    return <BulkConfirm picked={picked.files} skipped={picked.skipped} leadType={leadType} onStart={startBulk} onCancel={() => setPicked(null)} />;
+  }
 
   return (
     <>
-      <div className="card">
+      <div
+        className={`card${dragging ? ' drop-target' : ''}`}
+        onDragOver={(e) => {
+          e.preventDefault();
+          setDragging(true);
+        }}
+        onDragLeave={() => setDragging(false)}
+        onDrop={async (e) => {
+          e.preventDefault();
+          setDragging(false);
+          const all = await pickedFromDrop(e.dataTransfer);
+          onPicked(all, all.some((p) => p.path.includes('/')));
+        }}
+      >
         <h2>Import leads</h2>
         <div className="row" style={{ alignItems: 'flex-end' }}>
           <label className="field">
@@ -120,15 +186,29 @@ function Start({ onDraft }: { onDraft: (id: string) => void }) {
             </select>
           </label>
           <label className="field">
-            <span>Lead PDF or spreadsheet</span>
-            <input ref={fileInput} type="file" accept=".pdf,.xlsx,.xlsm,.csv,.tsv,.txt" onChange={(e) => onFile(e.target.files?.[0])} disabled={busy} />
+            <span>Lead PDFs or spreadsheets (pick one or many)</span>
+            <input ref={fileInput} type="file" multiple accept=".pdf,.xlsx,.xlsm,.csv,.tsv,.txt" onChange={(e) => onPicked(pickedFromInput(e.target.files), false)} disabled={busy} />
           </label>
+          <button className="btn" onClick={() => folderInput.current?.click()} disabled={busy}>Choose a folder…</button>
+          <input
+            ref={folderInput}
+            type="file"
+            multiple
+            hidden
+            {...({ webkitdirectory: '', directory: '' } as Record<string, string>)}
+            onChange={(e) => onPicked(pickedFromInput(e.target.files), true)}
+          />
         </div>
         <p className="help">
           A PDF is read page by page: typed pages are read straight from the page, and scanned cards are read by the AI you chose in Settings.
           If an order mixes lead types, you can change the type of any lead before importing. Nothing is added to your leads until you press Import.
         </p>
+        <p className="help">
+          Lots of files? Pick them all, choose a folder (every file in it and its subfolders), or drop them here. They're imported in one go:
+          complete leads go straight in, repeats are skipped, and anything that needs a look waits below.
+        </p>
       </div>
+      <BulkList onOpen={onBulk} />
       <Drafts onOpen={onDraft} />
       <BatchList />
     </>
@@ -286,6 +366,8 @@ function DraftScreen({ id, onLeave, onGone, onCommitted }: {
   const [toList, setToList] = useState(true);
   const [busy, setBusy] = useState(false);
   const [problems, setProblems] = useState<string[]>([]);
+  /** Rows drawn in the table; a big sheet shows more on request instead of freezing the page. */
+  const [limit, setLimit] = useState(500);
 
   const load = useCallback(async () => {
     try {
@@ -492,7 +574,7 @@ function DraftScreen({ id, onLeave, onGone, onCommitted }: {
               </tr>
             </thead>
             <tbody>
-              {shown.map((r) => (
+              {shown.slice(0, limit).map((r) => (
                 <tr key={r.row_number} className="click" onClick={() => r.extractor !== 'pending' && setReview({ rows: [r.row_number], start: 0 })}>
                   <td onClick={(e) => { e.stopPropagation(); toggle(r.row_number, e.shiftKey); }}>
                     <input type="checkbox" readOnly checked={checked.has(r.row_number)} aria-label={`Tick ${label(r)}`} />
@@ -509,6 +591,9 @@ function DraftScreen({ id, onLeave, onGone, onCommitted }: {
               ))}
             </tbody>
           </table>
+          {shown.length > limit && (
+            <button className="btn small" onClick={() => setLimit(limit + 1000)}>Show more ({shown.length - limit} left)</button>
+          )}
         </div>
       </div>
 

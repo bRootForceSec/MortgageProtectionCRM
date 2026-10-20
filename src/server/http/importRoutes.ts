@@ -21,6 +21,7 @@ import { timeZoneFor } from '../domain/normalize.js';
 import { uuidv7, nowIso } from '../ids.js';
 import { editLeadDetails, EDITABLE_FIELDS } from '../domain/leadEdit.js';
 import { seedCountyAreaCodes, builtInAreaCodes } from '../domain/areaCodes.js';
+import type { BulkImporter } from '../domain/bulkImport.js';
 
 // Routes for PDF and spreadsheet imports with review, AI settings, lead types and prices, and county groups.
 
@@ -52,12 +53,13 @@ export function registerImportRoutes(
     db: DB;
     config: Config;
     worker: DraftWorker;
+    bulk: BulkImporter;
     secrets: Secrets;
     getUpload: (id: string) => { parsed: ParsedFile; buf: Buffer };
     dropUpload: (id: string) => void;
   },
 ) {
-  const { db, config, worker, secrets } = deps;
+  const { db, config, worker, secrets, bulk } = deps;
 
   app.addContentTypeParser('application/pdf', { parseAs: 'buffer', bodyLimit: MAX_PDF_BYTES }, (_req, body, done) => done(null, body));
 
@@ -156,6 +158,33 @@ export function registerImportRoutes(
     const { id } = idParam.parse(req.params);
     deleteDraft(db, id);
     return { ok: true };
+  });
+
+  // ---------- bulk import: many files or a whole folder, sent one file at a time ----------
+  app.get('/api/bulk-imports', async () => bulk.list());
+
+  app.post('/api/bulk-imports', async (req) => {
+    const b = z.object({ lead_type: typeCode.nullish(), add_to_call_list: z.boolean().optional(), import_ready_now: z.boolean().optional() }).parse(req.body);
+    return bulk.create({ lead_type: b.lead_type ?? null, add_to_call_list: b.add_to_call_list, import_ready_now: b.import_ready_now });
+  });
+
+  app.get('/api/bulk-imports/:id', async (req) => bulk.status(idParam.parse(req.params).id));
+
+  // PDFs up to the PDF limit; spreadsheets are checked against their own, smaller limit.
+  app.post('/api/bulk-imports/:id/files', { bodyLimit: MAX_PDF_BYTES }, async (req) => {
+    const { id } = idParam.parse(req.params);
+    const buf = req.body as Buffer;
+    if (!Buffer.isBuffer(buf)) throw new DomainError('send the file as the request body');
+    const header = (h: string, fallback: string) => {
+      try {
+        return decodeURIComponent(String(req.headers[h] ?? fallback));
+      } catch {
+        return fallback;
+      }
+    };
+    const name = header('x-file-name', 'leads').replace(/[/\\]/g, '_').slice(0, 200);
+    const relPath = header('x-file-path', '').slice(0, 1000) || null;
+    return bulk.addFile(id, { fileName: name, relPath, bytes: buf, fileModified: fileModifiedHeader(req.headers['x-file-modified']) });
   });
 
   // ---------- AI settings (keys are write-only) ----------
