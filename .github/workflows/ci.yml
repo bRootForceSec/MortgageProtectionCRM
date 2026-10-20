@@ -42,3 +42,45 @@ jobs:
           name: playwright-results-${{ matrix.os }}
           path: test-results/
           retention-days: 7
+
+  desktop:
+    name: desktop app (${{ matrix.os }})
+    needs: test
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    env:
+      # Test builds are unsigned for now; signing comes with automatic updates.
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Use npm 12 (Windows)
+        if: runner.os == 'Windows'
+        run: npm install -g npm@12.2.0
+      - run: npm ci
+      - run: npm run build
+      - name: Package the desktop app
+        run: npx electron-builder --publish never
+      - name: Open the packaged app and check it works (Linux)
+        if: runner.os == 'Linux'
+        run: xvfb-run -a node scripts/desktop-smoke.mjs
+      - name: Open the packaged app and check it works
+        if: runner.os != 'Linux'
+        run: node scripts/desktop-smoke.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: desktop-${{ matrix.os }}
+          path: |
+            release/*.exe
+            release/*.dmg
+            release/*.AppImage
+            release/smoke-*.png
+          if-no-files-found: warn
+          retention-days: 14

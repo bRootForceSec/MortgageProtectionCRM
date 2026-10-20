@@ -4,13 +4,15 @@
   "description": "Local-first calling CRM for an independent life insurance agent",
   "scripts": {
     "dev": "concurrently -n api,web \"tsx watch src/server/main.ts\" \"vite\"",
-    "build": "tsc -p tsconfig.server.json && node scripts/copy-assets.mjs && vite build && node scripts/build-info.mjs",
+    "build": "tsc -p tsconfig.server.json && tsc -p tsconfig.desktop.json && node scripts/copy-assets.mjs && vite build && node scripts/build-info.mjs",
     "start": "node dist/server/main.js",
     "cli": "node dist/server/cli.js",
-    "typecheck": "tsc -p tsconfig.server.json --noEmit && tsc -p tsconfig.web.json --noEmit",
+    "typecheck": "tsc -p tsconfig.server.json --noEmit && tsc -p tsconfig.desktop.json --noEmit && tsc -p tsconfig.web.json --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:e2e": "npm run build && playwright test"
+    "test:e2e": "npm run build && playwright test",
+    "desktop": "npm run build && electron .",
+    "dist": "npm run build && electron-builder --publish never"
   },
   "repository": {
     "type": "git",
@@ -42,6 +44,8 @@
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.1.2",
     "concurrently": "^10.0.6",
+    "electron": "^44.9.0",
+    "electron-builder": "^26.15.3",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "tsx": "^4.23.15",
@@ -56,5 +60,69 @@
   },
   "overrides": {
     "uuid": "^11.1.1"
+  },
+  "main": "dist/desktop/main.js",
+  "productName": "Mortgage Protection CRM",
+  "build": {
+    "appId": "com.brootforcesec.mortgagecrm",
+    "productName": "Mortgage Protection CRM",
+    "artifactName": "Mortgage-Protection-CRM-${version}-${os}-${arch}.${ext}",
+    "directories": {
+      "output": "release",
+      "buildResources": "assets"
+    },
+    "files": [
+      "dist/**/*",
+      "assets/**/*",
+      "package.json",
+      "!dist/**/*.map"
+    ],
+    "asarUnpack": [
+      "**/*.node"
+    ],
+    "npmRebuild": false,
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "assets/icon.png"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "deleteAppDataOnUninstall": false,
+      "shortcutName": "Mortgage Protection CRM"
+    },
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        }
+      ],
+      "icon": "assets/icon.png",
+      "category": "public.app-category.business"
+    },
+    "linux": {
+      "target": [
+        {
+          "target": "AppImage",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "assets/icon.png",
+      "category": "Office"
+    },
+    "publish": null
   }
 }
