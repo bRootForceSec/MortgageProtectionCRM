@@ -147,14 +147,13 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   });
 
   const leadFilter = z.object({
-    status: z.enum(['dead', 'invalid', 'appointment_set', 'callback', 'retry', 'new', 'all']).default('all'),
+    status: z.enum(['dead', 'invalid', 'appointment_set', 'callback', 'retry', 'no_answer', 'talked', 'new', 'all']).default('all'),
     search: z.string().max(100).optional(),
     batch_id: z.string().max(64).optional(),
     counties: z.string().max(4000).optional(),
     area_codes: z.string().max(400).optional(),
     tried_before: z.string().max(40).optional(),
     tried_after: z.string().max(40).optional(),
-    not_reached: z.union([z.boolean(), z.enum(['1', '0', 'true', 'false'])]).optional(),
     not_on_list: z.union([z.boolean(), z.enum(['1', '0', 'true', 'false'])]).optional(),
   });
   const toFilter = (q: z.infer<typeof leadFilter>): LeadFilter => ({
@@ -165,7 +164,6 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     areaCodes: parseList(q.area_codes),
     tried_before: q.tried_before || undefined,
     tried_after: q.tried_after || undefined,
-    not_reached: q.not_reached === true || q.not_reached === '1' || q.not_reached === 'true',
     not_on_list: q.not_on_list === true || q.not_on_list === '1' || q.not_on_list === 'true',
   });
 

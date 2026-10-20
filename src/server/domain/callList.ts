@@ -20,9 +20,7 @@ export interface LeadFilter {
   tried_before?: string;
   /** Only leads last tried at or after this time, e.g. the start of today. */
   tried_after?: string;
-  /** Only leads whose last call didn't reach them (no answer). */
-  not_reached?: boolean;
-  /** Only leads that aren't on the call list. */
+  /** Only leads that aren't waiting on the call list (worked ones count as off it). */
   not_on_list?: boolean;
 }
 
@@ -30,14 +28,17 @@ export interface LeadFilter {
 export function leadFilterWhere(f: LeadFilter): { sql: string; params: Record<string, unknown> } {
   const group = groupWhere('l.county_key', { counties: f.counties, areaCodes: f.areaCodes });
   const search = searchWhere(f.search);
-  const status = f.status && f.status !== 'all' ? f.status : null;
+  // "Tried" leads split by how the last call went: not reached (no answer) or talked with no appointment.
+  const tried = f.status === 'no_answer' || f.status === 'talked' ? f.status : null;
+  const status = tried ? 'retry' : f.status && f.status !== 'all' ? f.status : null;
+  const talked = "coalesce((SELECT grp FROM outcome_code WHERE code = s.last_outcome_code), '') = 'contact'";
   const parts = [
     '(@lf_status IS NULL OR s.status = @lf_status)',
+    tried === 'talked' ? talked : tried === 'no_answer' ? `NOT ${talked}` : '1',
     '(@lf_batch IS NULL OR l.batch_id = @lf_batch)',
     '(@lf_before IS NULL OR (s.last_call_at IS NOT NULL AND s.last_call_at < @lf_before))',
     '(@lf_after IS NULL OR (s.last_call_at IS NOT NULL AND s.last_call_at >= @lf_after))',
-    f.not_reached ? "s.last_outcome_code IN (SELECT code FROM outcome_code WHERE grp = 'no_contact')" : '1',
-    f.not_on_list ? 'l.id NOT IN (SELECT lead_id FROM call_list_item)' : '1',
+    f.not_on_list ? `l.id NOT IN (SELECT i.lead_id FROM call_list_item i WHERE NOT ${WORKED})` : '1',
     group.sql,
     search.sql,
   ];
@@ -112,17 +113,21 @@ export interface AddResult {
 export function addToCallList(db: DB, leadIds: string[], now = nowIso()): AddResult {
   const res: AddResult = { added: 0, already: 0, not_callable: 0 };
   const status = db.prepare('SELECT status FROM lead_state WHERE lead_id = ?');
-  const has = db.prepare('SELECT 1 FROM call_list_item WHERE lead_id = ?');
+  const has = db.prepare(`SELECT ${WORKED} worked FROM call_list_item i WHERE i.lead_id = ?`);
   const ins = db.prepare('INSERT INTO call_list_item (lead_id, position, added_at) VALUES (?, ?, ?)');
+  const again = db.prepare('UPDATE call_list_item SET position = ?, added_at = ? WHERE lead_id = ?');
   db.transaction(() => {
     let pos = bottom(db);
     for (const id of new Set(leadIds)) {
       const s = status.get(id) as { status: string } | undefined;
       if (!s) continue;
-      if (has.get(id)) res.already++;
+      const on = has.get(id) as { worked: number } | undefined;
+      if (on && !on.worked) res.already++;
       else if (!(CALLABLE as readonly string[]).includes(s.status)) res.not_callable++;
       else {
-        ins.run(id, ++pos, now);
+        // Already called from this list: it goes back to the bottom as "to call".
+        if (on) again.run(++pos, now, id);
+        else ins.run(id, ++pos, now);
         res.added++;
       }
     }
@@ -170,9 +175,12 @@ export function moveToBottom(db: DB, leadId: string): boolean {
   return db.prepare('UPDATE call_list_item SET position = ? WHERE lead_id = ?').run(bottom(db) + 1, leadId).changes > 0;
 }
 
+/** The leads waiting to be called on the call list (ones already called from it can be added again). */
 export function onCallList(db: DB, leadIds: string[]): Set<string> {
   if (!leadIds.length) return new Set();
-  const rows = db.prepare('SELECT lead_id FROM call_list_item WHERE lead_id IN (SELECT value FROM json_each(?))').all(JSON.stringify(leadIds));
+  const rows = db
+    .prepare(`SELECT i.lead_id FROM call_list_item i WHERE i.lead_id IN (SELECT value FROM json_each(?)) AND NOT ${WORKED}`)
+    .all(JSON.stringify(leadIds));
   return new Set(rows.map((r: any) => r.lead_id as string));
 }
 

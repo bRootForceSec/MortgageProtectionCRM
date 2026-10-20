@@ -222,9 +222,9 @@ test('clear worked leads, add more from Leads, and look up an incoming call with
   await expect(queue.locator('.queue-list li')).toHaveCount(1);
   await expect(queue.locator('.queue-list li.done')).toHaveCount(0);
 
-  // Pick leads on the Leads page: everyone tried before, ticked and added to the bottom of the list.
+  // Pick leads on the Leads page: everyone talked to before (no appointment), ticked and added to the bottom of the list.
   await page.getByRole('button', { name: 'Leads', exact: true }).click();
-  await page.getByRole('button', { name: 'Tried', exact: true }).click();
+  await page.getByRole('button', { name: 'Talked, no appt', exact: true }).click();
   await page.getByLabel('Tick every lead shown').check();
   const add = page.getByRole('button', { name: /^Add \d+ ticked to call list$/ });
   const n = Number((await add.innerText()).match(/\d+/)![0]);
@@ -351,9 +351,9 @@ test('clear the call list into a saved list, load it back, and replace it from L
   await expect(queue.locator('.queue-list li')).toHaveCount(n);
   await expect(queue.getByText('List: Old area')).toBeVisible();
 
-  // Replace it from Leads with every lead tried before, keeping the old one.
+  // Replace it from Leads with every lead talked to before (no appointment), keeping the old one.
   await page.getByRole('button', { name: 'Leads', exact: true }).click();
-  await page.getByRole('button', { name: 'Tried', exact: true }).click();
+  await page.getByRole('button', { name: 'Talked, no appt', exact: true }).click();
   await page.getByLabel(/Replace the call list/).check();
   await page.getByRole('button', { name: /^Replace with all \d+ matching$/ }).click();
   await expect(page.getByLabel('Saved list name')).toHaveValue('Old area');
