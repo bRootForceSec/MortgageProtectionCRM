@@ -256,7 +256,10 @@ export class DraftWorker {
 
   /** Picks up drafts that were still being read when the app last stopped. */
   resumeAll() {
-    const ids = this.db.prepare("SELECT id FROM import_draft WHERE status = 'reading'").all() as { id: string }[];
+    // Files from a bulk import are read a few at a time by the bulk importer instead.
+    const ids = this.db
+      .prepare("SELECT id FROM import_draft WHERE status = 'reading' AND id NOT IN (SELECT draft_id FROM import_bulk_file WHERE draft_id IS NOT NULL)")
+      .all() as { id: string }[];
     for (const { id } of ids) void this.run(id);
   }
 
@@ -572,6 +575,33 @@ export function deleteDraft(db: DB, id: string) {
 export function draftFile(db: DB, id: string) {
   const d = getDraft(db, id);
   return { path: d.file_path, kind: d.kind, name: d.file_name };
+}
+
+/**
+ * Moves the rows that still need a look into a new draft of the same file, so the rest can be imported now.
+ * Returns the new draft, or null when there is nothing to set aside (or nothing would be left).
+ */
+export function setAsideNeedsReview(db: DB, importsDir: string, id: string): { id: string; rows: number } | null {
+  const d = getDraft(db, id);
+  if (d.status !== 'review') throw new DomainError('this import is not ready to split');
+  const counts = db
+    .prepare("SELECT COUNT(*) total, SUM(CASE WHEN review = 'needs_review' THEN 1 ELSE 0 END) look FROM import_draft_row WHERE draft_id = ?")
+    .get(id) as { total: number; look: number | null };
+  const look = counts.look ?? 0;
+  if (!look || look === counts.total) return null;
+  const newId = uuidv7();
+  const newPath = path.join(draftsDir(importsDir), `${newId}${path.extname(d.file_path)}`);
+  fs.copyFileSync(d.file_path, newPath);
+  fs.chmodSync(newPath, 0o600);
+  const now = nowIso();
+  db.transaction(() => {
+    db.prepare(
+      `INSERT INTO import_draft (id, kind, file_name, file_sha256, file_path, file_modified, status, settings_json, progress_json, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, 'review', ?, ?, ?, ?)`,
+    ).run(newId, d.kind, d.file_name, d.file_sha256, newPath, d.file_modified, d.settings_json, d.progress_json, now, now);
+    db.prepare("UPDATE import_draft_row SET draft_id = ? WHERE draft_id = ? AND review = 'needs_review'").run(newId, id);
+  })();
+  return { id: newId, rows: look };
 }
 
 export function commitDraft(db: DB, importsDir: string, id: string, batch: BatchInput) {

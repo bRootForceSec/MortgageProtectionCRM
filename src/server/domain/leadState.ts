@@ -247,6 +247,8 @@ export function loadPhoneBlocks(db: DB, leadId: string, phones: string[]): Phone
 /** Other leads that share a number with these leads (their own numbers, or numbers their calls went to). */
 export function leadsSharingPhones(db: DB, leadIds: string[]): string[] {
   if (!leadIds.length) return [];
+  // A Set: imports pass tens of thousands of ids here.
+  const given = new Set(leadIds);
   const ids = JSON.stringify(leadIds);
   const phones = (
     db
@@ -272,7 +274,7 @@ export function leadsSharingPhones(db: DB, leadIds: string[]): string[] {
       .all({ ph }) as { id: string }[]
   )
     .map((r) => r.id)
-    .filter((id) => !leadIds.includes(id));
+    .filter((id) => !given.has(id));
 }
 
 const UPSERT = `INSERT INTO lead_state (lead_id, status, attempts_total, last_call_at, last_outcome_code, next_due_at,
