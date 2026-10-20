@@ -145,6 +145,25 @@ describe('clearing, replacing and saved lists', () => {
     expect(listSavedLists(db)).toEqual([]);
   });
 
+  it("today's no answers: tried today and not reached, ready to add in one go", async () => {
+    const jane = id('Jane');
+    const other = (db.prepare('SELECT id FROM lead WHERE id <> ? LIMIT 1').get(jane) as any).id as string;
+    logManualCall(db, { lead_id: jane, idempotency_key: key(), outcome_code: 'no_answer' });
+    logManualCall(db, { lead_id: other, idempotency_key: key(), outcome_code: 'no_appt' });
+    const start = new Date(Date.now() - 3600_000).toISOString();
+    // Later than the calls: nobody.
+    expect(addMatchingToCallList(db, { tried_after: new Date(Date.now() + 60_000).toISOString(), not_reached: true }).added).toBe(0);
+    expect(addMatchingToCallList(db, { tried_after: start, not_reached: true }).added).toBe(1);
+    expect(getCallList(db).map((i) => i.lead_id)).toEqual([jane]);
+
+    const TOKEN = 'test-token-0123456789abcdef0123456789abcdef';
+    const headers = { host: '127.0.0.1:5170', cookie: `mpcrm_session=${TOKEN}`, origin: 'http://127.0.0.1:5170' };
+    const app = await buildApp({ db, config, token: TOKEN });
+    const r = await app.inject({ url: `/api/leads?tried_after=${encodeURIComponent(start)}&not_reached=1`, headers });
+    expect(r.json().rows.map((x: any) => x.id)).toEqual([jane]);
+    await app.close();
+  });
+
   it('over HTTP: replace the list with ticked leads or every match, keeping the old one', async () => {
     const TOKEN = 'test-token-0123456789abcdef0123456789abcdef';
     const headers = { host: '127.0.0.1:5170', cookie: `mpcrm_session=${TOKEN}`, origin: 'http://127.0.0.1:5170' };

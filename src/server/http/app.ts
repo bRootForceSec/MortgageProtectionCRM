@@ -153,6 +153,8 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     counties: z.string().max(4000).optional(),
     area_codes: z.string().max(400).optional(),
     tried_before: z.string().max(40).optional(),
+    tried_after: z.string().max(40).optional(),
+    not_reached: z.union([z.boolean(), z.enum(['1', '0', 'true', 'false'])]).optional(),
     not_on_list: z.union([z.boolean(), z.enum(['1', '0', 'true', 'false'])]).optional(),
   });
   const toFilter = (q: z.infer<typeof leadFilter>): LeadFilter => ({
@@ -162,6 +164,8 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     counties: parseList(q.counties),
     areaCodes: parseList(q.area_codes),
     tried_before: q.tried_before || undefined,
+    tried_after: q.tried_after || undefined,
+    not_reached: q.not_reached === true || q.not_reached === '1' || q.not_reached === 'true',
     not_on_list: q.not_on_list === true || q.not_on_list === '1' || q.not_on_list === 'true',
   });
 

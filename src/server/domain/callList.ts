@@ -18,6 +18,10 @@ export interface LeadFilter {
   areaCodes?: string[];
   /** Only leads last tried before this time (and never-called leads are left out). */
   tried_before?: string;
+  /** Only leads last tried at or after this time, e.g. the start of today. */
+  tried_after?: string;
+  /** Only leads whose last call didn't reach them (no answer). */
+  not_reached?: boolean;
   /** Only leads that aren't on the call list. */
   not_on_list?: boolean;
 }
@@ -31,13 +35,15 @@ export function leadFilterWhere(f: LeadFilter): { sql: string; params: Record<st
     '(@lf_status IS NULL OR s.status = @lf_status)',
     '(@lf_batch IS NULL OR l.batch_id = @lf_batch)',
     '(@lf_before IS NULL OR (s.last_call_at IS NOT NULL AND s.last_call_at < @lf_before))',
+    '(@lf_after IS NULL OR (s.last_call_at IS NOT NULL AND s.last_call_at >= @lf_after))',
+    f.not_reached ? "s.last_outcome_code IN (SELECT code FROM outcome_code WHERE grp = 'no_contact')" : '1',
     f.not_on_list ? 'l.id NOT IN (SELECT lead_id FROM call_list_item)' : '1',
     group.sql,
     search.sql,
   ];
   return {
     sql: parts.join(' AND '),
-    params: { lf_status: status, lf_batch: f.batch_id ?? null, lf_before: f.tried_before ?? null, ...group.params, ...search.params },
+    params: { lf_status: status, lf_batch: f.batch_id ?? null, lf_before: f.tried_before ?? null, lf_after: f.tried_after ?? null, ...group.params, ...search.params },
   };
 }
 

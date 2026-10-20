@@ -15,8 +15,9 @@ const STATUSES = [
 ];
 
 /** "Last tried more than … ago". */
-const TRIED = [
+const TRIED: { key: string; label: string; ms?: number }[] = [
   { key: '', label: 'Any time' },
+  { key: 'today', label: 'Last tried today' },
   { key: '4h', label: 'Last tried 4+ hours ago', ms: 4 * 3600_000 },
   { key: '1d', label: 'Last tried 1+ day ago', ms: 86_400_000 },
   { key: '3d', label: 'Last tried 3+ days ago', ms: 3 * 86_400_000 },
@@ -24,6 +25,13 @@ const TRIED = [
 ];
 
 const CALLABLE = new Set(['new', 'retry', 'callback']);
+
+/** Midnight this morning, your time. */
+function startOfToday(): string {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  return d.toISOString();
+}
 
 interface Batch { id: string; name: string; imported_at: string }
 
@@ -34,6 +42,7 @@ export function LeadsPage() {
   const [batch, setBatch] = useState('');
   const [tried, setTried] = useState('');
   const [notOnList, setNotOnList] = useState(false);
+  const [notReached, setNotReached] = useState(false);
   const [batches, setBatches] = useState<Batch[]>([]);
   const [rows, setRows] = useState<any[]>([]);
   const [total, setTotal] = useState(0);
@@ -61,10 +70,12 @@ export function LeadsPage() {
       search,
       batch_id: batch || undefined,
       tried_before: t?.ms ? new Date(Date.now() - t.ms).toISOString() : undefined,
+      tried_after: tried === 'today' ? startOfToday() : undefined,
+      not_reached: notReached ? '1' : undefined,
       not_on_list: notOnList ? '1' : undefined,
       ...groupParams,
     };
-  }, [status, search, batch, tried, notOnList, groupParams.counties, groupParams.area_codes]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [status, search, batch, tried, notReached, notOnList, groupParams.counties, groupParams.area_codes]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const load = useCallback(
     () => api.get<{ rows: any[]; total: number }>('/leads', filters).then((r) => { setRows(r.rows); setTotal(r.total); }),
@@ -85,6 +96,17 @@ export function LeadsPage() {
     else n.add(id);
     return n;
   });
+
+  /** One click: everyone you called today and didn't reach, ready to add or swap onto the call list. */
+  const todaysNoAnswers = () => {
+    setStatus('all');
+    setSearch('');
+    setBatch('');
+    setTried('today');
+    setNotReached(true);
+    setNotOnList(false);
+  };
+  const showingNoAnswers = status === 'all' && tried === 'today' && notReached;
 
   const report = (r: AddResult, replaced = false) => {
     if (replaced) {
@@ -129,6 +151,13 @@ export function LeadsPage() {
         <div className="tabs">
           {STATUSES.map((s) => <button key={s.key} className={status === s.key ? 'active' : ''} onClick={() => setStatus(s.key)}>{s.label}</button>)}
         </div>
+        <button
+          className={`btn${showingNoAnswers ? ' primary' : ''}`}
+          onClick={todaysNoAnswers}
+          title="Everyone you called today whose last call was a no answer. Then add them all, or replace the call list with them."
+        >
+          Today's no answers
+        </button>
       </div>
       <div className="leads-tools">
         <input placeholder="Search name, county, phone, or area code" value={search} onChange={(e) => setSearch(e.target.value)} title="A 3-digit number finds every county under that area code" />
@@ -140,6 +169,9 @@ export function LeadsPage() {
         <select value={tried} onChange={(e) => setTried(e.target.value)} aria-label="Last tried">
           {TRIED.map((t) => <option key={t.key} value={t.key}>{t.label}</option>)}
         </select>
+        <label className="row" style={{ gap: 4 }} title="The last call was a no answer">
+          <input type="checkbox" checked={notReached} onChange={(e) => setNotReached(e.target.checked)} /> Didn't reach
+        </label>
         <label className="row" style={{ gap: 4 }}>
           <input type="checkbox" checked={notOnList} onChange={(e) => setNotOnList(e.target.checked)} /> Not on the call list
         </label>
