@@ -26,15 +26,23 @@ A small calling CRM that runs on your own computer. It imports your lead spreads
 - **Export** any table to CSV or Excel, or everything as one Excel file or a full JSON dump. Health fields are left out unless you tick the box.
 - **Backups** are verified copies of the database. Restore keeps the current database aside instead of deleting it. Once a week the app restores the newest backup into a scratch copy to check it works, and shows the result on Export & backup.
 
-## Desktop app (test builds)
+## Install (Windows, Mac, Linux)
 
-The same CRM also builds as a desktop app for Windows, Mac and Linux. It runs the server inside the app, opens it in its own window, keeps running in the tray when you close the window (so callback alerts still fire), starts when you log in, and backs up every night at 11:30 PM (or soon after start-up if a night was missed).
+Download the app for your computer from the [Releases page](https://github.com/bRootForceSec/MortgageProtectionCRM/releases/latest):
 
-- Every change builds unsigned test installers in CI (the **desktop app** jobs; download them from the run's artifacts). Windows and Mac will warn that the app is from an unknown developer until signing is set up.
-- Data goes in **Mortgage CRM** in your home folder on Windows and Mac, and the usual `~/.local/share/mpcrm` on Linux. Logs are in its `logs` folder.
-- Only one copy can use a data folder at a time. On Linux, stop the background service first (`systemctl --user stop mpcrm`) or point the test app at a copy of your data with `MPCRM_DATA_DIR`.
-- Automatic updates for the desktop app come later; for now install a newer build over the old one.
-- Build it yourself: `npm run dist` (installers in `release/`), or `npm run desktop` to run it from the source folder.
+- **Windows**: the `…-win-x64.exe`. The first time, Windows says "Windows protected your PC": click **More info**, then **Run anyway**.
+- **Mac**: the `…-mac-arm64.dmg` for Apple-chip Macs (M1 and newer), or `…-mac-x64.dmg` for older Intel Macs. Drag the app to Applications. The first time you open it the Mac blocks it: open **System Settings → Privacy & Security**, scroll down and click **Open Anyway**.
+- **Linux**: the `…-linux-x86_64.AppImage`. Make it executable (`chmod +x`) and run it.
+
+The app isn't signed (it's for our team, not sold), which is why each system warns once. After that:
+
+- It opens in its own window, keeps running in the tray when you close the window (so callback alerts still fire), and starts when you log in.
+- It backs up every night at 11:30 PM, or soon after start-up if a night was missed.
+- It checks the Releases page every hour. When a new version is ready, a bar offers **Restart now** (or it installs itself at 3 AM if the computer is idle). Every update takes a backup first; if the new version can't open your data, the data is put back as it was and the app points you to the previous version.
+- Your data is in **Mortgage CRM** in your home folder on Windows and Mac, and `~/.local/share/mpcrm` on Linux. Logs are in its `logs` folder.
+- Only one copy can use a data folder at a time. On Linux, stop the background service first (`systemctl --user stop mpcrm`) or point the app at a copy of your data with `MPCRM_DATA_DIR`.
+
+Every push to `main` publishes a new release (numbered like 0.2.57) once the tests pass on all three systems. Build it yourself with `npm run dist` (installers in `release/`), or `npm run desktop` to run it from the source folder.
 
 ## Setup on Fedora
 

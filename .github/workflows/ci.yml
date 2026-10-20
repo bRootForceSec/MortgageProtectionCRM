@@ -52,7 +52,7 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
     env:
-      # Test builds are unsigned for now; signing comes with automatic updates.
+      # Builds are unsigned on purpose: this app is for a small team, downloaded from GitHub Releases.
       CSC_IDENTITY_AUTO_DISCOVERY: 'false'
     steps:
       - uses: actions/checkout@v4
@@ -64,6 +64,11 @@ jobs:
         if: runner.os == 'Windows'
         run: npm install -g npm@12.2.0
       - run: npm ci
+      # Each push to main becomes a release numbered <major>.<minor>.<run number>, e.g. 0.2.57.
+      - name: Number this release
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        shell: bash
+        run: node scripts/stamp-version.mjs "${{ github.run_number }}"
       - run: npm run build
       - name: Package the desktop app
         run: npx electron-builder --publish never
@@ -73,6 +78,21 @@ jobs:
       - name: Open the packaged app and check it works
         if: runner.os != 'Linux'
         run: node scripts/desktop-smoke.mjs
+      - name: Keep the files for the release
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.os }}
+          path: |
+            release/*.exe
+            release/*.exe.blockmap
+            release/*.dmg
+            release/*.zip
+            release/*.zip.blockmap
+            release/*.AppImage
+            release/latest*.yml
+          if-no-files-found: error
+          retention-days: 3
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -84,3 +104,33 @@ jobs:
             release/smoke-*.png
           if-no-files-found: warn
           retention-days: 14
+
+  release:
+    name: publish release
+    needs: desktop
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Number this release
+        run: node scripts/stamp-version.mjs "${{ github.run_number }}"
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          path: files
+          merge-multiple: true
+      - name: Write the release notes
+        run: node scripts/release-notes.mjs > notes.md
+      - name: Publish on the Releases page
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version="$(node -p "require('./package.json').version")"
+          gh release create "v$version" files/* --title "Version $version" --notes-file notes.md --target "$GITHUB_SHA"

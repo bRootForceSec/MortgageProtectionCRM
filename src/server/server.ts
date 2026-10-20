@@ -7,7 +7,7 @@ import { loadConfig, ensureDirs, loadOrCreateToken, type Config } from './config
 import { openDatabase, type DB } from './db/connection.js';
 import { buildApp } from './http/app.js';
 import { rebuildLeadState } from './domain/leadState.js';
-import { Updates, readBuildInfo, type Runtime } from './updates.js';
+import { Updates, readBuildInfo, type Runtime, type UpdateProvider } from './updates.js';
 import { DraftWorker } from './domain/drafts.js';
 import { Secrets } from './ai/settings.js';
 import { runBackupCheckIfDue } from './http/reportRoutes.js';
@@ -22,6 +22,8 @@ export interface StartOptions {
   /** Use another free port when the configured one is taken (the desktop app does; a service should fail loudly). */
   portFallback?: boolean;
   logStream?: NodeJS.WritableStream;
+  /** The desktop app's updater. */
+  updater?: UpdateProvider;
 }
 
 export interface RunningServer {
@@ -93,7 +95,7 @@ export async function startServer(opts: StartOptions = {}): Promise<RunningServe
   const webDir = [path.resolve(here, '../web'), path.resolve(here, '../../dist/web')].find((d) => fs.existsSync(path.join(d, 'index.html'))) ?? null;
   const build = readBuildInfo(path.resolve(here, '../build-info.json'));
   const env = opts.env ?? process.env;
-  const updates = new Updates(env.MPCRM_APP_DIR ? path.resolve(env.MPCRM_APP_DIR) : null, build, undefined, opts.runtime);
+  const updates = new Updates(env.MPCRM_APP_DIR ? path.resolve(env.MPCRM_APP_DIR) : null, build, undefined, opts.runtime, opts.updater);
   const secrets = Secrets.inDataDir(config.dataDir);
   const drafts = new DraftWorker(db, secrets);
   const app = await buildApp({ db, config, token, webDir, logger: true, logStream: opts.logStream, updates, drafts, secrets });

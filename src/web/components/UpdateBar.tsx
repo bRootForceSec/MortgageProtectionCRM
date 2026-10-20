@@ -5,13 +5,14 @@ import { useApp } from '../App';
 export interface UpdateStatus {
   managed: boolean;
   runtime?: 'desktop' | 'service' | 'manual';
-  current: { commit: string; built_at: string | null };
+  current: { commit: string; version?: string; built_at: string | null };
   staged: { commit: string; from: string | null; changes: string[]; at: string } | null;
   last_check: { ok: boolean; error?: string; latest?: string; at: string } | null;
   last_apply: { ok: boolean; from: string | null; to: string; error?: string; rolled_back?: boolean; changes?: string[]; at: string } | null;
 }
 
-const short = (c: string | null | undefined) => (c ? c.slice(0, 7) : '—');
+// Desktop releases are numbered (0.2.57); the Linux service uses git commits.
+const short = (c: string | null | undefined) => (c ? (/^\d+\.\d+/.test(c) ? c : c.slice(0, 7)) : '—');
 const LATER_KEY = 'mpcrm.update.later';
 const SEEN_KEY = 'mpcrm.update.seen';
 
@@ -47,7 +48,8 @@ async function waitForVersion(commit: string, timeoutMs = 120_000) {
     await new Promise((r) => setTimeout(r, 1500));
     try {
       const r = await fetch('/healthz', { cache: 'no-store' });
-      if (r.ok && (await r.json()).commit === commit) return true;
+      const h = r.ok ? await r.json() : null;
+      if (h && (h.commit === commit || h.version === commit)) return true;
     } catch {
       // restarting
     }
@@ -148,12 +150,12 @@ export function UpdatePanel() {
     <div className="card">
       <h2>Version and updates</h2>
       <p>
-        Version <b>{short(status.current.commit)}</b>
+        Version <b>{status.runtime === 'desktop' && status.current.version ? status.current.version : short(status.current.commit)}</b>
         {status.current.built_at && <> · built {fmtDateTime(status.current.built_at)}</>}
       </p>
       {!status.managed ? (
         status.runtime === 'desktop' ? (
-          <p className="help">This test version of the desktop app doesn't update itself yet. Automatic updates come in a later version.</p>
+          <p className="help">This copy of the desktop app doesn't update itself. Download new versions from the Releases page on GitHub.</p>
         ) : (
           <p className="help">This copy was started by hand, so it doesn't update itself. Run <code>bash scripts/install.sh</code> once to install the self-updating version.</p>
         )

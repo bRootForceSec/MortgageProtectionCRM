@@ -1,6 +1,6 @@
 {
   "name": "mortgage-protection-crm",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Local-first calling CRM for an independent life insurance agent",
   "scripts": {
     "dev": "concurrently -n api,web \"tsx watch src/server/main.ts\" \"vite\"",
@@ -29,8 +29,10 @@
     "@types/qrcode": "^1.5.6",
     "better-sqlite3": "^13.0.3",
     "csv-parse": "^7.0.3",
+    "electron-updater": "^6.8.9",
     "exceljs": "^4.4.0",
     "fastify": "^5.12.7",
+    "js-yaml": "^5.5.0",
     "pdf-lib": "^1.17.1",
     "pdfjs-dist": "^6.3.289",
     "qrcode": "^1.5.4",
@@ -106,6 +108,13 @@
             "arm64",
             "x64"
           ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
         }
       ],
       "icon": "assets/icon.png",
@@ -123,6 +132,11 @@
       "icon": "assets/icon.png",
       "category": "Office"
     },
-    "publish": null
+    "publish": {
+      "provider": "github",
+      "owner": "bRootForceSec",
+      "repo": "MortgageProtectionCRM",
+      "releaseType": "release"
+    }
   }
 }

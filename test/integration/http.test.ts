@@ -137,7 +137,7 @@ describe('version and updates', () => {
   it('/healthz answers without the access cookie and reveals only the version', async () => {
     const r = await app.inject({ url: '/healthz', headers: { host: HOST } });
     expect(r.statusCode).toBe(200);
-    expect(r.json()).toEqual({ ok: true, commit: 'dev' });
+    expect(r.json()).toEqual({ ok: true, commit: 'dev', version: null });
     const foreign = await app.inject({ url: '/healthz', headers: { host: 'evil.example:5170' } });
     expect(foreign.statusCode).toBe(421);
   });
