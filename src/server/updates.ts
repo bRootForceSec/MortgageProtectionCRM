@@ -10,8 +10,12 @@ export interface BuildInfo {
   built_at: string | null;
 }
 
+/** How this copy runs: the desktop app, the Linux background service, or started by hand (npm start). */
+export type Runtime = 'desktop' | 'service' | 'manual';
+
 export interface UpdateStatus {
   managed: boolean;
+  runtime: Runtime;
   current: BuildInfo;
   staged: { commit: string; from: string | null; changes: string[]; at: string } | null;
   last_check: { ok: boolean; error?: string; latest?: string; at: string } | null;
@@ -52,18 +56,24 @@ export class Updates {
     private appDir: string | null,
     readonly build: BuildInfo,
     private run: Runner = systemdRunner,
+    private runtimeHint?: Runtime,
   ) {}
+
+  get runtime(): Runtime {
+    return this.runtimeHint ?? (this.appDir ? 'service' : 'manual');
+  }
 
   get managed() {
     return this.appDir !== null;
   }
 
   status(): UpdateStatus {
-    if (!this.appDir) return { managed: false, current: this.build, staged: null, last_check: null, last_apply: null };
+    if (!this.appDir) return { managed: false, runtime: this.runtime, current: this.build, staged: null, last_check: null, last_apply: null };
     const s = (n: string) => path.join(this.appDir!, 'state', `${n}.json`);
     const staged = readJson<UpdateStatus['staged']>(s('staged'));
     return {
       managed: true,
+      runtime: this.runtime,
       current: this.build,
       // A staged version equal to the running one has just been installed.
       staged: staged && staged.commit !== this.build.commit ? staged : null,

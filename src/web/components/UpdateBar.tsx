@@ -4,6 +4,7 @@ import { useApp } from '../App';
 
 export interface UpdateStatus {
   managed: boolean;
+  runtime?: 'desktop' | 'service' | 'manual';
   current: { commit: string; built_at: string | null };
   staged: { commit: string; from: string | null; changes: string[]; at: string } | null;
   last_check: { ok: boolean; error?: string; latest?: string; at: string } | null;
@@ -151,7 +152,11 @@ export function UpdatePanel() {
         {status.current.built_at && <> · built {fmtDateTime(status.current.built_at)}</>}
       </p>
       {!status.managed ? (
-        <p className="help">This copy was started by hand, so it doesn't update itself. Run <code>bash scripts/install.sh</code> once to install the self-updating version.</p>
+        status.runtime === 'desktop' ? (
+          <p className="help">This test version of the desktop app doesn't update itself yet. Automatic updates come in a later version.</p>
+        ) : (
+          <p className="help">This copy was started by hand, so it doesn't update itself. Run <code>bash scripts/install.sh</code> once to install the self-updating version.</p>
+        )
       ) : (
         <>
           <p className="help">

@@ -68,7 +68,7 @@ export function DataPage() {
       <div className="card">
         <h2>Backups</h2>
         <p className="help">
-          Backups are verified copies of the whole database, saved in {meta?.data_dir}/backups. A backup runs every night at 11:30 PM once the app is installed with scripts/install.sh, and before every update.
+          Backups are verified copies of the whole database, saved in {meta?.data_dir}/backups. A backup runs every night at 11:30 PM while the app is running (in the desktop app, or once installed with scripts/install.sh on Linux), and before every update.
           To restore one, follow "Backups and restore" in the README. The current database is kept aside, not deleted.
         </p>
         <div className="row">

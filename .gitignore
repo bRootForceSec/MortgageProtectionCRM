@@ -7,3 +7,4 @@ dist/
 secrets/
 coverage/
 test-results/
+release/
