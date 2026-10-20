@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import { execFile } from 'node:child_process';
+import { findClaudeCode, claudeNotFoundMessage } from '../ai/findClaude.js';
 import { promisify } from 'node:util';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
@@ -172,11 +173,13 @@ export function registerImportRoutes(
   app.post('/api/settings/ai/test', async () => {
     const s = loadAiSettings(db);
     if (s.provider === 'claude_code') {
+      const found = findClaudeCode(s.claude_code.command);
+      if (!found) return { ok: false, message: claudeNotFoundMessage(s.claude_code.command) };
       try {
-        const { stdout } = await promisify(execFile)(s.claude_code.command, ['--version'], { timeout: 20_000 });
+        const { stdout } = await promisify(execFile)(found.file, [...found.prefix, '--version'], { timeout: 20_000, windowsHide: true });
         return { ok: true, message: `Found Claude Code ${stdout.trim()}. Pages are read with your Claude account.` };
       } catch (e: any) {
-        return { ok: false, message: e.code === 'ENOENT' ? `Couldn't find "${s.claude_code.command}". Install Claude Code, or enter its full path.` : e.message };
+        return { ok: false, message: e.code === 'ENOENT' ? claudeNotFoundMessage(s.claude_code.command) : e.message };
       }
     }
     if (s.provider === 'anthropic_api') return { ok: secrets.present().anthropic_api_key, message: secrets.present().anthropic_api_key ? 'API key saved.' : 'No API key saved yet.' };

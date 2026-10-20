@@ -106,7 +106,11 @@ async function freePort() {
   });
 }
 
+// The systemd-based updater is Linux-only; the desktop app has its own updater on Windows and Mac.
+const LINUX_UPDATER = process.platform !== 'win32';
+
 beforeAll(async () => {
+  if (!LINUX_UPDATER) return;
   root = fs.mkdtempSync(path.join(os.tmpdir(), 'mpcrm-upd-'));
   src = path.join(root, 'src');
   app = path.join(root, 'app');
@@ -136,11 +140,12 @@ beforeAll(async () => {
 });
 
 afterAll(() => {
+  if (!LINUX_UPDATER) return;
   spawnSync(path.join(root, 'bin', 'systemctl'), ['--user', 'stop', 'mpcrm.service'], { env });
   fs.rmSync(root, { recursive: true, force: true });
 });
 
-describe('self-updater', () => {
+describe.skipIf(!LINUX_UPDATER)('self-updater', () => {
   it('bootstrap builds the latest version and makes it current', () => {
     const r = run('bootstrap');
     expect(r.status, r.stdout + r.stderr).toBe(0);

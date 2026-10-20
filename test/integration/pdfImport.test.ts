@@ -250,7 +250,8 @@ describe('API keys', () => {
     const s = Secrets.inDataDir(c.dataDir);
     s.set('anthropic_api_key', 'sk-ant-test-123');
     const f = path.join(c.dataDir, 'secrets.json');
-    expect(fs.statSync(f).mode & 0o777).toBe(0o600);
+    // Windows has no Unix file modes; the file is private through the user's folder permissions there.
+    if (process.platform !== 'win32') expect(fs.statSync(f).mode & 0o777).toBe(0o600);
     expect(s.present()).toEqual({ anthropic_api_key: true, openai_api_key: false });
     s.set('anthropic_api_key', null);
     expect(s.get('anthropic_api_key')).toBeNull();

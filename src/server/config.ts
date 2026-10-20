@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import { randomBytes } from 'node:crypto';
 
 // All settings come from environment variables (or a 0600 env file loaded by the start script).
-// Nothing machine-specific is hard-coded beyond the XDG default data directory.
+// Nothing machine-specific is hard-coded beyond the default data folder for each system.
 
 export interface Config {
   dataDir: string;
@@ -17,9 +17,18 @@ export interface Config {
   backupAgeRecipient: string | null;
 }
 
+/**
+ * Where the data folder is when MPCRM_DATA_DIR isn't set.
+ * Windows and Mac: "Mortgage CRM" in your home folder (not Documents or Desktop, which are often synced to the cloud).
+ * Linux: still ~/.local/share/mpcrm, which the systemd install and its scripts expect, until installs move to the desktop app.
+ */
+export function defaultDataDir(env: NodeJS.ProcessEnv = process.env, platform: NodeJS.Platform = process.platform, home = os.homedir()): string {
+  if (platform === 'win32' || platform === 'darwin') return path.join(home, 'Mortgage CRM');
+  return path.join(env.XDG_DATA_HOME || path.join(home, '.local', 'share'), 'mpcrm');
+}
+
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
-  const xdg = env.XDG_DATA_HOME || path.join(os.homedir(), '.local', 'share');
-  const dataDir = path.resolve(env.MPCRM_DATA_DIR || path.join(xdg, 'mpcrm'));
+  const dataDir = path.resolve(env.MPCRM_DATA_DIR || defaultDataDir(env));
   const port = Number(env.MPCRM_PORT || 5170);
   if (!Number.isInteger(port) || port < 1024 || port > 65535) throw new Error('MPCRM_PORT must be 1024-65535');
   return {

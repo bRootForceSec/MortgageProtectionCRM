@@ -19,7 +19,8 @@ describe('backup and restore', () => {
     const original = { counts: tableCounts(db), checksum: contentChecksum(db) };
 
     const b = await createBackup(db, c);
-    expect(fs.statSync(b.file).mode & 0o777).toBe(0o600);
+    // Windows has no Unix file modes; the file is private through the user's folder permissions there.
+    if (process.platform !== 'win32') expect(fs.statSync(b.file).mode & 0o777).toBe(0o600);
 
     // Data changes after the backup are rolled back by the restore.
     logManualCall(db, { lead_id: lead, idempotency_key: 'k-87654321', outcome_code: 'no_answer' });

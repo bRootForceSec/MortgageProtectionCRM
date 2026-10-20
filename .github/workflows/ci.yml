@@ -10,13 +10,23 @@ permissions:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    name: test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
+      # better-sqlite3 has no prebuilt binaries, so it compiles on install. The node-gyp bundled with npm 10
+      # doesn't recognise Visual Studio 2026 on the Windows runner; npm 12 bundles node-gyp 13, which does.
+      - name: Use npm 12 (Windows)
+        if: runner.os == 'Windows'
+        run: npm install -g npm@12.2.0
       - run: npm ci
       - run: npm run typecheck
       - run: npm test
@@ -29,6 +39,6 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
-          name: playwright-results
+          name: playwright-results-${{ matrix.os }}
           path: test-results/
           retention-days: 7
