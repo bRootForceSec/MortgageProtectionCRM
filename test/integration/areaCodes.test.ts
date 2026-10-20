@@ -77,7 +77,7 @@ describe('area code filter goes by county, never by the lead\'s phone', () => {
   });
 
   it('leads list and its search box', async () => {
-    const get = async (q: string) => (await app.inject({ url: `/api/leads?${q}`, headers: auth })).json();
+    const get = async (q: string) => (await app.inject({ url: `/api/leads?${q}`, headers: auth })).json().rows;
     expect(names(await get('area_codes=614'))).toEqual(['Amy', 'Ben']);
     expect(names(await get('counties=IN%7CALLEN'))).toEqual(['Dee']);
     // A bare area code typed in search means the county's code.

@@ -277,3 +277,27 @@ table.grid tr.selected { background: var(--selected); }
 .lookup-results .sub { color: var(--muted); font-size: 12px; flex-basis: 100%; }
 .lookup-bar { display: flex; gap: 10px; align-items: center; padding: 6px 10px; margin-bottom: 10px; border: 1px solid var(--accent); border-radius: 8px; background: var(--panel-2); }
 .lookup-bar .btn { margin-left: auto; }
+
+/* A lead opened from Leads, Call history or Reports: full screen, laid out like the Calling page. */
+.lead-viewer { position: fixed; inset: 0; z-index: 40; background: var(--bg); display: flex; flex-direction: column; }
+.lead-viewer > .calling { flex: 1; min-height: 0; height: auto; }
+.lead-viewer .calling.no-list { grid-template-columns: minmax(0, 1fr) minmax(340px, 45%); }
+@media (max-width: 1100px) {
+  .lead-viewer { overflow: auto; }
+  .lead-viewer .calling.no-list { grid-template-columns: 1fr; }
+}
+
+/* The call list */
+.icon-btn { border: 0; background: none; color: var(--muted); cursor: pointer; font-size: 15px; line-height: 1; padding: 0 3px; border-radius: 4px; visibility: hidden; }
+.queue-list li:hover .icon-btn, .queue-list li.selected .icon-btn { visibility: visible; }
+.icon-btn:hover { color: var(--bad); background: var(--panel-2); }
+button.link { border: 0; background: none; padding: 0; color: var(--accent); cursor: pointer; font: inherit; text-decoration: underline; }
+.list-done { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 8px 10px; margin-bottom: 8px; border: 1px solid var(--good); border-radius: 8px; background: var(--panel-2); }
+.list-done .btn { margin-left: auto; }
+.recent { margin-top: 12px; border-top: 1px solid var(--border); padding-top: 6px; font-size: 12px; }
+.recent summary { cursor: pointer; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; font-weight: 600; }
+.recent ul { list-style: none; margin: 4px 0 0; padding: 0; }
+.recent li { padding: 2px 0; }
+.leads-tools { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 10px; }
+.leads-tools .add-bar { margin-left: auto; display: flex; gap: 6px; align-items: center; }
+table.grid td.pick, table.grid th.pick { width: 28px; text-align: center; }

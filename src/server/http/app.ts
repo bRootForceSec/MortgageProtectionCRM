@@ -24,6 +24,10 @@ import { registerReportRoutes } from './reportRoutes.js';
 import { KdeConnect } from '../dialer.js';
 import { loadCallingSettings } from '../domain/callingSettings.js';
 import { groupWhere, searchWhere, parseList } from '../domain/groupFilter.js';
+import {
+  addMatchingToCallList, addToCallList, addBatchToCallList, clearWorked, getCallList, leadFilterWhere, moveToBottom, onCallList,
+  recentOutcomes, removeFromCallList, type LeadFilter,
+} from '../domain/callList.js';
 
 export interface AppDeps {
   db: DB;
@@ -142,26 +146,58 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     return getQueue(db, { ...q, counties: parseList(q.counties), areaCodes: parseList(q.area_codes) });
   });
 
+  const leadFilter = z.object({
+    status: z.enum(['dead', 'invalid', 'appointment_set', 'callback', 'retry', 'new', 'all']).default('all'),
+    search: z.string().max(100).optional(),
+    batch_id: z.string().max(64).optional(),
+    counties: z.string().max(4000).optional(),
+    area_codes: z.string().max(400).optional(),
+    tried_before: z.string().max(40).optional(),
+    not_on_list: z.union([z.boolean(), z.enum(['1', '0', 'true', 'false'])]).optional(),
+  });
+  const toFilter = (q: z.infer<typeof leadFilter>): LeadFilter => ({
+    status: q.status,
+    search: q.search,
+    batch_id: q.batch_id || undefined,
+    counties: parseList(q.counties),
+    areaCodes: parseList(q.area_codes),
+    tried_before: q.tried_before || undefined,
+    not_on_list: q.not_on_list === true || q.not_on_list === '1' || q.not_on_list === 'true',
+  });
+
   app.get('/api/leads', async (req) => {
-    const q = z.object({
-      status: z.enum(['dead', 'invalid', 'appointment_set', 'callback', 'retry', 'new', 'all']).default('all'),
-      search: z.string().max(100).optional(),
-      batch_id: z.string().max(64).optional(),
-      counties: z.string().max(4000).optional(),
-      area_codes: z.string().max(400).optional(),
-    }).parse(req.query);
-    const group = groupWhere('l.county_key', { counties: parseList(q.counties), areaCodes: parseList(q.area_codes) });
-    const search = searchWhere(q.search);
-    return db
+    const w = leadFilterWhere(toFilter(leadFilter.parse(req.query)));
+    const rows = db
       .prepare(
         `SELECT l.id, l.first_name, l.last_name, l.phone_e164, l.state, l.city, l.county, b.name batch_name, s.status, s.attempts_total,
                 s.last_call_at, s.last_outcome_code, s.next_due_at
          FROM lead l JOIN lead_state s ON s.lead_id = l.id JOIN import_batch b ON b.id = l.batch_id
-         WHERE (@status = 'all' OR s.status = @status) AND (@batch IS NULL OR l.batch_id = @batch)
-           AND ${group.sql} AND ${search.sql}
+         WHERE ${w.sql}
          ORDER BY coalesce(s.last_call_at, l.created_at) DESC LIMIT 500`,
       )
-      .all({ status: q.status, batch: q.batch_id ?? null, ...group.params, ...search.params });
+      .all(w.params) as any[];
+    const total = (db.prepare(`SELECT COUNT(*) n FROM lead l JOIN lead_state s ON s.lead_id = l.id WHERE ${w.sql}`).get(w.params) as { n: number }).n;
+    const listed = onCallList(db, rows.map((r) => r.id));
+    return { rows: rows.map((r) => ({ ...r, on_list: listed.has(r.id) })), total };
+  });
+
+  // ---------- the call list ----------
+  app.get('/api/call-list', async () => ({ items: getCallList(db), recent: recentOutcomes(db) }));
+  app.post('/api/call-list', async (req) => {
+    const b = z.object({ lead_ids: z.array(z.string().max(64)).max(20_000) }).parse(req.body);
+    return addToCallList(db, b.lead_ids);
+  });
+  app.post('/api/call-list/add-matching', async (req) => addMatchingToCallList(db, toFilter(leadFilter.parse(req.body ?? {}))));
+  app.post('/api/call-list/clear-worked', async () => ({ removed: clearWorked(db) }));
+  app.post('/api/call-list/:leadId/skip', async (req) => {
+    const { leadId } = z.object({ leadId: z.string().max(64) }).parse(req.params);
+    if (!moveToBottom(db, leadId)) throw new DomainError('that lead is not on the call list', 404);
+    return { ok: true };
+  });
+  app.delete('/api/call-list/:leadId', async (req) => {
+    const { leadId } = z.object({ leadId: z.string().max(64) }).parse(req.params);
+    removeFromCallList(db, leadId);
+    return { ok: true };
   });
 
   // The PDF a batch was imported from (kept as "<batch id>-<file name>" in the imports folder).
@@ -463,6 +499,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
           lead_age_label: z.string().max(100).nullish(),
           notes: z.string().max(2000).nullish(),
         }),
+        add_to_call_list: z.boolean().optional(),
       })
       .parse(req.body);
     const { u, s } = sheetOf(b.upload_id, b.sheet);
@@ -471,7 +508,8 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     const safe = u.parsed.fileName.replace(/[^\w.\- ]/g, '_');
     fs.writeFileSync(path.join(config.importsDir, `${result.batchId}-${safe}`), u.buf, { mode: 0o600 });
     uploads.delete(b.upload_id);
-    return { batch_id: result.batchId, summary: result.summary };
+    const call_list = b.add_to_call_list ? addBatchToCallList(db, result.batchId) : null;
+    return { batch_id: result.batchId, summary: result.summary, call_list };
   });
 
   app.get('/api/imports', async () =>

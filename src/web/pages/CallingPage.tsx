@@ -1,27 +1,14 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import { callbackFields, describeCallback, differentZone, readCallback } from '../when';
-import { api, personAge, fmtMoney, fmtPhone, fmtRelative, newKey, type LeadDetail, type QueueResponse, type QueueItem } from '../api';
+import { api, personAge, fmtMoney, fmtPhone, fmtRelative, fmtDateTime, newKey, type LeadDetail, type CallListItem, type CallListResponse, type RecentOutcome } from '../api';
 import { useApp } from '../App';
 import { LeadSummary, CallHistory, Notes, StatusBadge } from '../components/LeadView';
 import { EditLead } from '../components/EditLead';
 import { LeadPage } from '../components/LeadPage';
 import { DialQr } from '../components/DialQr';
-import { GroupPicker, useGroups } from '../components/GroupPicker';
 import { fillScript, isAction, isTyping, keyLabel, normKey, type KeyMap } from '../shortcuts';
 
-const BUCKETS: { key: QueueItem['bucket'] | 'all'; label: string }[] = [
-  { key: 'all', label: 'All' },
-  { key: 'callback_due', label: 'Callbacks due' },
-  { key: 'new', label: 'New' },
-  { key: 'retry', label: 'Retry' },
-];
-
 const SELECTED_KEY = 'mpcrm.selectedLead';
-/** Before: one list. Now: your last few lists, one per tab/search/group choice, so switching back finds it as you left it. */
-const OLD_LIST_KEY = 'mpcrm.worklist';
-const LISTS_KEY = 'mpcrm.worklists';
-const KEEP_LISTS = 6;
-const BUCKET_KEY = 'mpcrm.calling.bucket';
 /** A lead opened outside the list (looked up for an incoming call, or from Today), and where to go back to. */
 export const OPENED_KEY = 'mpcrm.openedLead';
 const LAST_NUMBER_KEY = 'mpcrm.lastNumber';
@@ -72,42 +59,8 @@ interface Saved {
   tz: string | null;
 }
 
-/**
- * Your working list: the queue as it was when you started (or last refreshed), in a fixed order.
- * Worked leads stay in it, greyed out, so you see the list go down as you go.
- */
-interface WorkItem extends QueueItem {
-  done?: { label: string; dials: number } | null;
-  /** A callback that came due while you were calling, added to the top. */
-  due_now?: boolean;
-}
-interface WorkList {
-  key: string;
-  items: WorkItem[];
-  built_at: string;
-}
-
-function loadLists(): WorkList[] {
-  try {
-    const ls = JSON.parse(store(LISTS_KEY) ?? 'null') as WorkList[] | null;
-    if (Array.isArray(ls)) return ls.filter((l) => l && typeof l.key === 'string' && Array.isArray(l.items));
-    const old = JSON.parse(store(OLD_LIST_KEY) ?? 'null') as WorkList | null;
-    return old && Array.isArray(old.items) ? [old] : [];
-  } catch {
-    return [];
-  }
-}
-
-function loadList(key: string): WorkList | null {
-  return loadLists().find((l) => l.key === key) ?? null;
-}
-
-/** Saves this list as the most recent one, keeping a few others. */
-function saveList(l: WorkList) {
-  const rest = loadLists().filter((x) => x.key !== l.key);
-  store(LISTS_KEY, JSON.stringify([l, ...rest].slice(0, KEEP_LISTS)));
-  store(OLD_LIST_KEY, null);
-}
+/** A lead on your call list. The list is kept by the app; it only changes when you add, skip, remove or clear. */
+type WorkItem = CallListItem;
 
 interface Opened {
   leadId: string;
@@ -124,28 +77,11 @@ function loadOpened(): Opened | null {
   }
 }
 
-const BUCKET_KEYS = new Set<string>(BUCKETS.map((b) => b.key));
-
 export function CallingPage() {
   const { toast, keys, calling, bumpStats } = useApp();
   const settings = calling?.settings;
-  const [bucket, setBucketState] = useState<QueueItem['bucket'] | 'all'>(() => {
-    const b = store(BUCKET_KEY);
-    return b && BUCKET_KEYS.has(b) ? (b as QueueItem['bucket'] | 'all') : 'all';
-  });
-  const setBucket = (b: QueueItem['bucket'] | 'all') => {
-    setBucketState(b);
-    store(BUCKET_KEY, b);
-  };
-  const [search, setSearch] = useState('');
-  const [debounced, setDebounced] = useState('');
-  const [counts, setCounts] = useState<QueueResponse['counts'] | null>(null);
-  const [waitingLater, setWaitingLater] = useState(0);
-  /** Leads in the queue that aren't in your list yet (new imports, retries come due). */
-  const [more, setMore] = useState(0);
-  const [groups, setGroups, groupParams] = useGroups();
-  const listKey = JSON.stringify({ bucket, search: debounced, ...groupParams });
-  const [list, setListState] = useState<WorkList | null>(() => loadList(listKey));
+  const { go } = useApp();
+  const [list, setListState] = useState<CallListResponse | null>(null);
   const [selected, setSelected] = useState<string | null>(store(SELECTED_KEY));
   const [opened, setOpenedState] = useState<Opened | null>(loadOpened);
   const setOpened = (o: Opened | null) => {
@@ -160,27 +96,13 @@ export function CallingPage() {
   const [showScript, setShowScript] = useState(store(SCRIPT_KEY) === '1');
   const [editing, setEditing] = useState(false);
   const [qr, setQr] = useState<string | null>(null);
-  const searchRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
   /** After a save or skip with KDE Connect: the next lead's number goes to your phone once that lead is shown. */
   const autoSend = useRef<string | null>(null);
 
-  useEffect(() => {
-    const t = setTimeout(() => setDebounced(search.trim()), 250);
-    return () => clearTimeout(t);
-  }, [search]);
-
-  const setList = useCallback((l: WorkList) => {
-    setListState(l);
-    saveList(l);
-  }, []);
+  /** Local change shown at once (a lead just worked), until the list comes back from the app. */
   const updateList = useCallback((f: (items: WorkItem[]) => WorkItem[]) => {
-    setListState((l) => {
-      if (!l) return l;
-      const next = { ...l, items: f(l.items) };
-      saveList(next);
-      return next;
-    });
+    setListState((l) => (l ? { ...l, items: f(l.items) } : l));
   }, []);
 
   const select = (id: string | null) => {
@@ -188,67 +110,37 @@ export function CallingPage() {
     store(SELECTED_KEY, id);
   };
 
-  const fetchQueue = useCallback(async () => {
+  const loadList = useCallback(async () => {
     try {
-      const q = await api.get<QueueResponse>('/queue', {
-        bucket: bucket === 'all' ? undefined : bucket,
-        search: debounced,
-        limit: '2000',
-        ...groupParams,
-      });
-      setCounts(q.counts);
-      setWaitingLater(q.waiting_later);
-      return q;
+      setListState(await api.get<CallListResponse>('/call-list'));
     } catch (e: any) {
       toast(e.message, 'error');
-      return null;
     }
-  }, [bucket, debounced, groupParams.counties, groupParams.area_codes, toast]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [toast]);
+  useEffect(() => void loadList(), [loadList]);
 
-  /** Builds a fresh working list from the queue. Worked leads drop out; leads due again come in. */
-  const rebuild = useCallback(async () => {
-    const q = await fetchQueue();
-    if (!q) return;
-    const l: WorkList = { key: listKey, items: q.items, built_at: new Date().toISOString() };
-    setList(l);
-    setMore(0);
-    const keep = selected && l.items.some((i) => i.lead_id === selected);
-    if (!keep) select(l.items[0]?.lead_id ?? null);
-  }, [fetchQueue, listKey, selected, setList]); // eslint-disable-line react-hooks/exhaustive-deps
+  const clearWorked = async () => {
+    try {
+      const r = await api.post<{ removed: number }>('/call-list/clear-worked', {});
+      toast(`Cleared ${r.removed} worked lead${r.removed === 1 ? '' : 's'}`);
+      await loadList();
+    } catch (e: any) {
+      toast(e.message, 'error');
+    }
+  };
 
-  /**
-   * Adds callbacks that came due since the list was built, at the top. When everything in the list is worked,
-   * the rest of the queue (new imports, retries come due) is added below, so the crossed-out leads stay.
-   */
-  const mergeDue = useCallback(async () => {
-    const q = await fetchQueue();
-    if (!q) return;
-    updateList((items) => {
-      const have = new Set(items.map((i) => i.lead_id));
-      const due = q.items.filter((i) => i.bucket === 'callback_due' && !have.has(i.lead_id));
-      const rest = q.items.filter((i) => !have.has(i.lead_id) && !due.includes(i));
-      const allWorked = !items.some((i) => !i.done);
-      setMore(allWorked ? 0 : rest.length);
-      if (!due.length && !(allWorked && rest.length)) return items;
-      return [...due.map((i) => ({ ...i, due_now: true })), ...items, ...(allWorked ? rest : [])];
-    });
-  }, [fetchQueue, updateList]);
-
-  // A new filter, tab or search makes a new list; the same one is kept, crossed-out leads and all,
-  // across page changes, refreshes and switching back. Only "Refresh list" clears the worked leads out.
-  useEffect(() => {
-    const stored = loadList(listKey);
-    if (stored) {
-      setListState(stored);
-      saveList(stored);
-      void mergeDue();
-    } else void rebuild();
-  }, [listKey]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  useEffect(() => {
-    const t = setInterval(() => void mergeDue(), 60_000);
-    return () => clearInterval(t);
-  }, [mergeDue]);
+  const remove = async (id: string) => {
+    try {
+      await api.del(`/call-list/${id}`);
+      if (selected === id) {
+        const n = items.find((i) => i.lead_id !== id && !i.done);
+        select(n?.lead_id ?? null);
+      }
+      await loadList();
+    } catch (e: any) {
+      toast(e.message, 'error');
+    }
+  };
 
   const loadDetail = useCallback(async (id: string | null) => {
     if (!id) return setDetail(null);
@@ -299,11 +191,10 @@ export function CallingPage() {
   useEffect(() => {
     const f = (e: Event) => {
       openOutside((e as CustomEvent<string>).detail);
-      void mergeDue();
     };
     window.addEventListener('mpcrm:open-lead', f);
     return () => window.removeEventListener('mpcrm:open-lead', f);
-  }, [mergeDue, openOutside]);
+  }, [openOutside]);
 
   const items = list?.items ?? [];
   const idx = items.findIndex((i) => i.lead_id === selected);
@@ -350,7 +241,7 @@ export function CallingPage() {
     const n = nextUnworked();
     if (send) queueAutoSend(n);
     if (n) pick(n.lead_id);
-    else toast('You\'ve worked the whole list. Press "Refresh list" to load more.');
+    else toast('You\'ve worked the whole list. Clear the worked leads, or add more from Leads.');
   }, [nextUnworked, toast, settings, opened]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const move = useCallback(
@@ -363,19 +254,23 @@ export function CallingPage() {
   );
 
   const markDone = (leadId: string, done: WorkItem['done']) =>
-    updateList((xs) => xs.map((i) => (i.lead_id === leadId ? { ...i, done, due_now: false } : i)));
+    updateList((xs) => xs.map((i) => (i.lead_id === leadId ? { ...i, done } : i)));
 
+  /** Skip: the lead goes to the bottom of the list and you move on to the next one. */
   const skip = useCallback(async () => {
     if (!selected) return;
+    if (idx < 0) return backToList();
+    const n = nextUnworked();
     try {
-      await api.post(`/leads/${selected}/actions`, { action: 'skip' });
+      await api.post(`/call-list/${selected}/skip`, {});
     } catch (e: any) {
       toast(`Couldn't skip: ${e.message}`, 'error');
       return;
     }
-    markDone(selected, { label: 'Skipped', dials: 0 });
-    goNext(true);
-  }, [selected, goNext, toast]); // eslint-disable-line react-hooks/exhaustive-deps
+    queueAutoSend(n);
+    if (n && n.lead_id !== selected) pick(n.lead_id);
+    await loadList();
+  }, [selected, idx, nextUnworked, toast, loadList]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const dial = useCallback(
     async (e164: string | null | undefined) => {
@@ -432,6 +327,7 @@ export function CallingPage() {
       // The clock on this lead carries on from where it was when you saved.
       setAttempt({ dials: r.dial_count, timerStart: null, to: null, shownAt: Date.now() - (r.lead_seconds ?? 0) * 1000 });
       markDone(s.leadId, null);
+      void loadList();
       // A looked-up lead outside the list comes back as one, so the list stays as it is.
       if (!items.some((i) => i.lead_id === s.leadId)) setOpened({ leadId: s.leadId, backTo: selected });
       select(s.leadId);
@@ -459,7 +355,7 @@ export function CallingPage() {
       else if (act('list_up')) { e.preventDefault(); move(-1); }
       else if (act('next')) { e.preventDefault(); goNext(); }
       else if (act('skip')) { e.preventDefault(); void skip(); }
-      else if (act('search')) { e.preventDefault(); searchRef.current?.focus(); }
+      else if (act('search')) { e.preventDefault(); lookupRef.current?.focus(); }
       else if (act('lookup')) { e.preventDefault(); lookupRef.current?.focus(); }
       else if (act('note')) { e.preventDefault(); document.getElementById('note-input')?.focus(); }
       else if (act('dial')) { e.preventDefault(); void dial(phoneNow); }
@@ -479,7 +375,7 @@ export function CallingPage() {
   }, [keys, move, goNext, skip, dial, undo, detail, modalOpen, ready, phoneNow, otherPhone, toast]);
 
   const refreshDetail = async () => {
-    await loadDetail(selected);
+    await Promise.all([loadDetail(selected), loadList()]);
   };
 
   // Enter saves and moves straight on; the undo bar (or Z) brings you back.
@@ -492,22 +388,17 @@ export function CallingPage() {
     // A looked-up lead (an incoming call): back to where you were in the list, nothing sent to the phone.
     if (opened?.leadId === s.leadId) {
       backToList();
-      void mergeDue();
+      void loadList();
       return;
     }
     const n = items.slice(Math.max(0, items.findIndex((i) => i.lead_id === s.leadId)) + 1).find((i) => !i.done && i.lead_id !== s.leadId)
       ?? items.find((i) => !i.done && i.lead_id !== s.leadId);
     queueAutoSend(n);
     if (n) select(n.lead_id);
-    else {
-      toast('That was the last lead in your list. Press "Refresh list" to load more.');
-      await refreshDetail();
-    }
-    void mergeDue();
+    else await refreshDetail();
+    void loadList();
   };
 
-  const gap = settings?.retry_gap_minutes ?? 240;
-  const gapText = gap === 0 ? 'right away' : gap % 60 === 0 ? `${gap / 60} h` : `${gap} min`;
   const k = (a: keyof KeyMap['actions']) => keyLabel(keys.actions[a]?.[0] ?? '');
   const dialLabel = settings?.dial_method === 'qr' ? 'Show QR' : settings?.dial_method === 'kdeconnect' ? 'Dial on phone' : 'Copy number';
 
@@ -515,36 +406,31 @@ export function CallingPage() {
     <div className="calling">
       <section className="panel" aria-label="Queue">
         <header>
-          <input
-            ref={searchRef}
-            placeholder={`Search name, county, phone or area code  ( ${k('search')} )`}
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            onKeyDown={(e) => e.key === 'Escape' && (setSearch(''), (e.target as HTMLInputElement).blur())}
-            style={{ width: '100%' }}
-            title="A 3-digit number finds every county under that area code"
-          />
-          <GroupPicker groups={groups} onChange={setGroups} />
-          <div className="tabs" title={`Order: due callbacks, new leads (newest batch first), then retries ${gapText} after the last attempt (change this in Settings). Skipped leads drop to the end for today.`}>
-            {BUCKETS.map((b) => (
-              <button key={b.key} className={bucket === b.key ? 'active' : ''} onClick={() => setBucket(b.key)}>
-                {b.label}
-                {b.key !== 'all' && counts ? ` ${counts[b.key]}` : ''}
-              </button>
-            ))}
-          </div>
           <div className="row list-head">
-            <span><b>{left}</b> to go · {items.length - left} done</span>
-            <button className="btn small" onClick={() => void rebuild()} title="Load the queue again: worked leads leave the list, and leads due again come in">
-              Refresh list{more > 0 ? ` (+${more})` : ''}
-            </button>
+            <span><b>{left}</b> to call · {items.length - left} done</span>
+            {items.length - left > 0 && (
+              <button className="btn small" onClick={() => void clearWorked()} title="Take the worked leads off the list. Their calls stay in Call history.">
+                Clear worked
+              </button>
+            )}
+            <button className="btn small" onClick={() => go('leads')} title="Pick leads to call on the Leads page">Add leads</button>
           </div>
         </header>
         <div className="body">
+          {list && items.length > 0 && left === 0 && (
+            <div className="list-done" role="status">
+              <b>List done.</b> Every lead on it has been worked.
+              <button className="btn small primary" onClick={() => void clearWorked()}>Clear worked leads</button>
+            </div>
+          )}
           {!list ? null : items.length === 0 ? (
             <div className="empty">
-              Nothing to call right now.
-              {waitingLater > 0 && <div>{waitingLater} lead(s) are waiting for a later callback or retry time.</div>}
+              Your call list is empty.
+              <div className="help">Pick leads on the Leads page, or import a file. New imports go straight onto this list.</div>
+              <div className="row" style={{ justifyContent: 'center', marginTop: 8 }}>
+                <button className="btn small primary" onClick={() => go('leads')}>Go to Leads</button>
+                <button className="btn small" onClick={() => go('import')}>Import</button>
+              </div>
             </div>
           ) : (
             <ul className="queue-list" ref={listRef}>
@@ -552,29 +438,37 @@ export function CallingPage() {
                 <li
                   key={i.lead_id}
                   data-lead={i.lead_id}
-                  className={`${selected === i.lead_id ? 'selected' : ''} ${i.done ? 'done' : ''} ${i.skipped_today ? 'skipped' : ''}`}
+                  className={`${selected === i.lead_id ? 'selected' : ''} ${i.done ? 'done' : ''}`}
                   onClick={() => pick(i.lead_id)}
                 >
                   <span className="name">{i.name}</span>
-                  {i.done ? (
-                    <span className="badge done">{i.done.label}{i.done.dials > 1 ? ` · ${i.done.dials} dials` : ''}</span>
-                  ) : (
-                    <span className={`badge ${i.bucket}`}>
-                      {i.due_now ? 'due now' : i.bucket === 'callback_due' ? (i.needs_time ? 'callback, needs a time' : i.any_time ? 'callback, any time' : 'callback') : i.bucket}
-                    </span>
-                  )}
+                  <span className="row" style={{ gap: 4 }}>
+                    {i.done ? (
+                      <span className="badge done">{i.done.label}{i.done.dials > 1 ? ` · ${i.done.dials} dials` : ''}</span>
+                    ) : i.status === 'callback' ? (
+                      <span className="badge callback" title="A callback you set for this lead">{i.callback_due_at ? `callback ${fmtDateTime(i.callback_due_at)}` : 'callback'}</span>
+                    ) : i.attempts_total === 0 ? (
+                      <span className="badge new">new</span>
+                    ) : null}
+                    <button
+                      className="icon-btn"
+                      title="Take this lead off the list"
+                      aria-label={`Remove ${i.name} from the list`}
+                      onClick={(e) => { e.stopPropagation(); void remove(i.lead_id); }}
+                    >×</button>
+                  </span>
                   <span className="sub">
                     {fmtPhone(i.phone_e164)} · {i.county ? `${i.county} Co.` : i.state ?? '?'} · {i.attempts_total ? `${i.attempts_total} attempt${i.attempts_total > 1 ? 's' : ''}, last ${fmtRelative(i.last_call_at)}` : 'never called'}
-                    {i.skipped_today && !i.done && ' · skipped'}
                   </span>
                 </li>
               ))}
             </ul>
           )}
+          {list && list.recent.length > 0 && <Recent items={list.recent} onOpen={openOutside} />}
         </div>
         <header style={{ borderTop: '1px solid var(--border)', borderBottom: 0 }}>
           <span className="help">
-            <kbd>{k('list_up')}</kbd><kbd>{k('list_down')}</kbd> move <kbd>{k('skip')}</kbd> skip <kbd>{k('search')}</kbd> search <kbd>{k('dial')}</kbd> {dialLabel.toLowerCase()} <kbd>{k('dial_alt')}</kbd> other number{' '}
+            <kbd>{k('list_up')}</kbd><kbd>{k('list_down')}</kbd> move <kbd>{k('skip')}</kbd> skip to the bottom <kbd>{k('dial')}</kbd> {dialLabel.toLowerCase()} <kbd>{k('dial_alt')}</kbd> other number{' '}
             <kbd>{k('dials_down')}</kbd><kbd>{k('dials_up')}</kbd> dials <kbd>Enter</kbd> save and next <kbd>{k('undo')}</kbd> undo <kbd>{k('note')}</kbd> note{' '}
             <kbd>{k('edit')}</kbd> edit <kbd>{k('script')}</kbd> script <kbd>{k('lookup')}</kbd> look up a caller
           </span>
@@ -667,7 +561,7 @@ function CallerLookup({ inputRef, hotkey, onOpen }: { inputRef: RefObject<HTMLIn
     const n = ++seq.current;
     const t = setTimeout(async () => {
       try {
-        const r = await api.get<LookupRow[]>('/leads', { search: digits.length >= 4 ? digits : s });
+        const r = (await api.get<{ rows: LookupRow[] }>('/leads', { search: digits.length >= 4 ? digits : s })).rows;
         if (n === seq.current) {
           setRows(r.slice(0, 8));
           setHi(0);
@@ -1046,4 +940,23 @@ export function otherNumber(d: LeadDetail): string | null {
   const blocked: string[] = d.state?.blocked_phones_json ? JSON.parse(d.state.blocked_phones_json) : [];
   const now = d.state?.active_phone_e164 ?? d.lead.phone_e164;
   return [d.lead.phone_e164, d.lead.phone2_e164, d.lead.phone3_e164].find((p) => p && p !== now && !blocked.includes(p)) ?? null;
+}
+
+/** The last outcomes you set, newest first: click one to open that lead and fix it, even after clearing the list. */
+function Recent({ items, onOpen }: { items: RecentOutcome[]; onOpen: (id: string) => void }) {
+  return (
+    <details className="recent" open>
+      <summary>Recent outcomes</summary>
+      <ul>
+        {items.map((r) => (
+          <li key={r.call_id}>
+            <button className="link" onClick={() => onOpen(r.lead_id)} title="Open this lead to check or change the outcome">
+              {r.name || '(no name)'}
+            </button>
+            <span className="muted"> · {r.label} · {fmtRelative(r.entered_at)}</span>
+          </li>
+        ))}
+      </ul>
+    </details>
+  );
 }

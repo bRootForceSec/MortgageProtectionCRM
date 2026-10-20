@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api, fmtDateTime, fmtDuration, fmtPhone } from '../api';
 import { useApp } from '../App';
-import { LeadModal } from './LeadsPage';
+import { LeadViewer } from '../components/LeadViewer';
 import { GroupPicker, useGroups } from '../components/GroupPicker';
 
 function dayRange(dateStr: string) {
@@ -66,7 +66,13 @@ export function CallsPage() {
         </tbody>
       </table>
       {rows.length === 0 && <div className="empty">No calls on this day.</div>}
-      {open && <LeadModal id={open} onClose={() => setOpen(null)} />}
+      {open && (
+        <LeadViewer
+          id={open}
+          list={rows.filter((r) => r.lead_id).map((r) => ({ id: r.lead_id, name: r.lead_name, phone: r.to_e164, county: r.county }))}
+          onClose={() => setOpen(null)}
+        />
+      )}
     </>
   );
 }

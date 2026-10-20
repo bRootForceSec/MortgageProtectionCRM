@@ -58,14 +58,17 @@ test('import a sheet, log calls by keyboard, and set a callback', async ({ page 
   await expect(page.getByRole('dialog', { name: 'Check this lead' })).toContainText('row 6');
   await page.getByRole('button', { name: 'Discard' }).click();
   await expect(page.getByRole('dialog')).toHaveCount(0);
+  // New imports go straight onto the call list (ticked by default).
+  await expect(page.getByLabel('Add these leads to the call list')).toBeChecked();
   await page.getByRole('button', { name: 'Import 4 leads' }).click();
   await expect(page.getByText('Import finished')).toBeVisible();
+  await expect(page.getByText('4 leads added to your call list')).toBeVisible();
   await page.getByRole('button', { name: 'Start calling' }).click();
 
   // Calling screen: first lead is selected and shows the phone.
   await expect(page.locator('.phone-big')).toBeVisible();
   const first = await page.locator('.lead-name').innerText();
-  await expect(page.getByLabel('Queue').locator('li')).toHaveCount(4);
+  await expect(page.getByLabel('Queue').locator('.queue-list li')).toHaveCount(4);
   await page.screenshot({ path: 'test-results/calling.png', fullPage: true });
 
   // Talked, no appt: press 2 then Enter. Enter saves and moves straight on to the next lead.
@@ -77,8 +80,8 @@ test('import a sheet, log calls by keyboard, and set a callback', async ({ page 
   const second = await page.locator('.lead-name').innerText();
   await expect(page.locator('.topbar .stats')).toContainText('Calls 1');
   // The worked lead stays in the list, greyed out.
-  await expect(page.getByLabel('Queue').locator('li')).toHaveCount(4);
-  await expect(page.getByLabel('Queue').locator('li.done')).toHaveCount(1);
+  await expect(page.getByLabel('Queue').locator('.queue-list li')).toHaveCount(4);
+  await expect(page.getByLabel('Queue').locator('.queue-list li.done')).toHaveCount(1);
 
   // Up arrow goes back to it and shows the call; down comes back.
   await page.keyboard.press('ArrowUp');
@@ -107,7 +110,7 @@ test('import a sheet, log calls by keyboard, and set a callback', async ({ page 
   await expect(page.locator('.callback-picker')).toContainText(/Fri.* at 2:00/);
   await page.keyboard.press('Enter');
   await expect(page.locator('.lead-name')).not.toHaveText(second);
-  await expect(page.getByLabel('Queue')).toContainText('2 to go · 2 done');
+  await expect(page.getByLabel('Queue')).toContainText('2 to call · 2 done');
   await page.keyboard.press('ArrowUp');
   await expect(page.getByLabel('History').getByText(/call back \w+ \d+, 2:00 PM/)).toBeVisible();
   await page.keyboard.press('ArrowDown');
@@ -115,16 +118,16 @@ test('import a sheet, log calls by keyboard, and set a callback', async ({ page 
   const current = await page.locator('.lead-name').innerText();
 
   // Refresh keeps the list and the selected lead.
-  await page.getByRole('button', { name: 'Calling' }).click();
+  await page.getByRole('button', { name: 'Calling', exact: true }).click();
   await page.reload();
   await expect(page.locator('.lead-name')).toHaveText(current);
-  await expect(page.getByLabel('Queue').locator('li.done')).toHaveCount(2);
+  await expect(page.getByLabel('Queue').locator('.queue-list li.done')).toHaveCount(2);
 });
 
 test('dial counter, undo, remapped keys, QR dialing, scripts and lead edits', async ({ page }) => {
   page.on('dialog', (d) => void d.accept());
   await page.goto(launchUrl);
-  await page.getByRole('button', { name: 'Calling' }).click();
+  await page.getByRole('button', { name: 'Calling', exact: true }).click();
   await expect(page.locator('.phone-big')).toBeVisible();
   const lead = await page.locator('.lead-name').innerText();
 
@@ -172,7 +175,7 @@ test('dial counter, undo, remapped keys, QR dialing, scripts and lead edits', as
   await expect(page.locator('.topbar .stats')).toContainText('/ 200');
   await page.screenshot({ path: 'test-results/settings.png', fullPage: true });
 
-  await page.getByRole('button', { name: 'Calling' }).click();
+  await page.getByRole('button', { name: 'Calling', exact: true }).click();
   await expect(page.locator('.lead-name')).toHaveText(next);
   await page.keyboard.press('c');
   await expect(page.getByRole('dialog', { name: 'Scan to dial' }).locator('canvas')).toBeVisible();
@@ -202,17 +205,39 @@ test('dial counter, undo, remapped keys, QR dialing, scripts and lead edits', as
   await page.keyboard.press('j');
   await expect(page.getByText(/worked the whole list/)).toBeVisible();
 
-  await page.getByRole('button', { name: 'Today' }).click();
-  await expect(page.getByRole('heading', { name: 'Today' })).toBeVisible();
+  await page.getByRole('button', { name: 'Callbacks', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Callbacks' })).toBeVisible();
+  await expect(page.getByText('Coming up (next two weeks)')).toBeVisible();
 });
 
-test('incoming call: look up a number without losing the list; worked leads stay when you come back', async ({ page }) => {
+test('clear worked leads, add more from Leads, and look up an incoming call without losing the list', async ({ page }) => {
   await page.goto(launchUrl);
-  await page.getByRole('button', { name: 'Calling' }).click();
+  await page.getByRole('button', { name: 'Calling', exact: true }).click();
   await expect(page.locator('.phone-big')).toBeVisible();
   const queue = page.getByLabel('Queue');
-  const rows = await queue.locator('li').count();
+
+  // Worked leads stay until you clear them.
+  await expect(queue.locator('.queue-list li.done')).toHaveCount(3);
+  await queue.getByRole('button', { name: 'Clear worked' }).click();
+  await expect(queue.locator('.queue-list li')).toHaveCount(1);
+  await expect(queue.locator('.queue-list li.done')).toHaveCount(0);
+
+  // Pick leads on the Leads page: everyone tried before, ticked and added to the bottom of the list.
+  await page.getByRole('button', { name: 'Leads', exact: true }).click();
+  await page.getByRole('button', { name: 'Tried', exact: true }).click();
+  await page.getByLabel('Tick every lead shown').check();
+  const add = page.getByRole('button', { name: /^Add \d+ ticked to call list$/ });
+  const n = Number((await add.innerText()).match(/\d+/)![0]);
+  expect(n).toBeGreaterThan(0);
+  await add.click();
+  await expect(page.getByText(`${n} lead${n === 1 ? '' : 's'} added to the call list`)).toBeVisible();
+  await expect(page.locator('table.grid tbody').getByText('on call list')).toHaveCount(n);
+  await page.screenshot({ path: 'test-results/leads-pick.png' });
+
+  await page.getByRole('button', { name: 'Calling', exact: true }).click();
+  await expect(queue.locator('.queue-list li')).toHaveCount(n + 1);
   const current = await page.locator('.lead-name').innerText();
+  const rows = n + 1;
 
   // L jumps to the lookup box; part of the number finds the lead, any status. Enter opens the top match.
   await page.keyboard.press('l');
@@ -222,7 +247,7 @@ test('incoming call: look up a number without losing the list; worked leads stay
   await page.keyboard.press('Enter');
   await expect(page.locator('.lead-name')).toHaveText('Robert Ray');
   await expect(page.locator('.lookup-bar')).toContainText('Your list on the left is unchanged');
-  await expect(queue.locator('li')).toHaveCount(rows);
+  await expect(queue.locator('.queue-list li')).toHaveCount(rows);
   await page.screenshot({ path: 'test-results/lookup.png', fullPage: true });
 
   // Same outcome keys as always; saving goes back to where you were in the list.
@@ -231,18 +256,18 @@ test('incoming call: look up a number without losing the list; worked leads stay
   await expect(page.locator('.undo-bar')).toContainText('Saved for Robert Ray');
   await expect(page.locator('.lead-name')).toHaveText(current);
   await expect(page.locator('.lookup-bar')).toHaveCount(0);
-  await expect(queue.locator('li')).toHaveCount(rows);
+  await expect(queue.locator('.queue-list li')).toHaveCount(rows);
 
-  // Work the current lead, then leave the tab and switch filters: the crossed-out lead is still there.
+  // Work the current lead, then leave the tab: the crossed-out lead is still there, and in Recent outcomes.
+  const doneBefore = await queue.locator('.queue-list li.done').count();
   await page.keyboard.press('1');
-  await expect(queue.locator('li.done')).toHaveCount(1);
-  await page.getByRole('button', { name: 'Today' }).click();
-  await page.getByRole('button', { name: 'Calling' }).click();
-  await expect(queue.locator('li.done')).toHaveCount(1);
-  await queue.getByRole('button', { name: /^New/ }).click();
-  await queue.getByRole('button', { name: /^All/ }).click();
-  await expect(queue.locator('li.done')).toHaveCount(1);
-  await expect(queue.locator('li.done')).toContainText(current);
+  await expect(queue.locator('.queue-list li.done')).toHaveCount(doneBefore + 1);
+  await page.getByRole('button', { name: 'Callbacks', exact: true }).click();
+  await page.getByRole('button', { name: 'Calling', exact: true }).click();
+  await expect(queue.locator('.queue-list li.done')).toHaveCount(doneBefore + 1);
+  await expect(queue.locator('.queue-list li.done', { hasText: current })).toHaveCount(1);
+  await expect(page.locator('.recent')).toContainText('Robert Ray');
+  await page.screenshot({ path: 'test-results/call-list.png' });
 });
 
 test('reports: numbers open the calls behind them', async ({ page }) => {
@@ -262,6 +287,38 @@ test('reports: numbers open the calls behind them', async ({ page }) => {
   await expect(page.getByRole('heading', { name: /By batch/ })).toBeVisible();
   await expect(page.getByRole('heading', { name: /benchmarks/ })).toBeVisible();
   await page.screenshot({ path: 'test-results/reports.png', fullPage: true });
+});
+
+test('leads open full screen like the Calling page, and step through the list', async ({ page }) => {
+  await page.goto(launchUrl);
+  await page.getByRole('button', { name: 'Leads', exact: true }).click();
+  const rows = page.locator('table.grid tbody tr');
+  await expect(rows.first()).toBeVisible();
+  const first = (await rows.nth(0).locator('td').nth(1).innerText()).trim();
+  const second = (await rows.nth(1).locator('td').nth(1).innerText()).trim();
+  await rows.first().click();
+
+  const viewer = page.getByRole('dialog', { name: 'Lead' });
+  await expect(viewer).toBeVisible();
+  await expect(viewer.locator('.lead-name')).toHaveText(first);
+  await expect(viewer.getByLabel('Lead list').locator('.queue-list li.selected')).toContainText(first);
+  // The page the lead came from, with the same zoom tools as Calling; no outcome buttons.
+  await expect(viewer.getByLabel('Lead page').getByRole('button', { name: 'Zoom in' })).toBeVisible();
+  await expect(viewer.locator('.outcomes')).toHaveCount(0);
+  await page.screenshot({ path: 'test-results/lead-viewer.png' });
+
+  await page.keyboard.press('ArrowDown');
+  await expect(viewer.locator('.lead-name')).toHaveText(second);
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+
+  // Call now takes the lead to the Calling page.
+  await rows.nth(1).click();
+  await expect(viewer.locator('.lead-name')).toHaveText(second);
+  const callNow = viewer.getByRole('button', { name: 'Call now' });
+  await callNow.click();
+  await expect(page.getByLabel('Queue')).toBeVisible();
+  await expect(page.getByLabel('Current lead').locator('.lead-name')).toHaveText(second);
 });
 
 test('API refuses requests without the access cookie', async ({ request }) => {

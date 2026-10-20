@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { api, fmtDateTime, fmtMoney, fmtPhone } from '../api';
 import { useApp } from '../App';
 import { GroupPicker, useGroups } from '../components/GroupPicker';
-import { LeadModal } from './LeadsPage';
+import { LeadViewer, type ViewerItem } from '../components/LeadViewer';
 
 // Your numbers: activity, by hour, best time to call, by county, by batch, and against the flier's benchmarks.
 // Every number opens the calls or leads behind it.
@@ -66,7 +66,7 @@ export function ReportsPage() {
   const [groups, setGroups, groupParams] = useGroups();
   const [r, setR] = useState<Report | null>(null);
   const [drill, setDrill] = useState<Drill | null>(null);
-  const [open, setOpen] = useState<string | null>(null);
+  const [open, setOpen] = useState<{ id: string; list: ViewerItem[] } | null>(null);
   const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
   const { from, to } = rangeFor(range, custom);
   const params = useMemo(
@@ -199,8 +199,8 @@ export function ReportsPage() {
 
       {r && <Benchmarks r={r} N={N} onSaved={load} />}
 
-      {drill && <DrillModal params={params} drill={drill} onClose={() => setDrill(null)} onOpen={setOpen} />}
-      {open && <LeadModal id={open} onClose={() => setOpen(null)} />}
+      {drill && <DrillModal params={params} drill={drill} onClose={() => setDrill(null)} onOpen={(id, list) => setOpen({ id, list })} />}
+      {open && <LeadViewer id={open.id} list={open.list} onClose={() => setOpen(null)} />}
     </>
   );
 }
@@ -328,12 +328,15 @@ function Benchmarks({ r, N, onSaved }: { r: Report; N: any; onSaved: () => void 
   );
 }
 
-function DrillModal({ params, drill, onClose, onOpen }: { params: Record<string, string>; drill: Drill; onClose: () => void; onOpen: (id: string) => void }) {
+function DrillModal({ params, drill, onClose, onOpen }: { params: Record<string, string>; drill: Drill; onClose: () => void; onOpen: (id: string, list: ViewerItem[]) => void }) {
   const { toast } = useApp();
   const [d, setD] = useState<{ kind: 'calls' | 'leads'; rows: any[] } | null>(null);
   useEffect(() => {
     api.get<any>('/reports/drill', { ...params, section: drill.section, key: drill.key, metric: drill.metric }).then(setD).catch((e) => toast(e.message, 'error'));
   }, [params, drill, toast]);
+  /** The leads behind this number, so the lead view can step through them. */
+  const viewerList = (): ViewerItem[] =>
+    (d?.rows ?? []).map((r) => ({ id: r.lead_id, name: r.lead_name || '(no name)', status: r.status ?? null, phone: r.phone_e164 ?? r.to_e164, county: r.county }));
   useEffect(() => {
     const k = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
     window.addEventListener('keydown', k);
@@ -349,7 +352,7 @@ function DrillModal({ params, drill, onClose, onOpen }: { params: Record<string,
               <thead><tr><th>Time</th><th>Lead</th><th>County</th><th>To</th><th>Caller ID</th><th>Outcome</th><th>Dials</th><th>Talk</th></tr></thead>
               <tbody>
                 {d.rows.map((c) => (
-                  <tr key={c.id} className="click" onClick={() => onOpen(c.lead_id)}>
+                  <tr key={c.id} className="click" onClick={() => onOpen(c.lead_id, viewerList())}>
                     <td>{c.time_known ? fmtDateTime(c.requested_at) : <span className="muted">from sheet, on or before {new Date(c.requested_at).toLocaleDateString()}</span>}</td>
                     <td>{c.lead_name}</td><td>{c.county ?? ''}</td><td>{fmtPhone(c.to_e164)}</td><td>{c.from_label ?? ''}</td>
                     <td>{c.outcome ?? 'no outcome'}</td><td>{c.dials}</td><td>{c.talk_seconds ? `${Math.round(c.talk_seconds / 60)} min` : ''}</td>
@@ -363,7 +366,7 @@ function DrillModal({ params, drill, onClose, onOpen }: { params: Record<string,
               <thead><tr><th>Lead</th><th>Phone</th><th>County</th><th>Batch</th><th>Type</th><th>Price</th><th>Status</th><th>Attempts</th></tr></thead>
               <tbody>
                 {d.rows.map((l) => (
-                  <tr key={l.lead_id} className="click" onClick={() => onOpen(l.lead_id)}>
+                  <tr key={l.lead_id} className="click" onClick={() => onOpen(l.lead_id, viewerList())}>
                     <td>{l.lead_name || '(no name)'}</td><td>{fmtPhone(l.phone_e164)}</td><td>{l.county ?? ''}</td><td>{l.batch_name}</td>
                     <td>{l.lead_type ?? ''}</td><td>{fmtMoney(l.price_cents)}</td><td>{l.status?.replace('_', ' ') ?? ''}</td><td>{l.attempts_total}</td>
                   </tr>

@@ -4,7 +4,9 @@ import { useApp } from '../App';
 import { todayRange, type Agenda, type AgendaItem } from '../components/CallbackAlerts';
 import { GroupPicker, useGroups } from '../components/GroupPicker';
 
-// Today's callbacks, in your time and the lead's time. Appointments are followed up in Unitrust.
+// Callbacks: the ones you missed, today's, and the next two weeks, in your time and the lead's time.
+// They're kept apart from the call list: Open shows the lead on the Calling page without changing your list.
+// Appointments are followed up in Unitrust.
 
 function theirTime(iso: string | null | undefined, tz: string | null) {
   if (!iso || !tz) return '';
@@ -20,7 +22,7 @@ export function TodayPage() {
   const [a, setA] = useState<Agenda | null>(null);
   const [groups, setGroups, groupParams] = useGroups();
   useEffect(() => {
-    const load = () => api.get<Agenda>('/agenda', { ...todayRange(), ...groupParams }).then(setA).catch((e) => toast(e.message, 'error'));
+    const load = () => api.get<Agenda>('/agenda', { from: todayRange().from, to: new Date(Date.parse(todayRange().to) + 14 * 86_400_000).toISOString(), ...groupParams }).then(setA).catch((e) => toast(e.message, 'error'));
     void load();
     const t = setInterval(load, 60_000);
     return () => clearInterval(t);
@@ -28,10 +30,12 @@ export function TodayPage() {
   if (!a) return null;
   const now = new Date().toISOString();
   const startOfToday = new Date(new Date().setHours(0, 0, 0, 0)).toISOString();
-  const anyTimeToday = (c: AgendaItem) => !!c.any_time && !!c.due_at && c.due_at >= startOfToday;
+  const anyTimeToday = (c: AgendaItem) => !!c.any_time && !!c.due_at && c.due_at >= startOfToday && c.due_at < todayRange().to;
   const anyTime = a.callbacks.filter(anyTimeToday);
   const overdue = a.callbacks.filter((c) => c.due_at && c.due_at < now && !anyTimeToday(c));
-  const later = a.callbacks.filter((c) => c.due_at && c.due_at >= now && !anyTimeToday(c));
+  const endOfToday = todayRange().to;
+  const later = a.callbacks.filter((c) => c.due_at && c.due_at >= now && c.due_at < endOfToday && !anyTimeToday(c));
+  const comingUp = a.callbacks.filter((c) => c.due_at && c.due_at >= endOfToday);
   const noTime = a.callbacks.filter((c) => !c.due_at);
 
   const Row = ({ i, at }: { i: AgendaItem; at: string | null | undefined }) => (
@@ -64,15 +68,16 @@ export function TodayPage() {
   return (
     <div className="card">
       <div className="row" style={{ justifyContent: 'space-between' }}>
-        <h2>Today</h2>
+        <h2>Callbacks</h2>
         <GroupPicker groups={groups} onChange={setGroups} />
       </div>
-      {empty && <p className="muted">No callbacks today.</p>}
+      {empty && <p className="muted">No callbacks set.</p>}
       <Section title="Callbacks you missed" items={overdue} />
       <Section title="Callbacks any time today" items={anyTime} />
       <Section title="Callbacks later today" items={later} />
       <Section title="Callbacks that need a time" items={noTime} />
-      <p className="help">You get a desktop alert and a sound when a callback with a time comes due, while the app is open. Change that in Settings. Appointments are followed up in Unitrust.</p>
+      <Section title="Coming up (next two weeks)" items={comingUp} />
+      <p className="help">Callbacks stay off your call list; Open shows the lead on the Calling page beside your list. You get a desktop alert and a sound when a callback with a time comes due, while the app is open. Change that in Settings. Appointments are followed up in Unitrust.</p>
     </div>
   );
 }

@@ -3,7 +3,7 @@ import { api, fmtDateTime, fmtDob, fmtDuration, fmtMoney, fmtPhone, fullName, lo
 import { useApp } from '../App';
 
 const STATUS_LABEL: Record<string, string> = {
-  new: 'New', retry: 'Retry', callback: 'Callback', appointment_set: 'Appointment set', invalid: 'Bad number', dead: 'Dead lead',
+  new: 'New', retry: 'Tried', callback: 'Callback', appointment_set: 'Appointment set', invalid: 'Bad number', dead: 'Dead lead',
 };
 
 function leadAge(iso: string | null | undefined) {

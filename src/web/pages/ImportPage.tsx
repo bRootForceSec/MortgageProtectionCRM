@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { api, ApiError, fmtDateTime, fmtMoney, fmtPhone } from '../api';
+import { api, ApiError, fmtDateTime, fmtMoney, fmtPhone, type AddResult } from '../api';
 import { useApp } from '../App';
 import { ReviewWindow } from '../components/ReviewWindow';
 import type { DraftListItem, DraftView, DraftRow, LeadType, DraftSummary } from '../importTypes';
@@ -45,7 +45,7 @@ export function useLeadTypes() {
 
 export function ImportPage() {
   const [draftId, setDraftId] = useState<string | null>(store());
-  const [done, setDone] = useState<{ batch_id: string; summary: DraftSummary } | null>(null);
+  const [done, setDone] = useState<{ batch_id: string; summary: DraftSummary; call_list?: AddResult | null } | null>(null);
   const open = (id: string | null) => {
     setDraftId(id);
     store(id);
@@ -269,7 +269,7 @@ function DraftScreen({ id, onLeave, onGone, onCommitted }: {
   id: string;
   onLeave: () => void;
   onGone: () => void;
-  onCommitted: (r: { batch_id: string; summary: DraftSummary }) => void;
+  onCommitted: (r: { batch_id: string; summary: DraftSummary; call_list?: AddResult | null }) => void;
 }) {
   const { toast } = useApp();
   const { types } = useLeadTypes();
@@ -282,6 +282,8 @@ function DraftScreen({ id, onLeave, onGone, onCommitted }: {
   const [byCounty, setByCounty] = useState('');
   const [range, setRange] = useState({ from: '', to: '' });
   const [batch, setBatch] = useState({ name: '', purchased_count: '', cost_total: '', notes: '' });
+  /** New imports go straight onto the call list unless you untick this. */
+  const [toList, setToList] = useState(true);
   const [busy, setBusy] = useState(false);
   const [problems, setProblems] = useState<string[]>([]);
 
@@ -363,7 +365,8 @@ function DraftScreen({ id, onLeave, onGone, onCommitted }: {
     setProblems([]);
     try {
       const cents = (s: string) => (s.trim() ? Math.round(Number(s.replace(/[$,]/g, '')) * 100) : null);
-      const r = await api.post<{ batch_id: string; summary: DraftSummary }>(`/drafts/${id}/commit`, {
+      const r = await api.post<{ batch_id: string; summary: DraftSummary; call_list: AddResult | null }>(`/drafts/${id}/commit`, {
+        add_to_call_list: toList,
         batch: {
           name: batch.name,
           purchased_count: batch.purchased_count ? Number(batch.purchased_count) : null,
@@ -525,6 +528,10 @@ function DraftScreen({ id, onLeave, onGone, onCommitted }: {
             ? `Leave the cost blank to use your prices: ${fmtMoney(costFromTypes)} for ${willImport.length} leads. Each lead keeps its own price, so mixed orders are costed right.`
             : 'Cost is optional. Set prices for your lead types in Settings to have it filled in.'}
         </p>
+        <label className="row" style={{ gap: 6, marginTop: 8 }}>
+          <input type="checkbox" checked={toList} onChange={(e) => setToList(e.target.checked)} />
+          Add these leads to the call list
+        </label>
         <div className="row" style={{ marginTop: 10 }}>
           <button className="btn primary" onClick={commit} disabled={busy || reading || toCheck.length > 0 || !batch.name.trim() || willImport.length === 0}>
             Import {willImport.length} lead{willImport.length === 1 ? '' : 's'}
@@ -582,16 +589,20 @@ function SummaryTiles({ s }: { s: DraftSummary }) {
   );
 }
 
-function Done({ r, onAgain }: { r: { batch_id: string; summary: DraftSummary }; onAgain: () => void }) {
+function Done({ r, onAgain }: { r: { batch_id: string; summary: DraftSummary; call_list?: AddResult | null }; onAgain: () => void }) {
   const { go } = useApp();
   return (
     <div className="card">
       <h2>Import finished</h2>
       <SummaryTiles s={r.summary} />
       <ul className="plain">{r.summary.by_county.map((c) => <li key={c.county_key ?? 'x'}>{c.county}: <b>{c.count}</b></li>)}</ul>
-      <p className="help">Link each county to the area codes you call it under in Settings, then pick counties or area codes on the Calling page.</p>
+      {r.call_list ? (
+        <p><b>{r.call_list.added}</b> lead{r.call_list.added === 1 ? '' : 's'} added to your call list.</p>
+      ) : (
+        <p className="help">These leads aren't on your call list. Add them from the Leads page (pick this batch).</p>
+      )}
       <div className="row">
-        <button className="btn primary" onClick={() => go('calling')}>Start calling</button>
+        <button className="btn primary" onClick={() => go(r.call_list ? 'calling' : 'leads')}>{r.call_list ? 'Start calling' : 'Go to Leads'}</button>
         {r.summary.total - r.summary.accepted > 0 && <a className="btn" href={`/api/imports/${r.batch_id}/problems.csv`}>Download leads not imported (CSV)</a>}
         <button className="btn" onClick={() => go('settings')}>County area codes</button>
         <button className="btn" onClick={onAgain}>Import another file</button>
