@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawn, execFile } from 'node:child_process';
+import { findClaudeCode, claudeNotFoundMessage } from './findClaude.js';
 import { promisify } from 'node:util';
 import Anthropic from '@anthropic-ai/sdk';
 import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod';
@@ -59,7 +60,9 @@ export function claudeCodeReader(command: string, model: string): PageReader {
           '--json-schema', JSON.stringify(answerJsonSchema()),
           `${PAGE_PROMPT}\n\nThe page is the file page.pdf in the current folder. Read it with the Read tool.`,
         ];
-        const out = await run(command, args, dir);
+        const found = findClaudeCode(command);
+        if (!found) throw new AiError(claudeNotFoundMessage(command));
+        const out = await run(found.file, [...found.prefix, ...args], dir, command);
         let parsed: any;
         try {
           parsed = JSON.parse(out);
@@ -77,11 +80,11 @@ export function claudeCodeReader(command: string, model: string): PageReader {
   };
 }
 
-function run(command: string, args: string[], cwd: string): Promise<string> {
+function run(file: string, args: string[], cwd: string, command: string): Promise<string> {
   return new Promise((resolve, reject) => {
     let child;
     try {
-      child = spawn(command, args, { cwd, stdio: ['ignore', 'pipe', 'pipe'] });
+      child = spawn(file, args, { cwd, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
     } catch (e) {
       reject(new AiError(`couldn't start "${command}": ${(e as Error).message}`));
       return;

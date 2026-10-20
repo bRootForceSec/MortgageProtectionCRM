@@ -4,7 +4,7 @@
   "description": "Local-first calling CRM for an independent life insurance agent",
   "scripts": {
     "dev": "concurrently -n api,web \"tsx watch src/server/main.ts\" \"vite\"",
-    "build": "tsc -p tsconfig.server.json && cp -r src/server/db/migrations dist/server/db/ && cp -r src/server/data dist/server/ && vite build && node scripts/build-info.mjs",
+    "build": "tsc -p tsconfig.server.json && node scripts/copy-assets.mjs && vite build && node scripts/build-info.mjs",
     "start": "node dist/server/main.js",
     "cli": "node dist/server/cli.js",
     "typecheck": "tsc -p tsconfig.server.json --noEmit && tsc -p tsconfig.web.json --noEmit",
