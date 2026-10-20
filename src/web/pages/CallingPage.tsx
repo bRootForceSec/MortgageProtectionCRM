@@ -6,6 +6,7 @@ import { LeadSummary, CallHistory, Notes, StatusBadge } from '../components/Lead
 import { EditLead } from '../components/EditLead';
 import { LeadPage } from '../components/LeadPage';
 import { DialQr } from '../components/DialQr';
+import { ClearListDialog, SavedListsDialog, suggestListName } from '../components/CallListDialogs';
 import { fillScript, isAction, isTyping, keyLabel, normKey, type KeyMap } from '../shortcuts';
 
 const SELECTED_KEY = 'mpcrm.selectedLead';
@@ -96,6 +97,7 @@ export function CallingPage() {
   const [showScript, setShowScript] = useState(store(SCRIPT_KEY) === '1');
   const [editing, setEditing] = useState(false);
   const [qr, setQr] = useState<string | null>(null);
+  const [listDialog, setListDialog] = useState<'clear' | 'saved' | null>(null);
   const listRef = useRef<HTMLUListElement>(null);
   /** After a save or skip with KDE Connect: the next lead's number goes to your phone once that lead is shown. */
   const autoSend = useRef<string | null>(null);
@@ -123,6 +125,45 @@ export function CallingPage() {
     try {
       const r = await api.post<{ removed: number }>('/call-list/clear-worked', {});
       toast(`Cleared ${r.removed} worked lead${r.removed === 1 ? '' : 's'}`);
+      await loadList();
+    } catch (e: any) {
+      toast(e.message, 'error');
+    }
+  };
+
+  /** After the whole list changed (cleared or a saved list loaded): start again at the top. */
+  const afterSwap = async () => {
+    setListDialog(null);
+    setOpened(null);
+    const l = await api.get<CallListResponse>('/call-list');
+    setListState(l);
+    select(l.items.find((i) => !i.done)?.lead_id ?? l.items[0]?.lead_id ?? null);
+  };
+
+  const clearList = async (saveAs: string | null) => {
+    try {
+      const r = await api.post<{ removed: number; saved: { name: string } | null }>('/call-list/clear', { save_as: saveAs });
+      toast(r.saved ? `Call list cleared. "${r.saved.name}" is in Saved lists.` : `Call list cleared (${r.removed} lead${r.removed === 1 ? '' : 's'})`);
+      await afterSwap();
+    } catch (e: any) {
+      toast(e.message, 'error');
+    }
+  };
+
+  const loadSaved = async (id: string, saveCurrentAs: string | null) => {
+    try {
+      const name = list?.saved_lists.find((l) => l.id === id)?.name ?? 'list';
+      const r = await api.post<{ loaded: number; saved: { name: string } | null }>(`/saved-lists/${id}/load`, { save_current_as: saveCurrentAs });
+      toast(`Loaded "${name}" (${r.loaded} lead${r.loaded === 1 ? '' : 's'})${r.saved ? `. "${r.saved.name}" is in Saved lists.` : ''}`);
+      await afterSwap();
+    } catch (e: any) {
+      toast(e.message, 'error');
+    }
+  };
+
+  const deleteSaved = async (id: string) => {
+    try {
+      await api.del(`/saved-lists/${id}`);
       await loadList();
     } catch (e: any) {
       toast(e.message, 'error');
@@ -339,7 +380,7 @@ export function CallingPage() {
     }
   }, [saved, toast, bumpStats, loadDetail, items, selected]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const modalOpen = editing || !!qr;
+  const modalOpen = editing || !!qr || !!listDialog;
   /** The lead on screen is the one selected. Just after you move on, keys that act on a lead wait for it to load. */
   const ready = !!detail && detail.lead.id === selected;
   const phoneNow = detail ? detail.state?.active_phone_e164 ?? detail.lead.phone_e164 : null;
@@ -415,7 +456,40 @@ export function CallingPage() {
             )}
             <button className="btn small" onClick={() => go('leads')} title="Pick leads to call on the Leads page">Add leads</button>
           </div>
+          <div className="row list-head">
+            <span className="list-name">{list?.name ? <>List: <b>{list.name}</b></> : null}</span>
+            <span className="row" style={{ gap: 4 }}>
+              {items.length > 0 && (
+                <button className="btn small" onClick={() => setListDialog('clear')} title="Empty the call list, keeping it as a saved list if you want">
+                  Clear list
+                </button>
+              )}
+              <button className="btn small" onClick={() => setListDialog('saved')} title="Lists you put away to call later">
+                Saved lists{list?.saved_lists.length ? ` (${list.saved_lists.length})` : ''}
+              </button>
+            </span>
+          </div>
         </header>
+        {listDialog === 'clear' && (
+          <ClearListDialog
+            title={`Clear the call list (${items.length} lead${items.length === 1 ? '' : 's'})?`}
+            confirmLabel="Clear list"
+            count={items.length}
+            defaultName={suggestListName(items, list?.name ?? null)}
+            onConfirm={clearList}
+            onCancel={() => setListDialog(null)}
+          />
+        )}
+        {listDialog === 'saved' && list && (
+          <SavedListsDialog
+            lists={list.saved_lists}
+            count={items.length}
+            defaultName={suggestListName(items, list.name)}
+            onLoad={loadSaved}
+            onDelete={deleteSaved}
+            onClose={() => setListDialog(null)}
+          />
+        )}
         <div className="body">
           {list && items.length > 0 && left === 0 && (
             <div className="list-done" role="status">

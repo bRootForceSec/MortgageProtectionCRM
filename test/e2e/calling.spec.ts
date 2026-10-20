@@ -195,7 +195,7 @@ test('dial counter, undo, remapped keys, QR dialing, scripts and lead edits', as
   await page.keyboard.press('e');
   await expect(page.getByRole('dialog', { name: 'Edit lead' })).toBeVisible();
   await page.getByLabel('First name').fill('Zed');
-  await page.getByRole('button', { name: /^Save/ }).click();
+  await page.getByRole('dialog', { name: 'Edit lead' }).getByRole('button', { name: /^Save/ }).click();
   await expect(page.getByRole('dialog')).toHaveCount(0);
   await expect(page.locator('.lead-name')).toContainText('Zed');
   await expect(page.locator('.card.script')).toContainText('Hi Zed,');
@@ -324,4 +324,42 @@ test('leads open full screen like the Calling page, and step through the list', 
 test('API refuses requests without the access cookie', async ({ request }) => {
   const r = await request.get(`http://127.0.0.1:${PORT}/api/meta`);
   expect(r.status()).toBe(401);
+});
+
+test('clear the call list into a saved list, load it back, and replace it from Leads', async ({ page }) => {
+  await page.goto(launchUrl);
+  await page.getByRole('button', { name: 'Calling', exact: true }).click();
+  const queue = page.getByLabel('Queue');
+  await expect(queue.locator('.queue-list li').first()).toBeVisible();
+  const n = await queue.locator('.queue-list li').count();
+  expect(n).toBeGreaterThan(0);
+
+  // Clear it, keeping it as a saved list (ticked by default).
+  await queue.getByRole('button', { name: 'Clear list' }).click();
+  await page.getByLabel('Saved list name').fill('Old area');
+  await page.getByRole('alertdialog').getByRole('button', { name: 'Clear list' }).click();
+  await expect(page.getByText('"Old area" is in Saved lists.')).toBeVisible();
+  await expect(page.getByText('Your call list is empty.')).toBeVisible();
+
+  // Load it back: same leads, and it carries its name.
+  await queue.getByRole('button', { name: 'Saved lists (1)' }).click();
+  await expect(page.getByText(`of ${n} left to call`)).toBeVisible();
+  await page.getByRole('button', { name: 'Load Old area' }).click();
+  await expect(queue.locator('.queue-list li')).toHaveCount(n);
+  await expect(queue.getByText('List: Old area')).toBeVisible();
+
+  // Replace it from Leads with every lead tried before, keeping the old one.
+  await page.getByRole('button', { name: 'Leads', exact: true }).click();
+  await page.getByRole('button', { name: 'Tried', exact: true }).click();
+  await page.getByLabel(/Replace the call list/).check();
+  await page.getByRole('button', { name: /^Replace with all \d+ matching$/ }).click();
+  await expect(page.getByLabel('Saved list name')).toHaveValue('Old area');
+  await page.screenshot({ path: 'test-results/replace-list.png' });
+  await page.getByRole('button', { name: 'Replace call list' }).click();
+  await expect(page.getByText(/^Call list replaced/)).toBeVisible();
+
+  await page.getByRole('button', { name: 'Calling', exact: true }).click();
+  await queue.getByRole('button', { name: 'Saved lists (1)' }).click();
+  await expect(page.getByRole('dialog', { name: 'Saved lists' }).getByText('Old area')).toBeVisible();
+  await page.screenshot({ path: 'test-results/saved-lists.png' });
 });

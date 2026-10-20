@@ -116,9 +116,21 @@ export interface RecentOutcome {
   name: string;
 }
 
+/** A call list put away to call later. */
+export interface SavedList {
+  id: string;
+  name: string;
+  saved_at: string;
+  total: number;
+  to_call: number;
+}
+
 export interface CallListResponse {
   items: CallListItem[];
   recent: RecentOutcome[];
+  /** The list's name, when it was loaded from a saved list. */
+  name: string | null;
+  saved_lists: SavedList[];
 }
 
 export interface AddResult {

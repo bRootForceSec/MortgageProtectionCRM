@@ -1,5 +1,5 @@
 import type { DB } from '../db/connection.js';
-import { nowIso } from '../ids.js';
+import { nowIso, uuidv7 } from '../ids.js';
 import { groupWhere, searchWhere } from './groupFilter.js';
 
 // The call list: the leads you chose to call, worked top to bottom. Leads get here only when you add them
@@ -183,4 +183,79 @@ export function recentOutcomes(db: DB, limit = 10) {
 
 function bottom(db: DB): number {
   return (db.prepare('SELECT coalesce(max(position), 0) p FROM call_list_item').get() as { p: number }).p;
+}
+
+// ---------- saved lists ----------
+// A saved list is a call list put away to come back to later (say, one area code while you call another).
+// Loading it makes it the call list again and takes it off the saved lists, so there is only ever one copy.
+// Each lead keeps the time it was added, so leads you already worked still show as worked when it comes back.
+
+export interface SavedList {
+  id: string;
+  name: string;
+  saved_at: string;
+  total: number;
+  /** Leads with no call since they were added. */
+  to_call: number;
+}
+
+/** The name of the list being called, if it came from a saved list or was named. */
+export function callListName(db: DB): string | null {
+  return (db.prepare('SELECT name FROM call_list_meta WHERE id = 1').get() as { name: string | null } | undefined)?.name ?? null;
+}
+
+function setCallListName(db: DB, name: string | null) {
+  db.prepare('INSERT INTO call_list_meta (id, name) VALUES (1, ?) ON CONFLICT(id) DO UPDATE SET name = excluded.name').run(name);
+}
+
+const WORKED = `EXISTS (SELECT 1 FROM call c WHERE c.lead_id = i.lead_id AND c.voided_at IS NULL AND c.requested_at >= i.added_at)`;
+
+export function listSavedLists(db: DB): SavedList[] {
+  return db
+    .prepare(
+      `SELECT sl.id, sl.name, sl.saved_at, COUNT(i.lead_id) total, coalesce(SUM(CASE WHEN i.lead_id IS NOT NULL AND NOT ${WORKED} THEN 1 ELSE 0 END), 0) to_call
+       FROM saved_call_list sl LEFT JOIN saved_call_list_item i ON i.list_id = sl.id
+       GROUP BY sl.id ORDER BY sl.saved_at DESC`,
+    )
+    .all() as SavedList[];
+}
+
+/**
+ * Empties the call list. With a name, the leads on it are first kept as a saved list (returned).
+ * Their calls and outcomes are never touched.
+ */
+export function clearCallList(db: DB, saveAs?: string | null, now = nowIso()): { removed: number; saved: SavedList | null } {
+  return db.transaction(() => {
+    const n = (db.prepare('SELECT COUNT(*) n FROM call_list_item').get() as { n: number }).n;
+    let saved: SavedList | null = null;
+    const name = saveAs?.trim();
+    if (name && n > 0) {
+      const id = uuidv7();
+      db.prepare('INSERT INTO saved_call_list (id, name, saved_at) VALUES (?, ?, ?)').run(id, name, now);
+      db.prepare('INSERT INTO saved_call_list_item (list_id, lead_id, position, added_at) SELECT ?, lead_id, position, added_at FROM call_list_item').run(id);
+      saved = listSavedLists(db).find((l) => l.id === id) ?? null;
+    }
+    db.prepare('DELETE FROM call_list_item').run();
+    setCallListName(db, null);
+    return { removed: n, saved };
+  })();
+}
+
+/** Makes a saved list the call list again (the current one is cleared first, kept under `saveCurrentAs` if given). */
+export function loadSavedList(db: DB, listId: string, saveCurrentAs?: string | null, now = nowIso()): { loaded: number; saved: SavedList | null } | null {
+  return db.transaction(() => {
+    const list = db.prepare('SELECT name FROM saved_call_list WHERE id = ?').get(listId) as { name: string } | undefined;
+    if (!list) return null;
+    const { saved } = clearCallList(db, saveCurrentAs, now);
+    const loaded = db
+      .prepare('INSERT INTO call_list_item (lead_id, position, added_at) SELECT lead_id, position, added_at FROM saved_call_list_item WHERE list_id = ?')
+      .run(listId).changes;
+    db.prepare('DELETE FROM saved_call_list WHERE id = ?').run(listId);
+    setCallListName(db, list.name);
+    return { loaded, saved };
+  })();
+}
+
+export function deleteSavedList(db: DB, listId: string): boolean {
+  return db.prepare('DELETE FROM saved_call_list WHERE id = ?').run(listId).changes > 0;
 }

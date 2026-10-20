@@ -26,7 +26,7 @@ import { loadCallingSettings } from '../domain/callingSettings.js';
 import { groupWhere, searchWhere, parseList } from '../domain/groupFilter.js';
 import {
   addMatchingToCallList, addToCallList, addBatchToCallList, clearWorked, getCallList, leadFilterWhere, moveToBottom, onCallList,
-  recentOutcomes, removeFromCallList, type LeadFilter,
+  recentOutcomes, removeFromCallList, type LeadFilter, callListName, listSavedLists, clearCallList, loadSavedList, deleteSavedList,
 } from '../domain/callList.js';
 
 export interface AppDeps {
@@ -182,13 +182,45 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   });
 
   // ---------- the call list ----------
-  app.get('/api/call-list', async () => ({ items: getCallList(db), recent: recentOutcomes(db) }));
+  const savedName = z.string().trim().max(120);
+  app.get('/api/call-list', async () => ({
+    items: getCallList(db), recent: recentOutcomes(db), name: callListName(db), saved_lists: listSavedLists(db),
+  }));
+  // `replace` empties the list first (kept as a saved list named `save_current_as`, if given).
+  const replaceOpts = z.object({ replace: z.boolean().optional(), save_current_as: savedName.nullish() });
   app.post('/api/call-list', async (req) => {
-    const b = z.object({ lead_ids: z.array(z.string().max(64)).max(20_000) }).parse(req.body);
-    return addToCallList(db, b.lead_ids);
+    const b = z.object({ lead_ids: z.array(z.string().max(64)).max(20_000) }).extend(replaceOpts.shape).parse(req.body);
+    return db.transaction(() => {
+      if (b.replace) clearCallList(db, b.save_current_as);
+      return addToCallList(db, b.lead_ids);
+    })();
   });
-  app.post('/api/call-list/add-matching', async (req) => addMatchingToCallList(db, toFilter(leadFilter.parse(req.body ?? {}))));
+  app.post('/api/call-list/add-matching', async (req) => {
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const o = replaceOpts.parse({ replace: body.replace, save_current_as: body.save_current_as });
+    const f = toFilter(leadFilter.parse(body));
+    return db.transaction(() => {
+      if (o.replace) clearCallList(db, o.save_current_as);
+      return addMatchingToCallList(db, f);
+    })();
+  });
   app.post('/api/call-list/clear-worked', async () => ({ removed: clearWorked(db) }));
+  app.post('/api/call-list/clear', async (req) => {
+    const b = z.object({ save_as: savedName.nullish() }).parse(req.body ?? {});
+    return clearCallList(db, b.save_as);
+  });
+  app.post('/api/saved-lists/:id/load', async (req) => {
+    const { id } = z.object({ id: z.string().max(64) }).parse(req.params);
+    const b = z.object({ save_current_as: savedName.nullish() }).parse(req.body ?? {});
+    const r = loadSavedList(db, id, b.save_current_as);
+    if (!r) throw new DomainError('that saved list is gone', 404);
+    return r;
+  });
+  app.delete('/api/saved-lists/:id', async (req) => {
+    const { id } = z.object({ id: z.string().max(64) }).parse(req.params);
+    deleteSavedList(db, id);
+    return { ok: true };
+  });
   app.post('/api/call-list/:leadId/skip', async (req) => {
     const { leadId } = z.object({ leadId: z.string().max(64) }).parse(req.params);
     if (!moveToBottom(db, leadId)) throw new DomainError('that lead is not on the call list', 404);
