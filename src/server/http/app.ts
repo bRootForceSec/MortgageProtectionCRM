@@ -106,7 +106,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   // ---------- version & updates ----------
   const updates = deps.updates ?? new Updates(null, { commit: 'dev', built_at: null });
   // No token needed: the updater uses this to confirm the new version came up. It reveals only the version.
-  app.get('/healthz', async () => ({ ok: true, commit: updates.build.commit }));
+  app.get('/healthz', async () => ({ ok: true, commit: updates.build.commit, version: updates.build.version ?? null }));
   app.get('/api/update', async () => updates.status());
   app.post('/api/update/apply', async (_req, reply) => {
     try {

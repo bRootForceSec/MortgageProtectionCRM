@@ -11,4 +11,5 @@ if (!commit) {
   }
 }
 fs.mkdirSync('dist', { recursive: true });
-fs.writeFileSync('dist/build-info.json', JSON.stringify({ commit, built_at: new Date().toISOString() }, null, 2));
+const { version } = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+fs.writeFileSync('dist/build-info.json', JSON.stringify({ commit, version, built_at: new Date().toISOString() }, null, 2));

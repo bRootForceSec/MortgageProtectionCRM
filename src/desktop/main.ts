@@ -1,11 +1,21 @@
-import { app, BrowserWindow, Menu, Tray, dialog, nativeImage, session, shell, Notification } from 'electron';
+import { app, BrowserWindow, Menu, Tray, dialog, nativeImage, powerMonitor, session, shell, Notification } from 'electron';
 import fs from 'node:fs';
 import path from 'node:path';
 import { startServer, AlreadyRunningError, type RunningServer } from '../server/server.js';
 import { loadConfig } from '../server/config.js';
-import { createBackup } from '../server/backup.js';
+import { createBackup, restoreBackup } from '../server/backup.js';
 import { scheduleBackups, type BackupScheduler } from '../server/backupSchedule.js';
 import { linuxLaunchCommand, linuxLoginItem, type LoginItem } from './autostart.js';
+import { createDesktopUpdater, type DesktopUpdater } from './updater.js';
+import { RELEASES_PAGE } from './updateLogic.js';
+import type { UpdateStatus } from '../server/updates.js';
+
+interface Pending {
+  from: string;
+  to: string;
+  backup: string;
+  changes: string[];
+}
 
 // The desktop app: runs the CRM server inside the app and shows it in its own window.
 // Closing the window keeps it running in the tray (so callback alerts still fire); Quit is in the tray menu.
@@ -18,6 +28,7 @@ let backups: BackupScheduler | null = null;
 let win: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let quitting = false;
+let updater: DesktopUpdater | null = null;
 
 app.setName('Mortgage Protection CRM');
 if (process.platform === 'win32') app.setAppUserModelId('com.brootforcesec.mortgagecrm');
@@ -74,8 +85,37 @@ async function start() {
   const config = loadConfig();
   const log = openLog(config.dataDir);
   const note = (msg: string) => log.write(`${JSON.stringify({ time: Date.now(), msg })}\n`);
+  const state = desktopState(config.dataDir);
+  const current = app.getVersion();
+  const saved = state.read();
+  const pending = (saved.pending as Pending | undefined) ?? null;
+
+  // Did an update just happen? Then show it as the last update.
+  let lastApply = (saved.last_apply as UpdateStatus['last_apply']) ?? null;
+  if (typeof saved.last_version === 'string' && saved.last_version !== current) {
+    lastApply = { ok: true, from: saved.last_version, to: current, changes: pending?.changes ?? [], at: new Date().toISOString() };
+  }
+
+  updater = createDesktopUpdater({
+    currentVersion: current,
+    lastApply,
+    backup: async () => {
+      if (!server) throw new Error('the app is not running');
+      return (await createBackup(server.db, server.config)).file;
+    },
+    rememberPending: (p) => state.write({ pending: p }),
+    beforeInstall: async () => {
+      quitting = true;
+      backups?.stop();
+      const s = server;
+      server = null;
+      await s?.stop();
+    },
+    log: note,
+  });
+
   try {
-    server = await startServer({ runtime: 'desktop', portFallback: true, logStream: log });
+    server = await startServer({ runtime: 'desktop', portFallback: true, logStream: log, updater });
   } catch (e) {
     if (e instanceof AlreadyRunningError) {
       await dialog.showMessageBox({
@@ -88,13 +128,20 @@ async function start() {
       app.exit(0);
       return;
     }
+    if (pending && pending.to === current && fs.existsSync(pending.backup)) {
+      await undoFailedUpdate(config, pending, e, state, note);
+      app.exit(1);
+      return;
+    }
     throw e;
   }
-  note(`started on port ${server.config.port}`);
+  note(`started version ${current} on port ${server.config.port}`);
+  state.write({ last_version: current, pending: null, last_apply: lastApply });
   backups = scheduleBackups(server.db, server.config, note);
+  updater.start();
+  setInterval(() => updater?.maybeInstallOvernight(powerMonitor.getSystemIdleTime()), 10 * 60_000).unref();
 
-  const state = desktopState(server.config.dataDir);
-  if (!state.read().first_run_done) {
+  if (!saved.first_run_done) {
     // Start at login by default, like the Linux service did.
     try {
       loginItem().set(true);
@@ -108,6 +155,35 @@ async function start() {
   createTray();
   if (!startHidden) showWindow();
   if (process.platform === 'darwin') app.on('activate', () => showWindow());
+}
+
+/**
+ * The new version couldn't start (for example a database change failed). Put the data back exactly as it was
+ * just before the update, and point to the previous version's download.
+ */
+async function undoFailedUpdate(config: ReturnType<typeof loadConfig>, p: Pending, err: unknown, state: ReturnType<typeof desktopState>, note: (m: string) => void) {
+  const why = err instanceof Error ? err.message : String(err);
+  note(`version ${p.to} failed to start: ${why}`);
+  let restored = false;
+  try {
+    fs.rmSync(path.join(config.dataDir, 'server.pid'), { force: true });
+    restoreBackup(config, p.backup);
+    restored = true;
+  } catch (e: any) {
+    note(`restoring the pre-update backup failed: ${e.message}`);
+  }
+  const error = restored
+    ? `Version ${p.to} could not open your data, so your data was put back exactly as it was before the update. Install version ${p.from} again from the downloads page.`
+    : `Version ${p.to} could not open your data, and putting the backup back also failed. Your backup is ${p.backup}.`;
+  state.write({ pending: null, last_version: p.from, last_apply: { ok: false, from: p.from, to: p.to, error, at: new Date().toISOString() } });
+  const r = await dialog.showMessageBox({
+    type: 'error',
+    message: "The update didn't work",
+    detail: `${error}\n\nWhat went wrong: ${why}`,
+    buttons: ['Open downloads page', 'Close'],
+    defaultId: 0,
+  });
+  if (r.response === 0) await shell.openExternal(`${RELEASES_PAGE}/tag/v${p.from}`);
 }
 
 /** Only our own local server is shown in the window; other links open in the normal browser. */
@@ -185,6 +261,7 @@ function refreshTrayMenu() {
       { label: 'Open Mortgage Protection CRM', click: () => showWindow() },
       { label: 'Back up now', click: () => void backUpNow() },
       { label: 'Open data folder', click: () => server && void shell.openPath(server.config.dataDir) },
+      { label: 'Check for updates', click: () => void updater?.check() },
       { type: 'separator' },
       {
         label: 'Start when I log in',

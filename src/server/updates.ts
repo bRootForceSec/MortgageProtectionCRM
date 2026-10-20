@@ -7,6 +7,8 @@ import { spawn } from 'node:child_process';
 
 export interface BuildInfo {
   commit: string;
+  /** package.json version; release builds stamp it (for example 0.2.57). */
+  version?: string;
   built_at: string | null;
 }
 
@@ -24,6 +26,13 @@ export interface UpdateStatus {
 
 export type Runner = (unit: string) => Promise<void>;
 
+/** The desktop app's updater (src/desktop/updater.ts). Its versions go in the `commit` fields. */
+export interface UpdateProvider {
+  status(): Pick<UpdateStatus, 'staged' | 'last_check' | 'last_apply'>;
+  check(): Promise<void>;
+  apply(): Promise<void>;
+}
+
 /** Starts a systemd user unit without waiting for it to finish. */
 export const systemdRunner: Runner = (unit) =>
   new Promise((resolve, reject) => {
@@ -37,7 +46,7 @@ export const systemdRunner: Runner = (unit) =>
 export function readBuildInfo(file: string): BuildInfo {
   try {
     const j = JSON.parse(fs.readFileSync(file, 'utf8'));
-    return { commit: String(j.commit || 'dev'), built_at: j.built_at ?? null };
+    return { commit: String(j.commit || 'dev'), version: j.version ? String(j.version) : undefined, built_at: j.built_at ?? null };
   } catch {
     return { commit: 'dev', built_at: null };
   }
@@ -57,6 +66,7 @@ export class Updates {
     readonly build: BuildInfo,
     private run: Runner = systemdRunner,
     private runtimeHint?: Runtime,
+    private provider?: UpdateProvider,
   ) {}
 
   get runtime(): Runtime {
@@ -64,10 +74,11 @@ export class Updates {
   }
 
   get managed() {
-    return this.appDir !== null;
+    return this.appDir !== null || !!this.provider;
   }
 
   status(): UpdateStatus {
+    if (this.provider) return { managed: true, runtime: this.runtime, current: this.build, ...this.provider.status() };
     if (!this.appDir) return { managed: false, runtime: this.runtime, current: this.build, staged: null, last_check: null, last_apply: null };
     const s = (n: string) => path.join(this.appDir!, 'state', `${n}.json`);
     const staged = readJson<UpdateStatus['staged']>(s('staged'));
@@ -83,12 +94,20 @@ export class Updates {
   }
 
   async apply() {
+    if (this.provider) {
+      if (!this.provider.status().staged) throw new Error('there is no update ready to install');
+      // Installing stops this server, which waits for open requests, so answer first and start a moment later.
+      const provider = this.provider;
+      setTimeout(() => provider.apply().catch((e) => console.error(`update failed: ${e.message}`)), 300);
+      return;
+    }
     if (!this.appDir) throw new Error('updates are not set up on this copy (it was started by hand)');
     if (!this.status().staged) throw new Error('there is no update ready to install');
     await this.run('mpcrm-apply.service');
   }
 
   async check() {
+    if (this.provider) return this.provider.check();
     if (!this.appDir) throw new Error('updates are not set up on this copy (it was started by hand)');
     await this.run('mpcrm-update.service');
   }

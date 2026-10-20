@@ -35,3 +35,19 @@ describe('one copy per data folder', () => {
     expect(otherRunningCopy(dir)).toBeNull();
   });
 });
+
+describe('desktop updates through the shared update page', () => {
+  it('reports the desktop updater and answers before it starts installing', async () => {
+    const { Updates } = await import('../../src/server/updates.js');
+    let applied = 0;
+    const staged = { commit: '0.2.58', from: '0.2.57', changes: ['Faster calling'], at: 'now' };
+    const provider = { status: () => ({ staged, last_check: null, last_apply: null }), check: async () => {}, apply: async () => void applied++ };
+    const u = new Updates(null, { commit: 'abc', version: '0.2.57', built_at: null }, undefined, 'desktop', provider);
+    expect(u.status()).toMatchObject({ managed: true, runtime: 'desktop', staged, current: { version: '0.2.57' } });
+    await u.apply();
+    // Installing stops the server, so the request is answered first and the install starts a moment later.
+    expect(applied).toBe(0);
+    await new Promise((r) => setTimeout(r, 400));
+    expect(applied).toBe(1);
+  });
+});
