@@ -154,6 +154,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     status: z.enum(['dead', 'invalid', 'appointment_set', 'callback', 'retry', 'no_answer', 'talked', 'new', 'all']).default('all'),
     search: z.string().max(100).optional(),
     batch_id: z.string().max(64).optional(),
+    bulk_id: z.string().max(64).optional(),
     counties: z.string().max(4000).optional(),
     area_codes: z.string().max(400).optional(),
     tried_before: z.string().max(40).optional(),
@@ -164,6 +165,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     status: q.status,
     search: q.search,
     batch_id: q.batch_id || undefined,
+    bulk_id: q.bulk_id || undefined,
     counties: parseList(q.counties),
     areaCodes: parseList(q.area_codes),
     tried_before: q.tried_before || undefined,
@@ -582,6 +584,29 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       ...JSON.parse(r.raw_json),
     }));
     return reply.header('content-disposition', `attachment; filename="import-problems-${id}.csv"`).type('text/csv').send(toCsv(out));
+  });
+
+  // Every lead a bulk import left out (repeats, missing details, discarded), with the file each came from.
+  app.get('/api/bulk-imports/:id/problems.csv', async (req, reply) => {
+    const { id } = z.object({ id: z.string().max(64) }).parse(req.params);
+    const rows = db
+      .prepare(
+        `SELECT b.name batch, b.file_name file, r.row_number, r.status, r.errors_json, r.warnings_json, r.raw_json
+         FROM import_row r JOIN import_batch b ON b.id = r.batch_id
+         WHERE r.status <> 'accepted' AND r.batch_id IN (
+           SELECT j.value FROM import_bulk_file f, json_each(f.summary_json, '$.batches') j WHERE f.bulk_id = ? AND f.summary_json IS NOT NULL)
+         ORDER BY b.imported_at, r.row_number`,
+      )
+      .all(id) as any[];
+    const out = rows.map((r) => ({
+      file: r.file,
+      batch: r.batch,
+      row_number: r.row_number,
+      status: r.status,
+      problems: [...JSON.parse(r.errors_json ?? '[]'), ...JSON.parse(r.warnings_json ?? '[]')].join('; '),
+      ...JSON.parse(r.raw_json),
+    }));
+    return reply.header('content-disposition', `attachment; filename="bulk-import-not-imported-${id}.csv"`).type('text/csv').send(toCsv(out));
   });
 
   // ---------- export & backup ----------

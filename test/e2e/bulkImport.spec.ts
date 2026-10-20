@@ -65,6 +65,12 @@ test('import a whole folder of lead files in one go', async ({ page }) => {
   await expect(page.getByText("columns couldn't be matched").first()).toBeVisible();
   await page.screenshot({ path: path.join(process.env.SHOT_DIR ?? os.tmpdir(), 'bulk-import-done.png'), fullPage: true });
 
+  // Straight to just these leads on the Leads page, then back.
+  await page.getByRole('button', { name: 'See the 452 imported leads' }).click();
+  await expect(page.getByText('452 leads', { exact: false }).first()).toBeVisible();
+  await expect(page.getByLabel('Batch')).toHaveValue(/^bulk:/);
+  await page.getByRole('button', { name: 'Import', exact: true }).first().click();
+
   await page.getByRole('button', { name: 'Need you (1)' }).click();
   await expect(page.locator('table.grid tbody tr')).toHaveCount(1);
 

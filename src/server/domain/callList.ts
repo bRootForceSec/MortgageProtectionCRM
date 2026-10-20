@@ -14,6 +14,8 @@ export interface LeadFilter {
   status?: string;
   search?: string;
   batch_id?: string;
+  /** Leads from every file of one bulk import. */
+  bulk_id?: string;
   counties?: string[];
   areaCodes?: string[];
   /** Only leads last tried before this time (and never-called leads are left out). */
@@ -36,6 +38,9 @@ export function leadFilterWhere(f: LeadFilter): { sql: string; params: Record<st
     '(@lf_status IS NULL OR s.status = @lf_status)',
     tried === 'talked' ? talked : tried === 'no_answer' ? `NOT ${talked}` : '1',
     '(@lf_batch IS NULL OR l.batch_id = @lf_batch)',
+    f.bulk_id
+      ? `l.batch_id IN (SELECT b.value FROM import_bulk_file f, json_each(f.summary_json, '$.batches') b WHERE f.bulk_id = @lf_bulk AND f.summary_json IS NOT NULL)`
+      : '1',
     '(@lf_before IS NULL OR (s.last_call_at IS NOT NULL AND s.last_call_at < @lf_before))',
     '(@lf_after IS NULL OR (s.last_call_at IS NOT NULL AND s.last_call_at >= @lf_after))',
     f.not_on_list ? `l.id NOT IN (SELECT i.lead_id FROM call_list_item i WHERE NOT ${WORKED})` : '1',
@@ -44,7 +49,7 @@ export function leadFilterWhere(f: LeadFilter): { sql: string; params: Record<st
   ];
   return {
     sql: parts.join(' AND '),
-    params: { lf_status: status, lf_batch: f.batch_id ?? null, lf_before: f.tried_before ?? null, lf_after: f.tried_after ?? null, ...group.params, ...search.params },
+    params: { lf_status: status, lf_batch: f.batch_id ?? null, ...(f.bulk_id ? { lf_bulk: f.bulk_id } : {}), lf_before: f.tried_before ?? null, lf_after: f.tried_after ?? null, ...group.params, ...search.params },
   };
 }
 

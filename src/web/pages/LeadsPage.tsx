@@ -41,15 +41,43 @@ const ago = (ms: number) => new Date(Date.now() - ms).toISOString();
 const CALLABLE = new Set(['new', 'retry', 'callback']);
 
 interface Batch { id: string; name: string; imported_at: string }
+interface BulkRun { id: string; created_at: string; totals: { files: number; leads: number } }
+
+const SHOW_KEY = 'mpcrm.leads.show';
+
+/**
+ * Opens the Leads page showing one import: a batch (one file) or a bulk import (all its files).
+ * Call it, then go('leads').
+ */
+export function showImportedLeads(what: { batch: string } | { bulk: string }) {
+  try {
+    localStorage.setItem(SHOW_KEY, 'batch' in what ? what.batch : `bulk:${what.bulk}`);
+  } catch {
+    /* storage unavailable */
+  }
+}
+
+/** The import the Leads page was asked to show, used once. */
+function takeShown(): string {
+  try {
+    const v = localStorage.getItem(SHOW_KEY) ?? '';
+    localStorage.removeItem(SHOW_KEY);
+    return v;
+  } catch {
+    return '';
+  }
+}
 
 export function LeadsPage() {
   const { meta, toast, go } = useApp();
   const [status, setStatus] = useState('all');
   const [search, setSearch] = useState('');
-  const [batch, setBatch] = useState('');
+  /** A batch id, or "bulk:<id>" for every file of a bulk import. */
+  const [batch, setBatch] = useState(takeShown);
   const [tried, setTried] = useState('');
   const [notOnList, setNotOnList] = useState(false);
   const [batches, setBatches] = useState<Batch[]>([]);
+  const [bulks, setBulks] = useState<BulkRun[]>([]);
   const [rows, setRows] = useState<any[]>([]);
   const [total, setTotal] = useState(0);
   const [picked, setPicked] = useState<Set<string>>(new Set());
@@ -67,6 +95,7 @@ export function LeadsPage() {
 
   useEffect(() => {
     api.get<Batch[]>('/imports').then(setBatches).catch(() => setBatches([]));
+    api.get<BulkRun[]>('/bulk-imports').then(setBulks).catch(() => setBulks([]));
   }, []);
 
   const filters = useMemo(() => {
@@ -74,7 +103,8 @@ export function LeadsPage() {
     return {
       status,
       search,
-      batch_id: batch || undefined,
+      batch_id: batch && !batch.startsWith('bulk:') ? batch : undefined,
+      bulk_id: batch.startsWith('bulk:') ? batch.slice(5) : undefined,
       tried_before: r.before,
       tried_after: r.after,
       not_on_list: notOnList ? '1' : undefined,
@@ -162,7 +192,16 @@ export function LeadsPage() {
         <GroupPicker groups={groups} onChange={setGroups} />
         <select value={batch} onChange={(e) => setBatch(e.target.value)} aria-label="Batch">
           <option value="">All batches</option>
-          {batches.map((b) => <option key={b.id} value={b.id}>{b.name} · {fmtDateTime(b.imported_at)}</option>)}
+          {bulks.length > 0 && (
+            <optgroup label="Bulk imports (every file)">
+              {bulks.map((b) => (
+                <option key={b.id} value={`bulk:${b.id}`}>Bulk import · {fmtDateTime(b.created_at)} · {b.totals.files} files</option>
+              ))}
+            </optgroup>
+          )}
+          <optgroup label="Batches">
+            {batches.map((b) => <option key={b.id} value={b.id}>{b.name} · {fmtDateTime(b.imported_at)}</option>)}
+          </optgroup>
         </select>
         <select value={tried} onChange={(e) => setTried(e.target.value)} aria-label="Last call">
           {LAST_CALL.map((t) => <option key={t.key} value={t.key}>{t.label}</option>)}
