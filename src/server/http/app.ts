@@ -16,7 +16,7 @@ import { createBackup, listBackups } from '../backup.js';
 import { uuidv7, nowIso } from '../ids.js';
 import { normalizeUsPhone } from '../domain/normalize.js';
 import { Updates } from '../updates.js';
-import { registerImportRoutes } from './importRoutes.js';
+import { registerImportRoutes, uploadHeader } from './importRoutes.js';
 import { DraftWorker } from '../domain/drafts.js';
 import { BulkImporter } from '../domain/bulkImport.js';
 import { batchPdf, turnPdfPages, normTurn } from '../domain/pageTurn.js';
@@ -497,7 +497,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   app.post('/api/imports/parse', async (req) => {
     const buf = req.body as Buffer;
     if (!Buffer.isBuffer(buf) || !buf.length) throw new DomainError('empty file');
-    const name = decodeURIComponent(String(req.headers['x-file-name'] ?? 'upload.xlsx')).replace(/[/\\]/g, '_').slice(0, 200);
+    const name = uploadHeader(req.headers, 'x-file-name', 'upload.xlsx').replace(/[/\\]/g, '_').slice(0, 200);
     let parsed: ParsedFile;
     try {
       parsed = await parseSpreadsheet(buf, name);
