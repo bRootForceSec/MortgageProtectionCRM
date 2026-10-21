@@ -10,6 +10,7 @@ import type { Config } from '../config.js';
 import type { ParsedFile } from '../domain/spreadsheet.js';
 import type { ColumnMapping } from '../domain/mapping.js';
 import { DomainError } from '../core/errors.js';
+import { audit } from '../core/audit.js';
 import {
   createPdfDraft, createSheetDraft, DraftWorker, getDraftView, listDrafts, reviewRow, setRowsType, updateDraftSettings,
   deleteDraft, draftFile, commitDraft, lastLeadType,
@@ -256,9 +257,7 @@ export function registerImportRoutes(
         );
       }
       const neu = db.prepare('SELECT * FROM lead_type WHERE code = ?').get(code);
-      db.prepare('INSERT INTO audit_log (id, at, table_name, row_id, action, old_json, new_json) VALUES (?,?,?,?,?,?,?)').run(
-        uuidv7(), now, 'lead_type', code, old ? 'update' : 'insert', old ? JSON.stringify(old) : null, JSON.stringify(neu),
-      );
+      audit(db, 'lead_type', code, old ? 'update' : 'insert', old, neu, now);
       return neu;
     })();
   });
@@ -299,9 +298,7 @@ export function registerImportRoutes(
       db.prepare('DELETE FROM county_area_code WHERE county_key = ?').run(b.county_key);
       const ins = db.prepare('INSERT OR IGNORE INTO county_area_code (county_key, area_code, created_at) VALUES (?,?,?)');
       for (const c of b.area_codes) ins.run(b.county_key, c, now);
-      db.prepare('INSERT INTO audit_log (id, at, table_name, row_id, action, old_json, new_json) VALUES (?,?,?,?,?,?,?)').run(
-        uuidv7(), now, 'county_area_code', b.county_key, 'set', JSON.stringify(old), JSON.stringify(b.area_codes),
-      );
+      audit(db, 'county_area_code', b.county_key, 'set', old, b.area_codes, now);
     })();
     return { ok: true };
   });

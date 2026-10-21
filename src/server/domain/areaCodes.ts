@@ -2,9 +2,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { DB } from '../db/connection.js';
-import { nowIso, uuidv7 } from '../ids.js';
+import { nowIso } from '../ids.js';
 import { countyKey } from './county.js';
 import { getSetting, setSetting } from '../core/settings.js';
+import { audit } from '../core/audit.js';
 
 // Built-in area codes for each county, by state (data/county-area-codes.json). When a county first gets leads,
 // it's linked to these codes so area-code picking works without setup. You can change the links in Settings;
@@ -59,9 +60,7 @@ export function seedCountyAreaCodes(db: DB): number {
       const codes = builtInAreaCodes(k);
       if (!codes.length) continue; // state not in the table yet: try again once it is
       for (const c of codes) ins.run(k, c, now);
-      db.prepare('INSERT INTO audit_log (id, at, table_name, row_id, action, old_json, new_json) VALUES (?,?,?,?,?,?,?)').run(
-        uuidv7(), now, 'county_area_code', k, 'built_in', null, JSON.stringify(codes),
-      );
+      audit(db, 'county_area_code', k, 'built_in', null, codes, now);
       seeded.add(k);
       linked++;
     }

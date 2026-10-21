@@ -27,7 +27,7 @@ Read this before changing code. New features must fit the existing structure. Do
 | Add business logic or queries | `src/server/domain/<feature>.ts`. Domain functions take `db` and know nothing about HTTP. |
 | Signal a user-facing error | `throw new DomainError(message, status?)` from `src/server/core/errors.ts`. The error handler turns it into a 4xx with `{ error }`. Don't throw a plain `Error` for user mistakes, and don't catch and rewrap errors in routes. |
 | Store a setting | Use `getSetting` / `setSetting` from `src/server/core/settings.ts` (`app_setting` table). Don't create a new settings table or file. Secrets go in `Secrets` (0600 `secrets.json`), never in the DB. |
-| Record who changed what | Write an `audit_log` row through the existing helper in the module you're in. Don't add another inline `INSERT INTO audit_log`. |
+| Record who changed what | `audit(db, table, rowId, action, old, new)` from `src/server/core/audit.ts`, inside the same transaction as the change. Don't write `INSERT INTO audit_log` by hand. |
 | Change the schema | Add the next numbered file in `src/server/db/migrations/`. Check open PRs first so two branches don't take the same number. Never edit a migration that has shipped. 006 is missing on purpose. |
 | Read config or env vars | `src/server/config.ts` (`loadConfig`). Validate there, not where the value is used. |
 | Log on the server | Use the pino logger (`app.log` or `req.log`), not `console.*`. |

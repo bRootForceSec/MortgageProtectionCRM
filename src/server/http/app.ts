@@ -12,6 +12,7 @@ import { previewImport, commitImport, savedMappingFor, MappingError } from '../d
 import { getQueue } from '../domain/queue.js';
 import { logManualCall, changeOutcome, addLeadAction, addNote } from '../domain/calls.js';
 import { DomainError } from '../core/errors.js';
+import { audit } from '../core/audit.js';
 import { exportRows, toCsv, toXlsx, fullJsonDump, EXPORT_TABLES, type ExportTable } from '../domain/exporter.js';
 import { createBackup, listBackups } from '../backup.js';
 import { uuidv7, nowIso } from '../ids.js';
@@ -685,12 +686,6 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   }
 
   return app;
-}
-
-function audit(db: DB, table: string, rowId: string, action: string, oldV: unknown, newV: unknown) {
-  db.prepare('INSERT INTO audit_log (id, at, table_name, row_id, action, old_json, new_json) VALUES (?,?,?,?,?,?,?)').run(
-    uuidv7(), nowIso(), table, rowId, action, oldV ? JSON.stringify(oldV) : null, newV ? JSON.stringify(newV) : null,
-  );
 }
 
 export { batchPdf };
