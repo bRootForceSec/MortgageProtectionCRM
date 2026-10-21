@@ -25,7 +25,7 @@ Read this before changing code. New features must fit the existing structure. Do
 |---|---|
 | Add an endpoint | Put it in the route file for its feature (`src/server/http/*Routes.ts`). Keep the handler thin: validate input with zod, call a domain function, return the result. **No SQL in route files for new code.** |
 | Add business logic or queries | `src/server/domain/<feature>.ts`. Domain functions take `db` and know nothing about HTTP. |
-| Signal a user-facing error | `throw new DomainError(message, status?)` (currently in `domain/calls.ts`). The error handler turns it into a 4xx with `{ error }`. Don't throw a plain `Error` for user mistakes, and don't catch and rewrap errors in routes. |
+| Signal a user-facing error | `throw new DomainError(message, status?)` from `src/server/core/errors.ts`. The error handler turns it into a 4xx with `{ error }`. Don't throw a plain `Error` for user mistakes, and don't catch and rewrap errors in routes. |
 | Store a setting | Use `getSetting` / `setSetting` (`app_setting` table; currently in `ai/settings.ts`). Don't create a new settings table or file. Secrets go in `Secrets` (0600 `secrets.json`), never in the DB. |
 | Record who changed what | Write an `audit_log` row through the existing helper in the module you're in. Don't add another inline `INSERT INTO audit_log`. |
 | Change the schema | Add the next numbered file in `src/server/db/migrations/`. Check open PRs first so two branches don't take the same number. Never edit a migration that has shipped. 006 is missing on purpose. |
@@ -47,7 +47,7 @@ Read this before changing code. New features must fit the existing structure. Do
 ## Style
 
 - Strict TypeScript. Avoid `any` in new code.
-- Use the `zod` import (not `zod/v4`).
+- Import zod as `import * as z from 'zod/v4'`, like the rest of the code.
 - Match the file you're in. Don't add a library for something a few lines can do, and ask before adding a dependency.
 - Prefer deleting code to adding abstractions. Don't build a helper or layer with only one user.
 

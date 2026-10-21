@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import type { DB } from '../db/connection.js';
 import { uuidv7, nowIso } from '../ids.js';
-import { DomainError } from './calls.js';
+import { DomainError } from '../core/errors.js';
 import { parseSpreadsheet, MAX_UPLOAD_BYTES, type ParsedSheet } from './spreadsheet.js';
 import { suggestMapping, validateMapping, type ColumnMapping } from './mapping.js';
 import { savedMappingFor, MappingError } from './importer.js';

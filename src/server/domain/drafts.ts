@@ -3,7 +3,7 @@ import path from 'node:path';
 import { createHash } from 'node:crypto';
 import type { DB } from '../db/connection.js';
 import { uuidv7, nowIso } from '../ids.js';
-import { DomainError } from './calls.js';
+import { DomainError } from '../core/errors.js';
 import { type FieldValues, type SourceRow, type BatchInput, mapFields, previewRows, commitRows, saveMapping, sheetSourceRows } from './importer.js';
 import type { LeadFieldKey, ColumnMapping } from './mapping.js';
 import type { ParsedSheet } from './spreadsheet.js';

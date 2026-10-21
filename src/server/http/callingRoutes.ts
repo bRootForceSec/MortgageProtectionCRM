@@ -1,7 +1,8 @@
 import type { FastifyInstance } from 'fastify';
 import * as z from 'zod/v4';
 import type { DB } from '../db/connection.js';
-import { DomainError, voidCall } from '../domain/calls.js';
+import { voidCall } from '../domain/calls.js';
+import { DomainError } from '../core/errors.js';
 import { loadCallingSettings, saveCallingSettings, SHORTCUT_ACTIONS } from '../domain/callingSettings.js';
 import { rebuildLeadState } from '../domain/leadState.js';
 import { KdeConnect } from '../dialer.js';
@@ -21,13 +22,7 @@ export function registerCallingRoutes(app: FastifyInstance, deps: { db: DB; kde?
 
   app.put('/api/settings/calling', async (req) => {
     const before = loadCallingSettings(db);
-    let saved;
-    try {
-      saved = saveCallingSettings(db, req.body);
-    } catch (e: any) {
-      if (e instanceof z.ZodError) throw e;
-      throw new DomainError(e.message);
-    }
+    const saved = saveCallingSettings(db, req.body);
     // A new retry gap changes when every unanswered lead comes back.
     if (saved.retry_gap_minutes !== before.retry_gap_minutes) rebuildLeadState(db);
     return { settings: saved, actions: SHORTCUT_ACTIONS };

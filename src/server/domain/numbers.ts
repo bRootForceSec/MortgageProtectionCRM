@@ -1,6 +1,6 @@
 import type { DB } from '../db/connection.js';
 import { nowIso, uuidv7 } from '../ids.js';
-import { DomainError } from './calls.js';
+import { DomainError } from '../core/errors.js';
 
 // Caller ID numbers: how each one is doing, and the reputation checks you do by hand.
 // Nothing here switches, buys or rotates numbers; that's always your call.

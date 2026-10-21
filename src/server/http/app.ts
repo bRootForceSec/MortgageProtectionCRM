@@ -2,7 +2,7 @@ import Fastify, { type FastifyInstance } from 'fastify';
 import fastifyStatic from '@fastify/static';
 import fs from 'node:fs';
 import path from 'node:path';
-import { z } from 'zod';
+import * as z from 'zod/v4';
 import type { DB } from '../db/connection.js';
 import type { Config } from '../config.js';
 import { registerSecurity } from './security.js';
@@ -10,7 +10,8 @@ import { parseSpreadsheet, MAX_UPLOAD_BYTES, type ParsedFile } from '../domain/s
 import { LEAD_FIELDS, suggestMapping, type ColumnMapping } from '../domain/mapping.js';
 import { previewImport, commitImport, savedMappingFor, MappingError } from '../domain/importer.js';
 import { getQueue } from '../domain/queue.js';
-import { logManualCall, changeOutcome, addLeadAction, addNote, DomainError } from '../domain/calls.js';
+import { logManualCall, changeOutcome, addLeadAction, addNote } from '../domain/calls.js';
+import { DomainError } from '../core/errors.js';
 import { exportRows, toCsv, toXlsx, fullJsonDump, EXPORT_TABLES, type ExportTable } from '../domain/exporter.js';
 import { createBackup, listBackups } from '../backup.js';
 import { uuidv7, nowIso } from '../ids.js';

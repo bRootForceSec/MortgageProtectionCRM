@@ -3,6 +3,7 @@ import type { DB } from '../db/connection.js';
 import { getSetting, setSetting } from '../ai/settings.js';
 import { groupWhere } from './groupFilter.js';
 import { BOOKED_CODES } from './leadState.js';
+import { DomainError } from '../core/errors.js';
 
 // Reports. Every number is computed from a group of rows (calls or leads), and the same group answers
 // "show me the calls behind this number", so a total and its drill-down can never disagree.
@@ -398,7 +399,7 @@ export function drill(db: DB, f: ReportFilter, spec: DrillSpec) {
     const m = LEAD_METRICS[spec.metric as LeadMetric];
     return { kind: 'leads' as const, rows: group.leads.filter(m.pred).map(leadOut) };
   }
-  throw new Error(`unknown number "${spec.metric}"`);
+  throw new DomainError(`unknown number "${spec.metric}"`);
 }
 
 function callOut(c: CallRow) {

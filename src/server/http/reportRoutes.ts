@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import * as z from 'zod/v4';
 import type { DB } from '../db/connection.js';
 import type { Config } from '../config.js';
-import { DomainError } from '../domain/calls.js';
+import { DomainError } from '../core/errors.js';
 import { parseList } from '../domain/groupFilter.js';
 import { buildReport, drill, DrillSpec, loadTargets, reportSheets, saveTargets, type ReportFilter } from '../domain/reports.js';
 import { toXlsx } from '../domain/exporter.js';
@@ -50,11 +50,7 @@ export function registerReportRoutes(app: FastifyInstance, deps: { db: DB; confi
 
   app.get('/api/reports/drill', async (req) => {
     const q = filterQuery.extend(DrillSpec.shape).parse(req.query);
-    try {
-      return drill(db, toFilter(q), { section: q.section, key: q.key, metric: q.metric });
-    } catch (e: any) {
-      throw new DomainError(e.message);
-    }
+    return drill(db, toFilter(q), { section: q.section, key: q.key, metric: q.metric });
   });
 
   app.get('/api/reports/export.xlsx', async (req, reply) => {
@@ -71,7 +67,7 @@ export function registerReportRoutes(app: FastifyInstance, deps: { db: DB; confi
     try {
       return saveTargets(db, req.body);
     } catch (e: any) {
-      if (e?.issues) throw new DomainError('targets must be between 0% and 100%');
+      if (e instanceof z.ZodError) throw new DomainError('targets must be between 0% and 100%');
       throw e;
     }
   });

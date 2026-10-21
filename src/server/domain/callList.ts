@@ -1,6 +1,7 @@
 import type { DB } from '../db/connection.js';
 import { nowIso, uuidv7 } from '../ids.js';
 import { groupWhere, searchWhere } from './groupFilter.js';
+import { DomainError } from '../core/errors.js';
 
 // The call list: the leads you chose to call, worked top to bottom. Leads get here only when you add them
 // (from Leads, or with an import); nothing is added, removed or moved on its own.
@@ -285,7 +286,7 @@ export function deleteSavedList(db: DB, listId: string): boolean {
 
 /** "They called me back": sets or clears the mark on a lead. Returns the time set, or null when cleared. */
 export function setCalledBack(db: DB, leadId: string, on: boolean, now = nowIso()): string | null {
-  if (!db.prepare('SELECT 1 FROM lead WHERE id = ?').get(leadId)) throw new Error('lead not found');
+  if (!db.prepare('SELECT 1 FROM lead WHERE id = ?').get(leadId)) throw new DomainError('lead not found', 404);
   if (!on) {
     db.prepare('DELETE FROM lead_called_back WHERE lead_id = ?').run(leadId);
     return null;

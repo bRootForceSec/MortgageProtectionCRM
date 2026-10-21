@@ -1,6 +1,7 @@
 import * as z from 'zod/v4';
 import type { DB } from '../db/connection.js';
 import { getSetting, setSetting } from '../ai/settings.js';
+import { DomainError } from '../core/errors.js';
 
 // Settings for the Calling screen. You set every limit yourself; nothing here caps how much you call.
 
@@ -81,7 +82,7 @@ export function loadCallingSettings(db: DB): CallingSettings {
 export function saveCallingSettings(db: DB, input: unknown): CallingSettings {
   const s = CallingSettings.parse(input);
   for (const a of Object.keys(s.shortcuts.actions)) {
-    if (!(a in SHORTCUT_ACTIONS)) throw new Error(`unknown shortcut action "${a}"`);
+    if (!(a in SHORTCUT_ACTIONS)) throw new DomainError(`unknown shortcut action "${a}"`);
   }
   setSetting(db, 'calling', s);
   return s;

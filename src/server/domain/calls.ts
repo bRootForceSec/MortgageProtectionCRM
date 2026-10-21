@@ -1,12 +1,7 @@
 import type { DB } from '../db/connection.js';
 import { uuidv7, nowIso } from '../ids.js';
 import { rebuildLeadState } from './leadState.js';
-
-export class DomainError extends Error {
-  constructor(message: string, public status = 400) {
-    super(message);
-  }
-}
+import { DomainError } from '../core/errors.js';
 
 export interface ManualCallInput {
   lead_id: string;

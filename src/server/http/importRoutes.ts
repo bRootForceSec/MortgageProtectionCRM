@@ -3,13 +3,13 @@ import { execFile } from 'node:child_process';
 import { findClaudeCode, claudeNotFoundMessage } from '../ai/findClaude.js';
 import { promisify } from 'node:util';
 import type { FastifyInstance } from 'fastify';
-import { z } from 'zod';
+import * as z from 'zod/v4';
 import { addBatchToCallList } from '../domain/callList.js';
 import type { DB } from '../db/connection.js';
 import type { Config } from '../config.js';
 import type { ParsedFile } from '../domain/spreadsheet.js';
 import type { ColumnMapping } from '../domain/mapping.js';
-import { DomainError } from '../domain/calls.js';
+import { DomainError } from '../core/errors.js';
 import {
   createPdfDraft, createSheetDraft, DraftWorker, getDraftView, listDrafts, reviewRow, setRowsType, updateDraftSettings,
   deleteDraft, draftFile, commitDraft,
