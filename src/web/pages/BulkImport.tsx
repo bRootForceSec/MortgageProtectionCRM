@@ -151,34 +151,14 @@ export function BulkConfirm({ picked, skipped, leadType, onStart, onCancel }: {
 }
 
 async function sendFile(bulkId: string, p: PickedFile) {
-  const send = () =>
-    fetch(`/api/bulk-imports/${bulkId}/files`, {
-      method: 'POST',
-      credentials: 'same-origin',
-      headers: {
-        'content-type': 'application/octet-stream',
-        'x-file-name': encodeURIComponent(p.file.name),
-        'x-file-path': encodeURIComponent(p.path),
-        'x-file-modified': String(p.file.lastModified || ''),
-      },
-      body: p.file,
-    });
-  let r: Response;
+  const send = () => api.upload(`/bulk-imports/${bulkId}/files`, p.file, undefined, { 'x-file-path': encodeURIComponent(p.path) });
   try {
-    r = await send();
-  } catch {
+    await send();
+  } catch (e) {
+    if (e instanceof ApiError) throw e; // the app answered with an error: retrying won't help
     // One retry for a dropped connection (the app restarting, a sleeping laptop).
     await new Promise((res) => setTimeout(res, 2000));
-    r = await send();
-  }
-  if (!r.ok) {
-    let msg = `the app answered ${r.status}`;
-    try {
-      msg = (await r.json()).error ?? msg;
-    } catch {
-      /* not JSON */
-    }
-    throw new ApiError(msg, r.status);
+    await send();
   }
 }
 

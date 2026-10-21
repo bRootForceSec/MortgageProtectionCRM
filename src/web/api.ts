@@ -34,11 +34,11 @@ export const api = {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(body),
     }).then((r) => handle<T>(r)),
-  upload: <T>(path: string, file: File, contentType = 'application/octet-stream') =>
+  upload: <T>(path: string, file: File, contentType = 'application/octet-stream', headers: Record<string, string> = {}) =>
     fetch(`/api${path}`, {
       method: 'POST',
       credentials: 'same-origin',
-      headers: { 'content-type': contentType, 'x-file-name': encodeURIComponent(file.name), 'x-file-modified': String(file.lastModified || '') },
+      headers: { 'content-type': contentType, 'x-file-name': encodeURIComponent(file.name), 'x-file-modified': String(file.lastModified || ''), ...headers },
       body: file,
     }).then((r) => handle<T>(r)),
   put: <T>(path: string, body: unknown) =>
