@@ -9,7 +9,8 @@ import { registerSecurity } from './security.js';
 import { parseSpreadsheet, MAX_UPLOAD_BYTES, type ParsedFile } from '../domain/spreadsheet.js';
 import { LEAD_FIELDS, suggestMapping } from '../domain/mapping.js';
 import { savedMappingFor, MappingError } from '../domain/importer.js';
-import { logManualCall, changeOutcome, addLeadAction, addNote } from '../domain/calls.js';
+import { logManualCall, changeOutcome, addLeadAction, addNote, activeOutcomeCodes, callHistory } from '../domain/calls.js';
+import { todayStats } from '../domain/reports.js';
 import { DomainError } from '../core/errors.js';
 import { exportRows, toCsv, toXlsx, fullJsonDump, EXPORT_TABLES, type ExportTable } from '../domain/exporter.js';
 import { createBackup, listBackups } from '../backup.js';
@@ -28,8 +29,7 @@ import { Secrets } from '../ai/settings.js';
 import { registerCallingRoutes } from './callingRoutes.js';
 import { registerReportRoutes } from './reportRoutes.js';
 import { KdeConnect } from '../dialer.js';
-import { loadCallingSettings } from '../domain/callingSettings.js';
-import { groupWhere, searchWhere, parseList } from '../domain/groupFilter.js';
+import { parseList } from '../domain/groupFilter.js';
 import {
   addMatchingToCallList, addToCallList, clearWorked, getCallList, moveToBottom,
   recentOutcomes, removeFromCallList, type LeadFilter, callListName, listSavedLists, clearCallList, loadSavedList, deleteSavedList, setCalledBack,
@@ -139,7 +139,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
 
   // ---------- meta ----------
   app.get('/api/meta', async () => ({
-    outcome_codes: db.prepare('SELECT * FROM outcome_code WHERE active = 1 ORDER BY sort_order').all(),
+    outcome_codes: activeOutcomeCodes(db),
     lead_fields: LEAD_FIELDS.map(({ key, label }) => ({ key, label })),
     numbers: listNumbers(db),
     data_dir: config.dataDir,
@@ -316,45 +316,12 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       counties: z.string().max(4000).optional(),
       area_codes: z.string().max(400).optional(),
     }).parse(req.query);
-    const group = groupWhere('l.county_key', { counties: parseList(q.counties), areaCodes: parseList(q.area_codes) });
-    const search = searchWhere(q.search);
-    return db
-      .prepare(
-        `SELECT c.id, c.lead_id, c.channel, c.from_e164, c.to_e164, c.requested_at, c.state, c.talk_seconds, c.dial_count, c.lead_seconds, c.voided_at,
-                c.time_known,
-                trim(coalesce(l.first_name,'') || ' ' || coalesce(l.last_name,'')) lead_name, l.county, n.label from_label,
-                (SELECT o.outcome_code FROM call_outcome o WHERE o.call_id = c.id
-                   AND NOT EXISTS (SELECT 1 FROM call_outcome x WHERE x.supersedes_id = o.id) ORDER BY o.entered_at DESC LIMIT 1) outcome_code
-         FROM call c LEFT JOIN lead l ON l.id = c.lead_id LEFT JOIN caller_number n ON n.id = c.from_number_id
-         WHERE (@from IS NULL OR c.requested_at >= @from) AND (@to IS NULL OR c.requested_at < @to)
-           AND ${group.sql} AND ${search.sql}
-         ORDER BY c.requested_at DESC LIMIT 2000`,
-      )
-      .all({ from: q.from ?? null, to: q.to ?? null, ...group.params, ...search.params })
-      .filter((r: any) => !q.outcome || r.outcome_code === q.outcome);
+    return callHistory(db, { ...q, counties: parseList(q.counties), areaCodes: parseList(q.area_codes) });
   });
 
   app.get('/api/stats/today', async (req) => {
     const q = z.object({ from: z.string().max(40), to: z.string().max(40) }).parse(req.query);
-    const row = db
-      .prepare(
-        `WITH cur AS (
-           SELECT c.id, c.lead_id, oc.counts_as_human_contact h, o.outcome_code
-           FROM call c LEFT JOIN call_outcome o ON o.call_id = c.id
-             AND NOT EXISTS (SELECT 1 FROM call_outcome x WHERE x.supersedes_id = o.id)
-           LEFT JOIN outcome_code oc ON oc.code = o.outcome_code
-           WHERE c.requested_at >= @from AND c.requested_at < @to AND c.initiation_result = 'accepted' AND c.voided_at IS NULL
-             -- Calls from a spreadsheet's history have a date but no real time, so they aren't today's work (same as Reports).
-             AND c.time_known <> 0)
-         SELECT COUNT(DISTINCT id) attempts, COUNT(DISTINCT lead_id) unique_leads,
-                (SELECT coalesce(SUM(dial_count), 0) FROM call WHERE id IN (SELECT id FROM cur)) dials,
-                COUNT(DISTINCT CASE WHEN h = 1 THEN id END) human_contacts,
-                COUNT(DISTINCT CASE WHEN outcome_code = 'appointment' THEN id END) appointments,
-                COUNT(DISTINCT CASE WHEN outcome_code = 'callback' THEN id END) callbacks
-         FROM cur`,
-      )
-      .get({ from: q.from, to: q.to }) as Record<string, number>;
-    return { ...row, goals: loadCallingSettings(db).goals };
+    return todayStats(db, q.from, q.to);
   });
 
   // ---------- caller ID numbers ----------
