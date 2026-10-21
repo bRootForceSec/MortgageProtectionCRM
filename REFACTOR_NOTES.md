@@ -2,6 +2,16 @@
 
 A running log of the stabilization work. Newest first.
 
+## 2026-10-21: C5 web tidy-ups
+
+- **Storage** (`src/web/storage.ts`): `getStored`, `setStored`, `getStoredJson`, `setStoredJson`. They replace seven hand-written `localStorage` wrappers in CallingPage, ImportPage, UpdateBar, GroupPicker, CallbackAlerts, LeadsPage, ReportsPage and App. Blocked storage still just loses the preference. A new structure rule keeps `localStorage` inside `storage.ts`.
+- **Day helpers** (`src/web/when.ts`): `startOfDay`, `addDays`, `dayRange`, `todayRange` and `ymd` replace page-local copies in CallsPage, LeadsPage, ReportsPage, NumbersPage, TodayPage, App and CallbackAlerts. Each page gets the same values as before. Tests in `test/unit/when.test.ts`.
+- **Open question, not changed:** "today" and the Calls page's day are 24 hours from midnight (`dayRange`), while Reports counts calendar days. On the two days a year the clocks change, the 24-hour version is an hour short or long. I kept it as it was; it only matters for calls made in the last hour of those days.
+- **Upload:** `api.upload` takes extra headers, and BulkImport sends through it. It keeps its single retry on a dropped connection. The only visible difference: when the app answers with an error that isn't JSON, the message now reads "Request failed (500)" like everywhere else, instead of "the app answered 500".
+- **CallingPage split:** the log-call form (with its timer and the restore box) moved to `pages/LogCall.tsx`. CallingPage went from about 1,050 to 730 lines. Pure move.
+- **Renames:** `LeadPage` → `SourcePage` (the page the lead came from) and `LeadView` → `LeadDetails` (summary, call history, notes). `LeadViewer` keeps its name.
+- Checks: typecheck, lint, 220 tests, build, and 10 e2e tests pass.
+
 ## 2026-10-21: C4 shared types
 
 - New `src/shared/`, imported by both the server and the UI (decided D5):

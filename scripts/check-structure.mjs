@@ -19,6 +19,12 @@ const RULES = [
     allow: {},
   },
   {
+    name: 'direct localStorage use in the UI (use src/web/storage.ts)',
+    dir: 'src/web',
+    pattern: /\blocalStorage\./g,
+    allow: { 'storage.ts': 3 },
+  },
+  {
     name: 'hand-written audit_log insert (use audit() from src/server/core/audit.ts)',
     dir: 'src/server',
     pattern: /INSERT INTO audit_log/g,
