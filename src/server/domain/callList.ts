@@ -294,3 +294,17 @@ export function setCalledBack(db: DB, leadId: string, on: boolean, now = nowIso(
   db.prepare('INSERT INTO lead_called_back (lead_id, at) VALUES (?, ?) ON CONFLICT(lead_id) DO NOTHING').run(leadId, now);
   return (db.prepare('SELECT at FROM lead_called_back WHERE lead_id = ?').get(leadId) as { at: string }).at;
 }
+
+/** Callbacks due before `to`, including ones missed earlier and ones with no time yet. For the agenda. */
+export function callbacksDue(db: DB, to: string, groups: { counties?: string[]; areaCodes?: string[] }) {
+  const group = groupWhere('l.county_key', groups);
+  const name = `trim(coalesce(l.first_name,'') || ' ' || coalesce(l.last_name,''))`;
+  return db
+    .prepare(
+      `SELECT l.id lead_id, ${name} name, l.phone_e164, l.time_zone, l.county, l.state, s.next_due_at due_at, s.due_any_time = 1 any_time
+       FROM lead_state s JOIN lead l ON l.id = s.lead_id
+       WHERE s.status = 'callback' AND (s.next_due_at IS NULL OR s.next_due_at < @to) AND ${group.sql}
+       ORDER BY s.next_due_at IS NULL, s.next_due_at`,
+    )
+    .all({ to, ...group.params });
+}
