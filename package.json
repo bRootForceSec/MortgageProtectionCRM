@@ -12,7 +12,8 @@
     "test:watch": "vitest",
     "test:e2e": "npm run build && playwright test",
     "desktop": "npm run build && electron .",
-    "dist": "npm run build && electron-builder --publish never"
+    "dist": "npm run build && electron-builder --publish never",
+    "lint": "oxlint && node scripts/check-structure.mjs"
   },
   "repository": {
     "type": "git",
@@ -48,6 +49,7 @@
     "concurrently": "^10.0.6",
     "electron": "^44.9.0",
     "electron-builder": "^26.15.3",
+    "oxlint": "1.86.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "tsx": "^4.23.15",

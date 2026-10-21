@@ -74,7 +74,7 @@ src/
 
 | Step | Change | Audit | Size |
 |---|---|---|---|
-| **T1** | Add ESLint with typescript-eslint and react-hooks, and run it in CI. Fix or justify the existing `eslint-disable` comments. New dev dependencies, so it needs D6. | 7.5, 5.3 | M |
+| **T1** | ✅ Done with **oxlint** instead of ESLint: typescript-eslint doesn't support TypeScript 7, and oxlint reads TypeScript directly and honors the existing `eslint-disable` comments. Also added `scripts/check-structure.mjs` (stops new SQL in routes, new silent catches and new server `console.*`) and a PR checklist. Originally: Add ESLint with typescript-eslint and react-hooks, and run it in CI. Fix or justify the existing `eslint-disable` comments. New dev dependencies, so it needs D6. | 7.5, 5.3 | M |
 | **T2** | HTTP characterization tests for every untested route in audit 7.2 | 7.2 | M |
 | **T3** | A test that stops the server while a draft and a bulk import are running (fails until R1) | 4.1 | S |
 
