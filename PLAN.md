@@ -87,7 +87,7 @@ src/
 | **R3** | ✅ Show web request failures instead of swallowing them, and handle `RestoreBox` errors. Errors would now appear where none showed before. | 4.4, 4.5 | S |
 | **R4** | ✅ Claude CLI reader: SIGKILL after the timeout, and cap stdout | 4.6 | S |
 | **R5** | ✅ (in part: atomic `desktop.json` and one running-check rule. Refusing a newer database was dropped: databases that ran the removed migration 006 would be refused, and after a rolled-back update the app wouldn't open.) Atomic `desktop.json` write; one shared process-alive check; refuse to start on a database newer than the build | 4.9–4.11 | S |
-| **R7** | Top-bar today stats leave out spreadsheet-history calls without a time, matching Reports (approved behavior change, D3) | 2.12 | S |
+| **R7** | ✅ Top-bar today stats leave out spreadsheet-history calls without a time, matching Reports (approved behavior change, D3) | 2.12 | S |
 | **R6** | (Can defer) Move backup gzip and checksum off the event loop | 4.8 | M |
 
 ### Structure
