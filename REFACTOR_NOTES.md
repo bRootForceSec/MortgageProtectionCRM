@@ -2,6 +2,17 @@
 
 A running log of the stabilization work. Newest first.
 
+## 2026-10-21: C4 shared types
+
+- New `src/shared/`, imported by both the server and the UI (decided D5):
+  - `callingSettings.ts`: the zod schema for Calling settings and the shortcut action list. The UI's hand-copied `CallingSettings` and `ShortcutAction` types are gone; it now uses the type made from the server's schema, so they can't drift.
+  - `drafts.ts`: the draft review states and progress shape, used by `drafts.ts`, `bulkImport.ts` and the import screens.
+  - `age.ts`: `ageOn`. The UI's `personAge` had its own copy of the same arithmetic.
+- `tsconfig.server.json` now compiles from `src/` into `dist/`, so `src/shared` builds to `dist/shared`. `dist/server/` is laid out exactly as before, so `npm start`, the Linux service, the updater and the desktop app find their files in the same places. I built and started it to check.
+- Not moved yet: lead detail, draft view and the other response shapes in `web/api.ts` and `web/importTypes.ts`. The server builds those from untyped queries, so sharing them first needs typed domain functions. `fmtPhone` (audit 2.7) no longer has a server copy since X1 deleted `formatUsPhone`.
+- A new structure rule keeps `node:` imports and server or web code out of `src/shared`.
+- Checks: typecheck, lint, 217 tests, build, and 10 e2e tests pass.
+
 ## 2026-10-21: C2 logging and config
 
 - `MPCRM_APP_DIR` is read once, in `loadConfig` (`config.appDir`). `server.ts` and `main.ts` each read it themselves before. `main.ts` no longer passes a runtime, since `Updates` already works out "service" or "manual" from the same folder. Test: `test/unit/config.test.ts`.

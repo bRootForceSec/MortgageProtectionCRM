@@ -2,10 +2,11 @@ import type { DB } from '../db/connection.js';
 import { uuidv7, nowIso } from '../ids.js';
 import { DomainError } from '../core/errors.js';
 import {
-  normalizeUsPhone, normalizeState, normalizeZip, normalizeMoneyToCents, normalizeAge, normalizeDob, ageOn, coborrowerSignal, toText, STATE_TZ, timeZoneFor,
+  normalizeUsPhone, normalizeState, normalizeZip, normalizeMoneyToCents, normalizeAge, normalizeDob, coborrowerSignal, toText, STATE_TZ, timeZoneFor,
 } from './normalize.js';
 import { countyKey, countyDisplayName } from './county.js';
 import { rebuildLeadState, leadsSharingPhones } from './leadState.js';
+import { ageOn } from '../../shared/age.js';
 
 // Editing a lead's details by hand. The lead row holds the current value; every change is also written to
 // lead_change (old and new value), so nothing you typed over is lost.

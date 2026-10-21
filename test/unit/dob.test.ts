@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { ageOn, normalizeDob } from '../../src/server/domain/normalize.js';
+import { normalizeDob } from '../../src/server/domain/normalize.js';
+import { ageOn } from '../../src/shared/age.js';
 import { mapFields } from '../../src/server/domain/importer.js';
 import { suggestMapping } from '../../src/server/domain/mapping.js';
 

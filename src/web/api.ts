@@ -1,3 +1,5 @@
+import { ageOn } from '../shared/age';
+
 // Thin client for the local API. All requests are same-origin; the access cookie is sent automatically.
 
 export class ApiError extends Error {
@@ -204,10 +206,7 @@ export interface LeadDetail {
 /** The lead's age today: from the date of birth when there is one, else the age as imported. */
 export function personAge(l: { dob?: string | null; age?: number | null } & Record<string, unknown>, at = new Date()): number | null {
   if (l.dob && /^\d{4}-\d{2}-\d{2}$/.test(l.dob)) {
-    const [y, m, d] = l.dob.split('-').map(Number) as [number, number, number];
-    let a = at.getFullYear() - y;
-    if (at.getMonth() + 1 < m || (at.getMonth() + 1 === m && at.getDate() < d)) a--;
-    return a;
+    return ageOn(l.dob, at);
   }
   return l.age ?? null;
 }

@@ -36,8 +36,8 @@ Read this before changing code. New features must fit the existing structure. Do
 | Call the API from the UI | `src/web/api.ts` (`api.get`, `api.post`, `api.upload`). Don't write a new fetch wrapper. |
 | Show a failure in the UI | Show the user a message. Don't write `.catch(() => {})` unless failing really is harmless, and if so, add a comment saying why. |
 | Remember a UI preference | Reuse an existing `localStorage` helper. Wrap access in try/catch. |
-| Work with dates and time zones | Web: `src/web/when.ts`. Server: `domain/normalize.ts` (`timeZoneFor`). Don't write another day-range or time-zone offset helper. |
-| Share a type between server and UI | For now, mirror it in `src/web/api.ts` and update both sides in the same PR. |
+| Work with dates and time zones | Web: `src/web/when.ts`. Server: `domain/normalize.ts` (`timeZoneFor`). Age from a date of birth: `src/shared/age.ts` (`ageOn`). Don't write another day-range or time-zone offset helper. |
+| Share a type or helper between server and UI | Put it in `src/shared/` and import it from both sides (server: `'../../shared/x.js'`, web: `'../shared/x'`). Code there must run in both Node and the browser: no `node:` imports and nothing from `server/`, `web/` or `desktop/` (the structure check enforces it). Response shapes not moved yet are still mirrored in `src/web/api.ts` and `src/web/importTypes.ts`; when you change one, update both sides in the same PR. |
 
 ## Data rules
 

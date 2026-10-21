@@ -4,12 +4,13 @@ import { uuidv7, nowIso } from '../ids.js';
 import { type ColumnMapping, type LeadFieldKey, validateMapping, headerKey } from './mapping.js';
 import type { ParsedSheet } from './spreadsheet.js';
 import {
-  ageOn, coborrowerSignal, normalizeAge, normalizeDob, normalizeCallinDate, normalizeMoneyToCents, normalizeState, normalizeUsPhone,
+  coborrowerSignal, normalizeAge, normalizeDob, normalizeCallinDate, normalizeMoneyToCents, normalizeState, normalizeUsPhone,
   normalizeZip, splitName, splitStateZip, toText, timeZoneFor,
 } from './normalize.js';
 import { resolveCounty, lookupZip } from './county.js';
 import { rebuildLeadState } from './leadState.js';
 import { recordSheetHistory } from './sheetHistory.js';
+import { ageOn } from '../../shared/age.js';
 
 export type RowStatus = 'accepted' | 'duplicate_in_file' | 'already_imported' | 'rejected';
 

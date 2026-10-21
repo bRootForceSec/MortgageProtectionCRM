@@ -1,3 +1,5 @@
+import { ageOn } from '../../shared/age.js';
+
 // Pure normalization helpers for imported values. Each returns the normalized value plus,
 // when something looks wrong, a human-readable problem. Raw values are always kept separately.
 
@@ -45,14 +47,6 @@ export function normalizeAge(raw: unknown): Normalized<number> {
 }
 
 const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
-
-/** Whole years between a date of birth (YYYY-MM-DD) and `at`. */
-export function ageOn(dob: string, at: Date = new Date()): number {
-  const [y, m, d] = dob.split('-').map(Number) as [number, number, number];
-  let age = at.getFullYear() - y;
-  if (at.getMonth() + 1 < m || (at.getMonth() + 1 === m && at.getDate() < d)) age--;
-  return age;
-}
 
 /**
  * Date of birth as printed: "3/14/1961", "03-14-61", "1961-03-14", "March 14, 1961", "14 Mar 1961".

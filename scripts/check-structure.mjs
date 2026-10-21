@@ -25,6 +25,12 @@ const RULES = [
     allow: { 'core/audit.ts': 1 },
   },
   {
+    name: 'Node or app-specific import in src/shared (it runs in both the server and the browser)',
+    dir: 'src/shared',
+    pattern: /from '(node:|[^']*\/(server|web|desktop)\/)/g,
+    allow: {},
+  },
+  {
     name: 'console.* in server code (use the pino logger)',
     dir: 'src/server',
     pattern: /\bconsole\.(log|warn|error|info|debug)\(/g,
