@@ -80,7 +80,16 @@ export function claudeCodeReader(command: string, model: string): PageReader {
   };
 }
 
-function run(file: string, args: string[], cwd: string, command: string): Promise<string> {
+/** Limits for one Claude Code run. Exported for tests. */
+export const RUN_LIMITS = {
+  timeoutMs: TIMEOUT_MS,
+  // A page's answer is a few KB; anything near this means something is wrong.
+  maxOutputBytes: 10 * 1024 * 1024,
+  // After the polite stop, how long to wait before forcing it.
+  killAfterMs: 5_000,
+};
+
+export function run(file: string, args: string[], cwd: string, command: string, limits = RUN_LIMITS): Promise<string> {
   return new Promise((resolve, reject) => {
     let child;
     try {
@@ -91,12 +100,26 @@ function run(file: string, args: string[], cwd: string, command: string): Promis
     }
     let out = '';
     let err = '';
-    const timer = setTimeout(() => {
+    // Asks the process to stop, then forces it if it is still running a few seconds later.
+    let stopping = false;
+    const stop = (why: string) => {
+      if (stopping) return;
+      stopping = true;
+      clearTimeout(timer);
       child.kill('SIGTERM');
-      reject(new AiError('the AI took more than 3 minutes on this page'));
-    }, TIMEOUT_MS);
-    child.stdout.on('data', (d) => (out += d));
-    child.stderr.on('data', (d) => (err += d));
+      setTimeout(() => {
+        if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
+      }, limits.killAfterMs).unref();
+      reject(new AiError(why));
+    };
+    const timer = setTimeout(() => stop(`the AI took more than ${Math.round(limits.timeoutMs / 60_000)} minutes on this page`), limits.timeoutMs);
+    child.stdout.on('data', (d) => {
+      out += d;
+      if (out.length > limits.maxOutputBytes) stop('Claude Code sent far more output than a page answer');
+    });
+    child.stderr.on('data', (d) => {
+      err = (err + d).slice(-limits.maxOutputBytes);
+    });
     child.on('error', (e: NodeJS.ErrnoException) => {
       clearTimeout(timer);
       reject(
