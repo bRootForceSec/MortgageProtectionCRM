@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, fmtDateTime, fmtPhone, type LeadDetail } from '../api';
 import { useApp } from '../App';
-import { LeadSummary, CallHistory, Notes, StatusBadge, toggleCalledBack } from './LeadView';
-import { LeadPage } from './LeadPage';
+import { LeadSummary, CallHistory, Notes, StatusBadge, toggleCalledBack } from './LeadDetails';
+import { SourcePage } from './SourcePage';
 import { EditLead } from './EditLead';
 import { isAction, isTyping, keyLabel } from '../shortcuts';
 
@@ -161,7 +161,7 @@ export function LeadViewer({ id, list = [], onClose }: { id: string; list?: View
           </div>
         </section>
 
-        {d && d.lead.id === current ? <LeadPage d={d} /> : <section className="panel lead-page" aria-label="Lead page" />}
+        {d && d.lead.id === current ? <SourcePage d={d} /> : <section className="panel lead-page" aria-label="Lead page" />}
       </div>
       {editing && d && <EditLead d={d} onClose={() => setEditing(false)} onSaved={async () => { setEditing(false); await load(); }} />}
     </div>

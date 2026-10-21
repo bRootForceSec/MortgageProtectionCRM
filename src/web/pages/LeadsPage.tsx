@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api, fmtDateTime, fmtPhone, fullName, type AddResult, type CallListResponse } from '../api';
 import { ClearListDialog, suggestListName } from '../components/CallListDialogs';
 import { useApp } from '../App';
-import { StatusBadge } from '../components/LeadView';
+import { StatusBadge } from '../components/LeadDetails';
 import { LeadViewer } from '../components/LeadViewer';
 import { GroupPicker, useGroups } from '../components/GroupPicker';
 import { getStored, setStored } from '../storage';

@@ -2,9 +2,9 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, typ
 import { callbackFields } from '../when';
 import { api, personAge, fmtMoney, fmtPhone, fmtRelative, fmtDateTime, type LeadDetail, type CallListItem, type CallListResponse, type RecentOutcome } from '../api';
 import { useApp } from '../App';
-import { LeadSummary, CallHistory, Notes, StatusBadge, toggleCalledBack } from '../components/LeadView';
+import { LeadSummary, CallHistory, Notes, StatusBadge, toggleCalledBack } from '../components/LeadDetails';
 import { EditLead } from '../components/EditLead';
-import { LeadPage } from '../components/LeadPage';
+import { SourcePage } from '../components/SourcePage';
 import { DialQr } from '../components/DialQr';
 import { ClearListDialog, SavedListsDialog, suggestListName } from '../components/CallListDialogs';
 import { fillScript, isAction, isTyping, keyLabel, type KeyMap } from '../shortcuts';
@@ -557,7 +557,7 @@ export function CallingPage() {
         </div>
       </section>
 
-      {detail ? <LeadPage d={detail} /> : <section className="panel lead-page" aria-label="Lead page" />}
+      {detail ? <SourcePage d={detail} /> : <section className="panel lead-page" aria-label="Lead page" />}
       {editing && detail && <EditLead d={detail} onClose={() => setEditing(false)} onSaved={async () => { setEditing(false); await refreshDetail(); }} />}
       {qr && <DialQr e164={qr} onClose={() => setQr(null)} />}
     </div>
