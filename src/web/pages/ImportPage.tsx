@@ -41,8 +41,12 @@ function store(v?: string | null) {
 }
 
 export function useLeadTypes() {
+  const { toast } = useApp();
   const [types, setTypes] = useState<LeadType[]>([]);
-  const reload = useCallback(() => api.get<LeadType[]>('/lead-types').then(setTypes).catch(() => {}), []);
+  const reload = useCallback(
+    () => api.get<LeadType[]>('/lead-types').then(setTypes).catch((e: Error) => toast(`Couldn't load lead types: ${e.message}`, 'error')),
+    [toast],
+  );
   useEffect(() => void reload(), [reload]);
   return { types, reload };
 }
@@ -131,7 +135,7 @@ function Start({ onDraft, onBulk }: { onDraft: (id: string) => void; onBulk: (id
   };
 
   useEffect(() => {
-    api.get<{ lead_type: string }>('/import-defaults').then((d) => setLeadType((t) => t || d.lead_type)).catch(() => {});
+    api.get<{ lead_type: string }>('/import-defaults').then((d) => setLeadType((t) => t || d.lead_type)).catch(() => {}); // only a default; the type can still be picked by hand
   }, []);
 
   const onFile = async (f: File | undefined) => {
@@ -437,8 +441,12 @@ function DraftScreen({ id, onLeave, onGone, onCommitted }: {
     if (shift && lastClicked.current != null) {
       const nums = shown.map((r) => r.row_number);
       const [a = 0, b = 0] = [nums.indexOf(lastClicked.current), nums.indexOf(n)].sort((x, y) => x - y);
-      for (const k of nums.slice(a, b + 1)) on ? next.add(k) : next.delete(k);
-    } else on ? next.add(n) : next.delete(n);
+      for (const k of nums.slice(a, b + 1)) {
+        if (on) next.add(k);
+        else next.delete(k);
+      }
+    } else if (on) next.add(n);
+    else next.delete(n);
     lastClicked.current = n;
     setChecked(next);
   };

@@ -107,7 +107,6 @@ export function assessRow(data: DraftRowData, edits: FieldValues | null): ReadIs
   const { lead, errors, warnings } = mapFields(fields, data.extra);
   const edited = new Set(Object.keys(edits ?? {}));
   const issues: ReadIssue[] = [];
-  const has = (field: string) => issues.some((i) => i.field === field && i.blocking);
   for (const r of data.reader_issues) if (!edited.has(r.field)) issues.push(r);
   for (const e of errors) issues.push({ field: e.includes('name') ? 'full_name' : 'phone', message: e, blocking: true, kind: 'missing' });
   if (!lead.address_line) issues.push({ field: 'address', message: 'no street address', blocking: true, kind: 'missing' });
@@ -273,6 +272,7 @@ function lastLeadType(db: DB): string | null {
 
 export class DraftWorker {
   private running = new Set<string>();
+  private stopped = false;
   /** For tests: replace the AI reader. */
   readerOverride: PageReader | null | undefined = undefined;
   concurrency = 2;
@@ -290,10 +290,12 @@ export class DraftWorker {
 
   /** Starts (or continues) reading a draft. Resolves when the reading is finished. */
   run(id: string): Promise<void> {
-    if (this.running.has(id)) return Promise.resolve();
+    if (this.stopped || this.running.has(id)) return Promise.resolve();
     this.running.add(id);
     return this.read(id)
       .catch((e) => {
+        // Stopping closes the database under a read; the draft stays "reading" and resumeAll picks it up next start.
+        if (this.stopped) return;
         const d = this.db.prepare('SELECT progress_json FROM import_draft WHERE id = ?').get(id) as { progress_json: string } | undefined;
         if (!d) return;
         const p = { ...(JSON.parse(d.progress_json ?? '{}') as Progress), error: (e as Error).message };
@@ -306,7 +308,13 @@ export class DraftWorker {
     return this.running.has(id);
   }
 
+  /** Called before the database closes: reads in progress stop quietly and no new ones start. */
+  stop() {
+    this.stopped = true;
+  }
+
   private alive(id: string) {
+    if (this.stopped) return false;
     const d = this.db.prepare('SELECT status FROM import_draft WHERE id = ?').get(id) as { status: string } | undefined;
     return d?.status === 'reading';
   }
@@ -558,7 +566,7 @@ export function reviewRow(
     if (!r) throw new DomainError('row not found', 404);
     if (r.extractor === 'pending') throw new DomainError('this page is still being read');
     const data = JSON.parse(r.fields_json) as DraftRowData;
-    const edits = { ...(r.edits_json ? JSON.parse(r.edits_json) : {}), ...(input.edits ?? {}) } as FieldValues;
+    const edits = { ...(r.edits_json && JSON.parse(r.edits_json)), ...input.edits } as FieldValues;
     // Edits equal to what was read are not edits.
     for (const k of Object.keys(edits) as LeadFieldKey[]) if ((data.fields[k] ?? '') === (edits[k] ?? '')) delete edits[k];
     const issues = assessRow(data, edits);
@@ -676,15 +684,19 @@ export function commitDraft(db: DB, importsDir: string, id: string, batch: Batch
     default_lead_type: settings.default_lead_type, prompt_version: d.kind === 'pdf' ? PROMPT_VERSION : undefined,
     readers: [...new Set(rows.map((r) => r.extractor).filter(Boolean))],
   };
-  const result = commitRows(db, { fileName: d.file_name, sha256: d.file_sha256 }, source, batch, meta, {
-    fileModified: d.file_modified,
-    importRepeatsAsNew: settings.import_repeats_as_new,
-  });
-  const safe = d.file_name.replace(/[^\w.\- ]/g, '_');
-  fs.copyFileSync(d.file_path, path.join(importsDir, `${result.batchId}-${safe}`));
-  fs.chmodSync(path.join(importsDir, `${result.batchId}-${safe}`), 0o600);
-  db.prepare("UPDATE import_draft SET status = 'committed', batch_id = ?, updated_at = ? WHERE id = ?").run(result.batchId, nowIso(), id);
+  // One transaction: if keeping the file fails, no leads are imported, so trying again can't import them twice.
+  const result = db.transaction(() => {
+    const r = commitRows(db, { fileName: d.file_name, sha256: d.file_sha256 }, source, batch, meta, {
+      fileModified: d.file_modified,
+      importRepeatsAsNew: settings.import_repeats_as_new,
+    });
+    const safe = d.file_name.replace(/[^\w.\- ]/g, '_');
+    fs.copyFileSync(d.file_path, path.join(importsDir, `${r.batchId}-${safe}`));
+    fs.chmodSync(path.join(importsDir, `${r.batchId}-${safe}`), 0o600);
+    db.prepare("UPDATE import_draft SET status = 'committed', batch_id = ?, updated_at = ? WHERE id = ?").run(r.batchId, nowIso(), id);
+    if (settings.default_lead_type) setSetting(db, 'import.last_lead_type', settings.default_lead_type);
+    return r;
+  })();
   fs.rmSync(d.file_path, { force: true });
-  if (settings.default_lead_type) setSetting(db, 'import.last_lead_type', settings.default_lead_type);
   return result;
 }

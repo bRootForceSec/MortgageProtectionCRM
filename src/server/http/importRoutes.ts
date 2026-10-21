@@ -40,6 +40,15 @@ const batchSchema = z.object({
 const fieldsSchema = z.record(z.string().max(40), z.string().max(500));
 const typeCode = z.string().min(1).max(20).regex(/^[A-Za-z0-9-]+$/);
 
+/** Reads a URI-encoded upload header. A badly encoded value counts as missing, so the upload still goes through. */
+export function uploadHeader(headers: Record<string, unknown>, name: string, fallback: string): string {
+  try {
+    return decodeURIComponent(String(headers[name] ?? fallback));
+  } catch {
+    return fallback;
+  }
+}
+
 function fileModifiedHeader(v: unknown): string | null {
   const n = Number(v);
   if (!Number.isFinite(n) || n <= 0) return null;
@@ -69,7 +78,7 @@ export function registerImportRoutes(
   app.post('/api/drafts/pdf', async (req) => {
     const buf = req.body as Buffer;
     if (!Buffer.isBuffer(buf) || !buf.length) throw new DomainError('empty file');
-    const name = decodeURIComponent(String(req.headers['x-file-name'] ?? 'leads.pdf')).replace(/[/\\]/g, '_').slice(0, 200);
+    const name = uploadHeader(req.headers, 'x-file-name', 'leads.pdf').replace(/[/\\]/g, '_').slice(0, 200);
     const q = z.object({ lead_type: typeCode.optional() }).parse(req.query);
     const { id } = createPdfDraft(db, config.importsDir, { fileName: name, bytes: buf, fileModified: fileModifiedHeader(req.headers['x-file-modified']) }, q.lead_type ? { default_lead_type: q.lead_type } : {});
     void worker.run(id);
@@ -175,15 +184,8 @@ export function registerImportRoutes(
     const { id } = idParam.parse(req.params);
     const buf = req.body as Buffer;
     if (!Buffer.isBuffer(buf)) throw new DomainError('send the file as the request body');
-    const header = (h: string, fallback: string) => {
-      try {
-        return decodeURIComponent(String(req.headers[h] ?? fallback));
-      } catch {
-        return fallback;
-      }
-    };
-    const name = header('x-file-name', 'leads').replace(/[/\\]/g, '_').slice(0, 200);
-    const relPath = header('x-file-path', '').slice(0, 1000) || null;
+    const name = uploadHeader(req.headers, 'x-file-name', 'leads').replace(/[/\\]/g, '_').slice(0, 200);
+    const relPath = uploadHeader(req.headers, 'x-file-path', '').slice(0, 1000) || null;
     return bulk.addFile(id, { fileName: name, relPath, bytes: buf, fileModified: fileModifiedHeader(req.headers['x-file-modified']) });
   });
 

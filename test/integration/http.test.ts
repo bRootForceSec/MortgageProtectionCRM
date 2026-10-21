@@ -184,6 +184,19 @@ describe('AI settings and PDF uploads over HTTP', () => {
     expect(dump).not.toContain('sk-ant-secret-xyz');
   });
 
+  it('treats a badly encoded file name as missing instead of failing', async () => {
+    const parse = await app.inject({
+      method: 'POST', url: '/api/imports/parse', headers: { ...write, 'content-type': 'application/octet-stream', 'x-file-name': '%E0%A4%A' },
+      payload: await sampleXlsx(),
+    });
+    expect(parse.statusCode).toBe(200);
+    const pdf = await app.inject({
+      method: 'POST', url: '/api/drafts/pdf', headers: { ...write, 'content-type': 'application/pdf', 'x-file-name': '%E0%A4%A' }, payload: Buffer.from('hello'),
+    });
+    expect(pdf.statusCode).toBe(400);
+    expect(pdf.json().error).toMatch(/not a PDF/);
+  });
+
   it('refuses a file that is not a PDF', async () => {
     const r = await app.inject({
       method: 'POST', url: '/api/drafts/pdf', headers: { ...write, 'content-type': 'application/pdf', 'x-file-name': 'x.pdf' }, payload: Buffer.from('hello'),

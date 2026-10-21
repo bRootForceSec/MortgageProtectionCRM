@@ -31,7 +31,7 @@ export function loadPdf(url: string): Promise<PDFDocumentProxy> {
     while (cache.size > 2) {
       const [k, old] = cache.entries().next().value!;
       cache.delete(k);
-      void old.destroy().catch(() => {});
+      void old.destroy().catch(() => {}); // cleanup of a document we no longer show
     }
   }
   return task.promise;
@@ -43,7 +43,7 @@ export async function renderPage(canvas: HTMLCanvasElement, url: string, pageNo:
   const prev = running.get(canvas);
   if (prev) {
     prev.cancel();
-    await prev.promise.catch(() => {});
+    await prev.promise.catch(() => {}); // only waiting for it to finish; its own caller handles the error
   }
   const doc = await loadPdf(url);
   const page = await doc.getPage(pageNo);

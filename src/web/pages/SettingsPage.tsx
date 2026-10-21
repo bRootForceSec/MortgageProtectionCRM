@@ -148,7 +148,7 @@ interface PageCheck {
 function LeadPagesCard() {
   const { toast } = useApp();
   const [c, setC] = useState<PageCheck | null>(null);
-  const load = useCallback(() => api.get<PageCheck>('/lead-pages/check').then(setC).catch(() => {}), []);
+  const load = useCallback(() => api.get<PageCheck>('/lead-pages/check').then(setC).catch(() => {}), []); // polled while a check runs; the next poll tries again
   useEffect(() => { void load(); }, [load]);
   // Follow along while it runs.
   useEffect(() => {

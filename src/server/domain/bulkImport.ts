@@ -87,6 +87,7 @@ export class BulkImporter {
   maxReading = 2;
   partRows = PART_ROWS;
   private reading = new Map<string, Promise<void>>();
+  private stopped = false;
 
   constructor(private db: DB, private importsDir: string, private worker: DraftWorker) {}
 
@@ -302,8 +303,14 @@ export class BulkImporter {
     }
   }
 
+  /** Called before the database closes: files being read are left as they are and resume on the next start. */
+  stop() {
+    this.stopped = true;
+  }
+
   /** Starts reading queued PDFs, a few at a time. */
   pump() {
+    if (this.stopped) return;
     const waiting = this.db
       .prepare(
         `SELECT f.bulk_id, f.seq, f.draft_id FROM import_bulk_file f JOIN import_draft d ON d.id = f.draft_id
@@ -318,6 +325,7 @@ export class BulkImporter {
         .run(w.draft_id)
         .finally(() => {
           this.reading.delete(w.draft_id);
+          if (this.stopped) return;
           try {
             this.settle(w.bulk_id, w.seq);
           } catch (e: any) {
@@ -345,7 +353,7 @@ export class BulkImporter {
 
   /** For tests: resolves once nothing is being read. */
   async whenIdle() {
-    while (this.reading.size) await Promise.all([...this.reading.values()]);
+    while (this.reading.size) await Promise.all(this.reading.values());
   }
 
   private view(f: BulkFileDb) {

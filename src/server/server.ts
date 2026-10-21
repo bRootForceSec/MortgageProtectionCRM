@@ -144,6 +144,8 @@ export async function startServer(opts: StartOptions = {}): Promise<RunningServe
       clearInterval(t2);
       clearTimeout(t0);
       pageChecker.stop();
+      drafts.stop();
+      bulk.stop();
       await app.close();
       db.close();
       fs.rmSync(pidFile, { force: true });

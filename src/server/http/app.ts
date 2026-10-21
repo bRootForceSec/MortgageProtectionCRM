@@ -16,7 +16,7 @@ import { createBackup, listBackups } from '../backup.js';
 import { uuidv7, nowIso } from '../ids.js';
 import { normalizeUsPhone } from '../domain/normalize.js';
 import { Updates } from '../updates.js';
-import { registerImportRoutes } from './importRoutes.js';
+import { registerImportRoutes, uploadHeader } from './importRoutes.js';
 import { DraftWorker } from '../domain/drafts.js';
 import { BulkImporter } from '../domain/bulkImport.js';
 import { batchPdf, turnPdfPages, normTurn } from '../domain/pageTurn.js';
@@ -431,7 +431,9 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
            FROM call c LEFT JOIN call_outcome o ON o.call_id = c.id
              AND NOT EXISTS (SELECT 1 FROM call_outcome x WHERE x.supersedes_id = o.id)
            LEFT JOIN outcome_code oc ON oc.code = o.outcome_code
-           WHERE c.requested_at >= @from AND c.requested_at < @to AND c.initiation_result = 'accepted' AND c.voided_at IS NULL)
+           WHERE c.requested_at >= @from AND c.requested_at < @to AND c.initiation_result = 'accepted' AND c.voided_at IS NULL
+             -- Calls from a spreadsheet's history have a date but no real time, so they aren't today's work (same as Reports).
+             AND c.time_known <> 0)
          SELECT COUNT(DISTINCT id) attempts, COUNT(DISTINCT lead_id) unique_leads,
                 (SELECT coalesce(SUM(dial_count), 0) FROM call WHERE id IN (SELECT id FROM cur)) dials,
                 COUNT(DISTINCT CASE WHEN h = 1 THEN id END) human_contacts,
@@ -497,7 +499,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   app.post('/api/imports/parse', async (req) => {
     const buf = req.body as Buffer;
     if (!Buffer.isBuffer(buf) || !buf.length) throw new DomainError('empty file');
-    const name = decodeURIComponent(String(req.headers['x-file-name'] ?? 'upload.xlsx')).replace(/[/\\]/g, '_').slice(0, 200);
+    const name = uploadHeader(req.headers, 'x-file-name', 'upload.xlsx').replace(/[/\\]/g, '_').slice(0, 200);
     let parsed: ParsedFile;
     try {
       parsed = await parseSpreadsheet(buf, name);

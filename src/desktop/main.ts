@@ -64,7 +64,10 @@ function desktopState(dataDir: string) {
   return {
     read,
     write(patch: Record<string, unknown>) {
-      fs.writeFileSync(file, JSON.stringify({ ...read(), ...patch }, null, 2), { mode: 0o600 });
+      // Write a temp file, then rename it over the old one, so a crash mid-write can't leave a half-written file.
+      const tmp = `${file}.tmp`;
+      fs.writeFileSync(tmp, JSON.stringify({ ...read(), ...patch }, null, 2), { mode: 0o600 });
+      fs.renameSync(tmp, file);
     },
   };
 }

@@ -58,7 +58,7 @@ export function NumbersPage() {
   const [stats, setStats] = useState<Map<string, Stats>>(new Map());
   const [open, setOpen] = useState<string | null>(null);
   useEffect(() => {
-    api.get<Stats[]>('/numbers/stats', { today_from: todayRange().from }).then((r) => setStats(new Map(r.map((x) => [x.id, x])))).catch(() => {});
+    api.get<Stats[]>('/numbers/stats', { today_from: todayRange().from }).then((r) => setStats(new Map(r.map((x) => [x.id, x])))).catch(() => {}); // stats are extra; the numbers list still shows
   }, [meta?.numbers]);
 
   const add = async () => {

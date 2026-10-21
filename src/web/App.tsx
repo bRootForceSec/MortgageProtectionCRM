@@ -54,9 +54,6 @@ export function App() {
   const [toastMsg, setToast] = useState<{ msg: string; kind: 'ok' | 'error' } | null>(null);
   const [statsVersion, setStatsVersion] = useState(0);
   const [calling, setCalling] = useState<CallingSettingsResponse | null>(null);
-  useEffect(() => {
-    api.get<CallingSettingsResponse>('/settings/calling').then(setCalling).catch(() => {});
-  }, []);
   const keys = useMemo(() => buildKeyMap(calling, meta?.outcome_codes ?? []), [calling, meta]);
 
   const reloadMeta = useCallback(async () => {
@@ -77,6 +74,9 @@ export function App() {
     setToast({ msg, kind });
     window.setTimeout(() => setToast((t) => (t?.msg === msg ? null : t)), kind === 'error' ? 6000 : 2500);
   }, []);
+  useEffect(() => {
+    api.get<CallingSettingsResponse>('/settings/calling').then(setCalling).catch((e: Error) => toast(`Couldn't load calling settings: ${e.message}`, 'error'));
+  }, [toast]);
   const go = (p: Page) => {
     location.hash = p;
     setPage(p);
@@ -157,7 +157,7 @@ function TodayStats() {
     const start = new Date();
     start.setHours(0, 0, 0, 0);
     const end = new Date(start.getTime() + 86_400_000);
-    api.get<Stats>('/stats/today', { from: start.toISOString(), to: end.toISOString() }).then(setS).catch(() => {});
+    api.get<Stats>('/stats/today', { from: start.toISOString(), to: end.toISOString() }).then(setS).catch(() => {}); // refreshed often; the last numbers stay up until the next one works
   }, [statsVersion, calling]);
   if (!s) return null;
   const g = s.goals ?? { dials: null, contacts: null, appointments: null };
