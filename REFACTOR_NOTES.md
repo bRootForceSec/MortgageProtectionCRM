@@ -2,6 +2,10 @@
 
 A running log of the stabilization work. Newest first.
 
+## 2026-10-21: CLAUDE.md conventions
+
+- Added `CLAUDE.md`: where new code goes, which shared pieces to reuse, data rules, and the pre-push checks. Every Claude session reads it, so new features build on the shared pieces instead of copying them. Update it whenever a plan step moves a shared piece.
+
 ## 2026-10-21: Safety steps S1–S4
 
 - **S1 `MPCRM_BACKUP_KEEP`** (`src/server/config.ts`): values below 1 now mean 1, and a value that isn't a whole number falls back to 30, with a warning in both cases. Before, 0 deleted every backup and a non-number stopped pruning. Test: `test/unit/config.test.ts`.
