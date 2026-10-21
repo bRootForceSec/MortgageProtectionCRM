@@ -3,8 +3,9 @@ import { api } from '../api';
 import { useApp } from '../App';
 import { chime } from '../components/CallbackAlerts';
 import {
-  buildKeyMap, conflicts, keyLabel, normKey, RESERVED, type CallingSettings, type CallingSettingsResponse, type ShortcutAction,
+  buildKeyMap, conflicts, keyLabel, normKey, RESERVED, type CallingSettingsResponse,
 } from '../shortcuts';
+import type { CallingSettings, ShortcutAction } from '../../shared/callingSettings';
 
 // Settings for the Calling screen: retry gap, dialing, timer, goals, alerts, shortcuts and scripts.
 

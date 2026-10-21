@@ -13,7 +13,7 @@ Read this before changing code. New features must fit the existing structure. Do
 ## Before you push
 
 - Run `npm run typecheck`, `npm run lint` and `npm test`, and `npm run build` if you touched the build or assets.
-- `npm run lint` runs oxlint (React hook rules and common mistakes) and `scripts/check-structure.mjs`. The structure check stops new SQL in route files, new silent `.catch(() => {})` in the UI and new `console.*` in the server. If you remove some, lower the allowance in that script as it tells you to. Never raise one to get a change through.
+- `npm run lint` runs oxlint (React hook rules and common mistakes) and `scripts/check-structure.mjs`. The structure check stops new SQL in route files, new silent `.catch(() => {})` in the UI, hand-written `audit_log` inserts and new `console.*` in the server. If you remove some, lower the allowance in that script as it tells you to. Never raise one to get a change through.
 - Run `npm run test:e2e` for UI flows when you can.
 - Write a test for new behavior. Before refactoring untested code, first add a test that pins its current behavior.
 - Never commit secrets. CI runs `scripts/secret-scan.mjs`.
@@ -23,20 +23,21 @@ Read this before changing code. New features must fit the existing structure. Do
 
 | You need to… | Do this |
 |---|---|
-| Add an endpoint | Put it in the route file for its feature (`src/server/http/*Routes.ts`). Keep the handler thin: validate input with zod, call a domain function, return the result. **No SQL in route files for new code.** |
+| Add an endpoint | Put it in the route file for its feature (`src/server/http/*Routes.ts`). Keep the handler thin: validate input with zod, call a domain function, return the result. **No SQL in route files** (the structure check enforces it). |
+| Find the route file | `importRoutes` (uploads, drafts, bulk import, import history), `leadRoutes` (leads, call list, lead page, calls and outcomes), `callingRoutes`, `numberRoutes` (caller IDs and their checks), `reportRoutes`, `dataRoutes` (export and backups). `app.ts` only wires these together. |
 | Add business logic or queries | `src/server/domain/<feature>.ts`. Domain functions take `db` and know nothing about HTTP. |
-| Signal a user-facing error | `throw new DomainError(message, status?)` (currently in `domain/calls.ts`). The error handler turns it into a 4xx with `{ error }`. Don't throw a plain `Error` for user mistakes, and don't catch and rewrap errors in routes. |
-| Store a setting | Use `getSetting` / `setSetting` (`app_setting` table; currently in `ai/settings.ts`). Don't create a new settings table or file. Secrets go in `Secrets` (0600 `secrets.json`), never in the DB. |
-| Record who changed what | Write an `audit_log` row through the existing helper in the module you're in. Don't add another inline `INSERT INTO audit_log`. |
+| Signal a user-facing error | `throw new DomainError(message, status?)` from `src/server/core/errors.ts`. The error handler turns it into a 4xx with `{ error }`. Don't throw a plain `Error` for user mistakes, and don't catch and rewrap errors in routes. |
+| Store a setting | Use `getSetting` / `setSetting` from `src/server/core/settings.ts` (`app_setting` table). Don't create a new settings table or file. Secrets go in `Secrets` (0600 `secrets.json`), never in the DB. |
+| Record who changed what | `audit(db, table, rowId, action, old, new)` from `src/server/core/audit.ts`, inside the same transaction as the change. Don't write `INSERT INTO audit_log` by hand. |
 | Change the schema | Add the next numbered file in `src/server/db/migrations/`. Check open PRs first so two branches don't take the same number. Never edit a migration that has shipped. 006 is missing on purpose. |
 | Read config or env vars | `src/server/config.ts` (`loadConfig`). Validate there, not where the value is used. |
 | Log on the server | Use the pino logger (`app.log` or `req.log`), not `console.*`. |
 | Run a background job | Look at `DraftWorker`, `BulkImporter` and `PageChecker` first. A new job must stop cleanly when the server stops (`server.ts` `stop()`). |
-| Call the API from the UI | `src/web/api.ts` (`api.get`, `api.post`, `api.upload`). Don't write a new fetch wrapper. |
+| Call the API from the UI | `src/web/api.ts` (`api.get`, `api.post`, `api.upload`, which takes extra headers). Don't write a new fetch wrapper. |
 | Show a failure in the UI | Show the user a message. Don't write `.catch(() => {})` unless failing really is harmless, and if so, add a comment saying why. |
-| Remember a UI preference | Reuse an existing `localStorage` helper. Wrap access in try/catch. |
-| Work with dates and time zones | Web: `src/web/when.ts`. Server: `domain/normalize.ts` (`timeZoneFor`). Don't write another day-range or time-zone offset helper. |
-| Share a type between server and UI | For now, mirror it in `src/web/api.ts` and update both sides in the same PR. |
+| Remember a UI preference | `getStored` / `setStored` (or the `Json` versions) from `src/web/storage.ts`. Don't touch `localStorage` directly (the structure check enforces it). |
+| Work with dates and time zones | Web: `src/web/when.ts` (`startOfDay`, `addDays`, `dayRange`, `todayRange`, `ymd`, and the callback parsing). Server: `domain/normalize.ts` (`timeZoneFor`). Age from a date of birth: `src/shared/age.ts` (`ageOn`). Don't write another day-range or time-zone offset helper. |
+| Share a type or helper between server and UI | Put it in `src/shared/` and import it from both sides (server: `'../../shared/x.js'`, web: `'../shared/x'`). Code there must run in both Node and the browser: no `node:` imports and nothing from `server/`, `web/` or `desktop/` (the structure check enforces it). Response shapes not moved yet are still mirrored in `src/web/api.ts` and `src/web/importTypes.ts`; when you change one, update both sides in the same PR. |
 
 ## Data rules
 
@@ -47,7 +48,7 @@ Read this before changing code. New features must fit the existing structure. Do
 ## Style
 
 - Strict TypeScript. Avoid `any` in new code.
-- Use the `zod` import (not `zod/v4`).
+- Import zod as `import * as z from 'zod/v4'`, like the rest of the code.
 - Match the file you're in. Don't add a library for something a few lines can do, and ask before adding a dependency.
 - Prefer deleting code to adding abstractions. Don't build a helper or layer with only one user.
 

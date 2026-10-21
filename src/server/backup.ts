@@ -4,8 +4,9 @@ import zlib from 'node:zlib';
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import Database from 'better-sqlite3';
-import type { DB } from './db/connection.js';
+import { tableNames, type DB } from './db/connection.js';
 import type { Config } from './config.js';
+import { getSetting, setSetting } from './core/settings.js';
 
 // Backups use SQLite's online backup API, so they are consistent even while the app runs.
 // Each backup is verified (integrity check + row counts) before it is kept.
@@ -20,15 +21,13 @@ export interface BackupResult {
 }
 
 export function tableCounts(db: DB): Record<string, number> {
-  const names = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name").all() as { name: string }[];
-  return Object.fromEntries(names.map(({ name }) => [name, (db.prepare(`SELECT COUNT(*) n FROM "${name}"`).get() as { n: number }).n]));
+  return Object.fromEntries(tableNames(db).map((name) => [name, (db.prepare(`SELECT COUNT(*) n FROM "${name}"`).get() as { n: number }).n]));
 }
 
 /** Order-independent checksum of every row in every table. Equal checksums mean equal contents. */
 export function contentChecksum(db: DB): string {
   const h = createHash('sha256');
-  const names = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name").all() as { name: string }[];
-  for (const { name } of names) {
+  for (const name of tableNames(db)) {
     const rows = (db.prepare(`SELECT * FROM "${name}"`).all() as unknown[]).map((r) => JSON.stringify(r)).sort();
     h.update(name);
     for (const r of rows) h.update(r);
@@ -184,4 +183,26 @@ export function checkLatestBackup(c: Config, now = new Date()): RestoreCheck {
   } finally {
     for (const f of [scratch, `${scratch}-wal`, `${scratch}-shm`]) fs.rmSync(f, { force: true });
   }
+}
+
+const RESTORE_CHECK = 'backup_restore_check';
+const WEEK = 7 * 86_400_000;
+
+/** The result of the last restore check, if one has run. */
+export function lastBackupCheck(db: DB): RestoreCheck | null {
+  return getSetting<RestoreCheck>(db, RESTORE_CHECK);
+}
+
+/** Checks that the newest backup restores cleanly, and remembers the result. */
+export function runBackupCheck(db: DB, config: Config, now = new Date()): RestoreCheck {
+  const r = checkLatestBackup(config, now);
+  if (r.file) setSetting(db, RESTORE_CHECK, r);
+  return r;
+}
+
+/** Runs the restore check if the last one is a week old. */
+export function runBackupCheckIfDue(db: DB, config: Config, now = new Date()): RestoreCheck | null {
+  const last = lastBackupCheck(db);
+  if (last && now.getTime() - Date.parse(last.at) < WEEK) return null;
+  return runBackupCheck(db, config, now);
 }

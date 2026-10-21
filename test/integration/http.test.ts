@@ -55,7 +55,7 @@ describe('local access protections', () => {
 });
 
 describe('import and work a lead over HTTP', () => {
-  it('parse → preview → commit → queue → log call → export without health columns', async () => {
+  it('upload → draft → commit → log call → export without health columns', async () => {
     // One buffer for both uploads: a regenerated workbook carries a new timestamp, so it would be a different file.
     const xlsxFile = await sampleXlsx();
     const parse = await app.inject({
@@ -66,13 +66,18 @@ describe('import and work a lead over HTTP', () => {
     const p = parse.json();
     const sheet = p.sheets[0];
     expect(sheet.mapping_source).toBe('guessed');
-    const body = { upload_id: p.upload_id, sheet: sheet.name, mapping: sheet.suggested_mapping };
 
-    const prev = await app.inject({ method: 'POST', url: '/api/imports/preview', headers: write, payload: body });
-    expect(prev.json().summary).toMatchObject({ accepted: 4, rejected: 2 });
-
-    const commit = await app.inject({ method: 'POST', url: '/api/imports/commit', headers: write, payload: { ...body, batch: { name: 'Oct batch', cost_total_cents: 20000 } } });
+    const { id } = (await app.inject({
+      method: 'POST', url: '/api/drafts/sheet', headers: write, payload: { upload_id: p.upload_id, sheet: sheet.name, mapping: sheet.suggested_mapping },
+    })).json();
+    // Rows missing a usable phone need a look; leave them out.
+    const view = (await app.inject({ url: `/api/drafts/${id}`, headers: auth })).json();
+    for (const r of view.rows.filter((r: any) => r.review === 'needs_review')) {
+      await app.inject({ method: 'POST', url: `/api/drafts/${id}/rows/${r.row_number}`, headers: write, payload: { action: 'discard' } });
+    }
+    const commit = await app.inject({ method: 'POST', url: `/api/drafts/${id}/commit`, headers: write, payload: { batch: { name: 'Oct batch', cost_total_cents: 20000 } } });
     expect(commit.statusCode).toBe(200);
+    expect(commit.json().summary).toMatchObject({ accepted: 4 });
 
     // The mapping is remembered for the next file with the same columns.
     const again = await app.inject({
@@ -82,9 +87,9 @@ describe('import and work a lead over HTTP', () => {
     expect(again.json().sheets[0].mapping_source).toBe('saved');
     expect(again.json().file_previously_imported).toHaveLength(1);
 
-    const q = (await app.inject({ url: '/api/queue', headers: auth })).json();
-    expect(q.counts.new).toBe(4);
-    const leadId = q.items[0].lead_id;
+    const leads = (await app.inject({ url: '/api/leads?status=new', headers: auth })).json();
+    expect(leads.total).toBe(4);
+    const leadId = leads.rows[0].id;
 
     const num = (await app.inject({ method: 'POST', url: '/api/numbers', headers: write, payload: { number: '(614) 555-0199', label: 'Sideline' } })).json();
     const log = await app.inject({

@@ -1,3 +1,5 @@
+import type { DraftProgress, Review } from '../shared/drafts';
+
 // Shapes returned by the import draft API.
 
 export interface Issue {
@@ -9,7 +11,7 @@ export interface Issue {
 export interface DraftRow {
   row_number: number;
   page: number | null;
-  review: 'auto' | 'needs_review' | 'ok' | 'discarded';
+  review: Review;
   extractor: string | null;
   lead_type: string | null;
   notes: string | null;
@@ -41,18 +43,6 @@ export interface DraftSummary {
   file_previously_imported: { batch_id: string; name: string; imported_at: string }[];
   by_county: { county: string; county_key: string | null; count: number }[];
   by_type: { lead_type: string | null; count: number }[];
-}
-
-export interface DraftProgress {
-  phase: 'text' | 'ai' | 'done';
-  total: number;
-  text_done: number;
-  ai_total: number;
-  ai_done: number;
-  ai_failed: number;
-  cost_usd: number;
-  reader: string | null;
-  error?: string | null;
 }
 
 export interface DraftView {

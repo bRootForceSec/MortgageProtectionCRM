@@ -3,7 +3,7 @@ import { startServer } from './server.js';
 // `npm start` and the Linux background service: run the CRM and print the private link.
 
 async function main() {
-  const s = await startServer({ runtime: process.env.MPCRM_APP_DIR ? 'service' : 'manual' });
+  const s = await startServer();
   const shutdown = async () => {
     await s.stop();
     process.exit(0);

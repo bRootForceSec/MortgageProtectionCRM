@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseDay, parseTime, readCallback, callbackFields } from '../../src/web/when.js';
+import { parseDay, parseTime, readCallback, callbackFields, addDays, dayRange, startOfDay, todayRange, ymd as dateInput } from '../../src/web/when.js';
 
 // Saturday Oct 17 2026, 3:10 PM local.
 const now = new Date(2026, 9, 17, 15, 10);
@@ -86,5 +86,23 @@ describe('callback picker in the lead\'s time zone', () => {
     const cb = readCallback('11/1', '10am', now, 'America/Chicago');
     if ('error' in cb) throw new Error(cb.error);
     expect(hourIn(cb.at, 'America/Chicago')).toBe('10:00 AM');
+  });
+});
+
+describe('day helpers', () => {
+  it('ymd is the local calendar date', () => {
+    expect(dateInput(new Date(2026, 2, 5, 23, 30))).toBe('2026-03-05');
+  });
+
+  it('dayRange covers 24 hours from the start given', () => {
+    const start = new Date(2026, 9, 21);
+    expect(dayRange(start)).toEqual({ from: start.toISOString(), to: new Date(start.getTime() + 86_400_000).toISOString() });
+  });
+
+  it('startOfDay and addDays keep to local calendar days', () => {
+    const d = startOfDay(new Date(2026, 9, 21, 15, 45));
+    expect(d).toEqual(new Date(2026, 9, 21));
+    expect(addDays(d, -21)).toEqual(new Date(2026, 8, 30));
+    expect(todayRange().from).toBe(startOfDay(new Date()).toISOString());
   });
 });

@@ -12,7 +12,7 @@ const STEP = 1.25;
 interface View { scale: number; x: number; y: number; rotate: number }
 const START: View = { scale: 1, x: 0, y: 0, rotate: 0 };
 
-export function LeadPage({ d }: { d: LeadDetail }) {
+export function SourcePage({ d }: { d: LeadDetail }) {
   const page = d.lead.source_page as number | null;
   const raw = rawRow(d);
   const pdf = d.source_pdf && page != null;

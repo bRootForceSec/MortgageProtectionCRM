@@ -1,3 +1,5 @@
+import { ageOn } from '../../shared/age.js';
+
 // Pure normalization helpers for imported values. Each returns the normalized value plus,
 // when something looks wrong, a human-readable problem. Raw values are always kept separately.
 
@@ -20,12 +22,6 @@ export function normalizeUsPhone(raw: unknown): Normalized<string> {
   }
   if (/^(\d)\1{9}$/.test(digits)) return { value: null, problem: `phone looks like a placeholder: "${s}"` };
   return { value: `+1${digits}` };
-}
-
-export function formatUsPhone(e164: string | null | undefined): string {
-  if (!e164 || !/^\+1\d{10}$/.test(e164)) return e164 ?? '';
-  const d = e164.slice(2);
-  return `(${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6)}`;
 }
 
 /** "$286,000", "286000", "286k" → cents. */
@@ -51,14 +47,6 @@ export function normalizeAge(raw: unknown): Normalized<number> {
 }
 
 const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
-
-/** Whole years between a date of birth (YYYY-MM-DD) and `at`. */
-export function ageOn(dob: string, at: Date = new Date()): number {
-  const [y, m, d] = dob.split('-').map(Number) as [number, number, number];
-  let age = at.getFullYear() - y;
-  if (at.getMonth() + 1 < m || (at.getMonth() + 1 === m && at.getDate() < d)) age--;
-  return age;
-}
 
 /**
  * Date of birth as printed: "3/14/1961", "03-14-61", "1961-03-14", "March 14, 1961", "14 Mar 1961".
@@ -90,7 +78,7 @@ export function normalizeDob(raw: unknown, now: Date = new Date()): Normalized<s
 }
 
 /** Interprets yes/no style flags. Returns null when blank or unrecognized. */
-export function parseYesNo(raw: unknown): boolean | null {
+function parseYesNo(raw: unknown): boolean | null {
   if (typeof raw === 'boolean') return raw;
   const s = toText(raw).toLowerCase();
   if (!s) return null;
@@ -235,9 +223,6 @@ export function timeZoneFor(state: string | null | undefined, countyKey?: string
   if (countyKey && COUNTY_TZ[countyKey]) return COUNTY_TZ[countyKey]!;
   return state && STATE_TZ[state] ? STATE_TZ[state]!.tz : null;
 }
-
-/** County keys with their own time zone, for the database upgrade that fixes leads imported before. */
-export const COUNTY_TIME_ZONES = COUNTY_TZ;
 
 const STATE_NAMES: Record<string, string> = {
   ALABAMA: 'AL', ALASKA: 'AK', ARIZONA: 'AZ', ARKANSAS: 'AR', CALIFORNIA: 'CA', COLORADO: 'CO',

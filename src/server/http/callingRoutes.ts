@@ -1,11 +1,14 @@
 import type { FastifyInstance } from 'fastify';
 import * as z from 'zod/v4';
 import type { DB } from '../db/connection.js';
-import { DomainError, voidCall } from '../domain/calls.js';
-import { loadCallingSettings, saveCallingSettings, SHORTCUT_ACTIONS } from '../domain/callingSettings.js';
+import { voidCall } from '../domain/calls.js';
+import { DomainError } from '../core/errors.js';
+import { loadCallingSettings, saveCallingSettings } from '../domain/callingSettings.js';
+import { SHORTCUT_ACTIONS } from '../../shared/callingSettings.js';
 import { rebuildLeadState } from '../domain/leadState.js';
 import { KdeConnect } from '../dialer.js';
-import { groupWhere, parseList } from '../domain/groupFilter.js';
+import { parseList } from '../domain/groupFilter.js';
+import { callbacksDue } from '../domain/callList.js';
 
 const idParam = z.object({ id: z.string().max(64) });
 
@@ -21,13 +24,7 @@ export function registerCallingRoutes(app: FastifyInstance, deps: { db: DB; kde?
 
   app.put('/api/settings/calling', async (req) => {
     const before = loadCallingSettings(db);
-    let saved;
-    try {
-      saved = saveCallingSettings(db, req.body);
-    } catch (e: any) {
-      if (e instanceof z.ZodError) throw e;
-      throw new DomainError(e.message);
-    }
+    const saved = saveCallingSettings(db, req.body);
     // A new retry gap changes when every unanswered lead comes back.
     if (saved.retry_gap_minutes !== before.retry_gap_minutes) rebuildLeadState(db);
     return { settings: saved, actions: SHORTCUT_ACTIONS };
@@ -69,17 +66,6 @@ export function registerCallingRoutes(app: FastifyInstance, deps: { db: DB; kde?
       counties: z.string().max(4000).optional(),
       area_codes: z.string().max(400).optional(),
     }).parse(req.query);
-    const group = groupWhere('l.county_key', { counties: parseList(q.counties), areaCodes: parseList(q.area_codes) });
-    const name = `trim(coalesce(l.first_name,'') || ' ' || coalesce(l.last_name,''))`;
-    // Callbacks still due before the end of the range, including ones you missed earlier and ones with no time yet.
-    const callbacks = db
-      .prepare(
-        `SELECT l.id lead_id, ${name} name, l.phone_e164, l.time_zone, l.county, l.state, s.next_due_at due_at, s.due_any_time = 1 any_time
-         FROM lead_state s JOIN lead l ON l.id = s.lead_id
-         WHERE s.status = 'callback' AND (s.next_due_at IS NULL OR s.next_due_at < @to) AND ${group.sql}
-         ORDER BY s.next_due_at IS NULL, s.next_due_at`,
-      )
-      .all({ to: q.to, ...group.params });
-    return { callbacks };
+    return { callbacks: callbacksDue(db, q.to, { counties: parseList(q.counties), areaCodes: parseList(q.area_codes) }) };
   });
 }

@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import path from 'node:path';
 import { loadConfig } from '../../src/server/config.js';
 
 const keep = (v?: string) => loadConfig({ MPCRM_DATA_DIR: '/tmp/mpcrm-config-test', ...(v === undefined ? {} : { MPCRM_BACKUP_KEEP: v }) }).backupKeep;
@@ -24,5 +25,12 @@ describe('MPCRM_BACKUP_KEEP', () => {
     expect(keep('2.5')).toBe(30);
     expect(warn).toHaveBeenCalledTimes(2);
     warn.mockRestore();
+  });
+});
+
+describe('MPCRM_APP_DIR', () => {
+  it('is the Linux service install folder, and null when started by hand', () => {
+    expect(loadConfig({ MPCRM_DATA_DIR: '/tmp/mpcrm-config-test' }).appDir).toBeNull();
+    expect(loadConfig({ MPCRM_DATA_DIR: '/tmp/mpcrm-config-test', MPCRM_APP_DIR: '/opt/mpcrm/' }).appDir).toBe(path.resolve('/opt/mpcrm'));
   });
 });

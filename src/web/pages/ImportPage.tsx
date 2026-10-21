@@ -7,6 +7,7 @@ import {
   BulkConfirm, BulkList, BulkScreen, leadFilesOnly, pickedFromDrop, pickedFromInput, startSending, isSending, type PickedFile,
 } from './BulkImport';
 import { showImportedLeads } from './LeadsPage';
+import { getStored, setStored } from '../storage';
 
 // Import: a lead PDF (read page by page, scans by AI) or a spreadsheet. Every import goes through a draft
 // that is saved as you go: leads that need a look open in the review window, you set lead types,
@@ -29,16 +30,6 @@ interface ParseResult {
 }
 
 const DRAFT_KEY = 'mpcrm.import.draft';
-function store(v?: string | null) {
-  try {
-    if (v === undefined) return localStorage.getItem(DRAFT_KEY);
-    if (v === null) localStorage.removeItem(DRAFT_KEY);
-    else localStorage.setItem(DRAFT_KEY, v);
-  } catch {
-    /* storage unavailable */
-  }
-  return null;
-}
 
 export function useLeadTypes() {
   const { toast } = useApp();
@@ -64,13 +55,13 @@ function storeBulk(v?: string | null) {
 }
 
 export function ImportPage() {
-  const [draftId, setDraftId] = useState<string | null>(store());
+  const [draftId, setDraftId] = useState<string | null>(getStored(DRAFT_KEY));
   // The bulk import you were looking at; checking one of its files comes back here.
   const [bulkId, setBulkId] = useState<string | null>(storeBulk());
   const [done, setDone] = useState<{ batch_id: string; summary: DraftSummary; call_list?: AddResult | null } | null>(null);
   const open = (id: string | null) => {
     setDraftId(id);
-    store(id);
+    setStored(DRAFT_KEY, id);
   };
   const openBulk = (id: string | null) => {
     setBulkId(id);

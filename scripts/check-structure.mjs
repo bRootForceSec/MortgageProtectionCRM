@@ -10,7 +10,7 @@ const RULES = [
     name: 'SQL in a route file (move the query into src/server/domain/)',
     dir: 'src/server/http',
     pattern: /\.prepare\(/g,
-    allow: { 'app.ts': 34, 'importRoutes.ts': 22, 'callingRoutes.ts': 1 },
+    allow: {},
   },
   {
     name: 'silent .catch(() => {}) in the UI (show or log the failure, or comment why it is harmless)',
@@ -19,11 +19,30 @@ const RULES = [
     allow: {},
   },
   {
+    name: 'direct localStorage use in the UI (use src/web/storage.ts)',
+    dir: 'src/web',
+    pattern: /\blocalStorage\./g,
+    allow: { 'storage.ts': 3 },
+  },
+  {
+    name: 'hand-written audit_log insert (use audit() from src/server/core/audit.ts)',
+    dir: 'src/server',
+    pattern: /INSERT INTO audit_log/g,
+    allow: { 'core/audit.ts': 1 },
+  },
+  {
+    name: 'Node or app-specific import in src/shared (it runs in both the server and the browser)',
+    dir: 'src/shared',
+    pattern: /from '(node:|[^']*\/(server|web|desktop)\/)/g,
+    allow: {},
+  },
+  {
     name: 'console.* in server code (use the pino logger)',
     dir: 'src/server',
     pattern: /\bconsole\.(log|warn|error|info|debug)\(/g,
-    // cli.ts is a command-line tool and prints to the terminal on purpose; config.ts runs before the logger exists.
-    allow: { 'cli.ts': Infinity, 'config.ts': 2, 'updates.ts': 1, 'server.ts': 1, 'main.ts': 1 },
+    // cli.ts is a command-line tool and prints to the terminal on purpose. config.ts and main.ts report problems
+    // from before the logger exists. updates.ts reports a desktop install that fails after the server has stopped.
+    allow: { 'cli.ts': Infinity, 'config.ts': 2, 'updates.ts': 1, 'main.ts': 1 },
   },
 ];
 

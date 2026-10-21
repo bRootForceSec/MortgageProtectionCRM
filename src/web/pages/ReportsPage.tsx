@@ -3,6 +3,8 @@ import { api, fmtDateTime, fmtMoney, fmtPhone } from '../api';
 import { useApp } from '../App';
 import { GroupPicker, useGroups } from '../components/GroupPicker';
 import { LeadViewer, type ViewerItem } from '../components/LeadViewer';
+import { getStored, setStored } from '../storage';
+import { addDays, startOfDay, ymd } from '../when';
 
 // Your numbers: activity, by hour, best time to call, by county, local vs out-of-area caller ID, by batch, and against the flier's benchmarks.
 // Every number opens the calls or leads behind it.
@@ -27,12 +29,9 @@ const RANGES = [
 ] as const;
 type RangeKey = (typeof RANGES)[number][0];
 
-const dayStart = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
-const addDays = (d: Date, n: number) => new Date(d.getFullYear(), d.getMonth(), d.getDate() + n);
-const ymd = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
 function rangeFor(k: RangeKey, custom: { from: string; to: string }): { from: Date; to: Date } {
-  const today = dayStart(new Date());
+  const today = startOfDay(new Date());
   switch (k) {
     case 'today': return { from: today, to: addDays(today, 1) };
     case 'yesterday': return { from: addDays(today, -1), to: today };
@@ -56,13 +55,7 @@ const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 export function ReportsPage() {
   const { toast } = useApp();
-  const [range, setRange] = useState<RangeKey>(() => {
-    try {
-      return (localStorage.getItem('mpcrm.reports.range') as RangeKey) || 'today';
-    } catch {
-      return 'today';
-    }
-  });
+  const [range, setRange] = useState<RangeKey>(() => (getStored('mpcrm.reports.range') as RangeKey) || 'today');
   const [custom, setCustom] = useState({ from: ymd(new Date()), to: ymd(new Date()) });
   const [groups, setGroups, groupParams] = useGroups();
   const [r, setR] = useState<Report | null>(null);
@@ -77,11 +70,7 @@ export function ReportsPage() {
   const load = () => api.get<Report>('/reports', params).then(setR).catch((e) => toast(e.message, 'error'));
   useEffect(() => void load(), [params]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
-    try {
-      localStorage.setItem('mpcrm.reports.range', range);
-    } catch {
-      /* storage unavailable */
-    }
+    setStored('mpcrm.reports.range', range);
   }, [range]);
 
   /** A number you can click to see the rows behind it. */

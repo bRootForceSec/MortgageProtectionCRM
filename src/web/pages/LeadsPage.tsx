@@ -2,9 +2,11 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api, fmtDateTime, fmtPhone, fullName, type AddResult, type CallListResponse } from '../api';
 import { ClearListDialog, suggestListName } from '../components/CallListDialogs';
 import { useApp } from '../App';
-import { StatusBadge } from '../components/LeadView';
+import { StatusBadge } from '../components/LeadDetails';
 import { LeadViewer } from '../components/LeadViewer';
 import { GroupPicker, useGroups } from '../components/GroupPicker';
+import { getStored, setStored } from '../storage';
+import { addDays, startOfDay } from '../when';
 
 // Where you pick who to call: filter the leads, tick the ones you want (or take every match),
 // and add them to the bottom of the call list on the Calling page, or put them in place of it.
@@ -19,10 +21,7 @@ const STATUSES = [
 
 /** Midnight at the start of today, your time, `days` days back. */
 function dayStart(days = 0): string {
-  const d = new Date();
-  d.setHours(0, 0, 0, 0);
-  d.setDate(d.getDate() - days);
-  return d.toISOString();
+  return addDays(startOfDay(new Date()), -days).toISOString();
 }
 
 /** When the last call was: a recent window, or long enough ago to try again. */
@@ -50,22 +49,14 @@ const SHOW_KEY = 'mpcrm.leads.show';
  * Call it, then go('leads').
  */
 export function showImportedLeads(what: { batch: string } | { bulk: string }) {
-  try {
-    localStorage.setItem(SHOW_KEY, 'batch' in what ? what.batch : `bulk:${what.bulk}`);
-  } catch {
-    /* storage unavailable */
-  }
+  setStored(SHOW_KEY, 'batch' in what ? what.batch : `bulk:${what.bulk}`);
 }
 
 /** The import the Leads page was asked to show, used once. */
 function takeShown(): string {
-  try {
-    const v = localStorage.getItem(SHOW_KEY) ?? '';
-    localStorage.removeItem(SHOW_KEY);
-    return v;
-  } catch {
-    return '';
-  }
+  const v = getStored(SHOW_KEY) ?? '';
+  setStored(SHOW_KEY, null);
+  return v;
 }
 
 export function LeadsPage() {

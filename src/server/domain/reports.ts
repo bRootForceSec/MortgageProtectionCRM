@@ -1,8 +1,10 @@
 import * as z from 'zod/v4';
 import type { DB } from '../db/connection.js';
-import { getSetting, setSetting } from '../ai/settings.js';
+import { getSetting, setSetting } from '../core/settings.js';
 import { groupWhere } from './groupFilter.js';
 import { BOOKED_CODES } from './leadState.js';
+import { DomainError } from '../core/errors.js';
+import { loadCallingSettings } from './callingSettings.js';
 
 // Reports. Every number is computed from a group of rows (calls or leads), and the same group answers
 // "show me the calls behind this number", so a total and its drill-down can never disagree.
@@ -398,7 +400,7 @@ export function drill(db: DB, f: ReportFilter, spec: DrillSpec) {
     const m = LEAD_METRICS[spec.metric as LeadMetric];
     return { kind: 'leads' as const, rows: group.leads.filter(m.pred).map(leadOut) };
   }
-  throw new Error(`unknown number "${spec.metric}"`);
+  throw new DomainError(`unknown number "${spec.metric}"`);
 }
 
 function callOut(c: CallRow) {
@@ -489,4 +491,27 @@ export function reportSheets(r: ReturnType<typeof buildReport>) {
       })),
     },
   ];
+}
+
+/** The top bar's numbers for today (or any range), with the daily goals. */
+export function todayStats(db: DB, from: string, to: string) {
+  const row = db
+    .prepare(
+      `WITH cur AS (
+         SELECT c.id, c.lead_id, oc.counts_as_human_contact h, o.outcome_code
+         FROM call c LEFT JOIN call_outcome o ON o.call_id = c.id
+           AND NOT EXISTS (SELECT 1 FROM call_outcome x WHERE x.supersedes_id = o.id)
+         LEFT JOIN outcome_code oc ON oc.code = o.outcome_code
+         WHERE c.requested_at >= @from AND c.requested_at < @to AND c.initiation_result = 'accepted' AND c.voided_at IS NULL
+           -- Calls from a spreadsheet's history have a date but no real time, so they aren't today's work (same as Reports).
+           AND c.time_known <> 0)
+       SELECT COUNT(DISTINCT id) attempts, COUNT(DISTINCT lead_id) unique_leads,
+              (SELECT coalesce(SUM(dial_count), 0) FROM call WHERE id IN (SELECT id FROM cur)) dials,
+              COUNT(DISTINCT CASE WHEN h = 1 THEN id END) human_contacts,
+              COUNT(DISTINCT CASE WHEN outcome_code = 'appointment' THEN id END) appointments,
+              COUNT(DISTINCT CASE WHEN outcome_code = 'callback' THEN id END) callbacks
+       FROM cur`,
+    )
+    .get({ from, to }) as Record<string, number>;
+  return { ...row, goals: loadCallingSettings(db).goals };
 }

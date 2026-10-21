@@ -3,7 +3,7 @@ import path from 'node:path';
 import { createHash } from 'node:crypto';
 import type { DB } from '../db/connection.js';
 import { uuidv7, nowIso } from '../ids.js';
-import { DomainError } from './calls.js';
+import { DomainError } from '../core/errors.js';
 import { type FieldValues, type SourceRow, type BatchInput, mapFields, previewRows, commitRows, saveMapping, sheetSourceRows } from './importer.js';
 import type { LeadFieldKey, ColumnMapping } from './mapping.js';
 import type { ParsedSheet } from './spreadsheet.js';
@@ -13,7 +13,9 @@ import { readPdfText, extractPage, type ReadIssue } from './pdfReader.js';
 import { turnPdfPages, normTurn } from './pageTurn.js';
 import { PROMPT_VERSION, type PageAnswer } from '../ai/prompt.js';
 import { makeReader, AiError, type PageReader } from '../ai/readers.js';
-import { loadAiSettings, getSetting, setSetting, type Secrets } from '../ai/settings.js';
+import { loadAiSettings, type Secrets } from '../ai/settings.js';
+import { getSetting, setSetting } from '../core/settings.js';
+import type { DraftProgress, Review } from '../../shared/drafts.js';
 
 // An import in progress. A PDF is read page by page (typed pages from their text, scans by the AI reader),
 // then you review what needs a look, set lead types, and commit. Everything is saved as it goes,
@@ -29,8 +31,6 @@ export interface DraftRowData {
   /** Degrees the page still has to be turned clockwise in the draft's PDF to read upright (done when reading ends). */
   turn?: number;
 }
-
-export type Review = 'auto' | 'needs_review' | 'ok' | 'discarded';
 
 interface DraftRowDb {
   draft_id: string;
@@ -52,18 +52,6 @@ export interface DraftSettings {
   batch?: Partial<BatchInput>;
   /** Import leads identical to ones imported before as new leads (you bought the same lead again). */
   import_repeats_as_new?: boolean;
-}
-
-export interface Progress {
-  phase: 'text' | 'ai' | 'done';
-  total: number;
-  text_done: number;
-  ai_total: number;
-  ai_done: number;
-  ai_failed: number;
-  cost_usd: number;
-  reader: string | null;
-  error?: string | null;
 }
 
 /** Fields the AI reports by its own names. */
@@ -177,7 +165,7 @@ function reviewFor(current: Review, issues: ReadIssue[]): Review {
   return issues.some((i) => i.blocking) ? 'needs_review' : 'auto';
 }
 
-function setProgress(db: DB, id: string, p: Progress, status?: 'reading' | 'review') {
+function setProgress(db: DB, id: string, p: DraftProgress, status?: 'reading' | 'review') {
   db.prepare('UPDATE import_draft SET progress_json = ?, status = coalesce(?, status), updated_at = ? WHERE id = ?').run(
     JSON.stringify(p), status ?? null, nowIso(), id,
   );
@@ -263,7 +251,8 @@ export function createSheetDraft(
   return { id };
 }
 
-function lastLeadType(db: DB): string | null {
+/** The lead type the last import used; new imports start with it. */
+export function lastLeadType(db: DB): string | null {
   return getSetting<string>(db, 'import.last_lead_type') ?? 'D';
 }
 
@@ -298,7 +287,7 @@ export class DraftWorker {
         if (this.stopped) return;
         const d = this.db.prepare('SELECT progress_json FROM import_draft WHERE id = ?').get(id) as { progress_json: string } | undefined;
         if (!d) return;
-        const p = { ...(JSON.parse(d.progress_json ?? '{}') as Progress), error: (e as Error).message };
+        const p = { ...(JSON.parse(d.progress_json ?? '{}') as DraftProgress), error: (e as Error).message };
         setProgress(this.db, id, p, 'review');
       })
       .finally(() => this.running.delete(id));
@@ -323,7 +312,7 @@ export class DraftWorker {
     const db = this.db;
     const draft = getDraft(db, id);
     const bytes = new Uint8Array(fs.readFileSync(draft.file_path));
-    const progress: Progress = JSON.parse(draft.progress_json ?? '{}');
+    const progress: DraftProgress = JSON.parse(draft.progress_json ?? '{}');
     const up = upsertRow(db);
     const now = () => nowIso();
 
@@ -450,7 +439,7 @@ export class DraftWorker {
     if (d.status === 'committed') throw new DomainError('this import is already finished');
     const n = this.db.prepare("UPDATE import_draft_row SET extractor = 'pending' WHERE draft_id = ? AND extractor = 'failed' AND edits_json IS NULL AND review <> 'discarded'").run(id).changes;
     if (!n) return { pages: 0 };
-    const p = JSON.parse(d.progress_json ?? '{}') as Progress;
+    const p = JSON.parse(d.progress_json ?? '{}') as DraftProgress;
     setProgress(this.db, id, { ...p, phase: 'ai', ai_failed: Math.max(0, p.ai_failed - n), error: null }, 'reading');
     void this.run(id);
     return { pages: n };
@@ -520,7 +509,7 @@ export function getDraftView(db: DB, id: string) {
   return {
     id: d.id, kind: d.kind, file_name: d.file_name, file_modified: d.file_modified, status: d.status,
     settings,
-    progress: d.progress_json ? (JSON.parse(d.progress_json) as Progress) : null,
+    progress: d.progress_json ? (JSON.parse(d.progress_json) as DraftProgress) : null,
     summary,
     needs_review: rows.filter((r) => r.review === 'needs_review' && r.extractor !== 'pending').length,
     pending: rows.filter((r) => r.extractor === 'pending').length,

@@ -2,12 +2,11 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import fs from 'node:fs';
 import path from 'node:path';
-import { tempDb, sampleCsv } from '../helpers.js';
+import { tempDb, sampleCsv, dueLeads } from '../helpers.js';
 import { parseSpreadsheet } from '../../src/server/domain/spreadsheet.js';
 import { suggestMapping } from '../../src/server/domain/mapping.js';
 import { commitImport } from '../../src/server/domain/importer.js';
 import { logManualCall, voidCall, changeOutcome } from '../../src/server/domain/calls.js';
-import { getQueue } from '../../src/server/domain/queue.js';
 import { verifyLeadState } from '../../src/server/domain/leadState.js';
 import { buildApp } from '../../src/server/http/app.js';
 import { KdeConnect } from '../../src/server/dialer.js';
@@ -108,21 +107,21 @@ describe('undo', () => {
     const d = (await app.inject({ url: `/api/leads/${jane}`, headers: auth })).json();
     expect(d.notes).toEqual([]);
     expect(d.calls[0].voided_at).toBeTruthy();
-    expect(getQueue(db).items.find((i) => i.lead_id === jane)?.bucket).toBe('new');
+    expect(dueLeads(db).find((l) => l.id === jane)?.status).toBe('new');
   });
 });
 
 describe('calling settings', () => {
   it('a new retry gap changes when unanswered leads come back', async () => {
     logManualCall(db, { lead_id: jane, idempotency_key: key(), outcome_code: 'no_answer' });
-    expect(getQueue(db).items.some((i) => i.lead_id === jane)).toBe(false);
+    expect(dueLeads(db).some((l) => l.id === jane)).toBe(false);
     const cur = (await app.inject({ url: '/api/settings/calling', headers: auth })).json();
     expect(cur.settings.retry_gap_minutes).toBe(240);
     const r = await app.inject({
       method: 'PUT', url: '/api/settings/calling', headers: write, payload: { ...cur.settings, retry_gap_minutes: 0 },
     });
     expect(r.statusCode).toBe(200);
-    expect(getQueue(db).items.find((i) => i.lead_id === jane)?.bucket).toBe('retry');
+    expect(dueLeads(db).find((l) => l.id === jane)?.status).toBe('retry');
   });
 
   it('keeps remapped shortcuts and refuses unknown actions', async () => {

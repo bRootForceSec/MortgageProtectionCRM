@@ -1,5 +1,5 @@
 import ExcelJS from 'exceljs';
-import type { DB } from '../db/connection.js';
+import { tableNames, type DB } from '../db/connection.js';
 
 // Exports read straight from the tables so nothing is lost or reinterpreted.
 // Health columns are excluded unless explicitly requested.
@@ -73,10 +73,7 @@ export async function toXlsx(sheets: { name: string; rows: Record<string, unknow
 
 /** Full portable dump of every table, as JSON. */
 export function fullJsonDump(db: DB) {
-  const tables = (db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name").all() as {
-    name: string;
-  }[]).map((t) => t.name);
   const out: Record<string, unknown[]> = {};
-  for (const t of tables) out[t] = db.prepare(`SELECT * FROM "${t}"`).all();
+  for (const t of tableNames(db)) out[t] = db.prepare(`SELECT * FROM "${t}"`).all();
   return { exported_at: new Date().toISOString(), format: 'mpcrm-dump-v1', tables: out };
 }

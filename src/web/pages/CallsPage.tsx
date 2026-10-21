@@ -3,16 +3,11 @@ import { api, fmtDateTime, fmtDuration, fmtPhone } from '../api';
 import { useApp } from '../App';
 import { LeadViewer } from '../components/LeadViewer';
 import { GroupPicker, useGroups } from '../components/GroupPicker';
-
-function dayRange(dateStr: string) {
-  const start = new Date(`${dateStr}T00:00:00`);
-  return { from: start.toISOString(), to: new Date(start.getTime() + 86_400_000).toISOString() };
-}
+import { dayRange, ymd } from '../when';
 
 export function CallsPage() {
   const { meta } = useApp();
-  const today = new Date();
-  const [day, setDay] = useState(`${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`);
+  const [day, setDay] = useState(() => ymd(new Date()));
   const [outcome, setOutcome] = useState('');
   const [rows, setRows] = useState<any[]>([]);
   const [open, setOpen] = useState<string | null>(null);
@@ -22,7 +17,7 @@ export function CallsPage() {
 
   useEffect(() => {
     const t = setTimeout(() => {
-      api.get<any[]>('/calls', { ...dayRange(day), outcome: outcome || undefined, search, ...groupParams }).then(setRows);
+      api.get<any[]>('/calls', { ...dayRange(new Date(`${day}T00:00:00`)), outcome: outcome || undefined, search, ...groupParams }).then(setRows);
     }, search ? 200 : 0);
     return () => clearTimeout(t);
   }, [day, outcome, open, search, groupParams.counties, groupParams.area_codes]); // eslint-disable-line react-hooks/exhaustive-deps

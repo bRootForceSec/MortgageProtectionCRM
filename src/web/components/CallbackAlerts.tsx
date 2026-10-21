@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { api, fmtDateTime, fmtPhone } from '../api';
 import { useApp } from '../App';
+import { getStoredJson, setStoredJson } from '../storage';
+import { todayRange } from '../when';
 
 // Tells you when a callback comes due: a desktop notification, a short sound, and a bar in the app.
 // Checks once a minute while the app is open.
@@ -23,18 +25,11 @@ export interface Agenda {
 const SEEN_KEY = 'mpcrm.alerts.seen';
 
 function loadSeen(): Set<string> {
-  try {
-    return new Set(JSON.parse(localStorage.getItem(SEEN_KEY) ?? '[]'));
-  } catch {
-    return new Set();
-  }
+  const ids = getStoredJson<string[]>(SEEN_KEY);
+  return new Set(Array.isArray(ids) ? ids : []);
 }
 function saveSeen(s: Set<string>) {
-  try {
-    localStorage.setItem(SEEN_KEY, JSON.stringify([...s].slice(-500)));
-  } catch {
-    /* storage unavailable */
-  }
+  setStoredJson(SEEN_KEY, [...s].slice(-500));
 }
 
 /** Two short tones. Made in the browser, so no sound file is needed. */
@@ -56,12 +51,6 @@ export function chime() {
   } catch {
     /* no audio */
   }
-}
-
-export function todayRange() {
-  const start = new Date();
-  start.setHours(0, 0, 0, 0);
-  return { from: start.toISOString(), to: new Date(start.getTime() + 86_400_000).toISOString() };
 }
 
 export function CallbackAlerts() {

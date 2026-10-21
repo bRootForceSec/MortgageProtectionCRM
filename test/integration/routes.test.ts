@@ -212,6 +212,26 @@ describe('settings routes', () => {
   });
 });
 
+describe('caller ID number routes', () => {
+  it('adds, refuses a repeat, updates label, status and reputation, and audits each change', async () => {
+    const { id } = (await post('/api/numbers', { number: '(614) 555-0199', label: '  Sideline  ' })).json();
+    expect((await post('/api/numbers', { number: '614-555-0199' })).statusCode).toBe(409);
+    const one = () => (get('/api/numbers')).then((r) => r.json().find((n: any) => n.id === id));
+    expect(await one()).toMatchObject({ e164: '+16145550199', label: 'Sideline', status: 'active', retired_at: null });
+
+    expect((await post(`/api/numbers/${id}`, { status: 'retired', retire_reason: 'spam label' })).json()).toEqual({ ok: true });
+    const retired = await one();
+    expect(retired).toMatchObject({ status: 'retired', retire_reason: 'spam label', label: 'Sideline' });
+    expect(retired.retired_at).toBeTruthy();
+    await post(`/api/numbers/${id}`, { status: 'active', label: '', reputation_status: 'flagged' });
+    const back = await one();
+    expect(back).toMatchObject({ status: 'active', retired_at: null, label: null, reputation_status: 'flagged', retire_reason: 'spam label' });
+    expect(back.reputation_updated_at).toBeTruthy();
+    expect(audits('caller_number').map((a) => a.action)).toEqual(['insert', 'update', 'update']);
+    expect((await post('/api/numbers/nope', { label: 'x' })).statusCode).toBe(404);
+  });
+});
+
 describe('backup routes', () => {
   it('makes a backup and lists it', async () => {
     const made = (await post('/api/backups')).json();

@@ -1,14 +1,15 @@
 import { createHash } from 'node:crypto';
 import type { DB } from '../db/connection.js';
 import { uuidv7, nowIso } from '../ids.js';
-import { DomainError } from './calls.js';
+import { DomainError } from '../core/errors.js';
 import { parseSpreadsheet, MAX_UPLOAD_BYTES, type ParsedSheet } from './spreadsheet.js';
 import { suggestMapping, validateMapping, type ColumnMapping } from './mapping.js';
 import { savedMappingFor, MappingError } from './importer.js';
 import {
-  createPdfDraft, createSheetDraft, commitDraft, deleteDraft, getDraftView, setAsideNeedsReview, type DraftWorker, type Progress,
+  createPdfDraft, createSheetDraft, commitDraft, deleteDraft, getDraftView, setAsideNeedsReview, type DraftWorker,
 } from './drafts.js';
 import { addBatchToCallList } from './callList.js';
+import type { DraftProgress } from '../../shared/drafts.js';
 
 // Bulk import: many lead files, or a whole folder, in one go.
 // Each file still becomes its own draft and its own batch, exactly as if it was imported on its own.
@@ -236,7 +237,7 @@ export class BulkImporter {
       .prepare("SELECT COUNT(*) total, SUM(CASE WHEN review = 'needs_review' THEN 1 ELSE 0 END) look FROM import_draft_row WHERE draft_id = ?")
       .get(f.draft_id) as { total: number; look: number | null };
     const look = counts.look ?? 0;
-    const error = d.progress_json ? (JSON.parse(d.progress_json) as Progress).error : null;
+    const error = d.progress_json ? (JSON.parse(d.progress_json) as DraftProgress).error : null;
     if (error || (look && (!settings.import_ready_now || look === counts.total))) {
       const summary = { ...emptySummary(), to_check: look };
       this.update(f, { state: 'needs_review', summary, message: error ? `Reading stopped: ${error}` : `${plural(look, 'lead needs', 'leads need')} a look.` });
@@ -364,7 +365,7 @@ export class BulkImporter {
       seq: f.seq, file_name: f.file_name, rel_path: f.rel_path, part: f.part, size_bytes: f.size_bytes, state: f.state, draft_id: f.draft_id,
       batch_id: f.batch_id, message: f.message,
       summary: (f.summary_json ? JSON.parse(f.summary_json) : emptySummary()) as BulkFileSummary,
-      progress: progress ? (JSON.parse(progress) as Progress) : null,
+      progress: progress ? (JSON.parse(progress) as DraftProgress) : null,
     };
   }
 

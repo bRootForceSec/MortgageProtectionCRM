@@ -1,6 +1,7 @@
 import type { DB } from '../db/connection.js';
 import { nowIso, uuidv7 } from '../ids.js';
 import { groupWhere, searchWhere } from './groupFilter.js';
+import { DomainError } from '../core/errors.js';
 
 // The call list: the leads you chose to call, worked top to bottom. Leads get here only when you add them
 // (from Leads, or with an import); nothing is added, removed or moved on its own.
@@ -285,11 +286,25 @@ export function deleteSavedList(db: DB, listId: string): boolean {
 
 /** "They called me back": sets or clears the mark on a lead. Returns the time set, or null when cleared. */
 export function setCalledBack(db: DB, leadId: string, on: boolean, now = nowIso()): string | null {
-  if (!db.prepare('SELECT 1 FROM lead WHERE id = ?').get(leadId)) throw new Error('lead not found');
+  if (!db.prepare('SELECT 1 FROM lead WHERE id = ?').get(leadId)) throw new DomainError('lead not found', 404);
   if (!on) {
     db.prepare('DELETE FROM lead_called_back WHERE lead_id = ?').run(leadId);
     return null;
   }
   db.prepare('INSERT INTO lead_called_back (lead_id, at) VALUES (?, ?) ON CONFLICT(lead_id) DO NOTHING').run(leadId, now);
   return (db.prepare('SELECT at FROM lead_called_back WHERE lead_id = ?').get(leadId) as { at: string }).at;
+}
+
+/** Callbacks due before `to`, including ones missed earlier and ones with no time yet. For the agenda. */
+export function callbacksDue(db: DB, to: string, groups: { counties?: string[]; areaCodes?: string[] }) {
+  const group = groupWhere('l.county_key', groups);
+  const name = `trim(coalesce(l.first_name,'') || ' ' || coalesce(l.last_name,''))`;
+  return db
+    .prepare(
+      `SELECT l.id lead_id, ${name} name, l.phone_e164, l.time_zone, l.county, l.state, s.next_due_at due_at, s.due_any_time = 1 any_time
+       FROM lead_state s JOIN lead l ON l.id = s.lead_id
+       WHERE s.status = 'callback' AND (s.next_due_at IS NULL OR s.next_due_at < @to) AND ${group.sql}
+       ORDER BY s.next_due_at IS NULL, s.next_due_at`,
+    )
+    .all({ to, ...group.params });
 }

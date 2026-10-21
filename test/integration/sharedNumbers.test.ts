@@ -1,10 +1,9 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { tempDb, sampleCsv } from '../helpers.js';
+import { tempDb, sampleCsv, dueLeads } from '../helpers.js';
 import { parseSpreadsheet } from '../../src/server/domain/spreadsheet.js';
 import { suggestMapping } from '../../src/server/domain/mapping.js';
 import { commitImport } from '../../src/server/domain/importer.js';
 import { logManualCall, addLeadAction, voidCall } from '../../src/server/domain/calls.js';
-import { getQueue } from '../../src/server/domain/queue.js';
 import { rebuildLeadState, verifyLeadState } from '../../src/server/domain/leadState.js';
 import { timeZoneFor } from '../../src/server/domain/normalize.js';
 import type { DB } from '../../src/server/db/connection.js';
@@ -34,7 +33,7 @@ describe('leads that share a number', () => {
     addLeadAction(db, jane, 'mark_dead', 'asked not to be called');
     expect(state(john).status).toBe('dead');
     expect(state(john).block_reason).toMatch(/Jane Doe, who is in the dead pile/);
-    expect(getQueue(db).items.map((i) => i.lead_id)).not.toContain(john);
+    expect(dueLeads(db).map((l) => l.id)).not.toContain(john);
     addLeadAction(db, jane, 'restore');
     expect(state(john).status).toBe('new');
     expect(state(john).block_reason).toBeNull();
@@ -84,9 +83,9 @@ describe('bad number on a lead with another number', () => {
     expect(s.status).toBe('retry');
     expect(s.active_phone_e164).toBe('+16145550177');
     expect(JSON.parse(s.blocked_phones_json)).toEqual(['+16145550102']);
-    const item = getQueue(db).items.find((i) => i.lead_id === robert)!;
+    const item = dueLeads(db).find((l) => l.id === robert)!;
     expect(item.phone_e164).toBe('+16145550177');
-    expect(item.bucket).toBe('retry');
+    expect(item.status).toBe('retry');
   });
 
   it('logs the next call to the other number, and a second bad number ends it', () => {
@@ -103,14 +102,6 @@ describe('bad number on a lead with another number', () => {
   });
 });
 
-describe('queue counts', () => {
-  it('"waiting for later" follows the county filter', () => {
-    logManualCall(db, { lead_id: robert, idempotency_key: key(), outcome_code: 'no_answer' });
-    const robertCounty = (db.prepare('SELECT county_key FROM lead WHERE id = ?').get(robert) as any).county_key as string;
-    expect(getQueue(db, { counties: [robertCounty] }).waiting_later).toBe(1);
-    expect(getQueue(db, { counties: ['XX|NOWHERE'] }).waiting_later).toBe(0);
-  });
-});
 
 describe('time zones by county', () => {
   it('uses Central time for Indiana\'s Central counties and Eastern for the rest', () => {

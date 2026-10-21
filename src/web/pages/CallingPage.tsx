@@ -1,64 +1,23 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from 'react';
-import { callbackFields, describeCallback, differentZone, readCallback } from '../when';
-import { api, personAge, fmtMoney, fmtPhone, fmtRelative, fmtDateTime, newKey, type LeadDetail, type CallListItem, type CallListResponse, type RecentOutcome } from '../api';
+import { callbackFields } from '../when';
+import { api, personAge, fmtMoney, fmtPhone, fmtRelative, fmtDateTime, type LeadDetail, type CallListItem, type CallListResponse, type RecentOutcome } from '../api';
 import { useApp } from '../App';
-import { LeadSummary, CallHistory, Notes, StatusBadge, toggleCalledBack } from '../components/LeadView';
+import { LeadSummary, CallHistory, Notes, StatusBadge, toggleCalledBack } from '../components/LeadDetails';
 import { EditLead } from '../components/EditLead';
-import { LeadPage } from '../components/LeadPage';
+import { SourcePage } from '../components/SourcePage';
 import { DialQr } from '../components/DialQr';
 import { ClearListDialog, SavedListsDialog, suggestListName } from '../components/CallListDialogs';
-import { fillScript, isAction, isTyping, keyLabel, normKey, type KeyMap } from '../shortcuts';
+import { fillScript, isAction, isTyping, keyLabel, type KeyMap } from '../shortcuts';
+import { getStored, getStoredJson, setStored, setStoredJson } from '../storage';
+import { LogCall, type Attempt, type FormValues, type Saved } from './LogCall';
 
 const SELECTED_KEY = 'mpcrm.selectedLead';
 /** A lead opened outside the list (looked up for an incoming call, or from Today), and where to go back to. */
 export const OPENED_KEY = 'mpcrm.openedLead';
-const LAST_NUMBER_KEY = 'mpcrm.lastNumber';
-
-function store(k: string, v?: string | null) {
-  try {
-    if (v === undefined) return localStorage.getItem(k);
-    if (v === null) localStorage.removeItem(k);
-    else localStorage.setItem(k, v);
-  } catch {
-    /* storage unavailable: selection just won't persist */
-  }
-  return null;
-}
-
 const SCRIPT_KEY = 'mpcrm.script.open';
 const UNDO_MS = 10_000;
 
-/** One attempt on the current lead: how many dials, when the timer started, which number was dialed. */
-interface Attempt {
-  dials: number;
-  timerStart: number | null;
-  to: string | null;
-  /** When this lead came on screen, for the time spent on it. */
-  shownAt: number;
-}
 const freshAttempt = (): Attempt => ({ dials: 1, timerStart: null, to: null, shownAt: Date.now() });
-
-/** What you had entered, put back after an undo. */
-interface FormValues {
-  code: string | null;
-  /** Callback picker: the day and the optional time, as typed. */
-  day: string;
-  time: string;
-  minutes: string;
-  note: string;
-  numberId: string | null;
-}
-
-interface Saved {
-  callId: string;
-  leadId: string;
-  name: string;
-  label: string;
-  dials: number;
-  at: number;
-  /** The lead's time zone, so an undone callback comes back in their time. */
-  tz: string | null;
-}
 
 /** A lead on your call list. The list is kept by the app; it only changes when you add, skip, remove or clear. */
 type WorkItem = CallListItem;
@@ -70,12 +29,8 @@ interface Opened {
 }
 
 function loadOpened(): Opened | null {
-  try {
-    const o = JSON.parse(store(OPENED_KEY) ?? 'null') as Opened | null;
-    return o && typeof o.leadId === 'string' ? o : null;
-  } catch {
-    return null;
-  }
+  const o = getStoredJson<Opened>(OPENED_KEY);
+  return o && typeof o.leadId === 'string' ? o : null;
 }
 
 export function CallingPage() {
@@ -83,18 +38,18 @@ export function CallingPage() {
   const settings = calling?.settings;
   const { go } = useApp();
   const [list, setListState] = useState<CallListResponse | null>(null);
-  const [selected, setSelected] = useState<string | null>(store(SELECTED_KEY));
+  const [selected, setSelected] = useState<string | null>(getStored(SELECTED_KEY));
   const [opened, setOpenedState] = useState<Opened | null>(loadOpened);
   const setOpened = (o: Opened | null) => {
     setOpenedState(o);
-    store(OPENED_KEY, o ? JSON.stringify(o) : null);
+    setStored(OPENED_KEY, o ? JSON.stringify(o) : null);
   };
   const lookupRef = useRef<HTMLInputElement>(null);
   const [detail, setDetail] = useState<LeadDetail | null>(null);
   const [attempt, setAttempt] = useState<Attempt>(freshAttempt);
   const [restore, setRestore] = useState<{ leadId: string; values: FormValues; n: number } | null>(null);
   const [saved, setSaved] = useState<Saved | null>(null);
-  const [showScript, setShowScript] = useState(store(SCRIPT_KEY) === '1');
+  const [showScript, setShowScript] = useState(getStored(SCRIPT_KEY) === '1');
   const [editing, setEditing] = useState(false);
   const [qr, setQr] = useState<string | null>(null);
   const [listDialog, setListDialog] = useState<'clear' | 'saved' | null>(null);
@@ -109,7 +64,7 @@ export function CallingPage() {
 
   const select = (id: string | null) => {
     setSelected(id);
-    store(SELECTED_KEY, id);
+    setStored(SELECTED_KEY, id);
   };
 
   const loadList = useCallback(async () => {
@@ -190,10 +145,10 @@ export function CallingPage() {
     } catch {
       setDetail(null);
       setSelected(null);
-      store(SELECTED_KEY, null);
+      setStored(SELECTED_KEY, null);
       if (loadOpened()?.leadId === id) {
         setOpenedState(null);
-        store(OPENED_KEY, null);
+        setStored(OPENED_KEY, null);
       }
     }
   }, []);
@@ -222,7 +177,7 @@ export function CallingPage() {
       // Already off on a looked-up lead: keep the list lead you started from.
       const backTo = o && o.leadId === selected ? o.backTo : selected;
       const next = { leadId: id, backTo: backTo === id ? o?.backTo ?? null : backTo };
-      store(OPENED_KEY, JSON.stringify(next));
+      setStoredJson(OPENED_KEY, next);
       return next;
     });
     select(id);
@@ -416,7 +371,7 @@ export function CallingPage() {
       else if (act('undo')) { e.preventDefault(); void undo(); }
       else if (act('edit')) { if (detail) { e.preventDefault(); setEditing(true); } }
       else if (act('called_back')) { if (ready && detail) { e.preventDefault(); void toggleCalledBack(detail, toast).then((at) => calledBack(detail.lead.id, at)); } }
-      else if (act('script')) { e.preventDefault(); setShowScript((v) => { store(SCRIPT_KEY, v ? '0' : '1'); return !v; }); }
+      else if (act('script')) { e.preventDefault(); setShowScript((v) => { setStored(SCRIPT_KEY, v ? '0' : '1'); return !v; }); }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -602,7 +557,7 @@ export function CallingPage() {
         </div>
       </section>
 
-      {detail ? <LeadPage d={detail} /> : <section className="panel lead-page" aria-label="Lead page" />}
+      {detail ? <SourcePage d={detail} /> : <section className="panel lead-page" aria-label="Lead page" />}
       {editing && detail && <EditLead d={detail} onClose={() => setEditing(false)} onSaved={async () => { setEditing(false); await refreshDetail(); }} />}
       {qr && <DialQr e164={qr} onClose={() => setQr(null)} />}
     </div>
@@ -743,283 +698,6 @@ function ScriptPanel({ d }: { d: LeadDetail }) {
       {sc.voicemail && (<><b>Voicemail</b><p>{fillScript(sc.voicemail, values)}</p></>)}
     </div>
   );
-}
-
-function Timer({ start, onReset }: { start: number; onReset: () => void }) {
-  const [now, setNow] = useState(Date.now());
-  useEffect(() => {
-    const t = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(t);
-  }, []);
-  const s = Math.max(0, Math.floor((now - start) / 1000));
-  return (
-    <span className="timer" title="Started when you dialed. Fills talk minutes when someone picked up.">
-      ⏱ {Math.floor(s / 60)}:{String(s % 60).padStart(2, '0')}
-      <button className="btn small" onClick={onReset} aria-label="Reset timer">Reset</button>
-    </span>
-  );
-}
-
-/**
- * Log a call made on another phone (Sideline) with one keypress plus Enter.
- * Phase 2 replaces "log" with "call" but keeps this outcome panel.
- */
-function LogCall({
-  d, attempt, setDials, resetTimer, restore, active, onSaved, onRefresh,
-}: {
-  d: LeadDetail;
-  attempt: Attempt;
-  setDials: (n: number) => void;
-  resetTimer: () => void;
-  restore: FormValues | null;
-  /** False for a moment after you move on, until the next lead is on screen: keys wait. */
-  active: boolean;
-  onSaved: (s: Saved) => Promise<void>;
-  onRefresh: () => Promise<void>;
-}) {
-  const { meta, toast, keys, calling } = useApp();
-  const activeNumbers = useMemo(() => (meta?.numbers ?? []).filter((n) => n.status !== 'retired'), [meta]);
-  const defaultNumber = useMemo(() => {
-    const pref = d.state?.preferred_number_id;
-    if (pref && activeNumbers.some((n) => n.id === pref)) {
-      return { id: pref, why: d.state?.status === 'appointment_set' ? 'number this appointment was set from' : 'number last used with this lead', known: true };
-    }
-    const last = store(LAST_NUMBER_KEY);
-    if (last && activeNumbers.some((n) => n.id === last)) return { id: last, why: 'your last used number', known: false };
-    return { id: activeNumbers[0]?.id ?? '', why: activeNumbers[0] ? 'first active number' : '', known: false };
-  }, [d, activeNumbers]);
-
-  const [numberId, setNumberId] = useState(restore?.numberId ?? defaultNumber.id);
-  const [code, setCode] = useState<string | null>(restore?.code ?? null);
-  const [day, setDay] = useState(restore?.day ?? '');
-  const [time, setTime] = useState(restore?.time ?? '');
-  const [minutes, setMinutes] = useState(restore?.minutes ?? '');
-  const [note, setNote] = useState(restore?.note ?? '');
-  const [saving, setSaving] = useState(false);
-  const [key, setKey] = useState(newKey());
-  const dayRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    if (!numberId && defaultNumber.id) setNumberId(defaultNumber.id);
-  }, [defaultNumber.id]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const outcome = meta?.outcome_codes.find((o) => o.code === code) ?? null;
-  const needsWhen = !!outcome?.requires_callback_time;
-  const changed = numberId !== defaultNumber.id;
-
-  const choose = useCallback((c: string) => {
-    setCode(c);
-    const o = meta?.outcome_codes.find((x) => x.code === c);
-    if (o?.requires_callback_time) {
-      setDay((v) => v || 'tomorrow');
-      setTimeout(() => { dayRef.current?.focus(); dayRef.current?.select(); }, 0);
-      return;
-    }
-    // No answer and Bad number need nothing more, so they save straight away (Undo still catches a wrong key).
-    if (calling?.settings.instant_save !== false && o && instantOutcome(o)) void saveRef.current(c);
-  }, [meta, calling]);
-
-  // Talk time from the timer, only when someone picked up and you didn't type minutes yourself.
-  const timerSeconds = (o: typeof outcome) =>
-    attempt.timerStart && o?.counts_as_human_contact && calling?.settings.use_timer !== false
-      ? Math.round((Date.now() - attempt.timerStart) / 1000)
-      : null;
-
-  const save = useCallback(async (codeNow: string | null = code) => {
-    if (!codeNow || saving) return;
-    const o = meta?.outcome_codes.find((x) => x.code === codeNow) ?? null;
-    const cb = o?.requires_callback_time ? readCallback(day, time, new Date(), d.lead.time_zone) : null;
-    if (cb && 'error' in cb) {
-      toast(cb.error, 'error');
-      dayRef.current?.focus();
-      return;
-    }
-    setSaving(true);
-    try {
-      const r = await api.post<{ call_id: string }>(`/leads/${d.lead.id}/calls`, {
-        idempotency_key: key,
-        from_number_id: numberId || null,
-        to_e164: attempt.to,
-        outcome_code: codeNow,
-        callback_due_at: cb ? cb.at.toISOString() : null,
-        callback_any_time: cb ? cb.anyTime : null,
-        talk_seconds: minutes ? Number(minutes) * 60 : timerSeconds(o),
-        dial_count: attempt.dials,
-        lead_seconds: Math.round((Date.now() - attempt.shownAt) / 1000),
-        note: note || null,
-      });
-      if (numberId) store(LAST_NUMBER_KEY, numberId);
-      setCode(null);
-      setDay('');
-      setTime('');
-      setMinutes('');
-      setNote('');
-      setKey(newKey());
-      await onSaved({
-        callId: r.call_id, leadId: d.lead.id, name: [d.lead.first_name, d.lead.last_name].filter(Boolean).join(' ') || 'this lead',
-        label: o?.label ?? codeNow, dials: attempt.dials, at: Date.now(), tz: d.lead.time_zone ?? null,
-      });
-    } catch (e: any) {
-      toast(e.message, 'error');
-    } finally {
-      setSaving(false);
-    }
-  }, [code, saving, meta, day, time, key, numberId, minutes, note, d.lead.id, toast, onSaved, attempt]); // eslint-disable-line react-hooks/exhaustive-deps
-  const saveRef = useRef(save);
-  saveRef.current = save;
-
-  // Layout effect: the hotkeys are live as soon as the lead is on screen, so a fast keypress isn't lost.
-  useLayoutEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (document.querySelector('.modal-back') || !active) return;
-      if (e.key === 'Enter' && code && (!isTyping(e) || e.ctrlKey || e.metaKey || ['callback-day', 'callback-time', 'log-note', 'log-minutes'].includes((e.target as HTMLElement).id))) {
-        e.preventDefault();
-        void save();
-        return;
-      }
-      if (isTyping(e) || e.ctrlKey || e.metaKey || e.altKey) return;
-      if (e.key === 'Escape') return setCode(null);
-      // Action keys win over outcome keys (Settings warns about clashes).
-      if (Object.values(keys.actions).some((ks) => ks.includes(normKey(e.key)))) return;
-      const c = keys.outcomes.get(normKey(e.key));
-      if (c) {
-        e.preventDefault();
-        choose(c);
-      }
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [keys, code, save, choose, active]);
-
-  if (!d.lead.phone_e164 && !d.lead.phone2_e164 && !d.lead.phone3_e164) return <p className="error">This lead has no valid phone number.</p>;
-  if (d.state?.status === 'dead') return <RestoreBox d={d} onSaved={onRefresh} label={d.state.block_reason ? `${d.state.block_reason}.` : d.state?.last_outcome_code === 'dnc_request' ? 'Asked not to be called again. This lead is in the dead pile.' : 'This lead is in the dead pile.'} />;
-
-  const k = (a: keyof KeyMap['actions']) => keyLabel(keys.actions[a]?.[0] ?? '');
-  return (
-    <div className="log-box">
-      <div className="row">
-        <div className="dial-counter" aria-label="Dials this attempt">
-          <button className="btn small" onClick={() => setDials(attempt.dials - 1)} disabled={attempt.dials <= 1} aria-label="One less dial">− <kbd>{k('dials_down')}</kbd></button>
-          <b>{attempt.dials}</b> dial{attempt.dials === 1 ? '' : 's'}
-          <button className="btn small" onClick={() => setDials(attempt.dials + 1)} aria-label="One more dial">+ <kbd>{k('dials_up')}</kbd></button>
-        </div>
-        {attempt.timerStart && <Timer start={attempt.timerStart} onReset={resetTimer} />}
-        {attempt.to && attempt.to !== d.lead.phone_e164 && <span className="warn">Dialing {fmtPhone(attempt.to)}</span>}
-      </div>
-      <div className="row">
-        <label className="field">
-          <span>Caller ID used {defaultNumber.why && !changed && <em>({defaultNumber.why})</em>}</span>
-          <select value={numberId} onChange={(e) => setNumberId(e.target.value)} style={changed && defaultNumber.known ? { borderColor: 'var(--warn)' } : undefined}>
-            <option value="">Not recorded</option>
-            {activeNumbers.map((n) => (
-              <option key={n.id} value={n.id}>{n.label ? `${n.label} · ` : ''}{fmtPhone(n.e164)}{n.reputation_status === 'flagged' ? ' (flagged)' : ''}</option>
-            ))}
-          </select>
-        </label>
-        {changed && defaultNumber.known && (() => {
-          // Only worth a warning when this lead already knows you by another number.
-          const n = activeNumbers.find((x) => x.id === defaultNumber.id);
-          const shown = n ? `${n.label ? `${n.label}, ` : ''}${fmtPhone(n.e164)}` : 'another number';
-          return (
-            <span className="warn">
-              {d.state?.status === 'appointment_set'
-                ? `This lead's appointment was set from ${shown}. They may not pick up a number they don't know.`
-                : `You've reached this lead before from ${shown}. They may not pick up a number they don't know.`}
-            </span>
-          );
-        })()}
-        {!(changed && defaultNumber.known) && (() => {
-          // You call leads from a number in their county's area code. Say so when this one isn't, and offer one that is.
-          const codes = d.county_area_codes ?? [];
-          const chosen = activeNumbers.find((x) => x.id === numberId);
-          if (!codes.length || !chosen || codes.includes(chosen.e164.slice(2, 5))) return null;
-          const local = activeNumbers.find((x) => codes.includes(x.e164.slice(2, 5)) && x.reputation_status !== 'flagged');
-          return (
-            <span className="warn">
-              {d.lead.county ?? 'This county'} uses {codes.join('/')}; this number is {chosen.e164.slice(2, 5)}.{' '}
-              {local && (
-                <button className="btn small" onClick={() => setNumberId(local.id)}>
-                  Use {local.label ? `${local.label}, ` : ''}{fmtPhone(local.e164)}
-                </button>
-              )}
-            </span>
-          );
-        })()}
-        {activeNumbers.length === 0 && <span className="help">Add your numbers on the Numbers page to record which one you used.</span>}
-      </div>
-      <div className="outcomes" role="group" aria-label="Outcome">
-        {meta?.outcome_codes.map((o) => (
-          <button key={o.code} className={`${code === o.code ? 'active' : ''} ${o.marks_dead ? 'dead' : ''}`} onClick={() => choose(o.code)}>
-            {keys.outcomeKey[o.code] && <kbd>{keyLabel(keys.outcomeKey[o.code]!)}</kbd>}{o.label}
-          </button>
-        ))}
-      </div>
-      {code && (
-        <div className="row" style={{ alignItems: 'flex-end' }}>
-          {needsWhen && (() => {
-            const cb = readCallback(day, time, new Date(), d.lead.time_zone);
-            const theirs = differentZone(d.lead.time_zone);
-            return (
-              <div className="callback-picker">
-                <label className="field">
-                  <span>Call back on</span>
-                  <input id="callback-day" ref={dayRef} value={day} onChange={(e) => setDay(e.target.value)} onFocus={(e) => e.target.select()}
-                    placeholder="t, m, fri, 10/24" style={{ width: 120 }} autoComplete="off" />
-                </label>
-                <label className="field">
-                  <span>At (optional{theirs ? ', their time' : ''})</span>
-                  <input id="callback-time" value={time} onChange={(e) => setTime(e.target.value)} placeholder="any time" style={{ width: 90 }} autoComplete="off" />
-                </label>
-                <span className={'error' in cb ? 'help warn' : 'help'} aria-live="polite">{'error' in cb ? (day ? cb.error : '') : describeCallback(cb, new Date(), d.lead.time_zone)}</span>
-              </div>
-            );
-          })()}
-          <label className="field">
-            <span>Talk minutes {attempt.timerStart && outcome?.counts_as_human_contact ? '(blank: from the timer)' : '(optional)'}</span>
-            <input id="log-minutes" type="number" min={0} max={600} value={minutes} onChange={(e) => setMinutes(e.target.value)} style={{ width: 90 }} />
-          </label>
-          <label className="field" style={{ flex: 1, minWidth: 200 }}>
-            <span>Note (optional)</span>
-            <input id="log-note" value={note} onChange={(e) => setNote(e.target.value)} />
-          </label>
-          <button className="btn primary" onClick={() => void save()} disabled={saving}>Save <kbd>Enter</kbd></button>
-          <button className="btn" onClick={() => setCode(null)}>Cancel <kbd>Esc</kbd></button>
-        </div>
-      )}
-      {!code && (
-        <p className="help">
-          {calling?.settings.instant_save !== false
-            ? 'After the call, press the outcome key. No answer and Bad number save right away; the others save with Enter.'
-            : 'After the call, press the outcome key, then Enter.'}{' '}
-          Dialed more than once? Press <kbd>{k('dials_up')}</kbd> for each extra dial first.
-        </p>
-      )}
-      {d.state?.status === 'invalid' && <RestoreBox d={d} onSaved={onRefresh} label={d.state.block_reason ? `${d.state.block_reason}.` : 'Marked as a bad number.'} />}
-    </div>
-  );
-}
-
-function RestoreBox({ d, onSaved, label }: { d: LeadDetail; onSaved: () => Promise<void>; label: string }) {
-  const { toast } = useApp();
-  const restore = async () => {
-    try {
-      await api.post(`/leads/${d.lead.id}/actions`, { action: 'restore', reason: 'restored from calling screen' });
-      toast('Lead restored to the queue');
-      await onSaved();
-    } catch (e: any) {
-      toast(e.message, 'error');
-    }
-  };
-  return (
-    <div className="card" style={{ marginTop: 10 }}>
-      {label} <button className="btn small" onClick={restore}>Restore to queue</button>
-    </div>
-  );
-}
-
-/** Outcomes that need nothing more than the key: no callback time, and nobody was reached (so no talk time or note). */
-function instantOutcome(o: { requires_callback_time: number | boolean; counts_as_human_contact: number | boolean }) {
-  return !o.requires_callback_time && !o.counts_as_human_contact;
 }
 
 /** The lead's next working number after the one being called, if it has one. */

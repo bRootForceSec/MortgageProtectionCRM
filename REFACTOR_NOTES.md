@@ -2,6 +2,49 @@
 
 A running log of the stabilization work. Newest first.
 
+## 2026-10-21: X3 dropped, X4 docs
+
+- **X3 dropped** (Linux service, kept as decided in D1). Every place reads `MPCRM_PORT`; the default 5170 repeats only in scripts that can't share code with the app. The token in `xdg-open`'s arguments ends up in the browser's arguments too, so moving it would need a different way of opening the app. No change.
+- **X4:** `docs/phase-0-plan.md` is marked historical. New `env.example` lists every environment variable and where to set it. The README's Development section now covers how to run, check, configure, the code layout and the conventions (pointing to `CLAUDE.md`).
+- **README fixes:** the keys table said outcomes were `1`–`5` with `4` as Bad number and callbacks on `5`; the app has six (Do not call is `4`, Bad number `5`, Callback `6`), and `1` and `5` save straight away. Added the `L` and `B` keys. Added a "what is and isn't encrypted" note for all systems (D9); it was only in the Fedora section.
+
+## 2026-10-21: C5 web tidy-ups
+
+- **Storage** (`src/web/storage.ts`): `getStored`, `setStored`, `getStoredJson`, `setStoredJson`. They replace seven hand-written `localStorage` wrappers in CallingPage, ImportPage, UpdateBar, GroupPicker, CallbackAlerts, LeadsPage, ReportsPage and App. Blocked storage still just loses the preference. A new structure rule keeps `localStorage` inside `storage.ts`.
+- **Day helpers** (`src/web/when.ts`): `startOfDay`, `addDays`, `dayRange`, `todayRange` and `ymd` replace page-local copies in CallsPage, LeadsPage, ReportsPage, NumbersPage, TodayPage, App and CallbackAlerts. Each page gets the same values as before. Tests in `test/unit/when.test.ts`.
+- **Open question, not changed:** "today" and the Calls page's day are 24 hours from midnight (`dayRange`), while Reports counts calendar days. On the two days a year the clocks change, the 24-hour version is an hour short or long. I kept it as it was; it only matters for calls made in the last hour of those days.
+- **Upload:** `api.upload` takes extra headers, and BulkImport sends through it. It keeps its single retry on a dropped connection. The only visible difference: when the app answers with an error that isn't JSON, the message now reads "Request failed (500)" like everywhere else, instead of "the app answered 500".
+- **CallingPage split:** the log-call form (with its timer and the restore box) moved to `pages/LogCall.tsx`. CallingPage went from about 1,050 to 730 lines. Pure move.
+- **Renames:** `LeadPage` → `SourcePage` (the page the lead came from) and `LeadView` → `LeadDetails` (summary, call history, notes). `LeadViewer` keeps its name.
+- Checks: typecheck, lint, 220 tests, build, and 10 e2e tests pass.
+
+## 2026-10-21: C4 shared types
+
+- New `src/shared/`, imported by both the server and the UI (decided D5):
+  - `callingSettings.ts`: the zod schema for Calling settings and the shortcut action list. The UI's hand-copied `CallingSettings` and `ShortcutAction` types are gone; it now uses the type made from the server's schema, so they can't drift.
+  - `drafts.ts`: the draft review states and progress shape, used by `drafts.ts`, `bulkImport.ts` and the import screens.
+  - `age.ts`: `ageOn`. The UI's `personAge` had its own copy of the same arithmetic.
+- `tsconfig.server.json` now compiles from `src/` into `dist/`, so `src/shared` builds to `dist/shared`. `dist/server/` is laid out exactly as before, so `npm start`, the Linux service, the updater and the desktop app find their files in the same places. I built and started it to check.
+- Not moved yet: lead detail, draft view and the other response shapes in `web/api.ts` and `web/importTypes.ts`. The server builds those from untyped queries, so sharing them first needs typed domain functions. `fmtPhone` (audit 2.7) no longer has a server copy since X1 deleted `formatUsPhone`.
+- A new structure rule keeps `node:` imports and server or web code out of `src/shared`.
+- Checks: typecheck, lint, 217 tests, build, and 10 e2e tests pass.
+
+## 2026-10-21: C2 logging and config
+
+- `MPCRM_APP_DIR` is read once, in `loadConfig` (`config.appDir`). `server.ts` and `main.ts` each read it themselves before. `main.ts` no longer passes a runtime, since `Updates` already works out "service" or "manual" from the same folder. Test: `test/unit/config.test.ts`.
+- The page checker's warnings go to the server log instead of `console.warn`.
+- The `console.*` left in the server: `cli.ts` (prints on purpose), `config.ts` and `main.ts` (before the logger exists), and `updates.ts` (a desktop install failing after the server stopped). The structure check allows only these.
+- The desktop app's own env reads (`MPCRM_UPDATE_FEED`, `APPIMAGE`, autostart paths) stay in `src/desktop`; that's a separate process.
+- Checks: typecheck, lint, 217 tests, build, and 10 e2e tests pass.
+
+## 2026-10-21: C1, C3, X1, X2 structure and cleanup
+
+- **C1** shared pieces in `src/server/core/`: `errors.ts` (`DomainError`), `settings.ts` (`getSetting`/`setSetting`, moved out of `ai/settings.ts`) and `audit.ts` (`audit()`, which replaces three hand-written `INSERT INTO audit_log`). User mistakes that threw a plain `Error` now throw `DomainError`, so they give a 4xx instead of a 500: setting "called back" on a missing lead (404), an unknown shortcut action and an unknown report number. Two routes that caught and rewrapped errors no longer do. `tableNames(db)` in `db/connection.ts` is shared by backups and the full export. The structure check now refuses `INSERT INTO audit_log` outside `core/audit.ts`.
+- **X2** (decided D2): deleted `/api/queue`, `/api/imports/preview`, `/api/imports/commit` and `domain/queue.ts`. Nothing in the app called them. Tests that used the queue now read `lead_state` through a `dueLeads` test helper, and the upload test goes through the draft flow the app uses.
+- **X1:** deleted dead exports: `pdfPageCount`, `formatUsPhone`, `COUNTY_TIME_ZONES`, `mapRow`, `analyzeSheet`, `FIELD_LABELS` and the web `toLocalInput`.
+- **C3:** every query in the route files moved into domain functions (new `domain/leads.ts`, `domain/importHistory.ts`, `domain/leadTypes.ts`, plus additions to numbers, calls, reports, leadEdit, areaCodes, callList and backup). The structure check now allows no SQL in any route file. `app.ts` went from about 700 lines to 136 and only wires the route files together: `leadRoutes`, `numberRoutes`, `dataRoutes` are new, uploads moved into `importRoutes`, and today's stats into `reportRoutes`. No route changed its path, input or output.
+- Checks: typecheck, lint, 216 tests (2 queue-only tests removed, 1 caller ID test added), build, and 10 e2e tests pass.
+
 ## 2026-10-21: R3, R4, R5 reliability
 
 - **R3, UI errors** (user-visible): failed loads the user depends on now show an error toast. That covers counties in the group picker, lead types, and calling settings at start. A failed KDE Connect device lookup shows in its card. Restoring a dead lead from the Calling screen now shows an error if it fails. Background polls (update status, today's stats, page check, backup check, number stats) and PDF cleanup keep a quiet catch, each with a comment saying why. The structure check now allows no silent catch in the UI.

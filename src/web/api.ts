@@ -1,3 +1,5 @@
+import { ageOn } from '../shared/age';
+
 // Thin client for the local API. All requests are same-origin; the access cookie is sent automatically.
 
 export class ApiError extends Error {
@@ -32,11 +34,11 @@ export const api = {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(body),
     }).then((r) => handle<T>(r)),
-  upload: <T>(path: string, file: File, contentType = 'application/octet-stream') =>
+  upload: <T>(path: string, file: File, contentType = 'application/octet-stream', headers: Record<string, string> = {}) =>
     fetch(`/api${path}`, {
       method: 'POST',
       credentials: 'same-origin',
-      headers: { 'content-type': contentType, 'x-file-name': encodeURIComponent(file.name), 'x-file-modified': String(file.lastModified || '') },
+      headers: { 'content-type': contentType, 'x-file-name': encodeURIComponent(file.name), 'x-file-modified': String(file.lastModified || ''), ...headers },
       body: file,
     }).then((r) => handle<T>(r)),
   put: <T>(path: string, body: unknown) =>
@@ -204,10 +206,7 @@ export interface LeadDetail {
 /** The lead's age today: from the date of birth when there is one, else the age as imported. */
 export function personAge(l: { dob?: string | null; age?: number | null } & Record<string, unknown>, at = new Date()): number | null {
   if (l.dob && /^\d{4}-\d{2}-\d{2}$/.test(l.dob)) {
-    const [y, m, d] = l.dob.split('-').map(Number) as [number, number, number];
-    let a = at.getFullYear() - y;
-    if (at.getMonth() + 1 < m || (at.getMonth() + 1 === m && at.getDate() < d)) a--;
-    return a;
+    return ageOn(l.dob, at);
   }
   return l.age ?? null;
 }
@@ -264,10 +263,4 @@ export function fmtMoney(cents: number | null | undefined): string {
 
 export function fullName(l: { first_name?: string | null; last_name?: string | null; [k: string]: unknown }): string {
   return [l.first_name, l.last_name].filter(Boolean).join(' ') || '(no name)';
-}
-
-/** Value for <input type="datetime-local"> from a Date, in the browser's zone. */
-export function toLocalInput(d: Date): string {
-  const p = (n: number) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
 }

@@ -94,21 +94,21 @@ src/
 
 | Step | Change | Audit | Size |
 |---|---|---|---|
-| **C1** | `core/errors.ts`, `core/settings.ts`, `core/audit.ts`, `core/sql.ts`, and one shared zod-to-400 path. Moves and re-exports only, no behavior change. | 2.1, 2.2, 2.11, 2.13 | M |
-| **C2** | Route `console.*` through the logger; collect the env reads into `core/config.ts` | 6.1, 6.6 | S |
-| **C3** | Move SQL out of `app.ts`/`importRoutes.ts` into domain functions; split `app.ts` into per-feature route files | 2.3, 7.7 | M |
-| **C4** | Create `src/shared/` and move the mirrored types and the duplicate helpers into it (needs D5) | 2.6, 2.7, 2.5 | M |
-| **C5** | Web: `lib/storage.ts`, `lib/dates.ts`, `BulkImport` reuses `api.upload`; split `CallingPage.tsx`; rename the confusing Lead* components | 2.8–2.10, 7.7 | M |
+| **C1** | ✅ Done. The table-name helper went to `db/connection.ts` (`tableNames`) instead of a new `core/sql.ts`, and zod errors already reach the one error handler. Originally: `core/errors.ts`, `core/settings.ts`, `core/audit.ts`, `core/sql.ts`, and one shared zod-to-400 path. Moves and re-exports only, no behavior change. | 2.1, 2.2, 2.11, 2.13 | M |
+| **C2** | ✅ Server env reads now go through `config.ts` (`MPCRM_APP_DIR` was read in two other places), and the page checker logs through the server logger. The remaining `console.*` calls run where no logger exists, each with a reason in the structure check. No `core/config.ts`: `config.ts` already is that file. Originally: Route `console.*` through the logger; collect the env reads into `core/config.ts` | 6.1, 6.6 | S |
+| **C3** | ✅ Route files now hold no SQL (the structure check enforces 0), and `app.ts` is split into lead, number, data, import, calling and report route files. Originally: Move SQL out of `app.ts`/`importRoutes.ts` into domain functions; split `app.ts` into per-feature route files | 2.3, 7.7 | M |
+| **C4** | ✅ `src/shared/` holds the calling settings schema, the draft review and progress types, and `ageOn`. The bigger response shapes (lead detail, draft view) stay mirrored for now: the server builds them untyped, so sharing them means typing those functions first. Originally: Create `src/shared/` and move the mirrored types and the duplicate helpers into it (needs D5) | 2.6, 2.7, 2.5 | M |
+| **C5** | ✅ Done, with `storage.ts` and the day helpers beside `when.ts` rather than in a new `lib/` folder, to match how `src/web` is laid out. `LeadPage` → `SourcePage`, `LeadView` → `LeadDetails`; `LeadViewer` keeps its name. Originally: Web: `lib/storage.ts`, `lib/dates.ts`, `BulkImport` reuses `api.upload`; split `CallingPage.tsx`; rename the confusing Lead* components | 2.8–2.10, 7.7 | M |
 | **C6** | Move files into feature folders (only when no PRs are open) | 1 | M |
 
 ### Cleanup
 
 | Step | Change | Audit | Size |
 |---|---|---|---|
-| **X1** | Delete the dead exports in audit 5.1 | 5.1 | S |
-| **X2** | Delete `/api/queue`, `queue.ts` and the one-step import routes, moving their tests onto the routes in use (needs D2) | 5.2 | M |
-| **X3** | Keep the Linux systemd path (D1), with no behavior change. Only small tidy-ups: read the port from one place, and stop passing the token in `xdg-open` argv if that can be done without changing how the app opens. | 3.9, 6.2 | S |
-| **X4** | Mark `docs/phase-0-plan.md` as historical; add `.env.example`; update the README with structure, run/test/config instructions and conventions | 5.5, 6.3 | S |
+| **X1** | ✅ Delete the dead exports in audit 5.1 | 5.1 | S |
+| **X2** | ✅ Delete `/api/queue`, `queue.ts` and the one-step import routes, moving their tests onto the routes in use (needs D2) | 5.2 | M |
+| **X3** | ❎ Dropped after a closer look. The port: each place already reads `MPCRM_PORT`; only the default `5170` repeats, in a bash script, the updater script and the Vite config, which can't share code with the app without new coupling. The token in `xdg-open`: the browser gets the link in its own command line anyway, so hiding it from `xdg-open` alone wouldn't help, and anything that would (opening a local redirect file) changes how the app opens. Originally: Keep the Linux systemd path (D1), with no behavior change. Only small tidy-ups: read the port from one place, and stop passing the token in `xdg-open` argv if that can be done without changing how the app opens. | 3.9, 6.2 | S |
+| **X4** | ✅ Done. `env.example` (not `.env.example`, since nothing loads a `.env` file) lists every variable. The README also gets the right outcome keys (the table still said 1–5 with 4 as Bad number) and the encryption note for every system (D9). Originally: Mark `docs/phase-0-plan.md` as historical; add `.env.example`; update the README with structure, run/test/config instructions and conventions | 5.5, 6.3 | S |
 
 ## Risks
 
