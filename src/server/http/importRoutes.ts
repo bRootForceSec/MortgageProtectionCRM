@@ -10,18 +10,14 @@ import type { Config } from '../config.js';
 import type { ParsedFile } from '../domain/spreadsheet.js';
 import type { ColumnMapping } from '../domain/mapping.js';
 import { DomainError } from '../core/errors.js';
-import { audit } from '../core/audit.js';
 import {
   createPdfDraft, createSheetDraft, DraftWorker, getDraftView, listDrafts, reviewRow, setRowsType, updateDraftSettings,
   deleteDraft, draftFile, commitDraft, lastLeadType,
 } from '../domain/drafts.js';
 import { loadAiSettings, saveAiSettings, type Secrets } from '../ai/settings.js';
-import { countyKey, countyDisplayName } from '../domain/county.js';
-import { rebuildLeadState, leadsSharingPhones } from '../domain/leadState.js';
-import { timeZoneFor } from '../domain/normalize.js';
-import { uuidv7, nowIso } from '../ids.js';
-import { editLeadDetails, EDITABLE_FIELDS } from '../domain/leadEdit.js';
-import { seedCountyAreaCodes, builtInAreaCodes } from '../domain/areaCodes.js';
+import { editLead, EDITABLE_FIELDS } from '../domain/leadEdit.js';
+import { listLeadTypes, saveLeadType } from '../domain/leadTypes.js';
+import { listCounties, setCountyAreaCodes } from '../domain/areaCodes.js';
 import type { BulkImporter } from '../domain/bulkImport.js';
 
 // Routes for PDF and spreadsheet imports with review, AI settings, lead types and prices, and county groups.
@@ -228,7 +224,7 @@ export function registerImportRoutes(
 
   // ---------- lead types and prices ----------
   app.get('/api/import-defaults', async () => ({ lead_type: lastLeadType(db) }));
-  app.get('/api/lead-types', async () => db.prepare('SELECT * FROM lead_type ORDER BY sort_order, code').all());
+  app.get('/api/lead-types', async () => listLeadTypes(db));
   app.put('/api/lead-types/:code', async (req) => {
     const { code } = z.object({ code: typeCode }).parse(req.params);
     const b = z
@@ -239,67 +235,15 @@ export function registerImportRoutes(
         sort_order: z.number().int().optional(),
       })
       .parse(req.body);
-    const now = nowIso();
-    return db.transaction(() => {
-      const old = db.prepare('SELECT * FROM lead_type WHERE code = ?').get(code) as any;
-      if (!old) {
-        if (!b.label) throw new DomainError('a new lead type needs a name');
-        const max = (db.prepare('SELECT max(sort_order) m FROM lead_type').get() as { m: number | null }).m ?? 0;
-        db.prepare('INSERT INTO lead_type (code, label, price_cents, sort_order, active, updated_at) VALUES (?,?,?,?,?,?)').run(
-          code, b.label, b.price_cents ?? null, b.sort_order ?? max + 10, b.active === false ? 0 : 1, now,
-        );
-      } else {
-        db.prepare(
-          'UPDATE lead_type SET label = ?, price_cents = ?, active = ?, sort_order = ?, updated_at = ? WHERE code = ?',
-        ).run(
-          b.label ?? old.label, b.price_cents !== undefined ? b.price_cents : old.price_cents,
-          b.active === undefined ? old.active : b.active ? 1 : 0, b.sort_order ?? old.sort_order, now, code,
-        );
-      }
-      const neu = db.prepare('SELECT * FROM lead_type WHERE code = ?').get(code);
-      audit(db, 'lead_type', code, old ? 'update' : 'insert', old, neu, now);
-      return neu;
-    })();
+    return saveLeadType(db, code, b);
   });
 
   // ---------- counties and their area codes ----------
-  app.get('/api/counties', async () => {
-    seedCountyAreaCodes(db);
-    const rows = db
-      .prepare(
-        `SELECT l.county_key, max(l.county) county, max(l.state) state, COUNT(*) leads,
-                SUM(CASE WHEN s.status IN ('new','retry','callback') THEN 1 ELSE 0 END) workable
-         FROM lead l JOIN lead_state s ON s.lead_id = l.id WHERE l.county_key IS NOT NULL GROUP BY l.county_key ORDER BY state, county`,
-      )
-      .all() as { county_key: string; county: string; state: string; leads: number; workable: number }[];
-    const codes = db.prepare('SELECT county_key, area_code FROM county_area_code ORDER BY area_code').all() as { county_key: string; area_code: string }[];
-    const known = new Set(rows.map((r) => r.county_key));
-    const extra = [...new Set(codes.map((c) => c.county_key))].filter((k) => !known.has(k));
-    return [
-      ...rows.map((r) => ({
-        ...r,
-        name: countyDisplayName(r.county_key),
-        area_codes: codes.filter((c) => c.county_key === r.county_key).map((c) => c.area_code),
-        // The county's built-in area codes (from the county's location, never the leads' own numbers).
-        built_in: builtInAreaCodes(r.county_key),
-      })),
-      ...extra.map((k) => ({
-        county_key: k, county: countyDisplayName(k), name: countyDisplayName(k), state: k.split('|')[0], leads: 0, workable: 0,
-        area_codes: codes.filter((c) => c.county_key === k).map((c) => c.area_code), built_in: builtInAreaCodes(k),
-      })),
-    ];
-  });
+  app.get('/api/counties', async () => listCounties(db));
 
   app.put('/api/counties/area-codes', async (req) => {
     const b = z.object({ county_key: z.string().min(3).max(100), area_codes: z.array(z.string().regex(/^\d{3}$/)).max(20) }).parse(req.body);
-    const now = nowIso();
-    db.transaction(() => {
-      const old = (db.prepare('SELECT area_code FROM county_area_code WHERE county_key = ?').all(b.county_key) as { area_code: string }[]).map((r) => r.area_code);
-      db.prepare('DELETE FROM county_area_code WHERE county_key = ?').run(b.county_key);
-      const ins = db.prepare('INSERT OR IGNORE INTO county_area_code (county_key, area_code, created_at) VALUES (?,?,?)');
-      for (const c of b.area_codes) ins.run(b.county_key, c, now);
-      audit(db, 'county_area_code', b.county_key, 'set', old, b.area_codes, now);
-    })();
+    setCountyAreaCodes(db, b.county_key, b.area_codes);
     return { ok: true };
   });
 
@@ -311,42 +255,6 @@ export function registerImportRoutes(
       county: z.string().max(100).nullable().optional(),
       details: z.partialRecord(z.enum(EDITABLE_FIELDS), z.string().max(500).nullable()).optional(),
     }).parse(req.body);
-    const now = nowIso();
-    return db.transaction(() => {
-      const lead = db.prepare('SELECT * FROM lead WHERE id = ?').get(id) as any;
-      if (!lead) throw new DomainError('lead not found', 404);
-      const sharedBefore = leadsSharingPhones(db, [id]);
-      const change = db.prepare('INSERT INTO lead_change (id, lead_id, field, old_value, new_value, created_at) VALUES (?,?,?,?,?,?)');
-      if (b.details) {
-        editLeadDetails(db, id, b.details);
-        // A new state matters for the county below.
-        lead.state = (db.prepare('SELECT state FROM lead WHERE id = ?').get(id) as { state: string | null }).state;
-      }
-      if (b.lead_type !== undefined && b.lead_type !== lead.lead_type) {
-        const t = b.lead_type ? (db.prepare('SELECT price_cents FROM lead_type WHERE code = ?').get(b.lead_type) as { price_cents: number | null } | undefined) : null;
-        if (b.lead_type && !t) throw new DomainError(`unknown lead type "${b.lead_type}"`);
-        change.run(uuidv7(), id, 'lead_type', lead.lead_type, b.lead_type, now);
-        // The price follows the type, so cost per appointment stays right.
-        change.run(uuidv7(), id, 'price_cents', lead.price_cents == null ? null : String(lead.price_cents), t?.price_cents == null ? null : String(t.price_cents), now);
-        db.prepare('UPDATE lead SET lead_type = ?, price_cents = ? WHERE id = ?').run(b.lead_type, t?.price_cents ?? null, id);
-      }
-      if (b.county !== undefined) {
-        if (b.county && !lead.state) throw new DomainError('this lead has no state, so the county can\'t be set');
-        const key = b.county ? countyKey(lead.state, b.county) : null;
-        if (key !== lead.county_key) {
-          change.run(uuidv7(), id, 'county', lead.county_key, key, now);
-          db.prepare("UPDATE lead SET county = ?, county_key = ?, county_source = 'manual' WHERE id = ?").run(
-            key ? countyDisplayName(key) : null, key, id,
-          );
-        }
-      }
-      // The time zone follows the state and, where a state has two, the county.
-      const after = db.prepare('SELECT state, county_key, time_zone FROM lead WHERE id = ?').get(id) as { state: string | null; county_key: string | null; time_zone: string | null };
-      const tz = timeZoneFor(after.state, after.county_key);
-      if (tz !== after.time_zone) db.prepare('UPDATE lead SET time_zone = ? WHERE id = ?').run(tz, id);
-      // Leads that shared a phone with this one before the edit are rechecked too.
-      rebuildLeadState(db, [id, ...sharedBefore]);
-      return db.prepare('SELECT * FROM lead WHERE id = ?').get(id);
-    })();
+    return editLead(db, id, b);
   });
 }

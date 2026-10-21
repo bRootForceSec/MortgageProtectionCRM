@@ -3,7 +3,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { DB } from '../db/connection.js';
 import { nowIso } from '../ids.js';
-import { countyKey } from './county.js';
+import { countyKey, countyDisplayName } from './county.js';
 import { getSetting, setSetting } from '../core/settings.js';
 import { audit } from '../core/audit.js';
 
@@ -67,4 +67,44 @@ export function seedCountyAreaCodes(db: DB): number {
     setSetting(db, SEEDED, [...seeded]);
   })();
   return linked;
+}
+
+/** Counties with leads (and any with area codes set), with lead counts, their area codes and the built-in ones. */
+export function listCounties(db: DB) {
+  seedCountyAreaCodes(db);
+  const rows = db
+    .prepare(
+      `SELECT l.county_key, max(l.county) county, max(l.state) state, COUNT(*) leads,
+              SUM(CASE WHEN s.status IN ('new','retry','callback') THEN 1 ELSE 0 END) workable
+       FROM lead l JOIN lead_state s ON s.lead_id = l.id WHERE l.county_key IS NOT NULL GROUP BY l.county_key ORDER BY state, county`,
+    )
+    .all() as { county_key: string; county: string; state: string; leads: number; workable: number }[];
+  const codes = db.prepare('SELECT county_key, area_code FROM county_area_code ORDER BY area_code').all() as { county_key: string; area_code: string }[];
+  const known = new Set(rows.map((r) => r.county_key));
+  const extra = [...new Set(codes.map((c) => c.county_key))].filter((k) => !known.has(k));
+  return [
+    ...rows.map((r) => ({
+      ...r,
+      name: countyDisplayName(r.county_key),
+      area_codes: codes.filter((c) => c.county_key === r.county_key).map((c) => c.area_code),
+      // The county's built-in area codes (from the county's location, never the leads' own numbers).
+      built_in: builtInAreaCodes(r.county_key),
+    })),
+    ...extra.map((k) => ({
+      county_key: k, county: countyDisplayName(k), name: countyDisplayName(k), state: k.split('|')[0], leads: 0, workable: 0,
+      area_codes: codes.filter((c) => c.county_key === k).map((c) => c.area_code), built_in: builtInAreaCodes(k),
+    })),
+  ];
+}
+
+/** Replaces a county's area codes. */
+export function setCountyAreaCodes(db: DB, key: string, areaCodes: string[]) {
+  const now = nowIso();
+  db.transaction(() => {
+    const old = (db.prepare('SELECT area_code FROM county_area_code WHERE county_key = ?').all(key) as { area_code: string }[]).map((r) => r.area_code);
+    db.prepare('DELETE FROM county_area_code WHERE county_key = ?').run(key);
+    const ins = db.prepare('INSERT OR IGNORE INTO county_area_code (county_key, area_code, created_at) VALUES (?,?,?)');
+    for (const c of areaCodes) ins.run(key, c, now);
+    audit(db, 'county_area_code', key, 'set', old, areaCodes, now);
+  })();
 }
