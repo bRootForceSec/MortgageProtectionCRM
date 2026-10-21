@@ -50,11 +50,11 @@ export function useGroups(): [Groups, (g: Groups) => void, Record<string, string
 }
 
 export function GroupPicker({ groups, onChange }: { groups: Groups; onChange: (g: Groups) => void }) {
-  const { go } = useApp();
+  const { go, toast } = useApp();
   const [counties, setCounties] = useState<CountyOption[]>([]);
   useEffect(() => {
-    api.get<CountyOption[]>('/counties').then(setCounties).catch(() => {});
-  }, []);
+    api.get<CountyOption[]>('/counties').then(setCounties).catch((e: Error) => toast(`Couldn't load counties: ${e.message}`, 'error'));
+  }, [toast]);
   if (!counties.length) return null;
   const codes = [...new Set(counties.flatMap((c) => c.area_codes))].sort();
   const name = (k: string) => {

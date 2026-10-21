@@ -28,7 +28,7 @@ function store(key: string, value?: string) {
 
 export function useUpdateStatus(pollMs = 5 * 60_000) {
   const [s, setS] = useState<UpdateStatus | null>(null);
-  const load = useCallback(() => api.get<UpdateStatus>('/update').then(setS).catch(() => {}), []);
+  const load = useCallback(() => api.get<UpdateStatus>('/update').then(setS).catch(() => {}), []); // polled; fails while the app restarts for an update
   useEffect(() => {
     void load();
     const t = window.setInterval(load, pollMs);

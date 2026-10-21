@@ -41,8 +41,12 @@ function store(v?: string | null) {
 }
 
 export function useLeadTypes() {
+  const { toast } = useApp();
   const [types, setTypes] = useState<LeadType[]>([]);
-  const reload = useCallback(() => api.get<LeadType[]>('/lead-types').then(setTypes).catch(() => {}), []);
+  const reload = useCallback(
+    () => api.get<LeadType[]>('/lead-types').then(setTypes).catch((e: Error) => toast(`Couldn't load lead types: ${e.message}`, 'error')),
+    [toast],
+  );
   useEffect(() => void reload(), [reload]);
   return { types, reload };
 }
@@ -131,7 +135,7 @@ function Start({ onDraft, onBulk }: { onDraft: (id: string) => void; onBulk: (id
   };
 
   useEffect(() => {
-    api.get<{ lead_type: string }>('/import-defaults').then((d) => setLeadType((t) => t || d.lead_type)).catch(() => {});
+    api.get<{ lead_type: string }>('/import-defaults').then((d) => setLeadType((t) => t || d.lead_type)).catch(() => {}); // only a default; the type can still be picked by hand
   }, []);
 
   const onFile = async (f: File | undefined) => {

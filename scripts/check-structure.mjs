@@ -16,11 +16,7 @@ const RULES = [
     name: 'silent .catch(() => {}) in the UI (show or log the failure, or comment why it is harmless)',
     dir: 'src/web',
     pattern: /\.catch\(\(\) => \{\}\)(?![^\n]*\/\/)/g,
-    allow: {
-      'components/GroupPicker.tsx': 1, 'components/UpdateBar.tsx': 1, 'App.tsx': 2, 'pdfView.ts': 2,
-      'pages/ImportPage.tsx': 2, 'pages/CallingSettingsCards.tsx': 1, 'pages/SettingsPage.tsx': 1,
-      'pages/DataPage.tsx': 1, 'pages/NumbersPage.tsx': 1,
-    },
+    allow: {},
   },
   {
     name: 'console.* in server code (use the pino logger)',

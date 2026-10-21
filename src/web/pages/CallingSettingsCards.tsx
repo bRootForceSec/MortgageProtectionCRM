@@ -42,7 +42,7 @@ export function CallingCard() {
   const [perm, setPerm] = useState(typeof Notification === 'undefined' ? 'unsupported' : Notification.permission);
   const s = calling?.settings;
   useEffect(() => {
-    if (s?.dial_method === 'kdeconnect') api.get<typeof devices>('/dial/devices').then(setDevices).catch(() => {});
+    if (s?.dial_method === 'kdeconnect') api.get<typeof devices>('/dial/devices').then(setDevices).catch((e: Error) => setDevices({ ok: false, error: e.message, devices: [] }));
   }, [s?.dial_method]);
   if (!s) return null;
   const set = (patch: Partial<CallingSettings>) => save({ ...s, ...patch });

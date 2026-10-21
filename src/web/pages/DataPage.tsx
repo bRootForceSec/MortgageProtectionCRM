@@ -14,7 +14,7 @@ export function DataPage() {
   const [backups, setBackups] = useState<{ file: string; bytes: number; created_at: string }[]>([]);
   const [busy, setBusy] = useState(false);
   const [check, setCheck] = useState<{ at: string; file: string | null; ok: boolean | null; message: string } | null>(null);
-  useEffect(() => void api.get<typeof check>('/backups/check').then(setCheck).catch(() => {}), []);
+  useEffect(() => void api.get<typeof check>('/backups/check').then(setCheck).catch(() => {}), []); // only a status line; the backup buttons still work
   const checkNow = async () => {
     setBusy(true);
     try {

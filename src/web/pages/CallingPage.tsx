@@ -1002,9 +1002,13 @@ function LogCall({
 function RestoreBox({ d, onSaved, label }: { d: LeadDetail; onSaved: () => Promise<void>; label: string }) {
   const { toast } = useApp();
   const restore = async () => {
-    await api.post(`/leads/${d.lead.id}/actions`, { action: 'restore', reason: 'restored from calling screen' });
-    toast('Lead restored to the queue');
-    await onSaved();
+    try {
+      await api.post(`/leads/${d.lead.id}/actions`, { action: 'restore', reason: 'restored from calling screen' });
+      toast('Lead restored to the queue');
+      await onSaved();
+    } catch (e: any) {
+      toast(e.message, 'error');
+    }
   };
   return (
     <div className="card" style={{ marginTop: 10 }}>
