@@ -7,8 +7,7 @@ import { parseList } from '../domain/groupFilter.js';
 import { buildReport, drill, DrillSpec, loadTargets, reportSheets, saveTargets, type ReportFilter } from '../domain/reports.js';
 import { toXlsx } from '../domain/exporter.js';
 import { numberChecks, numberStats, recordNumberCheck } from '../domain/numbers.js';
-import { checkLatestBackup, type RestoreCheck } from '../backup.js';
-import { getSetting, setSetting } from '../core/settings.js';
+import { lastBackupCheck, runBackupCheck } from '../backup.js';
 
 const idParam = z.object({ id: z.string().max(64) });
 const filterQuery = z.object({
@@ -28,18 +27,6 @@ function toFilter(q: z.infer<typeof filterQuery>): ReportFilter {
     tz = 'UTC';
   }
   return { from: q.from, to: q.to, tz, counties: parseList(q.counties), areaCodes: parseList(q.area_codes) };
-}
-
-export const RESTORE_CHECK = 'backup_restore_check';
-const WEEK = 7 * 86_400_000;
-
-/** Runs the backup restore check if the last one is a week old (or there's a newer backup that has never been checked). */
-export function runBackupCheckIfDue(db: DB, config: Config, now = new Date()): RestoreCheck | null {
-  const last = getSetting<RestoreCheck>(db, RESTORE_CHECK);
-  if (last && now.getTime() - Date.parse(last.at) < WEEK) return null;
-  const r = checkLatestBackup(config, now);
-  if (r.file) setSetting(db, RESTORE_CHECK, r);
-  return r;
 }
 
 export function registerReportRoutes(app: FastifyInstance, deps: { db: DB; config: Config }) {
@@ -94,10 +81,6 @@ export function registerReportRoutes(app: FastifyInstance, deps: { db: DB; confi
   });
 
   // ---------- backup restore check ----------
-  app.get('/api/backups/check', async () => getSetting<RestoreCheck>(db, RESTORE_CHECK));
-  app.post('/api/backups/check', async () => {
-    const r = checkLatestBackup(config);
-    if (r.file) setSetting(db, RESTORE_CHECK, r);
-    return r;
-  });
+  app.get('/api/backups/check', async () => lastBackupCheck(db));
+  app.post('/api/backups/check', async () => runBackupCheck(db, config));
 }

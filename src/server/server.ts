@@ -14,7 +14,7 @@ import { PageChecker } from './domain/pageTurnFix.js';
 import { makeReader } from './ai/readers.js';
 import { loadAiSettings } from './ai/settings.js';
 import { Secrets } from './ai/settings.js';
-import { runBackupCheckIfDue } from './http/reportRoutes.js';
+import { runBackupCheckIfDue } from './backup.js';
 
 // Starts the CRM: database, HTTP server, background jobs. Used by `npm start` (main.ts) and the desktop app.
 
