@@ -107,7 +107,7 @@ src/
 |---|---|---|---|
 | **X1** | Delete the dead exports in audit 5.1 | 5.1 | S |
 | **X2** | Delete `/api/queue`, `queue.ts` and the one-step import routes, moving their tests onto the routes in use (needs D2) | 5.2 | M |
-| **X3** | Retire the Linux systemd/source-build path: remove `install.sh`, `mpcrm-update.mjs`, `mpcrm-open.sh` and their README sections (D1) | 1, 3.9, 6.2 | M |
+| **X3** | Keep the Linux systemd path (D1), with no behavior change. Only small tidy-ups: read the port from one place, and stop passing the token in `xdg-open` argv if that can be done without changing how the app opens. | 3.9, 6.2 | S |
 | **X4** | Mark `docs/phase-0-plan.md` as historical; add `.env.example`; update the README with structure, run/test/config instructions and conventions | 5.5, 6.3 | S |
 
 ## Risks
@@ -121,12 +121,12 @@ src/
 
 | # | Question | My recommendation |
 |---|---|---|
-| D1 | Keep the Linux systemd / build-from-source install, or retire it in favor of the AppImage? | **Decided 2026-10-21: retire it.** |
+| D1 | Keep the Linux systemd / build-from-source install, or retire it in favor of the AppImage? | **Decided 2026-10-21: keep it.** It is how Alistair's own Linux computer updates (one click in the app), and AppImage updates have been unreliable for him. |
 | D2 | Delete the unused `/api/queue` and one-step import routes? | **Decided 2026-10-21: delete them if the UI does not use them; move their tests.** |
 | D3 | Should the top-bar "today" stats count spreadsheet-history calls dated today, which Reports leaves out? | **Decided 2026-10-21: no, because those calls have no real time.** Align `/api/stats/today` with Reports (new step R7). |
 | D4 | Invalid `MPCRM_BACKUP_KEEP`: refuse to start, or fall back to 30 with a warning? | Fall back to 30 with a warning, and treat values below 1 as 1. Backups keep running instead of the app failing to start. |
 | D5 | OK to add `src/shared/`? | Yes. |
-| D6 | Add ESLint as a dev dependency? Prettier too? | ESLint yes. Skip Prettier: it would reformat every file in one big diff. |
+| D6 | Add ESLint as a dev dependency? Prettier too? | **Decided 2026-10-21: ESLint yes.** Skip Prettier: it would reformat every file in one big diff. |
 | D7 | Add a coverage tool? | Not now. |
 | D8 | Turn on branch protection for `main`? | Yes (your GitHub setting). |
 | D9 | Unencrypted local data, which includes health data: document it, or do more? | Document it in the README. |
