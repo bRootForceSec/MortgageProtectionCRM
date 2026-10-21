@@ -15,7 +15,7 @@ import { audit } from '../core/audit.js';
 import { exportRows, toCsv, toXlsx, fullJsonDump, EXPORT_TABLES, type ExportTable } from '../domain/exporter.js';
 import { createBackup, listBackups } from '../backup.js';
 import { uuidv7, nowIso } from '../ids.js';
-import { normalizeUsPhone } from '../domain/normalize.js';
+import { listNumbers, addNumber, updateNumber } from '../domain/numbers.js';
 import { Updates } from '../updates.js';
 import { registerImportRoutes, uploadHeader } from './importRoutes.js';
 import { DraftWorker } from '../domain/drafts.js';
@@ -141,7 +141,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   app.get('/api/meta', async () => ({
     outcome_codes: db.prepare('SELECT * FROM outcome_code WHERE active = 1 ORDER BY sort_order').all(),
     lead_fields: LEAD_FIELDS.map(({ key, label }) => ({ key, label })),
-    numbers: db.prepare("SELECT * FROM caller_number ORDER BY status = 'retired', created_at").all(),
+    numbers: listNumbers(db),
     data_dir: config.dataDir,
     version: updates.build,
   }));
@@ -436,22 +436,11 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   });
 
   // ---------- caller ID numbers ----------
-  app.get('/api/numbers', async () => db.prepare("SELECT * FROM caller_number ORDER BY status = 'retired', created_at").all());
+  app.get('/api/numbers', async () => listNumbers(db));
 
   app.post('/api/numbers', async (req) => {
     const b = z.object({ number: z.string().max(40), label: z.string().max(60).nullish(), notes: z.string().max(1000).nullish() }).parse(req.body);
-    const p = normalizeUsPhone(b.number);
-    if (!p.value) throw new DomainError(p.problem ?? 'enter a US phone number');
-    if (db.prepare('SELECT 1 FROM caller_number WHERE e164 = ?').get(p.value)) throw new DomainError('that number is already listed', 409);
-    const id = uuidv7();
-    const now = nowIso();
-    db.transaction(() => {
-      db.prepare(
-        `INSERT INTO caller_number (id, e164, label, provider, status, acquired_at, notes, created_at) VALUES (?,?,?, 'manual', 'active', ?, ?, ?)`,
-      ).run(id, p.value, b.label?.trim() || null, now, b.notes ?? null, now);
-      audit(db, 'caller_number', id, 'insert', null, { e164: p.value, label: b.label });
-    })();
-    return { id };
+    return addNumber(db, b);
   });
 
   app.post('/api/numbers/:id', async (req) => {
@@ -463,25 +452,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       reputation_status: z.enum(['unchecked', 'clear', 'flagged', 'investigating']).optional(),
       notes: z.string().max(1000).nullish(),
     }).parse(req.body);
-    const old = db.prepare('SELECT * FROM caller_number WHERE id = ?').get(id) as any;
-    if (!old) throw new DomainError('number not found', 404);
-    const now = nowIso();
-    const next = {
-      label: b.label !== undefined ? b.label?.trim() || null : old.label,
-      status: b.status ?? old.status,
-      retired_at: b.status === 'retired' && old.status !== 'retired' ? now : b.status && b.status !== 'retired' ? null : old.retired_at,
-      retire_reason: b.retire_reason !== undefined ? b.retire_reason : old.retire_reason,
-      reputation_status: b.reputation_status ?? old.reputation_status,
-      reputation_updated_at: b.reputation_status && b.reputation_status !== old.reputation_status ? now : old.reputation_updated_at,
-      notes: b.notes !== undefined ? b.notes : old.notes,
-    };
-    db.transaction(() => {
-      db.prepare(
-        `UPDATE caller_number SET label=@label, status=@status, retired_at=@retired_at, retire_reason=@retire_reason,
-         reputation_status=@reputation_status, reputation_updated_at=@reputation_updated_at, notes=@notes WHERE id=@id`,
-      ).run({ ...next, id });
-      audit(db, 'caller_number', id, 'update', old, next);
-    })();
+    updateNumber(db, id, b);
     return { ok: true };
   });
 

@@ -1,6 +1,8 @@
 import type { DB } from '../db/connection.js';
 import { nowIso, uuidv7 } from '../ids.js';
 import { DomainError } from '../core/errors.js';
+import { audit } from '../core/audit.js';
+import { normalizeUsPhone } from './normalize.js';
 
 // Caller ID numbers: how each one is doing, and the reputation checks you do by hand.
 // Nothing here switches, buys or rotates numbers; that's always your call.
@@ -15,6 +17,57 @@ export const REPUTATION_CHECKS = [
 ] as const;
 
 const DAY = 86_400_000;
+
+/** Every caller ID number, retired ones last. */
+export function listNumbers(db: DB) {
+  return db.prepare("SELECT * FROM caller_number ORDER BY status = 'retired', created_at").all();
+}
+
+export function addNumber(db: DB, input: { number: string; label?: string | null; notes?: string | null }) {
+  const p = normalizeUsPhone(input.number);
+  if (!p.value) throw new DomainError(p.problem ?? 'enter a US phone number');
+  if (db.prepare('SELECT 1 FROM caller_number WHERE e164 = ?').get(p.value)) throw new DomainError('that number is already listed', 409);
+  const id = uuidv7();
+  const now = nowIso();
+  db.transaction(() => {
+    db.prepare(
+      `INSERT INTO caller_number (id, e164, label, provider, status, acquired_at, notes, created_at) VALUES (?,?,?, 'manual', 'active', ?, ?, ?)`,
+    ).run(id, p.value, input.label?.trim() || null, now, input.notes ?? null, now);
+    audit(db, 'caller_number', id, 'insert', null, { e164: p.value, label: input.label });
+  })();
+  return { id };
+}
+
+export interface NumberPatch {
+  label?: string | null;
+  status?: 'active' | 'standby' | 'retired';
+  retire_reason?: string | null;
+  reputation_status?: 'unchecked' | 'clear' | 'flagged' | 'investigating';
+  notes?: string | null;
+}
+
+/** Changes a number's label, status, reputation or notes. Fields left out keep their value. */
+export function updateNumber(db: DB, id: string, b: NumberPatch) {
+  const old = db.prepare('SELECT * FROM caller_number WHERE id = ?').get(id) as any;
+  if (!old) throw new DomainError('number not found', 404);
+  const now = nowIso();
+  const next = {
+    label: b.label !== undefined ? b.label?.trim() || null : old.label,
+    status: b.status ?? old.status,
+    retired_at: b.status === 'retired' && old.status !== 'retired' ? now : b.status && b.status !== 'retired' ? null : old.retired_at,
+    retire_reason: b.retire_reason !== undefined ? b.retire_reason : old.retire_reason,
+    reputation_status: b.reputation_status ?? old.reputation_status,
+    reputation_updated_at: b.reputation_status && b.reputation_status !== old.reputation_status ? now : old.reputation_updated_at,
+    notes: b.notes !== undefined ? b.notes : old.notes,
+  };
+  db.transaction(() => {
+    db.prepare(
+      `UPDATE caller_number SET label=@label, status=@status, retired_at=@retired_at, retire_reason=@retire_reason,
+       reputation_status=@reputation_status, reputation_updated_at=@reputation_updated_at, notes=@notes WHERE id=@id`,
+    ).run({ ...next, id });
+    audit(db, 'caller_number', id, 'update', old, next);
+  })();
+}
 
 /** Calls, dials, contact rate and appointments for each number. `todayFrom` is the start of your day. */
 export function numberStats(db: DB, todayFrom: string, now = new Date()) {

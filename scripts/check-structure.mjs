@@ -10,7 +10,7 @@ const RULES = [
     name: 'SQL in a route file (move the query into src/server/domain/)',
     dir: 'src/server/http',
     pattern: /\.prepare\(/g,
-    allow: { 'app.ts': 33, 'importRoutes.ts': 20, 'callingRoutes.ts': 1 },
+    allow: { 'app.ts': 27, 'importRoutes.ts': 20, 'callingRoutes.ts': 1 },
   },
   {
     name: 'silent .catch(() => {}) in the UI (show or log the failure, or comment why it is harmless)',
