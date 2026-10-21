@@ -13,7 +13,7 @@ Read this before changing code. New features must fit the existing structure. Do
 ## Before you push
 
 - Run `npm run typecheck`, `npm run lint` and `npm test`, and `npm run build` if you touched the build or assets.
-- `npm run lint` runs oxlint (React hook rules and common mistakes) and `scripts/check-structure.mjs`. The structure check stops new SQL in route files, new silent `.catch(() => {})` in the UI and new `console.*` in the server. If you remove some, lower the allowance in that script as it tells you to. Never raise one to get a change through.
+- `npm run lint` runs oxlint (React hook rules and common mistakes) and `scripts/check-structure.mjs`. The structure check stops new SQL in route files, new silent `.catch(() => {})` in the UI, hand-written `audit_log` inserts and new `console.*` in the server. If you remove some, lower the allowance in that script as it tells you to. Never raise one to get a change through.
 - Run `npm run test:e2e` for UI flows when you can.
 - Write a test for new behavior. Before refactoring untested code, first add a test that pins its current behavior.
 - Never commit secrets. CI runs `scripts/secret-scan.mjs`.

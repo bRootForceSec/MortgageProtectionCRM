@@ -19,6 +19,12 @@ const RULES = [
     allow: {},
   },
   {
+    name: 'hand-written audit_log insert (use audit() from src/server/core/audit.ts)',
+    dir: 'src/server',
+    pattern: /INSERT INTO audit_log/g,
+    allow: { 'core/audit.ts': 1 },
+  },
+  {
     name: 'console.* in server code (use the pino logger)',
     dir: 'src/server',
     pattern: /\bconsole\.(log|warn|error|info|debug)\(/g,
