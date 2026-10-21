@@ -272,6 +272,7 @@ function lastLeadType(db: DB): string | null {
 
 export class DraftWorker {
   private running = new Set<string>();
+  private stopped = false;
   /** For tests: replace the AI reader. */
   readerOverride: PageReader | null | undefined = undefined;
   concurrency = 2;
@@ -289,10 +290,12 @@ export class DraftWorker {
 
   /** Starts (or continues) reading a draft. Resolves when the reading is finished. */
   run(id: string): Promise<void> {
-    if (this.running.has(id)) return Promise.resolve();
+    if (this.stopped || this.running.has(id)) return Promise.resolve();
     this.running.add(id);
     return this.read(id)
       .catch((e) => {
+        // Stopping closes the database under a read; the draft stays "reading" and resumeAll picks it up next start.
+        if (this.stopped) return;
         const d = this.db.prepare('SELECT progress_json FROM import_draft WHERE id = ?').get(id) as { progress_json: string } | undefined;
         if (!d) return;
         const p = { ...(JSON.parse(d.progress_json ?? '{}') as Progress), error: (e as Error).message };
@@ -305,7 +308,13 @@ export class DraftWorker {
     return this.running.has(id);
   }
 
+  /** Called before the database closes: reads in progress stop quietly and no new ones start. */
+  stop() {
+    this.stopped = true;
+  }
+
   private alive(id: string) {
+    if (this.stopped) return false;
     const d = this.db.prepare('SELECT status FROM import_draft WHERE id = ?').get(id) as { status: string } | undefined;
     return d?.status === 'reading';
   }
