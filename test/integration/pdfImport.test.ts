@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
-import { tempDb, tempConfig } from '../helpers.js';
+import { tempDb, tempConfig, dueLeads } from '../helpers.js';
 import { makeLeadPdf, FAKE } from '../pdfFixtures.js';
 import { readPdfText } from '../../src/server/domain/pdfReader.js';
 import {
@@ -10,7 +10,6 @@ import {
 import { Secrets } from '../../src/server/ai/settings.js';
 import type { PageReader } from '../../src/server/ai/readers.js';
 import { AiError } from '../../src/server/ai/readers.js';
-import { getQueue } from '../../src/server/domain/queue.js';
 import Database from 'better-sqlite3';
 import { migrate } from '../../src/server/db/connection.js';
 import { uuidv7 } from '../../src/server/ids.js';
@@ -234,21 +233,20 @@ describe('spreadsheet drafts and the Status column', () => {
     expect(st.PatFour).toMatchObject({ status: 'callback', next_due_at: null });
     expect(st.PatSix).toMatchObject({ status: 'new' });
 
-    const q = getQueue(db);
-    expect(q.items.map((i) => [i.name, i.bucket, i.needs_time])).toEqual([
-      ['Pat Four', 'callback_due', true],
-      ['Pat Six', 'new', false],
-      ['Pat One', 'retry', false],
-    ]); // appointments set are out of the queue
+    expect(dueLeads(db).map((l) => [l.name, l.status, l.next_due_at])).toEqual([
+      ['Pat Four', 'callback', null], // a callback from a sheet has no time: due now
+      ['Pat One', 'retry', null],
+      ['Pat Six', 'new', null],
+    ]); // appointments set are not called again
     expect(db.prepare('SELECT count(*) n FROM appointment').get()).toEqual({ n: 0 }); // appointments live in Unitrust
   });
 
-  it('the queue can be limited to counties, or to area codes linked to counties (never the lead\'s own area code)', () => {
+  it('calling can be limited to counties, or to area codes linked to counties (never the lead\'s own area code)', () => {
     const { c, db } = tempDb();
     const { id } = createSheetDraft(db, c.importsDir, { fileName: 'l.xlsx', sha256: 'abd', bytes: Buffer.from('x') }, sheet, mapping);
     reviewRow(db, id, 7, { action: 'ok', edits: { phone: '312-555-0206' } }); // Elkhart lead with a Chicago number
     commitDraft(db, c.importsDir, id, { name: 's' });
-    const names = (o: Parameters<typeof getQueue>[1]) => getQueue(db, o).items.map((i) => i.name).sort();
+    const names = (o: Parameters<typeof dueLeads>[1]) => dueLeads(db, o).map((l) => l.name);
     expect(names({ counties: ['IN|ELKHART'] })).toEqual(['Pat Four', 'Pat Six']);
     db.prepare("INSERT INTO county_area_code VALUES ('IN|ELKHART', '574', 'x'), ('IN|ST JOSEPH', '574', 'x')").run();
     expect(names({ areaCodes: ['574'] })).toEqual(['Pat Four', 'Pat One', 'Pat Six']);

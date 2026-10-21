@@ -1,11 +1,10 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import type { FastifyInstance } from 'fastify';
-import { tempDb, sampleCsv } from '../helpers.js';
+import { tempDb, sampleCsv, dueLeads } from '../helpers.js';
 import { parseSpreadsheet } from '../../src/server/domain/spreadsheet.js';
 import { suggestMapping } from '../../src/server/domain/mapping.js';
 import { commitImport } from '../../src/server/domain/importer.js';
 import { logManualCall } from '../../src/server/domain/calls.js';
-import { getQueue } from '../../src/server/domain/queue.js';
 import { builtInAreaCodes, builtInStates, seedCountyAreaCodes } from '../../src/server/domain/areaCodes.js';
 import { buildApp } from '../../src/server/http/app.js';
 import type { DB } from '../../src/server/db/connection.js';
@@ -71,9 +70,9 @@ describe('built-in county area codes', () => {
 describe('area code filter goes by county, never by the lead\'s phone', () => {
   beforeEach(() => void seedCountyAreaCodes(db));
 
-  it('queue', () => {
-    expect(names(getQueue(db, { areaCodes: ['614'] } as any).items)).toEqual(['Amy', 'Ben']);
-    expect(names(getQueue(db, { areaCodes: ['260'], counties: ['OH|MONTGOMERY'] } as any).items)).toEqual(['Cal', 'Dee']);
+  it('leads ready to call', () => {
+    expect(names(dueLeads(db, { areaCodes: ['614'] }))).toEqual(['Amy', 'Ben']);
+    expect(names(dueLeads(db, { areaCodes: ['260'], counties: ['OH|MONTGOMERY'] }))).toEqual(['Cal', 'Dee']);
   });
 
   it('leads list and its search box', async () => {

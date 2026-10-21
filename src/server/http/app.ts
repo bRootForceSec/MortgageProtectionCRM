@@ -7,9 +7,8 @@ import type { DB } from '../db/connection.js';
 import type { Config } from '../config.js';
 import { registerSecurity } from './security.js';
 import { parseSpreadsheet, MAX_UPLOAD_BYTES, type ParsedFile } from '../domain/spreadsheet.js';
-import { LEAD_FIELDS, suggestMapping, type ColumnMapping } from '../domain/mapping.js';
-import { previewImport, commitImport, savedMappingFor, MappingError } from '../domain/importer.js';
-import { getQueue } from '../domain/queue.js';
+import { LEAD_FIELDS, suggestMapping } from '../domain/mapping.js';
+import { savedMappingFor, MappingError } from '../domain/importer.js';
 import { logManualCall, changeOutcome, addLeadAction, addNote } from '../domain/calls.js';
 import { DomainError } from '../core/errors.js';
 import { audit } from '../core/audit.js';
@@ -32,7 +31,7 @@ import { KdeConnect } from '../dialer.js';
 import { loadCallingSettings } from '../domain/callingSettings.js';
 import { groupWhere, searchWhere, parseList } from '../domain/groupFilter.js';
 import {
-  addMatchingToCallList, addToCallList, addBatchToCallList, clearWorked, getCallList, leadFilterWhere, moveToBottom, onCallList,
+  addMatchingToCallList, addToCallList, clearWorked, getCallList, leadFilterWhere, moveToBottom, onCallList,
   recentOutcomes, removeFromCallList, type LeadFilter, callListName, listSavedLists, clearCallList, loadSavedList, deleteSavedList, setCalledBack,
 } from '../domain/callList.js';
 
@@ -147,18 +146,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     version: updates.build,
   }));
 
-  // ---------- queue & leads ----------
-  app.get('/api/queue', async (req) => {
-    const q = z.object({
-      bucket: z.enum(['callback_due', 'new', 'retry']).optional(),
-      search: z.string().max(100).optional(),
-      limit: z.coerce.number().int().optional(),
-      counties: z.string().max(4000).optional(),
-      area_codes: z.string().max(400).optional(),
-    }).parse(req.query);
-    return getQueue(db, { ...q, counties: parseList(q.counties), areaCodes: parseList(q.area_codes) });
-  });
-
+  // ---------- leads ----------
   const leadFilter = z.object({
     status: z.enum(['dead', 'invalid', 'appointment_set', 'callback', 'retry', 'no_answer', 'talked', 'new', 'all']).default('all'),
     search: z.string().max(100).optional(),
@@ -531,64 +519,6 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     };
   });
 
-  const importBody = z.object({
-    upload_id: z.string().max(64),
-    sheet: z.string().max(200),
-    mapping: z.record(z.string(), z.string().max(300)),
-    import_repeats_as_new: z.boolean().optional(),
-  });
-
-  const sheetOf = (uploadId: string, name: string) => {
-    const u = getUpload(uploadId);
-    const s = u.parsed.sheets.find((x) => x.name === name);
-    if (!s) throw new DomainError('sheet not found');
-    return { u, s };
-  };
-
-  const rowView = (r: ReturnType<typeof previewImport>['rows'][number]) => ({
-    row_number: r.rowNumber,
-    status: r.status,
-    errors: r.errors,
-    warnings: r.warnings,
-    name: [r.lead.first_name, r.lead.last_name].filter(Boolean).join(' '),
-    phone: r.lead.phone_e164 ?? r.lead.phone_raw,
-    state: r.lead.state,
-    lender: r.lead.lender,
-    loan_amount_cents: r.lead.loan_amount_cents,
-    age: r.lead.age,
-  });
-
-  app.post('/api/imports/preview', async (req) => {
-    const b = importBody.parse(req.body);
-    const { u, s } = sheetOf(b.upload_id, b.sheet);
-    const { summary, rows } = previewImport(db, u.parsed.sha256, s, b.mapping as ColumnMapping, { importRepeatsAsNew: b.import_repeats_as_new });
-    return { summary, rows: rows.map(rowView) };
-  });
-
-  app.post('/api/imports/commit', async (req) => {
-    const b = importBody
-      .extend({
-        batch: z.object({
-          name: z.string().min(1).max(200),
-          purchased_count: z.number().int().min(0).max(1_000_000).nullish(),
-          cost_total_cents: z.number().int().min(0).max(1e10).nullish(),
-          cost_per_lead_cents: z.number().int().min(0).max(1e8).nullish(),
-          lead_type: z.string().max(100).nullish(),
-          lead_age_label: z.string().max(100).nullish(),
-          notes: z.string().max(2000).nullish(),
-        }),
-        add_to_call_list: z.boolean().optional(),
-      })
-      .parse(req.body);
-    const { u, s } = sheetOf(b.upload_id, b.sheet);
-    const result = commitImport(db, u.parsed, s, b.mapping as ColumnMapping, b.batch, { importRepeatsAsNew: b.import_repeats_as_new });
-    // Keep the original file next to the database as the batch's source reference.
-    const safe = u.parsed.fileName.replace(/[^\w.\- ]/g, '_');
-    fs.writeFileSync(path.join(config.importsDir, `${result.batchId}-${safe}`), u.buf, { mode: 0o600 });
-    uploads.delete(b.upload_id);
-    const call_list = b.add_to_call_list ? addBatchToCallList(db, result.batchId) : null;
-    return { batch_id: result.batchId, summary: result.summary, call_list };
-  });
 
   app.get('/api/imports', async () =>
     db

@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { openDatabase } from '../src/server/db/connection.js';
 import type { Config } from '../src/server/config.js';
+import { groupWhere } from '../src/server/domain/groupFilter.js';
 
 export function tempConfig(): Config {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mpcrm-test-'));
@@ -51,4 +52,21 @@ export async function sampleXlsx(rows = SAMPLE_ROWS, headers = SAMPLE_HEADERS, t
 export function sampleCsv(rows = SAMPLE_ROWS, headers = SAMPLE_HEADERS): Buffer {
   const esc = (v: unknown) => (/[",\n]/.test(String(v)) ? `"${String(v).replace(/"/g, '""')}"` : String(v));
   return Buffer.from([headers, ...rows].map((r) => r.map(esc).join(',')).join('\n'));
+}
+
+/**
+ * Leads ready to call now, read from lead_state: new leads, and retries or callbacks that are due (or have no time).
+ * Tests use it to check what the derived state means for calling.
+ */
+export function dueLeads(db: import('../src/server/db/connection.js').DB, opts: { counties?: string[]; areaCodes?: string[]; now?: string } = {}) {
+  const g = groupWhere('l.county_key', opts);
+  return db
+    .prepare(
+      `SELECT l.id, trim(coalesce(l.first_name,'') || ' ' || coalesce(l.last_name,'')) name, s.status, s.next_due_at,
+              coalesce(s.active_phone_e164, l.phone_e164) phone_e164
+       FROM lead l JOIN lead_state s ON s.lead_id = l.id
+       WHERE (s.status = 'new' OR (s.status IN ('retry','callback') AND (s.next_due_at IS NULL OR s.next_due_at <= @now))) AND ${g.sql}
+       ORDER BY name`,
+    )
+    .all({ now: opts.now ?? new Date().toISOString(), ...g.params }) as { id: string; name: string; status: string; next_due_at: string | null; phone_e164: string | null }[];
 }

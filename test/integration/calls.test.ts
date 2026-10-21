@@ -1,11 +1,10 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { tempDb, sampleCsv } from '../helpers.js';
+import { tempDb, sampleCsv, dueLeads } from '../helpers.js';
 import { parseSpreadsheet } from '../../src/server/domain/spreadsheet.js';
 import { suggestMapping } from '../../src/server/domain/mapping.js';
 import { commitImport } from '../../src/server/domain/importer.js';
 import { logManualCall, changeOutcome, currentOutcome, addLeadAction, voidCall } from '../../src/server/domain/calls.js';
 import { DomainError } from '../../src/server/core/errors.js';
-import { getQueue } from '../../src/server/domain/queue.js';
 import { addToCallList } from '../../src/server/domain/callList.js';
 import { buildReport } from '../../src/server/domain/reports.js';
 import { rebuildLeadState, verifyLeadState } from '../../src/server/domain/leadState.js';
@@ -79,14 +78,13 @@ describe('manual call logging', () => {
     expect(() => logManualCall(db, { lead_id: jane, idempotency_key: key(), outcome_code: 'callback' })).toThrow(DomainError);
     const due = new Date(Date.now() - 60_000).toISOString();
     logManualCall(db, { lead_id: jane, idempotency_key: key(), outcome_code: 'callback', callback_due_at: due });
-    const q = getQueue(db);
-    expect(q.items[0]).toMatchObject({ lead_id: jane, bucket: 'callback_due' });
+    expect(dueLeads(db).find((l) => l.id === jane)).toMatchObject({ status: 'callback' });
   });
 
   it('Do not call (key 4) counts as reaching the lead, goes to the dead pile and stays off call lists', () => {
     logManualCall(db, { lead_id: jane, idempotency_key: key(), outcome_code: 'dnc_request', from_number_id: num });
     expect((db.prepare('SELECT status FROM lead_state WHERE lead_id = ?').get(jane) as any).status).toBe('dead');
-    expect(getQueue(db).items.find((i) => i.lead_id === jane)).toBeUndefined();
+    expect(dueLeads(db).map((l) => l.id)).not.toContain(jane);
     expect(addToCallList(db, [jane])).toEqual({ added: 0, already: 0, not_callable: 1 });
     const day = new Date(Date.now() - 86_400_000).toISOString();
     const r = buildReport(db, { from: day, to: new Date(Date.now() + 86_400_000).toISOString(), tz: 'America/New_York' });
@@ -101,7 +99,7 @@ describe('manual call logging', () => {
     logManualCall(db, { lead_id: jane, idempotency_key: key(), outcome_code: 'no_appt' });
     addLeadAction(db, jane, 'mark_dead', 'asked not to be called');
     expect((db.prepare('SELECT status FROM lead_state WHERE lead_id = ?').get(jane) as any).status).toBe('dead');
-    expect(getQueue(db).items.find((i) => i.lead_id === jane)).toBeUndefined();
+    expect(dueLeads(db).map((l) => l.id)).not.toContain(jane);
     addLeadAction(db, jane, 'restore', 'asked to be called after all');
     expect((db.prepare('SELECT status FROM lead_state WHERE lead_id = ?').get(jane) as any).status).toBe('retry');
   });
@@ -129,9 +127,9 @@ describe('manual call logging', () => {
     expect(db.prepare('SELECT status, next_due_at, due_any_time FROM lead_state WHERE lead_id = ?').get(jane)).toEqual({
       status: 'callback', next_due_at: tomorrow, due_any_time: 1,
     });
-    expect(getQueue(db).items.find((i) => i.lead_id === jane)).toBeUndefined(); // not due yet
-    const q = getQueue(db, { now: new Date(start.getTime() + 86_400_000 + 9 * 3600_000).toISOString() });
-    expect(q.items.find((i) => i.lead_id === jane)).toMatchObject({ bucket: 'callback_due', any_time: true, needs_time: false });
+    expect(dueLeads(db).map((l) => l.id)).not.toContain(jane); // not due yet
+    const later = dueLeads(db, { now: new Date(start.getTime() + 86_400_000 + 9 * 3600_000).toISOString() });
+    expect(later.find((l) => l.id === jane)).toMatchObject({ status: 'callback', next_due_at: tomorrow });
     // Undo hands it back as it was entered.
     expect(voidCall(db, r.call_id)).toMatchObject({ callback_due_at: tomorrow, callback_any_time: true });
     expect(verifyLeadState(db)).toEqual([]);
@@ -143,17 +141,7 @@ describe('manual call logging', () => {
     expect(db.prepare('SELECT status, next_due_at, preferred_number_id FROM lead_state WHERE lead_id = ?').get(jane)).toEqual({
       status: 'appointment_set', next_due_at: null, preferred_number_id: num,
     });
-    expect(getQueue(db).items.map((i) => i.lead_id)).not.toContain(jane);
-  });
-
-  it('queue: new leads first by batch, skipped leads drop to the end', () => {
-    const q1 = getQueue(db);
-    expect(q1.counts.new).toBe(4);
-    const first = q1.items[0]!.lead_id;
-    addLeadAction(db, first, 'skip');
-    const q2 = getQueue(db);
-    expect(q2.items.at(-1)!.lead_id).toBe(first);
-    expect(q2.items.at(-1)!.skipped_today).toBe(true);
+    expect(dueLeads(db).map((l) => l.id)).not.toContain(jane);
   });
 
   it('rebuild reproduces stored lead state exactly', () => {
