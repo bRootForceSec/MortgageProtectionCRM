@@ -4,7 +4,7 @@ import zlib from 'node:zlib';
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import Database from 'better-sqlite3';
-import type { DB } from './db/connection.js';
+import { tableNames, type DB } from './db/connection.js';
 import type { Config } from './config.js';
 
 // Backups use SQLite's online backup API, so they are consistent even while the app runs.
@@ -20,15 +20,13 @@ export interface BackupResult {
 }
 
 export function tableCounts(db: DB): Record<string, number> {
-  const names = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name").all() as { name: string }[];
-  return Object.fromEntries(names.map(({ name }) => [name, (db.prepare(`SELECT COUNT(*) n FROM "${name}"`).get() as { n: number }).n]));
+  return Object.fromEntries(tableNames(db).map((name) => [name, (db.prepare(`SELECT COUNT(*) n FROM "${name}"`).get() as { n: number }).n]));
 }
 
 /** Order-independent checksum of every row in every table. Equal checksums mean equal contents. */
 export function contentChecksum(db: DB): string {
   const h = createHash('sha256');
-  const names = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name").all() as { name: string }[];
-  for (const { name } of names) {
+  for (const name of tableNames(db)) {
     const rows = (db.prepare(`SELECT * FROM "${name}"`).all() as unknown[]).map((r) => JSON.stringify(r)).sort();
     h.update(name);
     for (const r of rows) h.update(r);

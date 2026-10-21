@@ -24,6 +24,11 @@ export function openDatabase(file: string): DB {
   return db;
 }
 
+/** Every table in the database, by name (SQLite's own tables left out). */
+export function tableNames(db: DB): string[] {
+  return (db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name").all() as { name: string }[]).map((t) => t.name);
+}
+
 /** Applies any migration files not yet recorded, in filename order, each in a transaction. */
 export function migrate(db: DB, dir = MIGRATIONS_DIR): string[] {
   db.exec(`CREATE TABLE IF NOT EXISTS schema_migration (
