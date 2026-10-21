@@ -274,3 +274,26 @@ export function titleCaseIfShouting(v: string | null | undefined, opts: { keepUp
     .replace(/\bMc([a-z])/g, (_, c: string) => `Mc${c.toUpperCase()}`)
     .replace(/\b([A-Z])'([a-z])/g, (_, a: string, b: string) => `${a}'${b.toUpperCase()}`);
 }
+
+/**
+ * Puts a ZIP code that landed in the State field (or a state that landed in the ZIP field) where it belongs.
+ * On the lead pages the ZIP is printed next to the state, and a reader sometimes takes "IN 46619" as the state.
+ * Returns the two values; anything that doesn't look like that is left as it was.
+ */
+export function splitStateZip(state: string | null | undefined, zip: string | null | undefined): { state: string | null; zip: string | null } {
+  let s = toText(state);
+  let z = toText(zip);
+  const zipAtEnd = /^(.*?)[\s,]*\b(\d{5}(?:-?\d{4})?)$/;
+  const isStateOrBlank = (t: string) => !t || normalizeState(t).value !== null;
+  const ms = s.match(zipAtEnd);
+  if (ms && isStateOrBlank(ms[1]!.trim()) && (!z || normalizeZip(z).value === normalizeZip(ms[2]!).value)) {
+    s = ms[1]!.trim();
+    z = ms[2]!;
+  }
+  const mz = z.match(zipAtEnd);
+  if (mz && mz[1]!.trim() && normalizeState(mz[1]!.trim()).value && (!s || normalizeState(s).value === normalizeState(mz[1]!.trim()).value)) {
+    s = mz[1]!.trim();
+    z = mz[2]!;
+  }
+  return { state: s || null, zip: z || null };
+}

@@ -6,13 +6,25 @@ import workerUrl from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url';
 
 GlobalWorkerOptions.workerSrc = workerUrl;
 
+// pdf.js's helper files, served by the app (see vite.config.ts).
+const PDFJS = new URL('/pdfjs/', location.href).href;
+
 const cache = new Map<string, PDFDocumentLoadingTask>();
 const running = new WeakMap<HTMLCanvasElement, { cancel: () => void; promise: Promise<unknown> }>();
 
 export function loadPdf(url: string): Promise<PDFDocumentProxy> {
   let task = cache.get(url);
   if (!task) {
-    task = getDocument({ url, withCredentials: true });
+    task = getDocument({
+      url,
+      withCredentials: true,
+      // Decoders for scanned pages (JPEG 2000, JBIG2) and the fonts and color profiles some PDFs lean on.
+      // Without them those pages are drawn blank white, though the PDF opens fine elsewhere.
+      wasmUrl: PDFJS + 'wasm/',
+      iccUrl: PDFJS + 'iccs/',
+      standardFontDataUrl: PDFJS + 'standard_fonts/',
+      cMapUrl: PDFJS + 'cmaps/',
+    });
     task.promise.catch(() => cache.delete(url));
     cache.set(url, task);
     // Keep only the latest couple of files in memory.

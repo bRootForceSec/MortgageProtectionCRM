@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  normalizeUsPhone, normalizeMoneyToCents, normalizeAge, coborrowerSignal, normalizeState, normalizeZip, splitName,
+  normalizeUsPhone, normalizeMoneyToCents, normalizeAge, coborrowerSignal, normalizeState, normalizeZip, splitName, splitStateZip,
 } from '../../src/server/domain/normalize.js';
 import { suggestMapping, validateMapping } from '../../src/server/domain/mapping.js';
 
@@ -69,4 +69,18 @@ describe('column mapping', () => {
     expect(validateMapping({}, ['A'])).toHaveLength(2);
     expect(validateMapping({ phone: 'Missing', full_name: 'A' }, ['A'])[0]).toMatch(/not in the sheet/);
   });
+});
+
+describe('ZIP code in the State field', () => {
+  it.each([
+    [['IN 46619', null], { state: 'IN', zip: '46619' }],
+    [['46619', ''], { state: null, zip: '46619' }],
+    [['IN, 46619-1234', '46619'], { state: 'IN', zip: '46619-1234' }],
+    [['Indiana 46619', null], { state: 'Indiana', zip: '46619' }],
+    [['', 'IN 46619'], { state: 'IN', zip: '46619' }],
+    [['IN', '46619'], { state: 'IN', zip: '46619' }],
+    // Left alone: a different ZIP already there, or not a state in front.
+    [['IN 46619', '46514'], { state: 'IN 46619', zip: '46514' }],
+    [['Apt 12345', null], { state: 'Apt 12345', zip: null }],
+  ] as const)('%j → %j', ([st, zip], out) => expect(splitStateZip(st, zip)).toEqual(out));
 });

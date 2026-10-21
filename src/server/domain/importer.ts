@@ -5,7 +5,7 @@ import { type ColumnMapping, type LeadFieldKey, LEAD_FIELDS, validateMapping, he
 import type { ParsedSheet } from './spreadsheet.js';
 import {
   ageOn, coborrowerSignal, normalizeAge, normalizeDob, normalizeCallinDate, normalizeMoneyToCents, normalizeState, normalizeUsPhone,
-  normalizeZip, splitName, toText, timeZoneFor,
+  normalizeZip, splitName, splitStateZip, toText, timeZoneFor,
 } from './normalize.js';
 import { resolveCounty, lookupZip } from './county.js';
 import { rebuildLeadState } from './leadState.js';
@@ -156,9 +156,11 @@ export function mapFields(f: FieldValues, extra: Record<string, string> = {}): {
     age.value = fromDob;
   }
 
-  const zip = normalizeZip(txt(f.zip));
+  // "IN 46619" read into the State field (or the ZIP field) is split into the two.
+  const sz = splitStateZip(txt(f.state), txt(f.zip));
+  const zip = normalizeZip(sz.zip);
   if (zip.problem) warnings.push(zip.problem);
-  let st = normalizeState(txt(f.state));
+  let st = normalizeState(sz.state);
   if (st.problem) warnings.push(st.problem);
   // No state column (common in hand-made sheets): take it from the ZIP code.
   if (!st.value && zip.value) {
