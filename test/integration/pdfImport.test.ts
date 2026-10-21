@@ -198,6 +198,20 @@ describe('spreadsheet drafts and the Status column', () => {
   } as ParsedSheet;
   const mapping = { status: 'Status', source_lead_id: 'Lead ID', full_name: 'Name', phone: 'Phone', address: 'Address', city: 'City', zip: 'Zip' };
 
+  it('a failed commit imports nothing, so trying again does not import twice', () => {
+    const { c, db } = tempDb();
+    const { id } = createSheetDraft(db, c.importsDir, { fileName: 'leads.xlsx', sha256: 'abc', bytes: Buffer.from('x'), fileModified: null }, sheet, mapping);
+    reviewRow(db, id, 7, { action: 'ok', edits: { phone: '574-555-0206' } });
+    // Keeping a copy of the file fails (here: the folder is missing).
+    expect(() => commitDraft(db, path.join(c.importsDir, 'missing'), id, { name: 'Sept sheet' })).toThrow();
+    expect(db.prepare('SELECT COUNT(*) n FROM import_batch').get()).toEqual({ n: 0 });
+    expect(db.prepare('SELECT COUNT(*) n FROM lead').get()).toEqual({ n: 0 });
+    expect(getDraftView(db, id).status).not.toBe('committed');
+    commitDraft(db, c.importsDir, id, { name: 'Sept sheet' });
+    expect(db.prepare('SELECT COUNT(*) n FROM import_batch').get()).toEqual({ n: 1 });
+    expect(getDraftView(db, id).status).toBe('committed');
+  });
+
   it('discards blanked-out rows, asks about incomplete ones, and turns statuses into undated history', () => {
     const { c, db } = tempDb();
     const { id } = createSheetDraft(db, c.importsDir, { fileName: 'leads.xlsx', sha256: 'abc', bytes: Buffer.from('x'), fileModified: '2026-09-30T18:00:00.000Z' }, sheet, mapping);

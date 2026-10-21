@@ -684,15 +684,19 @@ export function commitDraft(db: DB, importsDir: string, id: string, batch: Batch
     default_lead_type: settings.default_lead_type, prompt_version: d.kind === 'pdf' ? PROMPT_VERSION : undefined,
     readers: [...new Set(rows.map((r) => r.extractor).filter(Boolean))],
   };
-  const result = commitRows(db, { fileName: d.file_name, sha256: d.file_sha256 }, source, batch, meta, {
-    fileModified: d.file_modified,
-    importRepeatsAsNew: settings.import_repeats_as_new,
-  });
-  const safe = d.file_name.replace(/[^\w.\- ]/g, '_');
-  fs.copyFileSync(d.file_path, path.join(importsDir, `${result.batchId}-${safe}`));
-  fs.chmodSync(path.join(importsDir, `${result.batchId}-${safe}`), 0o600);
-  db.prepare("UPDATE import_draft SET status = 'committed', batch_id = ?, updated_at = ? WHERE id = ?").run(result.batchId, nowIso(), id);
+  // One transaction: if keeping the file fails, no leads are imported, so trying again can't import them twice.
+  const result = db.transaction(() => {
+    const r = commitRows(db, { fileName: d.file_name, sha256: d.file_sha256 }, source, batch, meta, {
+      fileModified: d.file_modified,
+      importRepeatsAsNew: settings.import_repeats_as_new,
+    });
+    const safe = d.file_name.replace(/[^\w.\- ]/g, '_');
+    fs.copyFileSync(d.file_path, path.join(importsDir, `${r.batchId}-${safe}`));
+    fs.chmodSync(path.join(importsDir, `${r.batchId}-${safe}`), 0o600);
+    db.prepare("UPDATE import_draft SET status = 'committed', batch_id = ?, updated_at = ? WHERE id = ?").run(r.batchId, nowIso(), id);
+    if (settings.default_lead_type) setSetting(db, 'import.last_lead_type', settings.default_lead_type);
+    return r;
+  })();
   fs.rmSync(d.file_path, { force: true });
-  if (settings.default_lead_type) setSetting(db, 'import.last_lead_type', settings.default_lead_type);
   return result;
 }
