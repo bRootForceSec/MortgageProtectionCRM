@@ -22,6 +22,8 @@ export interface FakeLead {
   calledFrom?: string;
   phone?: string;
   alt?: string;
+  /** Where the ZIP code starts, when it isn't under its label (some notices print it further left). */
+  zipX?: number;
   /** Turn the page sideways, as on some scans. */
   rotate?: boolean;
 }
@@ -80,7 +82,7 @@ export async function makeLeadPdf(pages: (FakeLead | 'scan')[]): Promise<Uint8Ar
     t(p.address, LEFT, 485);
     t(p.city, LEFT, 527);
     t(p.state, LEFT, 575);
-    t(p.zip, SUB - 4, 576);
+    t(p.zip, p.zipX ?? SUB - 4, 576);
     t(p.county, LEFT, 618);
     t(p.tobacco, LEFT, 660);
     t(p.health, LEFT, 715);

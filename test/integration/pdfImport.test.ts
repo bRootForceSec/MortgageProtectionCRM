@@ -58,6 +58,14 @@ describe('PDF page reader', () => {
     expect(p2.issues).toEqual([expect.objectContaining({ field: 'extra:Last Action', blocking: false })]);
     expect(p2.extra['Health history (heart attack, stroke, cancer, diabetes)']).toBe('No');
   });
+
+  it('a ZIP code printed left of its label still goes in ZIP, not State', async () => {
+    const pages = await readPdfText(await makeLeadPdf([{ ...FAKE[0]!, zipX: 120 }, { ...FAKE[0]!, state: undefined, zipX: 60 }]));
+    expect(pages[0]!.fields).toMatchObject({ state: 'IN', zip: '46619', county: 'ST JOSEPH' });
+    expect(pages[1]!.fields.state).toBeUndefined();
+    expect(pages[1]!.fields.zip).toBe('46619');
+    expect(pages[0]!.issues).toEqual([]);
+  });
 });
 
 describe('PDF import drafts', () => {
@@ -130,6 +138,18 @@ describe('PDF import drafts', () => {
 
     const off = await setup(['scan'], null);
     expect(getDraftView(off.db, off.id).rows[0]!.issues[0]!.message).toMatch(/no AI reader is set up/);
+  });
+
+  it('"IN 46619" in the State field is split into State and ZIP, and a missing state is blamed on the state, not the county', async () => {
+    const { db, id } = await setup([FAKE[0]!]);
+    // As if a reader had put the ZIP into State.
+    const r1 = reviewRow(db, id, 1, { action: 'save', edits: { state: 'IN 46619', zip: '' } });
+    expect(r1.issues.filter((i) => i.blocking)).toEqual([]);
+    const r2 = reviewRow(db, id, 1, { action: 'save', edits: { state: 'XX', zip: '' } });
+    const blocking = r2.issues.filter((i) => i.blocking);
+    expect(blocking).toEqual([expect.objectContaining({ field: 'state' })]);
+    expect(blocking[0]!.message).toMatch(/"XX" isn't a state/);
+    expect(blocking[0]!.message).toMatch(/St Joseph|ST JOSEPH/i);
   });
 
   it('a page whose county is not a real county must be fixed before OK', async () => {

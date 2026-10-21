@@ -172,6 +172,9 @@ export function readPageItems(page: number, items: Item[]): PageRead {
       if (!label || (left && left.y > label.y + it.h * 0.5)) label = left;
     }
     if (!label) continue;
+    // The ZIP is printed just right of the state, sometimes starting left of its own label: a bare ZIP
+    // code under "State:" belongs to "Zip Code:".
+    if (label.slot === 'state' && /^\d{5}(-?\d{4})?$/.test(it.str.trim())) label = found.find((f) => f.slot === 'zip') ?? label;
     const list = values.get(label.slot) ?? [];
     list.push(it);
     values.set(label.slot, list);

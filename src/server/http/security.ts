@@ -49,7 +49,7 @@ export function registerSecurity(app: FastifyInstance, opts: { token: string; po
     reply.header('cache-control', 'no-store');
     reply.header(
       'content-security-policy',
-      "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
+      "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
     );
     return payload;
   });

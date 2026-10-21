@@ -8,7 +8,7 @@ import { type FieldValues, type SourceRow, type BatchInput, mapFields, previewRo
 import type { LeadFieldKey, ColumnMapping } from './mapping.js';
 import type { ParsedSheet } from './spreadsheet.js';
 import { isKnownCounty } from './county.js';
-import { titleCaseIfShouting } from './normalize.js';
+import { titleCaseIfShouting, splitStateZip } from './normalize.js';
 import { readPdfText, extractPage, type ReadIssue } from './pdfReader.js';
 import { turnPdfPages, normTurn } from './pageTurn.js';
 import { PROMPT_VERSION, type PageAnswer } from '../ai/prompt.js';
@@ -76,6 +76,17 @@ const AI_FIELD: Record<keyof PageAnswer['fields'], LeadFieldKey> = {
 // ---------------------------------------------------------------------------------------------
 // Assessment: what still needs a look on a row.
 
+/** Moves a ZIP code read into the State field into the ZIP field (and the other way round), so the review form shows each where it belongs. */
+function fixStateZip(fields: FieldValues): FieldValues {
+  if (!fields.state && !fields.zip) return fields;
+  const { state, zip } = splitStateZip(fields.state, fields.zip);
+  if (state) fields.state = state;
+  else delete fields.state;
+  if (zip) fields.zip = zip;
+  else delete fields.zip;
+  return fields;
+}
+
 export function effectiveFields(data: DraftRowData, edits: FieldValues | null): { fields: FieldValues; notes: string[] } {
   const f: FieldValues = { ...data.fields };
   for (const [k, v] of Object.entries(edits ?? {}) as [LeadFieldKey, string][]) {
@@ -100,7 +111,18 @@ export function assessRow(data: DraftRowData, edits: FieldValues | null): ReadIs
   for (const r of data.reader_issues) if (!edited.has(r.field)) issues.push(r);
   for (const e of errors) issues.push({ field: e.includes('name') ? 'full_name' : 'phone', message: e, blocking: true, kind: 'missing' });
   if (!lead.address_line) issues.push({ field: 'address', message: 'no street address', blocking: true, kind: 'missing' });
-  if (!lead.county_key) {
+  if (!lead.county_key && lead.county && !lead.state) {
+    // The county is there, but without a state it can't be matched. The state is what needs fixing.
+    const st = fields.state?.trim();
+    issues.push({
+      field: 'state',
+      message: st
+        ? `"${st}" isn't a state. Type the two-letter state (e.g. IN) so the county "${lead.county}" can be matched.`
+        : `No state on the page, and the ZIP code didn't settle it. Type the two-letter state (e.g. IN) so the county "${lead.county}" can be matched.`,
+      blocking: true,
+      kind: 'missing',
+    });
+  } else if (!lead.county_key) {
     issues.push({ field: 'county', message: 'Which county was this lead bought for? It isn\'t on the page and the address didn\'t settle it.', blocking: true, kind: 'missing' });
   } else if (lead.county_source === 'page' && !isKnownCounty(lead.county_key)) {
     issues.push({ field: 'county', message: `"${lead.county}" isn't a county in ${lead.state}. Check the spelling.`, blocking: true, kind: 'missing' });
@@ -304,7 +326,7 @@ export class DraftWorker {
       });
       db.transaction(() => {
         for (const p of pages) {
-          const data: DraftRowData = { ...emptyData(), fields: p.fields, extra: p.extra, raw: p.raw, reader_issues: p.issues };
+          const data: DraftRowData = { ...emptyData(), fields: fixStateZip(p.fields), extra: p.extra, raw: p.raw, reader_issues: p.issues };
           if (p.turn) data.turn = p.turn;
           const pending = p.kind !== 'text';
           const issues = pending ? [] : assessRow(data, null);
@@ -352,6 +374,7 @@ export class DraftWorker {
             for (const [k, v] of Object.entries(a.fields) as [keyof PageAnswer['fields'], string | null][]) {
               if (v && v.trim()) fields[AI_FIELD[k]] = v.trim();
             }
+            fixStateZip(fields);
             const data: DraftRowData = {
               fields, extra: {}, raw: Object.fromEntries(Object.entries(a.fields).filter(([, v]) => v)) as Record<string, string>,
               uncertain: a.uncertain, reader_issues: [],
