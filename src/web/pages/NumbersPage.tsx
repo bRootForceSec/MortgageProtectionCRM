@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useState } from 'react';
 import { api, fmtDateTime, fmtPhone, type CallerNumber } from '../api';
 import { useApp } from '../App';
-import { todayRange } from '../components/CallbackAlerts';
+import { todayRange, ymd } from '../when';
 
 // The numbers you call from: how each is doing, and the reputation checks you do by hand.
 // The app never switches numbers by itself.
@@ -25,8 +25,7 @@ function Checklist({ n }: { n: CallerNumber }) {
       toast(e.message, 'error');
     }
   };
-  const today = new Date();
-  const ymd = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+  const today = ymd(new Date());
   return (
     <table className="grid checklist" aria-label={`Reputation checklist for ${n.label ?? n.e164}`}>
       <thead><tr><th>Check</th><th>Date done</th><th>Result</th><th>Note</th></tr></thead>
@@ -36,7 +35,7 @@ function Checklist({ n }: { n: CallerNumber }) {
             <td>{c.label}</td>
             <td className="nowrap">
               <input type="date" value={c.checked_on ?? ''} onChange={(e) => save(c, { checked_on: e.target.value || null })} aria-label={`Date for ${c.label}`} />
-              {!c.checked_on && <button className="btn small" onClick={() => save(c, { checked_on: ymd, result: 'ok' })}>Done today</button>}
+              {!c.checked_on && <button className="btn small" onClick={() => save(c, { checked_on: today, result: 'ok' })}>Done today</button>}
             </td>
             <td>
               <select value={c.result ?? ''} disabled={!c.checked_on} onChange={(e) => save(c, { result: (e.target.value || null) as Check['result'] })} aria-label={`Result for ${c.label}`}>

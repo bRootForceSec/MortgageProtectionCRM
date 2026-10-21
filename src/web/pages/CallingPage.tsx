@@ -8,22 +8,13 @@ import { LeadPage } from '../components/LeadPage';
 import { DialQr } from '../components/DialQr';
 import { ClearListDialog, SavedListsDialog, suggestListName } from '../components/CallListDialogs';
 import { fillScript, isAction, isTyping, keyLabel, normKey, type KeyMap } from '../shortcuts';
+import { getStored, getStoredJson, setStored, setStoredJson } from '../storage';
 
 const SELECTED_KEY = 'mpcrm.selectedLead';
 /** A lead opened outside the list (looked up for an incoming call, or from Today), and where to go back to. */
 export const OPENED_KEY = 'mpcrm.openedLead';
 const LAST_NUMBER_KEY = 'mpcrm.lastNumber';
 
-function store(k: string, v?: string | null) {
-  try {
-    if (v === undefined) return localStorage.getItem(k);
-    if (v === null) localStorage.removeItem(k);
-    else localStorage.setItem(k, v);
-  } catch {
-    /* storage unavailable: selection just won't persist */
-  }
-  return null;
-}
 
 const SCRIPT_KEY = 'mpcrm.script.open';
 const UNDO_MS = 10_000;
@@ -70,12 +61,8 @@ interface Opened {
 }
 
 function loadOpened(): Opened | null {
-  try {
-    const o = JSON.parse(store(OPENED_KEY) ?? 'null') as Opened | null;
-    return o && typeof o.leadId === 'string' ? o : null;
-  } catch {
-    return null;
-  }
+  const o = getStoredJson<Opened>(OPENED_KEY);
+  return o && typeof o.leadId === 'string' ? o : null;
 }
 
 export function CallingPage() {
@@ -83,18 +70,18 @@ export function CallingPage() {
   const settings = calling?.settings;
   const { go } = useApp();
   const [list, setListState] = useState<CallListResponse | null>(null);
-  const [selected, setSelected] = useState<string | null>(store(SELECTED_KEY));
+  const [selected, setSelected] = useState<string | null>(getStored(SELECTED_KEY));
   const [opened, setOpenedState] = useState<Opened | null>(loadOpened);
   const setOpened = (o: Opened | null) => {
     setOpenedState(o);
-    store(OPENED_KEY, o ? JSON.stringify(o) : null);
+    setStored(OPENED_KEY, o ? JSON.stringify(o) : null);
   };
   const lookupRef = useRef<HTMLInputElement>(null);
   const [detail, setDetail] = useState<LeadDetail | null>(null);
   const [attempt, setAttempt] = useState<Attempt>(freshAttempt);
   const [restore, setRestore] = useState<{ leadId: string; values: FormValues; n: number } | null>(null);
   const [saved, setSaved] = useState<Saved | null>(null);
-  const [showScript, setShowScript] = useState(store(SCRIPT_KEY) === '1');
+  const [showScript, setShowScript] = useState(getStored(SCRIPT_KEY) === '1');
   const [editing, setEditing] = useState(false);
   const [qr, setQr] = useState<string | null>(null);
   const [listDialog, setListDialog] = useState<'clear' | 'saved' | null>(null);
@@ -109,7 +96,7 @@ export function CallingPage() {
 
   const select = (id: string | null) => {
     setSelected(id);
-    store(SELECTED_KEY, id);
+    setStored(SELECTED_KEY, id);
   };
 
   const loadList = useCallback(async () => {
@@ -190,10 +177,10 @@ export function CallingPage() {
     } catch {
       setDetail(null);
       setSelected(null);
-      store(SELECTED_KEY, null);
+      setStored(SELECTED_KEY, null);
       if (loadOpened()?.leadId === id) {
         setOpenedState(null);
-        store(OPENED_KEY, null);
+        setStored(OPENED_KEY, null);
       }
     }
   }, []);
@@ -222,7 +209,7 @@ export function CallingPage() {
       // Already off on a looked-up lead: keep the list lead you started from.
       const backTo = o && o.leadId === selected ? o.backTo : selected;
       const next = { leadId: id, backTo: backTo === id ? o?.backTo ?? null : backTo };
-      store(OPENED_KEY, JSON.stringify(next));
+      setStoredJson(OPENED_KEY, next);
       return next;
     });
     select(id);
@@ -416,7 +403,7 @@ export function CallingPage() {
       else if (act('undo')) { e.preventDefault(); void undo(); }
       else if (act('edit')) { if (detail) { e.preventDefault(); setEditing(true); } }
       else if (act('called_back')) { if (ready && detail) { e.preventDefault(); void toggleCalledBack(detail, toast).then((at) => calledBack(detail.lead.id, at)); } }
-      else if (act('script')) { e.preventDefault(); setShowScript((v) => { store(SCRIPT_KEY, v ? '0' : '1'); return !v; }); }
+      else if (act('script')) { e.preventDefault(); setShowScript((v) => { setStored(SCRIPT_KEY, v ? '0' : '1'); return !v; }); }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -784,7 +771,7 @@ function LogCall({
     if (pref && activeNumbers.some((n) => n.id === pref)) {
       return { id: pref, why: d.state?.status === 'appointment_set' ? 'number this appointment was set from' : 'number last used with this lead', known: true };
     }
-    const last = store(LAST_NUMBER_KEY);
+    const last = getStored(LAST_NUMBER_KEY);
     if (last && activeNumbers.some((n) => n.id === last)) return { id: last, why: 'your last used number', known: false };
     return { id: activeNumbers[0]?.id ?? '', why: activeNumbers[0] ? 'first active number' : '', known: false };
   }, [d, activeNumbers]);
@@ -848,7 +835,7 @@ function LogCall({
         lead_seconds: Math.round((Date.now() - attempt.shownAt) / 1000),
         note: note || null,
       });
-      if (numberId) store(LAST_NUMBER_KEY, numberId);
+      if (numberId) setStored(LAST_NUMBER_KEY, numberId);
       setCode(null);
       setDay('');
       setTime('');

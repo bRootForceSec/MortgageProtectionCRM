@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '../api';
 import { useApp } from '../App';
+import { getStoredJson, setStoredJson } from '../storage';
 
 // Pick which leads to see or work: by the county they were bought for, by area code (every county linked
 // to that code, never the lead's own number), or both. The same choice applies on every page.
@@ -20,12 +21,8 @@ export interface CountyOption {
 }
 
 function loadGroups(): Groups {
-  try {
-    const g = JSON.parse(localStorage.getItem(GROUPS_KEY) ?? 'null');
-    if (g && Array.isArray(g.counties) && Array.isArray(g.areaCodes)) return g;
-  } catch {
-    /* ignore */
-  }
+  const g = getStoredJson<Groups>(GROUPS_KEY);
+  if (g && Array.isArray(g.counties) && Array.isArray(g.areaCodes)) return g;
   return { counties: [], areaCodes: [] };
 }
 
@@ -39,11 +36,7 @@ export function useGroups(): [Groups, (g: Groups) => void, Record<string, string
   }, []);
   const set = useCallback((g: Groups) => {
     setState(g);
-    try {
-      localStorage.setItem(GROUPS_KEY, JSON.stringify(g));
-    } catch {
-      /* storage unavailable */
-    }
+    setStoredJson(GROUPS_KEY, g);
     window.dispatchEvent(new Event('mpcrm:groups'));
   }, []);
   return [groups, set, { counties: groups.counties.join(','), area_codes: groups.areaCodes.join(',') }];

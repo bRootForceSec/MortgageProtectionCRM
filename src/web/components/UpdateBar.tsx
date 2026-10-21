@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api, fmtDateTime } from '../api';
 import { useApp } from '../App';
+import { getStored, setStored } from '../storage';
 
 export interface UpdateStatus {
   managed: boolean;
@@ -16,15 +17,6 @@ const short = (c: string | null | undefined) => (c ? (/^\d+\.\d+/.test(c) ? c : 
 const LATER_KEY = 'mpcrm.update.later';
 const SEEN_KEY = 'mpcrm.update.seen';
 
-function store(key: string, value?: string) {
-  try {
-    if (value === undefined) return localStorage.getItem(key);
-    localStorage.setItem(key, value);
-  } catch {
-    // storage unavailable; the bar just shows again
-  }
-  return null;
-}
 
 export function useUpdateStatus(pollMs = 5 * 60_000) {
   const [s, setS] = useState<UpdateStatus | null>(null);
@@ -61,8 +53,8 @@ async function waitForVersion(commit: string, timeoutMs = 120_000) {
 export function UpdateBar() {
   const { toast } = useApp();
   const { status, reload } = useUpdateStatus();
-  const [later, setLater] = useState(() => store(LATER_KEY));
-  const [seen, setSeen] = useState(() => store(SEEN_KEY));
+  const [later, setLater] = useState(() => getStored(LATER_KEY));
+  const [seen, setSeen] = useState(() => getStored(SEEN_KEY));
   const [showChanges, setShowChanges] = useState(false);
   const [updating, setUpdating] = useState(false);
 
@@ -77,7 +69,7 @@ export function UpdateBar() {
     return (
       <div className="update-bar bad" role="alert">
         <span>Update to version {short(a.to)} did not work. {a.error}</span>
-        <button className="btn small" onClick={() => { store(SEEN_KEY, a.at); setSeen(a.at); }}>OK</button>
+        <button className="btn small" onClick={() => { setStored(SEEN_KEY, a.at); setSeen(a.at); }}>OK</button>
       </div>
     );
   }
@@ -117,7 +109,7 @@ export function UpdateBar() {
         className="btn small"
         onClick={() => {
           const v = `${st.commit}:${new Date().toDateString()}`;
-          store(LATER_KEY, v);
+          setStored(LATER_KEY, v);
           setLater(v);
         }}
       >

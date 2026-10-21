@@ -12,6 +12,8 @@ import { ReportsPage } from './pages/ReportsPage';
 import { UpdateBar } from './components/UpdateBar';
 import { CallbackAlerts } from './components/CallbackAlerts';
 import { buildKeyMap, type CallingSettingsResponse, type KeyMap } from './shortcuts';
+import { getStored, getStoredJson, setStored, setStoredJson } from './storage';
+import { todayRange } from './when';
 
 export type Page = 'calling' | 'today' | 'reports' | 'import' | 'leads' | 'calls' | 'numbers' | 'data' | 'settings';
 const PAGES: { key: Page; label: string }[] = [
@@ -82,16 +84,12 @@ export function App() {
     setPage(p);
   };
   const openLead = useCallback((leadId: string) => {
-    try {
-      // Shown beside your calling list without changing it; "Back to list" returns to the lead you were on.
-      const was = localStorage.getItem('mpcrm.selectedLead');
-      const prev = JSON.parse(localStorage.getItem(OPENED_KEY) ?? 'null') as { leadId: string; backTo: string | null } | null;
-      const backTo = prev && prev.leadId === was ? prev.backTo : was;
-      localStorage.setItem(OPENED_KEY, JSON.stringify({ leadId, backTo: backTo === leadId ? null : backTo }));
-      localStorage.setItem('mpcrm.selectedLead', leadId);
-    } catch {
-      /* storage unavailable */
-    }
+    // Shown beside your calling list without changing it; "Back to list" returns to the lead you were on.
+    const was = getStored('mpcrm.selectedLead');
+    const prev = getStoredJson<{ leadId: string; backTo: string | null }>(OPENED_KEY);
+    const backTo = prev && prev.leadId === was ? prev.backTo : was;
+    setStoredJson(OPENED_KEY, { leadId, backTo: backTo === leadId ? null : backTo });
+    setStored('mpcrm.selectedLead', leadId);
     window.dispatchEvent(new CustomEvent('mpcrm:open-lead', { detail: leadId }));
     location.hash = 'calling';
     setPage('calling');
@@ -154,10 +152,7 @@ function TodayStats() {
   const { statsVersion, calling } = useApp();
   const [s, setS] = useState<Stats | null>(null);
   useEffect(() => {
-    const start = new Date();
-    start.setHours(0, 0, 0, 0);
-    const end = new Date(start.getTime() + 86_400_000);
-    api.get<Stats>('/stats/today', { from: start.toISOString(), to: end.toISOString() }).then(setS).catch(() => {}); // refreshed often; the last numbers stay up until the next one works
+    api.get<Stats>('/stats/today', todayRange()).then(setS).catch(() => {}); // refreshed often; the last numbers stay up until the next one works
   }, [statsVersion, calling]);
   if (!s) return null;
   const g = s.goals ?? { dials: null, contacts: null, appointments: null };

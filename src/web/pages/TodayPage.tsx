@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { api, fmtDateTime, fmtPhone } from '../api';
 import { useApp } from '../App';
-import { todayRange, type Agenda, type AgendaItem } from '../components/CallbackAlerts';
+import { type Agenda, type AgendaItem } from '../components/CallbackAlerts';
+import { todayRange } from '../when';
 import { GroupPicker, useGroups } from '../components/GroupPicker';
 
 // Callbacks: the ones you missed, today's, and the next two weeks, in your time and the lead's time.
@@ -29,7 +30,7 @@ export function TodayPage() {
   }, [toast, groupParams.counties, groupParams.area_codes]); // eslint-disable-line react-hooks/exhaustive-deps
   if (!a) return null;
   const now = new Date().toISOString();
-  const startOfToday = new Date(new Date().setHours(0, 0, 0, 0)).toISOString();
+  const startOfToday = todayRange().from;
   const anyTimeToday = (c: AgendaItem) => !!c.any_time && !!c.due_at && c.due_at >= startOfToday && c.due_at < todayRange().to;
   const anyTime = a.callbacks.filter(anyTimeToday);
   const overdue = a.callbacks.filter((c) => c.due_at && c.due_at < now && !anyTimeToday(c));

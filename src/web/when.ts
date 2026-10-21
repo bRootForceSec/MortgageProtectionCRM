@@ -6,16 +6,33 @@
 
 const WEEKDAYS = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
 
-function startOfDay(d: Date): Date {
+/** Local midnight at the start of `d`'s day. */
+export function startOfDay(d: Date): Date {
   const x = new Date(d);
   x.setHours(0, 0, 0, 0);
   return x;
 }
 
-function addDays(d: Date, n: number): Date {
+/** The same time of day, `n` calendar days later (or earlier, for negative `n`). */
+export function addDays(d: Date, n: number): Date {
   const x = new Date(d);
   x.setDate(x.getDate() + n);
   return x;
+}
+
+/** The 24 hours from `start`, as the from/to the API takes. */
+export function dayRange(start: Date): { from: string; to: string } {
+  return { from: start.toISOString(), to: new Date(start.getTime() + 86_400_000).toISOString() };
+}
+
+/** Today, from your local midnight. */
+export function todayRange(): { from: string; to: string } {
+  return dayRange(startOfDay(new Date()));
+}
+
+/** YYYY-MM-DD in your time zone, as a date input wants it. */
+export function ymd(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
 /** The day you typed, at local midnight, or null if it isn't a day. */
