@@ -2,6 +2,14 @@
 
 A running log of the stabilization work. Newest first.
 
+## 2026-10-21: C2 logging and config
+
+- `MPCRM_APP_DIR` is read once, in `loadConfig` (`config.appDir`). `server.ts` and `main.ts` each read it themselves before. `main.ts` no longer passes a runtime, since `Updates` already works out "service" or "manual" from the same folder. Test: `test/unit/config.test.ts`.
+- The page checker's warnings go to the server log instead of `console.warn`.
+- The `console.*` left in the server: `cli.ts` (prints on purpose), `config.ts` and `main.ts` (before the logger exists), and `updates.ts` (a desktop install failing after the server stopped). The structure check allows only these.
+- The desktop app's own env reads (`MPCRM_UPDATE_FEED`, `APPIMAGE`, autostart paths) stay in `src/desktop`; that's a separate process.
+- Checks: typecheck, lint, 217 tests, build, and 10 e2e tests pass.
+
 ## 2026-10-21: C1, C3, X1, X2 structure and cleanup
 
 - **C1** shared pieces in `src/server/core/`: `errors.ts` (`DomainError`), `settings.ts` (`getSetting`/`setSetting`, moved out of `ai/settings.ts`) and `audit.ts` (`audit()`, which replaces three hand-written `INSERT INTO audit_log`). User mistakes that threw a plain `Error` now throw `DomainError`, so they give a 4xx instead of a 500: setting "called back" on a missing lead (404), an unknown shortcut action and an unknown report number. Two routes that caught and rewrapped errors no longer do. `tableNames(db)` in `db/connection.ts` is shared by backups and the full export. The structure check now refuses `INSERT INTO audit_log` outside `core/audit.ts`.

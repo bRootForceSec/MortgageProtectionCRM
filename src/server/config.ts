@@ -15,6 +15,8 @@ export interface Config {
   port: number;
   backupKeep: number;
   backupAgeRecipient: string | null;
+  /** The Linux service's install folder (MPCRM_APP_DIR). Null when started by hand or by the desktop app. */
+  appDir: string | null;
 }
 
 /**
@@ -41,6 +43,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     port,
     backupKeep: backupKeepFrom(env.MPCRM_BACKUP_KEEP),
     backupAgeRecipient: env.MPCRM_BACKUP_AGE_RECIPIENT || null,
+    appDir: env.MPCRM_APP_DIR ? path.resolve(env.MPCRM_APP_DIR) : null,
   };
 }
 

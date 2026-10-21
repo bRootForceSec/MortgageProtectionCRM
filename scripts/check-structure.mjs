@@ -28,8 +28,9 @@ const RULES = [
     name: 'console.* in server code (use the pino logger)',
     dir: 'src/server',
     pattern: /\bconsole\.(log|warn|error|info|debug)\(/g,
-    // cli.ts is a command-line tool and prints to the terminal on purpose; config.ts runs before the logger exists.
-    allow: { 'cli.ts': Infinity, 'config.ts': 2, 'updates.ts': 1, 'server.ts': 1, 'main.ts': 1 },
+    // cli.ts is a command-line tool and prints to the terminal on purpose. config.ts and main.ts report problems
+    // from before the logger exists. updates.ts reports a desktop install that fails after the server has stopped.
+    allow: { 'cli.ts': Infinity, 'config.ts': 2, 'updates.ts': 1, 'main.ts': 1 },
   },
 ];
 

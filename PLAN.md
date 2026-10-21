@@ -95,7 +95,7 @@ src/
 | Step | Change | Audit | Size |
 |---|---|---|---|
 | **C1** | ✅ Done. The table-name helper went to `db/connection.ts` (`tableNames`) instead of a new `core/sql.ts`, and zod errors already reach the one error handler. Originally: `core/errors.ts`, `core/settings.ts`, `core/audit.ts`, `core/sql.ts`, and one shared zod-to-400 path. Moves and re-exports only, no behavior change. | 2.1, 2.2, 2.11, 2.13 | M |
-| **C2** | Route `console.*` through the logger; collect the env reads into `core/config.ts` | 6.1, 6.6 | S |
+| **C2** | ✅ Server env reads now go through `config.ts` (`MPCRM_APP_DIR` was read in two other places), and the page checker logs through the server logger. The remaining `console.*` calls run where no logger exists, each with a reason in the structure check. No `core/config.ts`: `config.ts` already is that file. Originally: Route `console.*` through the logger; collect the env reads into `core/config.ts` | 6.1, 6.6 | S |
 | **C3** | ✅ Route files now hold no SQL (the structure check enforces 0), and `app.ts` is split into lead, number, data, import, calling and report route files. Originally: Move SQL out of `app.ts`/`importRoutes.ts` into domain functions; split `app.ts` into per-feature route files | 2.3, 7.7 | M |
 | **C4** | Create `src/shared/` and move the mirrored types and the duplicate helpers into it (needs D5) | 2.6, 2.7, 2.5 | M |
 | **C5** | Web: `lib/storage.ts`, `lib/dates.ts`, `BulkImport` reuses `api.upload`; split `CallingPage.tsx`; rename the confusing Lead* components | 2.8–2.10, 7.7 | M |

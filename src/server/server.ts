@@ -98,12 +98,11 @@ export async function startServer(opts: StartOptions = {}): Promise<RunningServe
   const token = loadOrCreateToken(config);
   const webDir = [path.resolve(here, '../web'), path.resolve(here, '../../dist/web')].find((d) => fs.existsSync(path.join(d, 'index.html'))) ?? null;
   const build = readBuildInfo(path.resolve(here, '../build-info.json'));
-  const env = opts.env ?? process.env;
-  const updates = new Updates(env.MPCRM_APP_DIR ? path.resolve(env.MPCRM_APP_DIR) : null, build, undefined, opts.runtime, opts.updater);
+  const updates = new Updates(config.appDir, build, undefined, opts.runtime, opts.updater);
   const secrets = Secrets.inDataDir(config.dataDir);
   const drafts = new DraftWorker(db, secrets);
   const bulk = new BulkImporter(db, config.importsDir, drafts);
-  const pageChecker = new PageChecker(db, config.importsDir, () => makeReader(loadAiSettings(db), secrets), (m) => console.warn(m));
+  const pageChecker = new PageChecker(db, config.importsDir, () => makeReader(loadAiSettings(db), secrets), (m) => app.log.warn(m));
   const app = await buildApp({ db, config, token, webDir, logger: true, logStream: opts.logStream, updates, drafts, bulk, secrets, pageChecker });
 
   const pidFile = path.join(config.dataDir, 'server.pid');
