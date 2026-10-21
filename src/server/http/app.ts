@@ -17,6 +17,7 @@ import { createBackup, listBackups } from '../backup.js';
 import { uuidv7 } from '../ids.js';
 import { listNumbers, addNumber, updateNumber } from '../domain/numbers.js';
 import { listLeads, getLeadDetail, leadPdfPage, setLinkStatus } from '../domain/leads.js';
+import { listImportBatches, batchesFromFile, importProblems, bulkImportProblems } from '../domain/importHistory.js';
 import { Updates } from '../updates.js';
 import { registerImportRoutes, uploadHeader } from './importRoutes.js';
 import { DraftWorker } from '../domain/drafts.js';
@@ -363,7 +364,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     return {
       upload_id: uploadId,
       file_name: name,
-      file_previously_imported: db.prepare('SELECT id, name, imported_at FROM import_batch WHERE file_sha256 = ?').all(parsed.sha256),
+      file_previously_imported: batchesFromFile(db, parsed.sha256),
       sheets: parsed.sheets.map((s) => {
         const saved = savedMappingFor(db, s.headers);
         return {
@@ -380,53 +381,20 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   });
 
 
-  app.get('/api/imports', async () =>
-    db
-      .prepare(
-        `SELECT b.*, (SELECT COUNT(*) FROM import_row r WHERE r.batch_id = b.id) rows_total,
-                (SELECT COUNT(*) FROM import_row r WHERE r.batch_id = b.id AND r.status = 'accepted') rows_accepted,
-                (SELECT COUNT(*) FROM import_row r WHERE r.batch_id = b.id AND r.status = 'rejected') rows_rejected,
-                (SELECT COUNT(*) FROM import_row r WHERE r.batch_id = b.id AND r.status IN ('already_imported','duplicate_in_file')) rows_repeat
-         FROM import_batch b ORDER BY b.imported_at DESC`,
-      )
-      .all(),
-  );
+  app.get('/api/imports', async () => listImportBatches(db));
 
   app.get('/api/imports/:id/problems.csv', async (req, reply) => {
     const { id } = z.object({ id: z.string().max(64) }).parse(req.params);
-    const rows = db
-      .prepare("SELECT row_number, status, errors_json, warnings_json, raw_json FROM import_row WHERE batch_id = ? AND status <> 'accepted' ORDER BY row_number")
-      .all(id) as any[];
-    const out = rows.map((r) => ({
-      row_number: r.row_number,
-      status: r.status,
-      problems: [...JSON.parse(r.errors_json ?? '[]'), ...JSON.parse(r.warnings_json ?? '[]')].join('; '),
-      ...JSON.parse(r.raw_json),
-    }));
-    return reply.header('content-disposition', `attachment; filename="import-problems-${id}.csv"`).type('text/csv').send(toCsv(out));
+    return reply.header('content-disposition', `attachment; filename="import-problems-${id}.csv"`).type('text/csv').send(toCsv(importProblems(db, id)));
   });
 
   // Every lead a bulk import left out (repeats, missing details, discarded), with the file each came from.
   app.get('/api/bulk-imports/:id/problems.csv', async (req, reply) => {
     const { id } = z.object({ id: z.string().max(64) }).parse(req.params);
-    const rows = db
-      .prepare(
-        `SELECT b.name batch, b.file_name file, r.row_number, r.status, r.errors_json, r.warnings_json, r.raw_json
-         FROM import_row r JOIN import_batch b ON b.id = r.batch_id
-         WHERE r.status <> 'accepted' AND r.batch_id IN (
-           SELECT j.value FROM import_bulk_file f, json_each(f.summary_json, '$.batches') j WHERE f.bulk_id = ? AND f.summary_json IS NOT NULL)
-         ORDER BY b.imported_at, r.row_number`,
-      )
-      .all(id) as any[];
-    const out = rows.map((r) => ({
-      file: r.file,
-      batch: r.batch,
-      row_number: r.row_number,
-      status: r.status,
-      problems: [...JSON.parse(r.errors_json ?? '[]'), ...JSON.parse(r.warnings_json ?? '[]')].join('; '),
-      ...JSON.parse(r.raw_json),
-    }));
-    return reply.header('content-disposition', `attachment; filename="bulk-import-not-imported-${id}.csv"`).type('text/csv').send(toCsv(out));
+    return reply
+      .header('content-disposition', `attachment; filename="bulk-import-not-imported-${id}.csv"`)
+      .type('text/csv')
+      .send(toCsv(bulkImportProblems(db, id)));
   });
 
   // ---------- export & backup ----------
