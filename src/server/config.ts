@@ -39,9 +39,24 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     // Deliberately loopback only. Exposing the UI to the network needs authentication first (plan §9.9).
     host: '127.0.0.1',
     port,
-    backupKeep: Number(env.MPCRM_BACKUP_KEEP || 30),
+    backupKeep: backupKeepFrom(env.MPCRM_BACKUP_KEEP),
     backupAgeRecipient: env.MPCRM_BACKUP_AGE_RECIPIENT || null,
   };
+}
+
+/** How many backups to keep. A bad value must never make pruning delete every backup, so it falls back instead of failing. */
+function backupKeepFrom(raw: string | undefined): number {
+  if (!raw) return 30;
+  const n = Number(raw);
+  if (!Number.isInteger(n)) {
+    console.warn(`MPCRM_BACKUP_KEEP=${raw} is not a whole number; keeping 30 backups`);
+    return 30;
+  }
+  if (n < 1) {
+    console.warn(`MPCRM_BACKUP_KEEP=${raw} is below 1; keeping 1 backup`);
+    return 1;
+  }
+  return n;
 }
 
 export function ensureDirs(c: Config) {

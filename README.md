@@ -83,7 +83,7 @@ Put these in `~/.config/mpcrm/env` (one `NAME=value` per line, mode 600), then r
 | `MPCRM_DATA_DIR` | `~/.local/share/mpcrm` on Linux; `Mortgage CRM` in your home folder on Windows and Mac | Where the database and files live |
 | `MPCRM_PORT` | `5170` | Local port (the app only listens on 127.0.0.1) |
 | `MPCRM_BACKUP_DIR` | `<data dir>/backups` | Put this on an external drive if you can |
-| `MPCRM_BACKUP_KEEP` | `30` | How many backups to keep |
+| `MPCRM_BACKUP_KEEP` | `30` | How many backups to keep (at least 1; a value that is not a whole number falls back to 30) |
 | `MPCRM_BACKUP_AGE_RECIPIENT` | none | An [age](https://github.com/FiloSottile/age) public key; backups are then encrypted |
 
 ### AI for scanned pages
