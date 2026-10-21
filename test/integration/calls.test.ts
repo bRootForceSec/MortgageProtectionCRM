@@ -5,6 +5,8 @@ import { suggestMapping } from '../../src/server/domain/mapping.js';
 import { commitImport } from '../../src/server/domain/importer.js';
 import { logManualCall, changeOutcome, currentOutcome, addLeadAction, voidCall, DomainError } from '../../src/server/domain/calls.js';
 import { getQueue } from '../../src/server/domain/queue.js';
+import { addToCallList } from '../../src/server/domain/callList.js';
+import { buildReport } from '../../src/server/domain/reports.js';
 import { rebuildLeadState, verifyLeadState } from '../../src/server/domain/leadState.js';
 import type { DB } from '../../src/server/db/connection.js';
 import { uuidv7 } from '../../src/server/ids.js';
@@ -80,8 +82,21 @@ describe('manual call logging', () => {
     expect(q.items[0]).toMatchObject({ lead_id: jane, bucket: 'callback_due' });
   });
 
-  it('a do-not-call request goes to the dead pile from the lead page, and can be restored', () => {
-    expect(() => logManualCall(db, { lead_id: jane, idempotency_key: key(), outcome_code: 'dnc_request' })).toThrow(/retired/);
+  it('Do not call (key 4) counts as reaching the lead, goes to the dead pile and stays off call lists', () => {
+    logManualCall(db, { lead_id: jane, idempotency_key: key(), outcome_code: 'dnc_request', from_number_id: num });
+    expect((db.prepare('SELECT status FROM lead_state WHERE lead_id = ?').get(jane) as any).status).toBe('dead');
+    expect(getQueue(db).items.find((i) => i.lead_id === jane)).toBeUndefined();
+    expect(addToCallList(db, [jane])).toEqual({ added: 0, already: 0, not_callable: 1 });
+    const day = new Date(Date.now() - 86_400_000).toISOString();
+    const r = buildReport(db, { from: day, to: new Date(Date.now() + 86_400_000).toISOString(), tz: 'America/New_York' });
+    expect(r.activity).toMatchObject({ attempts: 1, contacts: 1, bad_numbers: 0 });
+    // The caller ID that reached them is remembered, as for any pickup.
+    expect((db.prepare('SELECT preferred_number_id FROM lead_state WHERE lead_id = ?').get(jane) as any).preferred_number_id).toBe(num);
+    addLeadAction(db, jane, 'restore', 'asked to be called after all');
+    expect((db.prepare('SELECT status FROM lead_state WHERE lead_id = ?').get(jane) as any).status).toBe('retry');
+  });
+
+  it('a lead can still go to the dead pile from the lead page, and be restored', () => {
     logManualCall(db, { lead_id: jane, idempotency_key: key(), outcome_code: 'no_appt' });
     addLeadAction(db, jane, 'mark_dead', 'asked not to be called');
     expect((db.prepare('SELECT status FROM lead_state WHERE lead_id = ?').get(jane) as any).status).toBe('dead');
@@ -90,13 +105,14 @@ describe('manual call logging', () => {
     expect((db.prepare('SELECT status FROM lead_state WHERE lead_id = ?').get(jane) as any).status).toBe('retry');
   });
 
-  it('offers five outcomes on keys 1 to 5', () => {
+  it('offers six outcomes on keys 1 to 6', () => {
     expect(db.prepare('SELECT hotkey, code, label FROM outcome_code WHERE active = 1 ORDER BY sort_order').all()).toEqual([
       { hotkey: '1', code: 'no_answer', label: 'No answer' },
       { hotkey: '2', code: 'no_appt', label: 'Talked, no appt' },
       { hotkey: '3', code: 'appointment', label: 'Appt set' },
-      { hotkey: '4', code: 'bad_number', label: 'Bad number' },
-      { hotkey: '5', code: 'callback', label: 'Callback' },
+      { hotkey: '4', code: 'dnc_request', label: 'Do not call' },
+      { hotkey: '5', code: 'bad_number', label: 'Bad number' },
+      { hotkey: '6', code: 'callback', label: 'Callback' },
     ]);
     logManualCall(db, { lead_id: jane, idempotency_key: key(), outcome_code: 'no_appt' });
     expect(db.prepare('SELECT status FROM lead_state WHERE lead_id = ?').get(jane)).toEqual({ status: 'retry' }); // back after the gap

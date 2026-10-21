@@ -21,6 +21,8 @@ const STATUS_MAP: Record<string, SheetStatusMapping> = {
   disconnected: { outcome: 'bad_number' },
   'wrong number': { outcome: 'bad_number' },
   'bad number': { outcome: 'bad_number' },
+  'do not call': { outcome: 'dnc_request' },
+  dnc: { outcome: 'dnc_request' },
   // How appointments went is kept in Unitrust; here they all mean "appointment set". The call's note keeps the original words.
   'appt set': { outcome: 'appointment' },
   'appointment set': { outcome: 'appointment' },
