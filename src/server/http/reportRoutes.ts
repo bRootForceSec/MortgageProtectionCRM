@@ -1,15 +1,11 @@
 import type { FastifyInstance } from 'fastify';
 import * as z from 'zod/v4';
 import type { DB } from '../db/connection.js';
-import type { Config } from '../config.js';
 import { DomainError } from '../core/errors.js';
 import { parseList } from '../domain/groupFilter.js';
-import { buildReport, drill, DrillSpec, loadTargets, reportSheets, saveTargets, type ReportFilter } from '../domain/reports.js';
+import { buildReport, drill, DrillSpec, loadTargets, reportSheets, saveTargets, type ReportFilter, todayStats } from '../domain/reports.js';
 import { toXlsx } from '../domain/exporter.js';
-import { numberChecks, numberStats, recordNumberCheck } from '../domain/numbers.js';
-import { lastBackupCheck, runBackupCheck } from '../backup.js';
 
-const idParam = z.object({ id: z.string().max(64) });
 const filterQuery = z.object({
   from: z.string().max(40),
   to: z.string().max(40),
@@ -29,8 +25,8 @@ function toFilter(q: z.infer<typeof filterQuery>): ReportFilter {
   return { from: q.from, to: q.to, tz, counties: parseList(q.counties), areaCodes: parseList(q.area_codes) };
 }
 
-export function registerReportRoutes(app: FastifyInstance, deps: { db: DB; config: Config }) {
-  const { db, config } = deps;
+export function registerReportRoutes(app: FastifyInstance, deps: { db: DB }) {
+  const { db } = deps;
 
   // ---------- reports ----------
   app.get('/api/reports', async (req) => buildReport(db, toFilter(filterQuery.parse(req.query))));
@@ -59,28 +55,8 @@ export function registerReportRoutes(app: FastifyInstance, deps: { db: DB; confi
     }
   });
 
-
-  // ---------- caller ID numbers ----------
-  app.get('/api/numbers/stats', async (req) => {
-    const q = z.object({ today_from: z.string().max(40) }).parse(req.query);
-    if (Number.isNaN(Date.parse(q.today_from))) throw new DomainError('bad date');
-    return numberStats(db, q.today_from);
+  app.get('/api/stats/today', async (req) => {
+    const q = z.object({ from: z.string().max(40), to: z.string().max(40) }).parse(req.query);
+    return todayStats(db, q.from, q.to);
   });
-  app.get('/api/numbers/:id/checks', async (req) => numberChecks(db, idParam.parse(req.params).id));
-  app.post('/api/numbers/:id/checks', async (req) => {
-    const { id } = idParam.parse(req.params);
-    const b = z
-      .object({
-        item: z.string().max(60),
-        checked_on: z.string().max(10).nullable(),
-        result: z.enum(['ok', 'problem']).nullish(),
-        note: z.string().max(1000).nullish(),
-      })
-      .parse(req.body);
-    return recordNumberCheck(db, id, { ...b, result: b.result ?? null });
-  });
-
-  // ---------- backup restore check ----------
-  app.get('/api/backups/check', async () => lastBackupCheck(db));
-  app.post('/api/backups/check', async () => runBackupCheck(db, config));
 }

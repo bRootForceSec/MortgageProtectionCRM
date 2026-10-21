@@ -1,40 +1,30 @@
 import Fastify, { type FastifyInstance } from 'fastify';
 import fastifyStatic from '@fastify/static';
 import fs from 'node:fs';
-import path from 'node:path';
 import * as z from 'zod/v4';
 import type { DB } from '../db/connection.js';
 import type { Config } from '../config.js';
 import { registerSecurity } from './security.js';
-import { parseSpreadsheet, MAX_UPLOAD_BYTES, type ParsedFile } from '../domain/spreadsheet.js';
-import { LEAD_FIELDS, suggestMapping } from '../domain/mapping.js';
-import { savedMappingFor, MappingError } from '../domain/importer.js';
-import { logManualCall, changeOutcome, addLeadAction, addNote, activeOutcomeCodes, callHistory } from '../domain/calls.js';
-import { todayStats } from '../domain/reports.js';
+import { MAX_UPLOAD_BYTES } from '../domain/spreadsheet.js';
+import { LEAD_FIELDS } from '../domain/mapping.js';
+import { MappingError } from '../domain/importer.js';
+import { activeOutcomeCodes } from '../domain/calls.js';
 import { DomainError } from '../core/errors.js';
-import { exportRows, toCsv, toXlsx, fullJsonDump, EXPORT_TABLES, type ExportTable } from '../domain/exporter.js';
-import { createBackup, listBackups } from '../backup.js';
-import { uuidv7 } from '../ids.js';
-import { listNumbers, addNumber, updateNumber } from '../domain/numbers.js';
-import { listLeads, getLeadDetail, leadPdfPage, setLinkStatus } from '../domain/leads.js';
-import { listImportBatches, batchesFromFile, importProblems, bulkImportProblems } from '../domain/importHistory.js';
+import { listNumbers } from '../domain/numbers.js';
 import { Updates } from '../updates.js';
-import { registerImportRoutes, uploadHeader } from './importRoutes.js';
 import { DraftWorker } from '../domain/drafts.js';
 import { BulkImporter } from '../domain/bulkImport.js';
-import { batchPdf, turnPdfPages, normTurn } from '../domain/pageTurn.js';
+import { batchPdf } from '../domain/pageTurn.js';
 import { PageChecker } from '../domain/pageTurnFix.js';
 import { makeReader } from '../ai/readers.js';
-import { loadAiSettings } from '../ai/settings.js';
-import { Secrets } from '../ai/settings.js';
+import { loadAiSettings, Secrets } from '../ai/settings.js';
+import { registerImportRoutes } from './importRoutes.js';
+import { registerLeadRoutes } from './leadRoutes.js';
 import { registerCallingRoutes } from './callingRoutes.js';
+import { registerNumberRoutes } from './numberRoutes.js';
 import { registerReportRoutes } from './reportRoutes.js';
+import { registerDataRoutes } from './dataRoutes.js';
 import { KdeConnect } from '../dialer.js';
-import { parseList } from '../domain/groupFilter.js';
-import {
-  addMatchingToCallList, addToCallList, clearWorked, getCallList, moveToBottom,
-  recentOutcomes, removeFromCallList, type LeadFilter, callListName, listSavedLists, clearCallList, loadSavedList, deleteSavedList, setCalledBack,
-} from '../domain/callList.js';
 
 export interface AppDeps {
   db: DB;
@@ -55,12 +45,6 @@ export interface AppDeps {
   kde?: KdeConnect;
   /** Turns lead pages upright in imported PDFs. Defaults to one made here. */
   pageChecker?: PageChecker;
-}
-
-interface Upload {
-  parsed: ParsedFile;
-  buf: Buffer;
-  at: number;
 }
 
 export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
@@ -95,26 +79,16 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     return reply.code(500).send({ error: 'Something went wrong. Details are in the app log.' });
   });
 
-  // ---------- uploads (kept in memory until committed; re-upload after a restart) ----------
-  const uploads = new Map<string, Upload>();
-  const getUpload = (id: string) => {
-    const u = uploads.get(id);
-    if (!u) throw new DomainError('upload expired; choose the file again', 410);
-    return u;
-  };
-  const pruneUploads = () => {
-    const cutoff = Date.now() - 60 * 60 * 1000;
-    for (const [k, u] of uploads) if (u.at < cutoff) uploads.delete(k);
-    while (uploads.size > 5) uploads.delete(uploads.keys().next().value!);
-  };
-
   const secrets = deps.secrets ?? Secrets.inDataDir(config.dataDir);
   const drafts = deps.drafts ?? new DraftWorker(db, secrets);
   const bulk = deps.bulk ?? new BulkImporter(db, config.importsDir, drafts);
   const pageChecker = deps.pageChecker ?? new PageChecker(db, config.importsDir, () => makeReader(loadAiSettings(db), secrets));
-  registerImportRoutes(app, { db, config, worker: drafts, bulk, secrets, getUpload, dropUpload: (id) => uploads.delete(id) });
+  registerImportRoutes(app, { db, config, worker: drafts, bulk, secrets });
+  registerLeadRoutes(app, { db, config, pageChecker });
   registerCallingRoutes(app, { db, kde: deps.kde });
-  registerReportRoutes(app, { db, config });
+  registerNumberRoutes(app, { db });
+  registerReportRoutes(app, { db });
+  registerDataRoutes(app, { db, config });
 
   // ---------- version & updates ----------
   const updates = deps.updates ?? new Updates(null, { commit: 'dev', built_at: null });
@@ -146,293 +120,6 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     data_dir: config.dataDir,
     version: updates.build,
   }));
-
-  // ---------- leads ----------
-  const leadFilter = z.object({
-    status: z.enum(['dead', 'invalid', 'appointment_set', 'callback', 'retry', 'no_answer', 'talked', 'new', 'all']).default('all'),
-    search: z.string().max(100).optional(),
-    batch_id: z.string().max(64).optional(),
-    bulk_id: z.string().max(64).optional(),
-    counties: z.string().max(4000).optional(),
-    area_codes: z.string().max(400).optional(),
-    tried_before: z.string().max(40).optional(),
-    tried_after: z.string().max(40).optional(),
-    not_on_list: z.union([z.boolean(), z.enum(['1', '0', 'true', 'false'])]).optional(),
-  });
-  const toFilter = (q: z.infer<typeof leadFilter>): LeadFilter => ({
-    status: q.status,
-    search: q.search,
-    batch_id: q.batch_id || undefined,
-    bulk_id: q.bulk_id || undefined,
-    counties: parseList(q.counties),
-    areaCodes: parseList(q.area_codes),
-    tried_before: q.tried_before || undefined,
-    tried_after: q.tried_after || undefined,
-    not_on_list: q.not_on_list === true || q.not_on_list === '1' || q.not_on_list === 'true',
-  });
-
-  app.get('/api/leads', async (req) => listLeads(db, toFilter(leadFilter.parse(req.query))));
-
-  // ---------- the call list ----------
-  const savedName = z.string().trim().max(120);
-  app.get('/api/call-list', async () => ({
-    items: getCallList(db), recent: recentOutcomes(db), name: callListName(db), saved_lists: listSavedLists(db),
-  }));
-  // `replace` empties the list first (kept as a saved list named `save_current_as`, if given).
-  const replaceOpts = z.object({ replace: z.boolean().optional(), save_current_as: savedName.nullish() });
-  app.post('/api/call-list', async (req) => {
-    const b = z.object({ lead_ids: z.array(z.string().max(64)).max(20_000) }).extend(replaceOpts.shape).parse(req.body);
-    return db.transaction(() => {
-      if (b.replace) clearCallList(db, b.save_current_as);
-      return addToCallList(db, b.lead_ids);
-    })();
-  });
-  app.post('/api/call-list/add-matching', async (req) => {
-    const body = (req.body ?? {}) as Record<string, unknown>;
-    const o = replaceOpts.parse({ replace: body.replace, save_current_as: body.save_current_as });
-    const f = toFilter(leadFilter.parse(body));
-    return db.transaction(() => {
-      if (o.replace) clearCallList(db, o.save_current_as);
-      return addMatchingToCallList(db, f);
-    })();
-  });
-  app.post('/api/call-list/clear-worked', async () => ({ removed: clearWorked(db) }));
-  app.post('/api/call-list/clear', async (req) => {
-    const b = z.object({ save_as: savedName.nullish() }).parse(req.body ?? {});
-    return clearCallList(db, b.save_as);
-  });
-  app.post('/api/saved-lists/:id/load', async (req) => {
-    const { id } = z.object({ id: z.string().max(64) }).parse(req.params);
-    const b = z.object({ save_current_as: savedName.nullish() }).parse(req.body ?? {});
-    const r = loadSavedList(db, id, b.save_current_as);
-    if (!r) throw new DomainError('that saved list is gone', 404);
-    return r;
-  });
-  app.delete('/api/saved-lists/:id', async (req) => {
-    const { id } = z.object({ id: z.string().max(64) }).parse(req.params);
-    deleteSavedList(db, id);
-    return { ok: true };
-  });
-  app.post('/api/call-list/:leadId/skip', async (req) => {
-    const { leadId } = z.object({ leadId: z.string().max(64) }).parse(req.params);
-    if (!moveToBottom(db, leadId)) throw new DomainError('that lead is not on the call list', 404);
-    return { ok: true };
-  });
-  app.delete('/api/call-list/:leadId', async (req) => {
-    const { leadId } = z.object({ leadId: z.string().max(64) }).parse(req.params);
-    removeFromCallList(db, leadId);
-    return { ok: true };
-  });
-
-  // The PDF a batch was imported from (kept as "<batch id>-<file name>" in the imports folder).
-  app.get('/api/batches/:id/file', async (req, reply) => {
-    const { id } = z.object({ id: z.string().max(64) }).parse(req.params);
-    const file = batchPdf(config.importsDir, id);
-    if (!file) throw new DomainError('the PDF for this batch is not on this computer', 404);
-    return reply.type('application/pdf').send(fs.createReadStream(file));
-  });
-
-  // "Check all lead pages": goes through every imported PDF and turns sideways or upside-down pages upright.
-  app.get('/api/lead-pages/check', async () => pageChecker.state);
-  app.post('/api/lead-pages/check', async () => {
-    void pageChecker.start(true);
-    return pageChecker.state;
-  });
-
-  // Saves a turn of the lead's page in the batch PDF, so it shows the right way up from now on.
-  app.post('/api/leads/:id/page-turn', async (req) => {
-    const { id } = z.object({ id: z.string().max(64) }).parse(req.params);
-    const { turn } = z.object({ turn: z.number().int() }).parse(req.body);
-    const { file, page } = leadPdfPage(db, config.importsDir, id);
-    const turned = await turnPdfPages(file, new Map([[page, normTurn(turn)]]));
-    return { ok: true, turned };
-  });
-
-  app.get('/api/leads/:id', async (req) => {
-    const { id } = z.object({ id: z.string().max(64) }).parse(req.params);
-    return getLeadDetail(db, config.importsDir, id);
-  });
-
-  app.post('/api/leads/:id/calls', async (req) => {
-    const { id } = z.object({ id: z.string().max(64) }).parse(req.params);
-    const b = z.object({
-      idempotency_key: z.string().min(8).max(100),
-      from_number_id: z.string().max(64).nullish(),
-      occurred_at: z.string().max(40).nullish(),
-      talk_seconds: z.number().min(0).max(36000).nullish(),
-      dial_count: z.number().int().min(1).max(1000).nullish(),
-      lead_seconds: z.number().min(0).max(7 * 86400).nullish(),
-      outcome_code: z.string().max(40),
-      callback_due_at: z.string().max(40).nullish(),
-      callback_any_time: z.boolean().nullish(),
-      note: z.string().max(10000).nullish(),
-    }).parse(req.body);
-    return logManualCall(db, { ...b, lead_id: id });
-  });
-
-  app.post('/api/calls/:id/outcomes', async (req) => {
-    const { id } = z.object({ id: z.string().max(64) }).parse(req.params);
-    const b = z.object({
-      outcome_code: z.string().max(40),
-      expected_current_id: z.string().max(64).nullable(),
-      callback_due_at: z.string().max(40).nullish(),
-      callback_any_time: z.boolean().nullish(),
-      note: z.string().max(10000).nullish(),
-    }).parse(req.body);
-    return changeOutcome(db, id, b);
-  });
-
-  app.post('/api/leads/:id/actions', async (req) => {
-    const { id } = z.object({ id: z.string().max(64) }).parse(req.params);
-    const b = z.object({ action: z.enum(['skip', 'mark_dead', 'restore']), reason: z.string().max(500).nullish() }).parse(req.body);
-    return addLeadAction(db, id, b.action, b.reason);
-  });
-
-  app.post('/api/leads/:id/called-back', async (req) => {
-    const { id } = z.object({ id: z.string().max(64) }).parse(req.params);
-    const b = z.object({ on: z.boolean() }).parse(req.body);
-    return { called_back_at: setCalledBack(db, id, b.on) };
-  });
-
-  app.post('/api/leads/:id/notes', async (req) => {
-    const { id } = z.object({ id: z.string().max(64) }).parse(req.params);
-    const b = z.object({ body: z.string().max(10000), call_id: z.string().max(64).nullish() }).parse(req.body);
-    return addNote(db, id, b.body, b.call_id);
-  });
-
-  app.post('/api/lead-links/:id', async (req) => {
-    const { id } = z.object({ id: z.string().max(64) }).parse(req.params);
-    const b = z.object({ status: z.enum(['suggested', 'same_person', 'different_person']) }).parse(req.body);
-    setLinkStatus(db, id, b.status);
-    return { ok: true };
-  });
-
-  // ---------- call history ----------
-  app.get('/api/calls', async (req) => {
-    const q = z.object({
-      from: z.string().max(40).optional(),
-      to: z.string().max(40).optional(),
-      outcome: z.string().max(40).optional(),
-      search: z.string().max(100).optional(),
-      counties: z.string().max(4000).optional(),
-      area_codes: z.string().max(400).optional(),
-    }).parse(req.query);
-    return callHistory(db, { ...q, counties: parseList(q.counties), areaCodes: parseList(q.area_codes) });
-  });
-
-  app.get('/api/stats/today', async (req) => {
-    const q = z.object({ from: z.string().max(40), to: z.string().max(40) }).parse(req.query);
-    return todayStats(db, q.from, q.to);
-  });
-
-  // ---------- caller ID numbers ----------
-  app.get('/api/numbers', async () => listNumbers(db));
-
-  app.post('/api/numbers', async (req) => {
-    const b = z.object({ number: z.string().max(40), label: z.string().max(60).nullish(), notes: z.string().max(1000).nullish() }).parse(req.body);
-    return addNumber(db, b);
-  });
-
-  app.post('/api/numbers/:id', async (req) => {
-    const { id } = z.object({ id: z.string().max(64) }).parse(req.params);
-    const b = z.object({
-      label: z.string().max(60).nullish(),
-      status: z.enum(['active', 'standby', 'retired']).optional(),
-      retire_reason: z.string().max(500).nullish(),
-      reputation_status: z.enum(['unchecked', 'clear', 'flagged', 'investigating']).optional(),
-      notes: z.string().max(1000).nullish(),
-    }).parse(req.body);
-    updateNumber(db, id, b);
-    return { ok: true };
-  });
-
-  // ---------- imports ----------
-  app.post('/api/imports/parse', async (req) => {
-    const buf = req.body as Buffer;
-    if (!Buffer.isBuffer(buf) || !buf.length) throw new DomainError('empty file');
-    const name = uploadHeader(req.headers, 'x-file-name', 'upload.xlsx').replace(/[/\\]/g, '_').slice(0, 200);
-    let parsed: ParsedFile;
-    try {
-      parsed = await parseSpreadsheet(buf, name);
-    } catch (e: any) {
-      throw new DomainError(e.message?.startsWith('Unsupported') ? e.message : `Could not read this file: ${e.message}`);
-    }
-    if (!parsed.sheets.length) throw new DomainError('no data found in this file');
-    pruneUploads();
-    const uploadId = uuidv7();
-    uploads.set(uploadId, { parsed, buf, at: Date.now() });
-    return {
-      upload_id: uploadId,
-      file_name: name,
-      file_previously_imported: batchesFromFile(db, parsed.sha256),
-      sheets: parsed.sheets.map((s) => {
-        const saved = savedMappingFor(db, s.headers);
-        return {
-          name: s.name,
-          headers: s.headers,
-          header_row: s.headerRow,
-          row_count: s.rows.length,
-          sample: s.rows.slice(0, 5),
-          suggested_mapping: saved ?? suggestMapping(s.headers),
-          mapping_source: saved ? 'saved' : 'guessed',
-        };
-      }),
-    };
-  });
-
-
-  app.get('/api/imports', async () => listImportBatches(db));
-
-  app.get('/api/imports/:id/problems.csv', async (req, reply) => {
-    const { id } = z.object({ id: z.string().max(64) }).parse(req.params);
-    return reply.header('content-disposition', `attachment; filename="import-problems-${id}.csv"`).type('text/csv').send(toCsv(importProblems(db, id)));
-  });
-
-  // Every lead a bulk import left out (repeats, missing details, discarded), with the file each came from.
-  app.get('/api/bulk-imports/:id/problems.csv', async (req, reply) => {
-    const { id } = z.object({ id: z.string().max(64) }).parse(req.params);
-    return reply
-      .header('content-disposition', `attachment; filename="bulk-import-not-imported-${id}.csv"`)
-      .type('text/csv')
-      .send(toCsv(bulkImportProblems(db, id)));
-  });
-
-  // ---------- export & backup ----------
-  app.get('/api/export/:file', async (req, reply) => {
-    const { file } = z.object({ file: z.string().max(60) }).parse(req.params);
-    const { health } = z.object({ health: z.enum(['0', '1']).default('0') }).parse(req.query);
-    const includeHealth = health === '1';
-    const stamp = new Date().toISOString().slice(0, 10);
-    if (file === 'dump.json') {
-      return reply.header('content-disposition', `attachment; filename="mpcrm-dump-${stamp}.json"`).type('application/json').send(JSON.stringify(fullJsonDump(db)));
-    }
-    if (file === 'all.xlsx') {
-      const buf = await toXlsx(EXPORT_TABLES.map((t) => ({ name: t, rows: exportRows(db, t, { includeHealth }) })));
-      return reply.header('content-disposition', `attachment; filename="mpcrm-export-${stamp}.xlsx"`)
-        .type('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet').send(buf);
-    }
-    const m = file.match(/^([a-z_]+)\.(csv|xlsx)$/);
-    if (!m || !(EXPORT_TABLES as readonly string[]).includes(m[1]!)) throw new DomainError('unknown export', 404);
-    const rows = exportRows(db, m[1] as ExportTable, { includeHealth });
-    if (m[2] === 'csv') {
-      return reply.header('content-disposition', `attachment; filename="${m[1]}-${stamp}.csv"`).type('text/csv').send(toCsv(rows));
-    }
-    const buf = await toXlsx([{ name: m[1]!, rows }]);
-    return reply.header('content-disposition', `attachment; filename="${m[1]}-${stamp}.xlsx"`)
-      .type('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet').send(buf);
-  });
-
-  app.get('/api/backups', async () =>
-    listBackups(config).reverse().map((f) => {
-      const st = fs.statSync(f);
-      return { file: path.basename(f), bytes: st.size, created_at: st.mtime.toISOString() };
-    }),
-  );
-
-  app.post('/api/backups', async () => {
-    const r = await createBackup(db, config);
-    return { file: path.basename(r.file), bytes: r.bytes, encrypted: r.encrypted, counts: r.counts };
-  });
 
   // ---------- static UI ----------
   if (deps.webDir && fs.existsSync(deps.webDir)) {

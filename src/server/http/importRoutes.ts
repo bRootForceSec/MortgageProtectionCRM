@@ -7,7 +7,12 @@ import * as z from 'zod/v4';
 import { addBatchToCallList } from '../domain/callList.js';
 import type { DB } from '../db/connection.js';
 import type { Config } from '../config.js';
-import type { ParsedFile } from '../domain/spreadsheet.js';
+import { parseSpreadsheet, type ParsedFile } from '../domain/spreadsheet.js';
+import { suggestMapping } from '../domain/mapping.js';
+import { savedMappingFor } from '../domain/importer.js';
+import { listImportBatches, batchesFromFile, importProblems, bulkImportProblems } from '../domain/importHistory.js';
+import { toCsv } from '../domain/exporter.js';
+import { uuidv7 } from '../ids.js';
 import type { ColumnMapping } from '../domain/mapping.js';
 import { DomainError } from '../core/errors.js';
 import {
@@ -21,6 +26,13 @@ import { listCounties, setCountyAreaCodes } from '../domain/areaCodes.js';
 import type { BulkImporter } from '../domain/bulkImport.js';
 
 // Routes for PDF and spreadsheet imports with review, AI settings, lead types and prices, and county groups.
+
+/** A spreadsheet uploaded for import, kept in memory until it becomes a draft (choose it again after a restart). */
+interface Upload {
+  parsed: ParsedFile;
+  buf: Buffer;
+  at: number;
+}
 
 export const MAX_PDF_BYTES = 200 * 1024 * 1024;
 
@@ -61,11 +73,73 @@ export function registerImportRoutes(
     worker: DraftWorker;
     bulk: BulkImporter;
     secrets: Secrets;
-    getUpload: (id: string) => { parsed: ParsedFile; buf: Buffer };
-    dropUpload: (id: string) => void;
   },
 ) {
   const { db, config, worker, secrets, bulk } = deps;
+
+  // ---------- uploads (kept in memory until committed; re-upload after a restart) ----------
+  const uploads = new Map<string, Upload>();
+  const getUpload = (id: string) => {
+    const u = uploads.get(id);
+    if (!u) throw new DomainError('upload expired; choose the file again', 410);
+    return u;
+  };
+  const pruneUploads = () => {
+    const cutoff = Date.now() - 60 * 60 * 1000;
+    for (const [k, u] of uploads) if (u.at < cutoff) uploads.delete(k);
+    while (uploads.size > 5) uploads.delete(uploads.keys().next().value!);
+  };
+
+  // ---------- imports ----------
+  app.post('/api/imports/parse', async (req) => {
+    const buf = req.body as Buffer;
+    if (!Buffer.isBuffer(buf) || !buf.length) throw new DomainError('empty file');
+    const name = uploadHeader(req.headers, 'x-file-name', 'upload.xlsx').replace(/[/\\]/g, '_').slice(0, 200);
+    let parsed: ParsedFile;
+    try {
+      parsed = await parseSpreadsheet(buf, name);
+    } catch (e: any) {
+      throw new DomainError(e.message?.startsWith('Unsupported') ? e.message : `Could not read this file: ${e.message}`);
+    }
+    if (!parsed.sheets.length) throw new DomainError('no data found in this file');
+    pruneUploads();
+    const uploadId = uuidv7();
+    uploads.set(uploadId, { parsed, buf, at: Date.now() });
+    return {
+      upload_id: uploadId,
+      file_name: name,
+      file_previously_imported: batchesFromFile(db, parsed.sha256),
+      sheets: parsed.sheets.map((s) => {
+        const saved = savedMappingFor(db, s.headers);
+        return {
+          name: s.name,
+          headers: s.headers,
+          header_row: s.headerRow,
+          row_count: s.rows.length,
+          sample: s.rows.slice(0, 5),
+          suggested_mapping: saved ?? suggestMapping(s.headers),
+          mapping_source: saved ? 'saved' : 'guessed',
+        };
+      }),
+    };
+  });
+
+
+  app.get('/api/imports', async () => listImportBatches(db));
+
+  app.get('/api/imports/:id/problems.csv', async (req, reply) => {
+    const { id } = z.object({ id: z.string().max(64) }).parse(req.params);
+    return reply.header('content-disposition', `attachment; filename="import-problems-${id}.csv"`).type('text/csv').send(toCsv(importProblems(db, id)));
+  });
+
+  // Every lead a bulk import left out (repeats, missing details, discarded), with the file each came from.
+  app.get('/api/bulk-imports/:id/problems.csv', async (req, reply) => {
+    const { id } = z.object({ id: z.string().max(64) }).parse(req.params);
+    return reply
+      .header('content-disposition', `attachment; filename="bulk-import-not-imported-${id}.csv"`)
+      .type('text/csv')
+      .send(toCsv(bulkImportProblems(db, id)));
+  });
 
   app.addContentTypeParser('application/pdf', { parseAs: 'buffer', bodyLimit: MAX_PDF_BYTES }, (_req, body, done) => done(null, body));
 
@@ -92,7 +166,7 @@ export function registerImportRoutes(
         file_modified: z.number().nullish(),
       })
       .parse(req.body);
-    const u = deps.getUpload(b.upload_id);
+    const u = getUpload(b.upload_id);
     const s = u.parsed.sheets.find((x) => x.name === b.sheet);
     if (!s) throw new DomainError('sheet not found');
     const { id } = createSheetDraft(
@@ -100,7 +174,7 @@ export function registerImportRoutes(
       { fileName: u.parsed.fileName, sha256: u.parsed.sha256, bytes: u.buf, fileModified: fileModifiedHeader(b.file_modified) },
       s, b.mapping as ColumnMapping, b.lead_type !== undefined ? { default_lead_type: b.lead_type } : {},
     );
-    deps.dropUpload(b.upload_id);
+    uploads.delete(b.upload_id);
     return { id };
   });
 
