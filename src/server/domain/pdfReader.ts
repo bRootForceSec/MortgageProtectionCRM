@@ -261,11 +261,6 @@ export async function pdfTextTurns(data: Uint8Array): Promise<(0 | 90 | 180 | 27
   }
 }
 
-export async function pdfPageCount(data: Uint8Array): Promise<number> {
-  const doc = await PDFDocument.load(data, { ignoreEncryption: true });
-  return doc.getPageCount();
-}
-
 /** One page as its own PDF, for sending to an AI reader. */
 export async function extractPage(data: Uint8Array, page: number): Promise<Uint8Array> {
   const src = await PDFDocument.load(data, { ignoreEncryption: true });

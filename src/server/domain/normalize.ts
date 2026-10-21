@@ -22,12 +22,6 @@ export function normalizeUsPhone(raw: unknown): Normalized<string> {
   return { value: `+1${digits}` };
 }
 
-export function formatUsPhone(e164: string | null | undefined): string {
-  if (!e164 || !/^\+1\d{10}$/.test(e164)) return e164 ?? '';
-  const d = e164.slice(2);
-  return `(${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6)}`;
-}
-
 /** "$286,000", "286000", "286k" → cents. */
 export function normalizeMoneyToCents(raw: unknown): Normalized<number> {
   if (typeof raw === 'number' && Number.isFinite(raw)) return { value: Math.round(raw * 100) };
@@ -90,7 +84,7 @@ export function normalizeDob(raw: unknown, now: Date = new Date()): Normalized<s
 }
 
 /** Interprets yes/no style flags. Returns null when blank or unrecognized. */
-export function parseYesNo(raw: unknown): boolean | null {
+function parseYesNo(raw: unknown): boolean | null {
   if (typeof raw === 'boolean') return raw;
   const s = toText(raw).toLowerCase();
   if (!s) return null;
@@ -235,9 +229,6 @@ export function timeZoneFor(state: string | null | undefined, countyKey?: string
   if (countyKey && COUNTY_TZ[countyKey]) return COUNTY_TZ[countyKey]!;
   return state && STATE_TZ[state] ? STATE_TZ[state]!.tz : null;
 }
-
-/** County keys with their own time zone, for the database upgrade that fixes leads imported before. */
-export const COUNTY_TIME_ZONES = COUNTY_TZ;
 
 const STATE_NAMES: Record<string, string> = {
   ALABAMA: 'AL', ALASKA: 'AK', ARIZONA: 'AZ', ARKANSAS: 'AR', CALIFORNIA: 'CA', COLORADO: 'CO',

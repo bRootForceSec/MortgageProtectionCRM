@@ -265,9 +265,3 @@ export function fmtMoney(cents: number | null | undefined): string {
 export function fullName(l: { first_name?: string | null; last_name?: string | null; [k: string]: unknown }): string {
   return [l.first_name, l.last_name].filter(Boolean).join(' ') || '(no name)';
 }
-
-/** Value for <input type="datetime-local"> from a Date, in the browser's zone. */
-export function toLocalInput(d: Date): string {
-  const p = (n: number) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
-}

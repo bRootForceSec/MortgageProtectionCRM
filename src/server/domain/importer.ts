@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import type { DB } from '../db/connection.js';
 import { uuidv7, nowIso } from '../ids.js';
-import { type ColumnMapping, type LeadFieldKey, LEAD_FIELDS, validateMapping, headerKey } from './mapping.js';
+import { type ColumnMapping, type LeadFieldKey, validateMapping, headerKey } from './mapping.js';
 import type { ParsedSheet } from './spreadsheet.js';
 import {
   ageOn, coborrowerSignal, normalizeAge, normalizeDob, normalizeCallinDate, normalizeMoneyToCents, normalizeState, normalizeUsPhone,
@@ -240,11 +240,6 @@ export function sheetRowFields(raw: Record<string, string>, m: ColumnMapping): {
   return { fields, extra };
 }
 
-export function mapRow(raw: Record<string, string>, m: ColumnMapping) {
-  const { fields, extra } = sheetRowFields(raw, m);
-  return mapFields(fields, extra);
-}
-
 /**
  * Fingerprint of the mapped content of a row, independent of file and batch.
  * Two rows with the same fingerprint describe the same lead record.
@@ -307,10 +302,6 @@ export function analyzeRows(db: DB, rows: SourceRow[], opts: ImportOptions = {})
     }
     return { rowNumber: src.rowNumber, status, errors, warnings, fingerprint, lead, raw: src.raw, page: src.page ?? null, samePhoneLeadIds };
   });
-}
-
-export function analyzeSheet(db: DB, sheet: ParsedSheet, mapping: ColumnMapping, opts: ImportOptions = {}): RowResult[] {
-  return analyzeRows(db, sheetSourceRows(sheet, mapping), opts);
 }
 
 export function deadPilePhones(db: DB): Set<string> {
@@ -504,4 +495,3 @@ export class MappingError extends Error {
   }
 }
 
-export const FIELD_LABELS = Object.fromEntries(LEAD_FIELDS.map((f) => [f.key, f.label]));
