@@ -2,6 +2,13 @@
 
 A running log of the stabilization work. Newest first.
 
+## 2026-10-21: R3, R4, R5 reliability
+
+- **R3, UI errors** (user-visible): failed loads the user depends on now show an error toast. That covers counties in the group picker, lead types, and calling settings at start. A failed KDE Connect device lookup shows in its card. Restoring a dead lead from the Calling screen now shows an error if it fails. Background polls (update status, today's stats, page check, backup check, number stats) and PDF cleanup keep a quiet catch, each with a comment saying why. The structure check now allows no silent catch in the UI.
+- **R4, Claude Code reader** (`ai/readers.ts` `run`): a run that ignores the stop signal is forced to stop 5 s later. Output over 10 MB stops the run, and stderr keeps only its last 10 MB. Test: `test/unit/readerRun.test.ts`, which failed without the fix.
+- **R5:** `desktop.json` is written to a temp file and renamed into place. The restore's "is the app running" check treats EPERM as running, like the server's check. **Dropped:** refusing to open a database newer than the app. Migration 006 was removed after shipping, so real databases may record it, and the desktop app rolls back failed updates; refusing would stop the app opening in both cases.
+- Checks: typecheck, lint, 216 tests, build, and 10 e2e tests pass.
+
 ## 2026-10-21: T2, T3, R1, R2 tests and reliability
 
 - **T2** `test/integration/routes.test.ts`: 16 characterization tests for 27 routes that had no HTTP test. They cover lead notes, actions, called-back, outcome changes, lead links, call-list skip, clear-worked and saved-list delete, import history, problems.csv, the spreadsheet draft flow end to end, lead types, county area codes, the page checker, the AI test and backups.
