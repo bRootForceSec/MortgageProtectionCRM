@@ -75,15 +75,15 @@ src/
 | Step | Change | Audit | Size |
 |---|---|---|---|
 | **T1** | ✅ Done with **oxlint** instead of ESLint: typescript-eslint doesn't support TypeScript 7, and oxlint reads TypeScript directly and honors the existing `eslint-disable` comments. Also added `scripts/check-structure.mjs` (stops new SQL in routes, new silent catches and new server `console.*`) and a PR checklist. Originally: Add ESLint with typescript-eslint and react-hooks, and run it in CI. Fix or justify the existing `eslint-disable` comments. New dev dependencies, so it needs D6. | 7.5, 5.3 | M |
-| **T2** | HTTP characterization tests for every untested route in audit 7.2 | 7.2 | M |
-| **T3** | A test that stops the server while a draft and a bulk import are running (fails until R1) | 4.1 | S |
+| **T2** | ✅ HTTP characterization tests for every untested route in audit 7.2 | 7.2 | M |
+| **T3** | ✅ A test that stops the server while a draft and a bulk import are running (fails until R1) | 4.1 | S |
 
 ### Reliability
 
 | Step | Change | Audit | Size |
 |---|---|---|---|
-| **R1** | `stop()` and drain `DraftWorker` and `BulkImporter` before `db.close()` | 4.1 | S |
-| **R2** | Make draft commit safe to fail: copy the file first, then commit rows and mark the draft committed in one transaction | 4.2 | S |
+| **R1** | ✅ `stop()` and drain `DraftWorker` and `BulkImporter` before `db.close()` | 4.1 | S |
+| **R2** | ✅ Make draft commit safe to fail: copy the file first, then commit rows and mark the draft committed in one transaction | 4.2 | S |
 | **R3** | Show web request failures instead of swallowing them, and handle `RestoreBox` errors. Errors would now appear where none showed before. | 4.4, 4.5 | S |
 | **R4** | Claude CLI reader: SIGKILL after the timeout, and cap stdout | 4.6 | S |
 | **R5** | Atomic `desktop.json` write; one shared process-alive check; refuse to start on a database newer than the build | 4.9–4.11 | S |

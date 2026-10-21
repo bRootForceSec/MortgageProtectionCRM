@@ -2,6 +2,13 @@
 
 A running log of the stabilization work. Newest first.
 
+## 2026-10-21: T2, T3, R1, R2 tests and reliability
+
+- **T2** `test/integration/routes.test.ts`: 16 characterization tests for 27 routes that had no HTTP test. They cover lead notes, actions, called-back, outcome changes, lead links, call-list skip, clear-worked and saved-list delete, import history, problems.csv, the spreadsheet draft flow end to end, lead types, county area codes, the page checker, the AI test and backups.
+- **T3 + R1** (`server.ts`, `drafts.ts`, `bulkImport.ts`): `DraftWorker` and `BulkImporter` have `stop()`, and `server.stop()` calls both before closing the database. Before, a PDF being read during quit or an update restart hit the closed database and ended in an unhandled rejection; I reproduced that first. An interrupted draft stays "reading" and resumes on the next start, as before. Test: `test/integration/shutdown.test.ts`.
+- **R2** (`drafts.ts` `commitDraft`): importing the rows, copying the file and marking the draft committed now happen in one transaction. A failed copy no longer leaves imported leads behind a draft that still looks open, so trying again can't import twice. Test: `pdfImport.test.ts`, "a failed commit imports nothing".
+- Checks: typecheck, lint, 213 tests, build, and 10 e2e tests pass.
+
 ## 2026-10-21: T1 lint and structure checks
 
 - `npm run lint` = `oxlint` (`.oxlintrc.json`) + `scripts/check-structure.mjs`. It runs in CI after typecheck.
