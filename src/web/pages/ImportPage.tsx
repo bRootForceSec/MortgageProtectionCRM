@@ -437,8 +437,12 @@ function DraftScreen({ id, onLeave, onGone, onCommitted }: {
     if (shift && lastClicked.current != null) {
       const nums = shown.map((r) => r.row_number);
       const [a = 0, b = 0] = [nums.indexOf(lastClicked.current), nums.indexOf(n)].sort((x, y) => x - y);
-      for (const k of nums.slice(a, b + 1)) on ? next.add(k) : next.delete(k);
-    } else on ? next.add(n) : next.delete(n);
+      for (const k of nums.slice(a, b + 1)) {
+        if (on) next.add(k);
+        else next.delete(k);
+      }
+    } else if (on) next.add(n);
+    else next.delete(n);
     lastClicked.current = n;
     setChecked(next);
   };

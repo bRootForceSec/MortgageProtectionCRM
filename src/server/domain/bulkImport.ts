@@ -345,7 +345,7 @@ export class BulkImporter {
 
   /** For tests: resolves once nothing is being read. */
   async whenIdle() {
-    while (this.reading.size) await Promise.all([...this.reading.values()]);
+    while (this.reading.size) await Promise.all(this.reading.values());
   }
 
   private view(f: BulkFileDb) {

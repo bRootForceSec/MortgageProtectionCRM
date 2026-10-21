@@ -237,7 +237,7 @@ export function CallingPage() {
     return () => window.removeEventListener('mpcrm:open-lead', f);
   }, [openOutside]);
 
-  const items = list?.items ?? [];
+  const items = useMemo(() => list?.items ?? [], [list]);
   const idx = items.findIndex((i) => i.lead_id === selected);
   /** The lead on screen was opened on purpose outside the list (or is a looked-up lead that is also in it). */
   const outside = !!selected && opened?.leadId === selected;
@@ -385,6 +385,12 @@ export function CallingPage() {
   const ready = !!detail && detail.lead.id === selected;
   const phoneNow = detail ? detail.state?.active_phone_e164 ?? detail.lead.phone_e164 : null;
   const otherPhone = detail ? otherNumber(detail) : null;
+  /** The "called me back" mark changed: shown at once on the lead and its list row. */
+  const calledBack = useCallback((leadId: string, at: string | null) => {
+    setDetail((d) => (d && d.lead.id === leadId ? { ...d, called_back_at: at } : d));
+    updateList((xs) => xs.map((i) => (i.lead_id === leadId ? { ...i, called_back_at: at } : i)));
+  }, [updateList]);
+
   // Layout effect, so the keys act on the lead you can see as soon as it's on screen.
   useLayoutEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -414,13 +420,7 @@ export function CallingPage() {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [keys, move, goNext, skip, dial, undo, detail, modalOpen, ready, phoneNow, otherPhone, toast]);
-
-  /** The "called me back" mark changed: shown at once on the lead and its list row. */
-  const calledBack = (leadId: string, at: string | null) => {
-    setDetail((d) => (d && d.lead.id === leadId ? { ...d, called_back_at: at } : d));
-    updateList((xs) => xs.map((i) => (i.lead_id === leadId ? { ...i, called_back_at: at } : i)));
-  };
+  }, [keys, move, goNext, skip, dial, undo, detail, modalOpen, ready, phoneNow, otherPhone, toast, calledBack]);
 
   const refreshDetail = async () => {
     await Promise.all([loadDetail(selected), loadList()]);

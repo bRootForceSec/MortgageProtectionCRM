@@ -3,7 +3,7 @@ import * as z from 'zod/v4';
 import type { DB } from '../db/connection.js';
 import type { Config } from '../config.js';
 import { DomainError } from '../domain/calls.js';
-import { parseList, groupWhere } from '../domain/groupFilter.js';
+import { parseList } from '../domain/groupFilter.js';
 import { buildReport, drill, DrillSpec, loadTargets, reportSheets, saveTargets, type ReportFilter } from '../domain/reports.js';
 import { toXlsx } from '../domain/exporter.js';
 import { numberChecks, numberStats, recordNumberCheck } from '../domain/numbers.js';

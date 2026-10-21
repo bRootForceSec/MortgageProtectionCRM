@@ -107,7 +107,6 @@ export function assessRow(data: DraftRowData, edits: FieldValues | null): ReadIs
   const { lead, errors, warnings } = mapFields(fields, data.extra);
   const edited = new Set(Object.keys(edits ?? {}));
   const issues: ReadIssue[] = [];
-  const has = (field: string) => issues.some((i) => i.field === field && i.blocking);
   for (const r of data.reader_issues) if (!edited.has(r.field)) issues.push(r);
   for (const e of errors) issues.push({ field: e.includes('name') ? 'full_name' : 'phone', message: e, blocking: true, kind: 'missing' });
   if (!lead.address_line) issues.push({ field: 'address', message: 'no street address', blocking: true, kind: 'missing' });
@@ -558,7 +557,7 @@ export function reviewRow(
     if (!r) throw new DomainError('row not found', 404);
     if (r.extractor === 'pending') throw new DomainError('this page is still being read');
     const data = JSON.parse(r.fields_json) as DraftRowData;
-    const edits = { ...(r.edits_json ? JSON.parse(r.edits_json) : {}), ...(input.edits ?? {}) } as FieldValues;
+    const edits = { ...(r.edits_json && JSON.parse(r.edits_json)), ...input.edits } as FieldValues;
     // Edits equal to what was read are not edits.
     for (const k of Object.keys(edits) as LeadFieldKey[]) if ((data.fields[k] ?? '') === (edits[k] ?? '')) delete edits[k];
     const issues = assessRow(data, edits);
