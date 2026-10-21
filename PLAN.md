@@ -87,6 +87,7 @@ src/
 | **R3** | Show web request failures instead of swallowing them, and handle `RestoreBox` errors. Errors would now appear where none showed before. | 4.4, 4.5 | S |
 | **R4** | Claude CLI reader: SIGKILL after the timeout, and cap stdout | 4.6 | S |
 | **R5** | Atomic `desktop.json` write; one shared process-alive check; refuse to start on a database newer than the build | 4.9–4.11 | S |
+| **R7** | Top-bar today stats leave out spreadsheet-history calls without a time, matching Reports (approved behavior change, D3) | 2.12 | S |
 | **R6** | (Can defer) Move backup gzip and checksum off the event loop | 4.8 | M |
 
 ### Structure
@@ -106,7 +107,7 @@ src/
 |---|---|---|---|
 | **X1** | Delete the dead exports in audit 5.1 | 5.1 | S |
 | **X2** | Delete `/api/queue`, `queue.ts` and the one-step import routes, moving their tests onto the routes in use (needs D2) | 5.2 | M |
-| **X3** | Retire the Linux systemd/source-build path, or document it as secondary (needs D1) | 1, 3.9, 6.2 | M |
+| **X3** | Retire the Linux systemd/source-build path: remove `install.sh`, `mpcrm-update.mjs`, `mpcrm-open.sh` and their README sections (D1) | 1, 3.9, 6.2 | M |
 | **X4** | Mark `docs/phase-0-plan.md` as historical; add `.env.example`; update the README with structure, run/test/config instructions and conventions | 5.5, 6.3 | S |
 
 ## Risks
@@ -120,9 +121,9 @@ src/
 
 | # | Question | My recommendation |
 |---|---|---|
-| D1 | Keep the Linux systemd / build-from-source install, or retire it in favor of the AppImage? | Keep it for now. Retire it only if nobody uses it, since it is a second update path to maintain. |
-| D2 | Delete the unused `/api/queue` and one-step import routes? | Yes, and move their tests. |
-| D3 | Should the top-bar "today" stats count spreadsheet-history calls dated today, which Reports leaves out? | Your call; I will not change it without an answer. |
+| D1 | Keep the Linux systemd / build-from-source install, or retire it in favor of the AppImage? | **Decided 2026-10-21: retire it.** |
+| D2 | Delete the unused `/api/queue` and one-step import routes? | **Decided 2026-10-21: delete them if the UI does not use them; move their tests.** |
+| D3 | Should the top-bar "today" stats count spreadsheet-history calls dated today, which Reports leaves out? | **Decided 2026-10-21: no, because those calls have no real time.** Align `/api/stats/today` with Reports (new step R7). |
 | D4 | Invalid `MPCRM_BACKUP_KEEP`: refuse to start, or fall back to 30 with a warning? | Fall back to 30 with a warning, and treat values below 1 as 1. Backups keep running instead of the app failing to start. |
 | D5 | OK to add `src/shared/`? | Yes. |
 | D6 | Add ESLint as a dev dependency? Prettier too? | ESLint yes. Skip Prettier: it would reformat every file in one big diff. |
