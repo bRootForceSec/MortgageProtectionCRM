@@ -892,7 +892,7 @@ function LogCall({
   }, [keys, code, save, choose, active]);
 
   if (!d.lead.phone_e164 && !d.lead.phone2_e164 && !d.lead.phone3_e164) return <p className="error">This lead has no valid phone number.</p>;
-  if (d.state?.status === 'dead') return <RestoreBox d={d} onSaved={onRefresh} label={d.state.block_reason ? `${d.state.block_reason}.` : 'This lead is in the dead pile.'} />;
+  if (d.state?.status === 'dead') return <RestoreBox d={d} onSaved={onRefresh} label={d.state.block_reason ? `${d.state.block_reason}.` : d.state?.last_outcome_code === 'dnc_request' ? 'Asked not to be called again. This lead is in the dead pile.' : 'This lead is in the dead pile.'} />;
 
   const k = (a: keyof KeyMap['actions']) => keyLabel(keys.actions[a]?.[0] ?? '');
   return (

@@ -92,8 +92,8 @@ test('import a sheet, log calls by keyboard, and set a callback', async ({ page 
   await page.keyboard.press('ArrowDown');
   await expect(page.locator('.lead-name')).toHaveText(second);
 
-  // Callback: 5 opens the picker on "tomorrow"; a blank time means any time that day.
-  await page.keyboard.press('5');
+  // Callback: 6 opens the picker on "tomorrow"; a blank time means any time that day.
+  await page.keyboard.press('6');
   await expect(page.locator('#callback-day')).toBeFocused();
   await expect(page.locator('#callback-day')).toHaveValue('tomorrow');
   await expect(page.locator('.callback-picker')).toContainText(/Tomorrow, .*any time/);
