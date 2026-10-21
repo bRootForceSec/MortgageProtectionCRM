@@ -64,10 +64,10 @@ src/
 
 | Step | Change | Audit | Size |
 |---|---|---|---|
-| **S1** | Validate `MPCRM_BACKUP_KEEP` (needs D4) | 4.3 | S |
-| **S2** | Guard `decodeURIComponent` on upload headers so a bad name returns 400 instead of 500 | 3.3 | S |
-| **S3** | Add `\t` and `\r` to the XLSX formula guard so it matches CSV | 3.10 | S |
-| **S4** | Pin CI actions to commit SHAs; move `@types/qrcode` to devDependencies | 3.6, 6.5 | S |
+| **S1** | ✅ Validate `MPCRM_BACKUP_KEEP` (needs D4) | 4.3 | S |
+| **S2** | ✅ Guard `decodeURIComponent` on upload headers. A badly encoded name now falls back to the default name (as the bulk-import route already did) instead of returning 500. | 3.3 | S |
+| **S3** | ❎ Dropped: XLSX values are stored as text and never evaluated (see audit 3.10) | 3.10 | — |
+| **S4** | ✅ Pin CI actions to commit SHAs; move `@types/qrcode` to devDependencies | 3.6, 6.5 | S |
 | **S5** | (Your action) branch protection on `main` with required checks | 3.5 | S |
 
 ### Tests and tooling
