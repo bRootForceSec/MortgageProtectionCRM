@@ -107,8 +107,8 @@ src/
 |---|---|---|---|
 | **X1** | ✅ Delete the dead exports in audit 5.1 | 5.1 | S |
 | **X2** | ✅ Delete `/api/queue`, `queue.ts` and the one-step import routes, moving their tests onto the routes in use (needs D2) | 5.2 | M |
-| **X3** | Keep the Linux systemd path (D1), with no behavior change. Only small tidy-ups: read the port from one place, and stop passing the token in `xdg-open` argv if that can be done without changing how the app opens. | 3.9, 6.2 | S |
-| **X4** | Mark `docs/phase-0-plan.md` as historical; add `.env.example`; update the README with structure, run/test/config instructions and conventions | 5.5, 6.3 | S |
+| **X3** | ❎ Dropped after a closer look. The port: each place already reads `MPCRM_PORT`; only the default `5170` repeats, in a bash script, the updater script and the Vite config, which can't share code with the app without new coupling. The token in `xdg-open`: the browser gets the link in its own command line anyway, so hiding it from `xdg-open` alone wouldn't help, and anything that would (opening a local redirect file) changes how the app opens. Originally: Keep the Linux systemd path (D1), with no behavior change. Only small tidy-ups: read the port from one place, and stop passing the token in `xdg-open` argv if that can be done without changing how the app opens. | 3.9, 6.2 | S |
+| **X4** | ✅ Done. `env.example` (not `.env.example`, since nothing loads a `.env` file) lists every variable. The README also gets the right outcome keys (the table still said 1–5 with 4 as Bad number) and the encryption note for every system (D9). Originally: Mark `docs/phase-0-plan.md` as historical; add `.env.example`; update the README with structure, run/test/config instructions and conventions | 5.5, 6.3 | S |
 
 ## Risks
 

@@ -2,7 +2,7 @@
 
 A small calling CRM that runs on your own computer. It imports your lead spreadsheets, gives you a call list you work top to bottom, and records every call and outcome without overwriting history.
 
-**Status: Phase 1 (leads and call history).** You still dial on your phone (Sideline) and log each call here with one keypress. Phase 2 adds calling from the computer through Telnyx. The full plan is in [docs/phase-0-plan.md](docs/phase-0-plan.md).
+**Status: Phase 1 (leads and call history).** You still dial on your phone (Sideline) and log each call here with one keypress. Phase 2 adds calling from the computer through Telnyx. The original plan, written before the code, is in [docs/phase-0-plan.md](docs/phase-0-plan.md).
 
 ## What works now
 
@@ -14,7 +14,7 @@ A small calling CRM that runs on your own computer. It imports your lead spreads
 - **Call list**: the Calling page is a plain list you build. You go top to bottom, and at the end you're done; nothing is added, removed or reordered on its own. Worked leads stay on it, crossed out with their outcome, until you press "Clear worked" (offered when the list is done). `S` moves a lead to the bottom; `×` takes one off. "Recent outcomes" under the list shows the last 10 outcomes you set, so you can open one and fix it even after clearing the list.
 - **Leads page**: where you choose who to call. Filter by status (never called, tried, callbacks…), batch, county or area code, "last tried 4+ hours ago" and so on; tick leads (or take every match) and add them to the bottom of the call list. Booked, bad-number and dead leads can't be added. Opening a lead shows it full screen like the Calling page, with its PDF page.
 - **Imports** go straight onto the call list, in file order (untick the box on the import screen to skip that).
-- **Callbacks** (`5`) are for real "call me later" requests. Type the day (`t` today, `m` tomorrow, a weekday like `fri`, or a date like `10/24`) and, if you want, a time (`2`, `2:30`, `10am`; 1 to 7 means PM). The time is the lead's own time, so "call me at 2" from a Central-time lead means 2 PM where they are; the picker shows it in your time too. Leave the time blank for any time that day.
+- **Callbacks** (`6`) are for real "call me later" requests. Type the day (`t` today, `m` tomorrow, a weekday like `fri`, or a date like `10/24`) and, if you want, a time (`2`, `2:30`, `10am`; 1 to 7 means PM). The time is the lead's own time, so "call me at 2" from a Central-time lead means 2 PM where they are; the picker shows it in your time too. Leave the time blank for any time that day.
 - **Callbacks page**: callbacks you missed, today's, and the next two weeks, in your time and the lead's. They stay off the call list; Open shows the lead on the Calling page beside your list. A desktop alert and a sound when one with a time comes due.
 - **Appointment set** is a call outcome with no date or time. Appointment times and results (sat, sold, no-show) are tracked in Unitrust, not here.
 - **Reports**: today or any dates, for the counties or area codes you pick. Activity (dials, attempts, contacts, talks of 2+ minutes, appointments), by hour, best time to call by the lead's local time, by county, by batch (cost per lead reached and booked, from each lead's own price) and against the flier's benchmarks by lead type (booked per contact; edit the targets on the page). Click any number to see the calls or leads behind it. "Export to Excel" saves the whole report.
@@ -98,7 +98,7 @@ Choose it in **Settings**. The default is **Claude with your Claude account**: i
 
 1. **Import** a batch: Import → pick the lead type → choose the PDF or spreadsheet → (spreadsheet: check the column matches → Continue) → check any leads that need a look → set types for mixed orders → Import.
 2. **Numbers**: add your Sideline number once, so each call records which caller ID you used.
-3. **Calling**: the current lead's details are in the middle. Press `C` to dial (copy, QR code or KDE Connect, chosen in Settings), call on your phone, press `→` for each extra dial, then press the outcome key. `1` (No answer) and `4` (Bad number) save and move on by themselves; the others save with `Enter`. A callback suggests tomorrow; type `t` for today or any other day.
+3. **Calling**: the current lead's details are in the middle. Press `C` to dial (copy, QR code or KDE Connect, chosen in Settings), call on your phone, press `→` for each extra dial, then press the outcome key. `1` (No answer) and `5` (Bad number) save and move on by themselves; the others save with `Enter`. A callback suggests tomorrow; type `t` for today or any other day.
 
 These are the starting keys. Change any of them in **Settings → Keyboard shortcuts**.
 
@@ -115,7 +115,9 @@ These are the starting keys. Change any of them in **Settings → Keyboard short
 | `A` | Write a note |
 | `E` | Edit the lead |
 | `P` | Show or hide your script |
-| `1`–`5` | Pick an outcome (`1` and `4` save straight away) |
+| `L` | Look up an incoming caller by number |
+| `B` | Mark (or unmark) that this lead called you back |
+| `1`–`6` | Pick an outcome: No answer, Talked no appt, Appt set, Do not call, Bad number, Callback (`1` and `5` save straight away) |
 | `Enter` | Save the outcome and go to the next lead |
 | `Esc` | Cancel |
 
@@ -150,24 +152,47 @@ Other commands (same folder): `node dist/server/cli.js verify` checks that deriv
 - Lead status (new, retry, callback, appointment set, bad number, dead) is calculated from that history and can be rebuilt at any time.
 - Appointment times and outcomes like "sat", "no-show" or "sale" stay in Unitrust, which remains the official record.
 
+**What is and isn't encrypted.** The database, the copies of imported files and exports are ordinary files, protected by your user account's folder permissions (private to you on Linux and Mac) but not encrypted. Anyone who can read your disk can read them, so keep disk encryption on (BitLocker on Windows, FileVault on Mac, LUKS on Linux). Backups are encrypted only if you set `MPCRM_BACKUP_AGE_RECIPIENT`. AI keys are kept in `secrets.json` in the data folder, readable only by you, and never go into exports or backups.
+
 ## Development
 
+Needs Node 22 or newer.
+
 ```bash
+npm ci
 npm run dev          # API on 5170 with reload, UI on http://127.0.0.1:5173 (open the API's start link once first)
-npm test             # unit and integration tests
-npm run test:e2e     # builds, then drives the real app in Chromium
-npm run typecheck
+npm run build        # server, desktop and UI into dist/
+npm start            # run the built app; prints the private link
+npm run desktop      # build and open the desktop app from the source folder
+```
+
+Checks (CI runs all of them on Windows, Mac and Linux):
+
+```bash
+npm run typecheck    # TypeScript for server, desktop and UI
+npm run lint         # oxlint, plus scripts/check-structure.mjs (see CLAUDE.md)
+npm test             # unit and integration tests (vitest)
+npm run test:e2e     # builds, then drives the real app in Chromium (Playwright)
 node scripts/secret-scan.mjs
 ```
+
+Configuration is environment variables only. The ones you'd set are in the Settings table above; [`env.example`](env.example) lists every variable, including the ones the updater and tests use.
 
 Code layout:
 
 | Path | What |
 |---|---|
-| `src/server/db/migrations/` | SQL schema, applied in order on start |
-| `src/server/domain/` | Import, normalization, queue, call logging, lead status, export. No HTTP in here |
-| `src/server/http/` | API routes and local-access security |
-| `src/server/backup.ts`, `cli.ts` | Backup, restore, rebuild |
-| `scripts/install.sh`, `scripts/mpcrm-update.mjs` | Install, background service, self-update and rollback |
-| `src/web/` | React UI |
-| `test/` | Unit, integration and end-to-end tests |
+| `src/server/http/` | API routes, one file per feature (`importRoutes`, `leadRoutes`, `callingRoutes`, `numberRoutes`, `reportRoutes`, `dataRoutes`), and local-access security. `app.ts` wires them together. Routes validate input and call the domain; they hold no SQL |
+| `src/server/domain/` | Business logic and queries: import, normalization, call list, call logging, lead status, reports, export. No HTTP in here |
+| `src/server/core/` | Shared server pieces: `DomainError`, settings, audit log |
+| `src/server/db/` | Database connection and the numbered SQL migrations, applied in order on start |
+| `src/server/ai/` | Reading scanned pages with Claude Code, the Anthropic API or a local model |
+| `src/server/config.ts` | Reads and checks every environment variable |
+| `src/server/backup.ts`, `cli.ts` | Backup, restore, verify and rebuild |
+| `src/shared/` | Types and helpers used by both the server and the UI (no Node-only code) |
+| `src/web/` | React UI: `pages/`, `components/`, `api.ts` (the only fetch client), `storage.ts` (browser preferences), `when.ts` (dates) |
+| `src/desktop/` | The Electron app: window, tray, autostart, desktop updates |
+| `scripts/install.sh`, `scripts/mpcrm-update.mjs` | Linux install, background service, self-update and rollback |
+| `test/` | `unit/`, `integration/` and `e2e/` tests |
+
+Conventions are in [CLAUDE.md](CLAUDE.md): where new code goes, which shared pieces to reuse, and the data rules (lead status is derived, outcomes are never overwritten, calls are voided rather than deleted). Every PR fills in the checklist in `.github/pull_request_template.md`. The stabilization work is recorded in `AUDIT.md`, `PLAN.md` and `REFACTOR_NOTES.md`.

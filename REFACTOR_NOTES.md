@@ -2,6 +2,12 @@
 
 A running log of the stabilization work. Newest first.
 
+## 2026-10-21: X3 dropped, X4 docs
+
+- **X3 dropped** (Linux service, kept as decided in D1). Every place reads `MPCRM_PORT`; the default 5170 repeats only in scripts that can't share code with the app. The token in `xdg-open`'s arguments ends up in the browser's arguments too, so moving it would need a different way of opening the app. No change.
+- **X4:** `docs/phase-0-plan.md` is marked historical. New `env.example` lists every environment variable and where to set it. The README's Development section now covers how to run, check, configure, the code layout and the conventions (pointing to `CLAUDE.md`).
+- **README fixes:** the keys table said outcomes were `1`–`5` with `4` as Bad number and callbacks on `5`; the app has six (Do not call is `4`, Bad number `5`, Callback `6`), and `1` and `5` save straight away. Added the `L` and `B` keys. Added a "what is and isn't encrypted" note for all systems (D9); it was only in the Fedora section.
+
 ## 2026-10-21: C5 web tidy-ups
 
 - **Storage** (`src/web/storage.ts`): `getStored`, `setStored`, `getStoredJson`, `setStoredJson`. They replace seven hand-written `localStorage` wrappers in CallingPage, ImportPage, UpdateBar, GroupPicker, CallbackAlerts, LeadsPage, ReportsPage and App. Blocked storage still just loses the preference. A new structure rule keeps `localStorage` inside `storage.ts`.

@@ -1,3 +1,5 @@
+> **Historical.** This is the plan written on 2026-10-17, before any code existed. The app has moved on since: see the [README](../README.md) for what it does now and [CLAUDE.md](../CLAUDE.md) for how the code is organized.
+
 # Local-First Insurance Calling CRM — Phase 0 Implementation Plan
 
 Prepared 2026-10-17 for Alistair. Status: **draft for review. No code written, no services provisioned, no money spent.**
