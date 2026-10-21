@@ -142,8 +142,9 @@ function isAlive(pid: number) {
   try {
     process.kill(pid, 0);
     return true;
-  } catch {
-    return false;
+  } catch (e: any) {
+    // EPERM means it exists but belongs to someone else (same rule as the server's start-up check).
+    return e?.code === 'EPERM';
   }
 }
 
