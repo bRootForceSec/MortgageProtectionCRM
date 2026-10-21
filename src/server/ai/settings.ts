@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import * as z from 'zod/v4';
 import type { DB } from '../db/connection.js';
-import { nowIso } from '../ids.js';
+import { getSetting, setSetting } from '../core/settings.js';
 
 // Which AI reads scanned pages. Plain settings live in the database (they are exported with it);
 // API keys live in a separate 0600 file in the data folder and are never sent to the browser.
@@ -24,18 +24,6 @@ export const AiSettings = z.object({
     .default({ base_url: 'http://127.0.0.1:11434/v1', model: '' }),
 });
 export type AiSettings = z.infer<typeof AiSettings>;
-
-export function getSetting<T>(db: DB, key: string): T | null {
-  const r = db.prepare('SELECT value_json FROM app_setting WHERE key = ?').get(key) as { value_json: string } | undefined;
-  return r ? (JSON.parse(r.value_json) as T) : null;
-}
-
-export function setSetting(db: DB, key: string, value: unknown) {
-  db.prepare(
-    `INSERT INTO app_setting (key, value_json, updated_at) VALUES (?,?,?)
-     ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json, updated_at = excluded.updated_at`,
-  ).run(key, JSON.stringify(value), nowIso());
-}
 
 export function loadAiSettings(db: DB): AiSettings {
   return AiSettings.parse(getSetting(db, 'ai') ?? {});

@@ -1,6 +1,6 @@
 import * as z from 'zod/v4';
 import type { DB } from '../db/connection.js';
-import { getSetting, setSetting } from '../ai/settings.js';
+import { getSetting, setSetting } from '../core/settings.js';
 import { DomainError } from '../core/errors.js';
 
 // Settings for the Calling screen. You set every limit yourself; nothing here caps how much you call.

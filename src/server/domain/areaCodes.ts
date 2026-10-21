@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import type { DB } from '../db/connection.js';
 import { nowIso, uuidv7 } from '../ids.js';
 import { countyKey } from './county.js';
-import { getSetting, setSetting } from '../ai/settings.js';
+import { getSetting, setSetting } from '../core/settings.js';
 
 // Built-in area codes for each county, by state (data/county-area-codes.json). When a county first gets leads,
 // it's linked to these codes so area-code picking works without setup. You can change the links in Settings;

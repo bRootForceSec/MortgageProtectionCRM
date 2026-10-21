@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import type { DB } from '../db/connection.js';
-import { getSetting, setSetting } from '../ai/settings.js';
+import { getSetting, setSetting } from '../core/settings.js';
 import { AiError, type PageReader } from '../ai/readers.js';
 import { pdfTextTurns, extractPage } from './pdfReader.js';
 import { batchPdf, turnPdfPages, normTurn } from './pageTurn.js';

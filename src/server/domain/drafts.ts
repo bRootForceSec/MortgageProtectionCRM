@@ -13,7 +13,8 @@ import { readPdfText, extractPage, type ReadIssue } from './pdfReader.js';
 import { turnPdfPages, normTurn } from './pageTurn.js';
 import { PROMPT_VERSION, type PageAnswer } from '../ai/prompt.js';
 import { makeReader, AiError, type PageReader } from '../ai/readers.js';
-import { loadAiSettings, getSetting, setSetting, type Secrets } from '../ai/settings.js';
+import { loadAiSettings, type Secrets } from '../ai/settings.js';
+import { getSetting, setSetting } from '../core/settings.js';
 
 // An import in progress. A PDF is read page by page (typed pages from their text, scans by the AI reader),
 // then you review what needs a look, set lead types, and commit. Everything is saved as it goes,
@@ -263,7 +264,8 @@ export function createSheetDraft(
   return { id };
 }
 
-function lastLeadType(db: DB): string | null {
+/** The lead type the last import used; new imports start with it. */
+export function lastLeadType(db: DB): string | null {
   return getSetting<string>(db, 'import.last_lead_type') ?? 'D';
 }
 

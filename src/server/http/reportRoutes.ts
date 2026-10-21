@@ -8,7 +8,7 @@ import { buildReport, drill, DrillSpec, loadTargets, reportSheets, saveTargets, 
 import { toXlsx } from '../domain/exporter.js';
 import { numberChecks, numberStats, recordNumberCheck } from '../domain/numbers.js';
 import { checkLatestBackup, type RestoreCheck } from '../backup.js';
-import { getSetting, setSetting } from '../ai/settings.js';
+import { getSetting, setSetting } from '../core/settings.js';
 
 const idParam = z.object({ id: z.string().max(64) });
 const filterQuery = z.object({

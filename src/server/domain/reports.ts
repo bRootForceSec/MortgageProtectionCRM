@@ -1,6 +1,6 @@
 import * as z from 'zod/v4';
 import type { DB } from '../db/connection.js';
-import { getSetting, setSetting } from '../ai/settings.js';
+import { getSetting, setSetting } from '../core/settings.js';
 import { groupWhere } from './groupFilter.js';
 import { BOOKED_CODES } from './leadState.js';
 import { DomainError } from '../core/errors.js';

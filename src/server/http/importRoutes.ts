@@ -12,9 +12,9 @@ import type { ColumnMapping } from '../domain/mapping.js';
 import { DomainError } from '../core/errors.js';
 import {
   createPdfDraft, createSheetDraft, DraftWorker, getDraftView, listDrafts, reviewRow, setRowsType, updateDraftSettings,
-  deleteDraft, draftFile, commitDraft,
+  deleteDraft, draftFile, commitDraft, lastLeadType,
 } from '../domain/drafts.js';
-import { loadAiSettings, saveAiSettings, getSetting, type Secrets } from '../ai/settings.js';
+import { loadAiSettings, saveAiSettings, type Secrets } from '../ai/settings.js';
 import { countyKey, countyDisplayName } from '../domain/county.js';
 import { rebuildLeadState, leadsSharingPhones } from '../domain/leadState.js';
 import { timeZoneFor } from '../domain/normalize.js';
@@ -226,7 +226,7 @@ export function registerImportRoutes(
   });
 
   // ---------- lead types and prices ----------
-  app.get('/api/import-defaults', async () => ({ lead_type: getSetting<string>(db, 'import.last_lead_type') ?? 'D' }));
+  app.get('/api/import-defaults', async () => ({ lead_type: lastLeadType(db) }));
   app.get('/api/lead-types', async () => db.prepare('SELECT * FROM lead_type ORDER BY sort_order, code').all());
   app.put('/api/lead-types/:code', async (req) => {
     const { code } = z.object({ code: typeCode }).parse(req.params);
