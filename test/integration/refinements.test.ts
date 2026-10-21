@@ -61,6 +61,16 @@ describe('dial counter', () => {
     expect(db.prepare('SELECT attempts_total FROM lead_state WHERE lead_id = ?').get(jane)).toEqual({ attempts_total: 2 });
   });
 
+  it("leaves out calls from a spreadsheet's history, which have no real time", async () => {
+    logManualCall(db, { lead_id: jane, idempotency_key: key(), outcome_code: 'no_answer', dial_count: 2 });
+    const sheet = logManualCall(db, { lead_id: jane, idempotency_key: key(), outcome_code: 'no_answer' });
+    db.prepare("UPDATE call SET time_known = 0, history_source = 'sheet' WHERE id = ?").run(sheet.call_id);
+    const from = new Date(Date.now() - 3600_000).toISOString();
+    const to = new Date(Date.now() + 3600_000).toISOString();
+    const s = (await app.inject({ url: `/api/stats/today?from=${from}&to=${to}`, headers: auth })).json();
+    expect(s).toMatchObject({ attempts: 1, dials: 2 });
+  });
+
   it('refuses zero dials', async () => {
     const r = await app.inject({
       method: 'POST', url: `/api/leads/${jane}/calls`, headers: write,
