@@ -2,6 +2,14 @@
 
 A running log of the stabilization work. Newest first.
 
+## 2026-10-21: C1, C3, X1, X2 structure and cleanup
+
+- **C1** shared pieces in `src/server/core/`: `errors.ts` (`DomainError`), `settings.ts` (`getSetting`/`setSetting`, moved out of `ai/settings.ts`) and `audit.ts` (`audit()`, which replaces three hand-written `INSERT INTO audit_log`). User mistakes that threw a plain `Error` now throw `DomainError`, so they give a 4xx instead of a 500: setting "called back" on a missing lead (404), an unknown shortcut action and an unknown report number. Two routes that caught and rewrapped errors no longer do. `tableNames(db)` in `db/connection.ts` is shared by backups and the full export. The structure check now refuses `INSERT INTO audit_log` outside `core/audit.ts`.
+- **X2** (decided D2): deleted `/api/queue`, `/api/imports/preview`, `/api/imports/commit` and `domain/queue.ts`. Nothing in the app called them. Tests that used the queue now read `lead_state` through a `dueLeads` test helper, and the upload test goes through the draft flow the app uses.
+- **X1:** deleted dead exports: `pdfPageCount`, `formatUsPhone`, `COUNTY_TIME_ZONES`, `mapRow`, `analyzeSheet`, `FIELD_LABELS` and the web `toLocalInput`.
+- **C3:** every query in the route files moved into domain functions (new `domain/leads.ts`, `domain/importHistory.ts`, `domain/leadTypes.ts`, plus additions to numbers, calls, reports, leadEdit, areaCodes, callList and backup). The structure check now allows no SQL in any route file. `app.ts` went from about 700 lines to 136 and only wires the route files together: `leadRoutes`, `numberRoutes`, `dataRoutes` are new, uploads moved into `importRoutes`, and today's stats into `reportRoutes`. No route changed its path, input or output.
+- Checks: typecheck, lint, 216 tests (2 queue-only tests removed, 1 caller ID test added), build, and 10 e2e tests pass.
+
 ## 2026-10-21: R3, R4, R5 reliability
 
 - **R3, UI errors** (user-visible): failed loads the user depends on now show an error toast. That covers counties in the group picker, lead types, and calling settings at start. A failed KDE Connect device lookup shows in its card. Restoring a dead lead from the Calling screen now shows an error if it fails. Background polls (update status, today's stats, page check, backup check, number stats) and PDF cleanup keep a quiet catch, each with a comment saying why. The structure check now allows no silent catch in the UI.
