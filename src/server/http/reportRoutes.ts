@@ -3,8 +3,8 @@ import * as z from 'zod/v4';
 import type { DB } from '../db/connection.js';
 import { DomainError } from '../core/errors.js';
 import { parseList } from '../domain/groupFilter.js';
-import { buildReport, drill, DrillSpec, loadTargets, reportSheets, saveTargets, type ReportFilter, todayStats } from '../domain/reports.js';
-import { toXlsx } from '../domain/exporter.js';
+import { buildReport, drill, DrillSpec, loadTargets, reportCalls, reportJson, reportSheets, saveTargets, type ReportFilter, todayStats } from '../domain/reports.js';
+import { toCsv, toXlsx } from '../domain/exporter.js';
 
 const filterQuery = z.object({
   from: z.string().max(40),
@@ -38,11 +38,29 @@ export function registerReportRoutes(app: FastifyInstance, deps: { db: DB }) {
 
   app.get('/api/reports/export.xlsx', async (req, reply) => {
     const f = toFilter(filterQuery.parse(req.query));
-    const buf = await toXlsx(reportSheets(buildReport(db, f)));
+    const buf = await toXlsx(reportSheets(buildReport(db, f), reportCalls(db, f)));
     return reply
       .header('content-disposition', `attachment; filename="report-${f.from.slice(0, 10)}.xlsx"`)
       .type('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
       .send(buf);
+  });
+
+  // Every call in the range, one row each, for another system or a spreadsheet.
+  app.get('/api/reports/calls.csv', async (req, reply) => {
+    const f = toFilter(filterQuery.parse(req.query));
+    return reply
+      .header('content-disposition', `attachment; filename="report-calls-${f.from.slice(0, 10)}.csv"`)
+      .type('text/csv')
+      .send(toCsv(reportCalls(db, f)));
+  });
+
+  // The whole report plus its calls, for another system or for analysis.
+  app.get('/api/reports/export.json', async (req, reply) => {
+    const f = toFilter(filterQuery.parse(req.query));
+    return reply
+      .header('content-disposition', `attachment; filename="report-${f.from.slice(0, 10)}.json"`)
+      .type('application/json')
+      .send(JSON.stringify(reportJson(db, f), null, 2));
   });
 
   app.get('/api/reports/targets', async () => loadTargets(db));

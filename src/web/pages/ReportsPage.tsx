@@ -85,7 +85,12 @@ export function ReportsPage() {
       <div className="card">
         <div className="row" style={{ justifyContent: 'space-between' }}>
           <h2>Reports</h2>
-          <a className="btn small" href={`/api/reports/export.xlsx?${q}`}>Export to Excel</a>
+          <div className="row" role="group" aria-label="Export this report">
+            <span className="muted">Export</span>
+            <a className="btn small" href={`/api/reports/export.xlsx?${q}`} title="Every section of the report, plus a sheet with each call">Excel</a>
+            <a className="btn small" href={`/api/reports/calls.csv?${q}`} title="One row per call in these dates, to import into another system">Calls (CSV)</a>
+            <a className="btn small" href={`/api/reports/export.json?${q}`} title="The whole report and every call, with what each number means, for analysis">Data (JSON)</a>
+          </div>
         </div>
         <div className="row">
           <div className="tabs" role="group" aria-label="Date range">

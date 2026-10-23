@@ -7,7 +7,7 @@ import { suggestMapping } from '../../src/server/domain/mapping.js';
 import { commitImport } from '../../src/server/domain/importer.js';
 import { logManualCall, voidCall } from '../../src/server/domain/calls.js';
 import { seedCountyAreaCodes } from '../../src/server/domain/areaCodes.js';
-import { buildReport, drill, type ReportFilter } from '../../src/server/domain/reports.js';
+import { buildReport, drill, reportCalls, type ReportFilter } from '../../src/server/domain/reports.js';
 import { setCalledBack } from '../../src/server/domain/callList.js';
 import { buildApp } from '../../src/server/http/app.js';
 import { createBackup, checkLatestBackup, listBackups } from '../../src/server/backup.js';
@@ -165,6 +165,55 @@ describe('reports', () => {
     expect(t.statusCode).toBe(200);
     expect(buildReport(db, f).benchmarks.find((b) => b.key === 'B')!.booked_target).toBe(0.3);
     const bad = await app.inject({ method: 'PUT', url: '/api/reports/targets', headers: write, payload: { booked_per_contact: { B: 3 } } });
+    expect(bad.statusCode).toBe(400);
+  });
+});
+
+describe('report data export', () => {
+  it('lists every call in the range, one row each, without health fields', () => {
+    db.prepare("UPDATE lead SET tobacco_raw = 'yes', health_heart_raw = 'yes'").run();
+    const rows = reportCalls(db, range());
+    // 6 timed calls and the spreadsheet call; the undone call is left out.
+    expect(rows).toHaveLength(7);
+    expect(rows.filter((r) => r.time_known === 'no')).toHaveLength(1);
+    expect(rows.find((r) => r.time_known === 'no')!.time).toBe('');
+    const amy = rows.find((r) => r.lead_name === 'Amy One' && r.outcome_code === 'appointment')!;
+    expect(amy).toMatchObject({
+      lead_phone: '+12605550101', county: 'Allen', state: 'IN', lead_type: 'B', batch: 'October',
+      caller_id: '+16145550199', caller_id_label: 'Sideline', caller_id_match: 'out_of_area',
+      outcome: expect.any(String), contact: 'yes', talk_seconds: 300, time_known: 'yes',
+    });
+    expect(amy.date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(amy.time).toMatch(/^\d{2}:\d{2}$/);
+    expect(JSON.stringify(rows)).not.toMatch(/tobacco|health/);
+  });
+
+  it('serves the calls as CSV and the report as JSON, and adds a Calls sheet to Excel', async () => {
+    const f = range();
+    const q = `from=${encodeURIComponent(f.from)}&to=${encodeURIComponent(f.to)}&tz=America%2FIndiana%2FIndianapolis&area_codes=260`;
+    const csv = await app.inject({ url: `/api/reports/calls.csv?${q}`, headers: auth });
+    expect(csv.statusCode).toBe(200);
+    expect(csv.headers['content-type']).toContain('text/csv');
+    expect(csv.headers['content-disposition']).toContain('report-calls-');
+    const lines = csv.body.trim().split('\r\n');
+    expect(lines[0]).toMatch(/^call_id,date,time,time_known,called_at_utc,lead_id,lead_name,lead_phone,/);
+    // Area code 260: Amy, Ben and Cal (Cal twice, once from the spreadsheet).
+    expect(lines).toHaveLength(1 + 5);
+
+    const j = await app.inject({ url: `/api/reports/export.json?${q}`, headers: auth });
+    expect(j.statusCode).toBe(200);
+    expect(j.headers['content-type']).toContain('application/json');
+    const body = j.json();
+    expect(body.summary.activity.leads_called).toBe(3);
+    expect(body.calls).toHaveLength(5);
+    expect(Object.keys(body.notes)).toContain('date_range');
+
+    const ExcelJS = (await import('exceljs')).default;
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load((await app.inject({ url: `/api/reports/export.xlsx?${q}`, headers: auth })).rawPayload as any);
+    expect(wb.getWorksheet('Calls')!.rowCount).toBe(1 + 5);
+
+    const bad = await app.inject({ url: '/api/reports/calls.csv?from=nope&to=nope', headers: auth });
     expect(bad.statusCode).toBe(400);
   });
 });
