@@ -249,6 +249,7 @@ export function CallHistory({ calls, onChange }: { calls: Call[]; onChange: () =
             {c.outcomes.map((o) => (
               <div key={o.id} className={o.superseded ? 'superseded' : ''}>
                 {o.label}
+                {!!o.do_not_call && <span className="warn"> · do not call</span>}
                 {c.outcomes.length > 1 && <span className="muted"> · set {fmtDateTime(o.entered_at)}</span>}
                 {o.callback_due_at && <> · call back {o.callback_any_time ? `${fmtDay(o.callback_due_at)}, any time` : fmtDateTime(o.callback_due_at)}</>}
                 {!o.callback_due_at && o.outcome_code === 'callback' && !o.superseded && <span className="warn"> · needs a time</span>}

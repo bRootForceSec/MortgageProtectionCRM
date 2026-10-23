@@ -20,6 +20,8 @@ export interface ManualCallInput {
   callback_due_at?: string | null;
   /** The callback is for a day, any time that day; callback_due_at is the start of that day. */
   callback_any_time?: boolean | null;
+  /** They asked not to be called again: the lead goes to the dead pile. */
+  do_not_call?: boolean | null;
   note?: string | null;
 }
 
@@ -96,8 +98,9 @@ export function logManualCall(db: DB, input: ManualCallInput) {
        VALUES (?, ?, 'manual', ?, 'manual.logged', 'call.logged_manually', ?, ?, ?)`,
     ).run(uuidv7(), callId, `manual:${callId}`, at, now, JSON.stringify({ talk_seconds: talk, dial_count: dials, from_e164: fromE164, to_e164: to }));
     db.prepare(
-      `INSERT INTO call_outcome (id, call_id, outcome_code, entered_at, callback_due_at, callback_any_time, note) VALUES (?,?,?,?,?,?,?)`,
-    ).run(uuidv7(), callId, outcome.code, now, callbackDue, callbackDue && input.callback_any_time ? 1 : 0, input.note?.trim() || null);
+      `INSERT INTO call_outcome (id, call_id, outcome_code, entered_at, callback_due_at, callback_any_time, note, do_not_call)
+       VALUES (?,?,?,?,?,?,?,?)`,
+    ).run(uuidv7(), callId, outcome.code, now, callbackDue, callbackDue && input.callback_any_time ? 1 : 0, input.note?.trim() || null, input.do_not_call ? 1 : 0);
     if (input.note?.trim()) {
       db.prepare('INSERT INTO note (id, lead_id, call_id, body, created_at) VALUES (?,?,?,?,?)').run(
         uuidv7(), lead.id, callId, input.note.trim(), now,
@@ -133,6 +136,7 @@ export function voidCall(db: DB, callId: string, reason?: string | null) {
       outcome_code: out?.outcome_code ?? null,
       callback_due_at: out?.callback_due_at ?? null,
       callback_any_time: !!out?.callback_any_time,
+      do_not_call: !!out?.do_not_call,
       dial_count: call.dial_count as number,
       talk_seconds: call.talk_seconds as number | null,
       lead_seconds: call.lead_seconds as number | null,
@@ -150,7 +154,7 @@ export function currentOutcome(db: DB, callId: string) {
        AND NOT EXISTS (SELECT 1 FROM call_outcome s WHERE s.supersedes_id = o.id)
        ORDER BY entered_at DESC LIMIT 1`,
     )
-    .get(callId) as { id: string; outcome_code: string; callback_due_at: string | null; callback_any_time: number } | undefined;
+    .get(callId) as { id: string; outcome_code: string; callback_due_at: string | null; callback_any_time: number; do_not_call: number } | undefined;
 }
 
 /**
@@ -162,6 +166,8 @@ export function changeOutcome(
   callId: string,
   input: {
     outcome_code: string; expected_current_id: string | null; callback_due_at?: string | null; callback_any_time?: boolean | null;
+    /** Left out: keeps the call's current "Do not call" tick. */
+    do_not_call?: boolean | null;
     note?: string | null;
   },
 ) {
@@ -180,9 +186,12 @@ export function changeOutcome(
     if (o.requires_callback_time && !due) throw new DomainError('a callback needs a date and time');
     const id = uuidv7();
     db.prepare(
-      `INSERT INTO call_outcome (id, call_id, outcome_code, entered_at, supersedes_id, callback_due_at, callback_any_time, note)
-       VALUES (?,?,?,?,?,?,?,?)`,
-    ).run(id, callId, o.code, nowIso(), cur?.id ?? null, due, due && input.callback_any_time ? 1 : 0, input.note?.trim() || null);
+      `INSERT INTO call_outcome (id, call_id, outcome_code, entered_at, supersedes_id, callback_due_at, callback_any_time, note, do_not_call)
+       VALUES (?,?,?,?,?,?,?,?,?)`,
+    ).run(
+      id, callId, o.code, nowIso(), cur?.id ?? null, due, due && input.callback_any_time ? 1 : 0, input.note?.trim() || null,
+      (input.do_not_call ?? !!cur?.do_not_call) ? 1 : 0,
+    );
     if (call.lead_id) rebuildLeadState(db, [call.lead_id]);
     return { outcome_id: id };
   })();

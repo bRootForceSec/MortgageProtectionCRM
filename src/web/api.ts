@@ -152,6 +152,8 @@ export interface Outcome {
   callback_due_at: string | null;
   /** 1 when the callback is for a day, any time that day. */
   callback_any_time?: number;
+  /** 1 when you ticked "Do not call". */
+  do_not_call?: number;
   note: string | null;
 }
 

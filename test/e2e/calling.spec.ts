@@ -92,8 +92,8 @@ test('import a sheet, log calls by keyboard, and set a callback', async ({ page 
   await page.keyboard.press('ArrowDown');
   await expect(page.locator('.lead-name')).toHaveText(second);
 
-  // Callback: 6 opens the picker on "tomorrow"; a blank time means any time that day.
-  await page.keyboard.press('6');
+  // Callback: 5 opens the picker on "tomorrow"; a blank time means any time that day.
+  await page.keyboard.press('5');
   await expect(page.locator('#callback-day')).toBeFocused();
   await expect(page.locator('#callback-day')).toHaveValue('tomorrow');
   await expect(page.locator('.callback-picker')).toContainText(/Tomorrow, .*any time/);
@@ -123,6 +123,7 @@ test('import a sheet, log calls by keyboard, and set a callback', async ({ page 
   await page.reload();
   await expect(page.locator('.lead-name')).toHaveText(current);
   await expect(page.getByLabel('Queue').locator('.queue-list li.done')).toHaveCount(2);
+
 });
 
 test('dial counter, undo, remapped keys, QR dialing, scripts and lead edits', async ({ page }) => {
@@ -395,4 +396,26 @@ test('"called me back": one key on the Calling screen, or the tick on any lead p
   await page.keyboard.press('Escape');
   await page.getByRole('button', { name: 'Calling', exact: true }).click();
   await expect(queue.locator('li', { hasText: name }).getByText('✓ called back')).toBeVisible();
+});
+
+test('Do not call is a tick beside the outcome, toggled with D', async ({ page }) => {
+  await page.goto(launchUrl);
+  await page.getByRole('button', { name: 'Calling', exact: true }).click();
+  await expect(page.locator('.phone-big')).toBeVisible();
+  const lead = await page.locator('.lead-name').innerText();
+  await page.keyboard.press('d');
+  await expect(page.getByLabel('Do not call')).toBeChecked();
+  await page.keyboard.press('d');
+  await expect(page.getByLabel('Do not call')).not.toBeChecked();
+  // D, then 2 and Enter: Talked, no appt with the tick. The lead goes to the dead pile.
+  await page.keyboard.press('d');
+  await page.keyboard.press('2');
+  await page.keyboard.press('Enter');
+  await expect(page.locator('.undo-bar')).toContainText('Talked, no appt, do not call');
+  await expect(page.getByLabel('Do not call')).not.toBeChecked();
+  await expect(page.locator('.lead-name')).not.toHaveText(lead);
+  await page.keyboard.press('ArrowUp');
+  await expect(page.locator('.lead-name')).toHaveText(lead);
+  await expect(page.getByText('Asked not to be called again. This lead is in the dead pile.')).toBeVisible();
+  await expect(page.getByLabel('History').getByText('do not call')).toBeVisible();
 });

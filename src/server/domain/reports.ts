@@ -33,6 +33,8 @@ interface CallRow {
   outcome_code: string | null;
   outcome_label: string | null;
   contact: number;
+  /** Ticked "Do not call". */
+  do_not_call: number;
   outcome_group: string | null;
   from_label: string | null;
   county_key: string | null;
@@ -125,7 +127,7 @@ function loadCalls(db: DB, f: ReportFilter, range: boolean): CallRow[] {
   return db
     .prepare(
       `SELECT c.id, c.lead_id, c.requested_at, c.time_known, c.dial_count, c.talk_seconds, c.to_e164, c.from_e164, c.channel,
-              o.outcome_code, oc.label outcome_label, coalesce(oc.counts_as_human_contact, 0) contact, oc.grp outcome_group, n.label from_label,
+              o.outcome_code, oc.label outcome_label, coalesce(oc.counts_as_human_contact, 0) contact, coalesce(o.do_not_call, 0) do_not_call, oc.grp outcome_group, n.label from_label,
               l.county_key, l.county, l.state, l.lead_type, l.batch_id, l.time_zone, b.name batch_name,
               trim(coalesce(l.first_name,'') || ' ' || coalesce(l.last_name,'')) lead_name
        FROM call c JOIN lead l ON l.id = c.lead_id JOIN import_batch b ON b.id = l.batch_id
@@ -413,7 +415,7 @@ function callOut(c: CallRow) {
   return {
     id: c.id, lead_id: c.lead_id, requested_at: c.requested_at, time_known: c.time_known, lead_name: c.lead_name,
     county: c.county, state: c.state, to_e164: c.to_e164, from_label: c.from_label, outcome_code: c.outcome_code,
-    outcome: c.outcome_label, dials: c.dial_count, talk_seconds: c.talk_seconds, channel: c.channel,
+    outcome: c.outcome_label, do_not_call: c.do_not_call, dials: c.dial_count, talk_seconds: c.talk_seconds, channel: c.channel,
   };
 }
 function leadOut(l: LeadRow) {
@@ -466,6 +468,7 @@ export function reportCalls(db: DB, f: ReportFilter) {
       outcome_code: c.outcome_code ?? '',
       outcome: c.outcome_label ?? '',
       contact: c.contact ? 'yes' : 'no',
+      do_not_call: c.do_not_call ? 'yes' : 'no',
       dials: c.dial_count,
       talk_seconds: c.talk_seconds ?? '',
       channel: c.channel,
@@ -483,6 +486,7 @@ export function reportJson(db: DB, f: ReportFilter) {
       all_time: 'best_time, by_batch and benchmarks are all-time for the leads in the county / area-code filter, not just this date range.',
       dials_vs_attempts: 'An attempt is one logged call to a lead; one attempt can be several dials (redials of the same number).',
       contact: 'A contact is a call whose outcome counts as talking to a person. Conversations are calls with 2 minutes or more of talk time.',
+      do_not_call: 'do_not_call: the person asked not to be called again. It sits beside the outcome, and the lead goes to the dead pile.',
       rates: 'Rates are fractions from 0 to 1 (null when there is nothing to divide by). Money is in cents.',
       caller_id_match: 'local: the caller ID area code is one set for the lead\'s county (or the lead\'s own area code); out_of_area: it is not; unknown: no caller ID recorded.',
     },

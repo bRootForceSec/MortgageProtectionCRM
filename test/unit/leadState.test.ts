@@ -25,6 +25,15 @@ describe('deriveLeadState', () => {
     expect(s.status).toBe('dead');
   });
 
+  it('the Do not call tick sends the lead to the dead pile, whatever the outcome', () => {
+    const s = deriveLeadState({
+      ...empty,
+      calls: [call('c1', '2026-10-17T10:00:00.000Z')],
+      outcomes: [out('c1', 'no_appt', '2026-10-17T10:01:00.000Z', { grp: 'contact', counts_as_human_contact: 1, do_not_call: 1 })],
+    }, NOW);
+    expect(s).toMatchObject({ status: 'dead', preferred_number_id: 'n1' });
+  });
+
   it('restore after dead brings the lead back', () => {
     const s = deriveLeadState({
       ...empty,

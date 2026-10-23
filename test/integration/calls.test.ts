@@ -1,4 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { tempDb, sampleCsv, dueLeads } from '../helpers.js';
 import { parseSpreadsheet } from '../../src/server/domain/spreadsheet.js';
 import { suggestMapping } from '../../src/server/domain/mapping.js';
@@ -6,6 +9,7 @@ import { commitImport } from '../../src/server/domain/importer.js';
 import { logManualCall, changeOutcome, currentOutcome, addLeadAction, voidCall } from '../../src/server/domain/calls.js';
 import { DomainError } from '../../src/server/core/errors.js';
 import { addToCallList } from '../../src/server/domain/callList.js';
+import { mapSheetStatus } from '../../src/server/domain/sheetHistory.js';
 import { buildReport } from '../../src/server/domain/reports.js';
 import { rebuildLeadState, verifyLeadState } from '../../src/server/domain/leadState.js';
 import type { DB } from '../../src/server/db/connection.js';
@@ -25,6 +29,7 @@ beforeEach(async () => {
   db.prepare("INSERT INTO caller_number (id, e164, label, created_at) VALUES (?, '+16145550199', 'Line A', ?)").run(num, new Date().toISOString());
 });
 
+const MIGRATIONS = path.join(path.dirname(fileURLToPath(import.meta.url)), '../../src/server/db/migrations');
 const key = () => `k-${uuidv7()}`;
 
 describe('manual call logging', () => {
@@ -81,18 +86,48 @@ describe('manual call logging', () => {
     expect(dueLeads(db).find((l) => l.id === jane)).toMatchObject({ status: 'callback' });
   });
 
-  it('Do not call (key 4) counts as reaching the lead, goes to the dead pile and stays off call lists', () => {
-    logManualCall(db, { lead_id: jane, idempotency_key: key(), outcome_code: 'dnc_request', from_number_id: num });
+  it('the Do not call tick: counts as reaching the lead, goes to the dead pile and stays off call lists', () => {
+    expect(() => logManualCall(db, { lead_id: jane, idempotency_key: key(), outcome_code: 'dnc_request' })).toThrow(/retired/);
+    const r = logManualCall(db, { lead_id: jane, idempotency_key: key(), outcome_code: 'no_appt', do_not_call: true, from_number_id: num });
     expect((db.prepare('SELECT status FROM lead_state WHERE lead_id = ?').get(jane) as any).status).toBe('dead');
     expect(dueLeads(db).map((l) => l.id)).not.toContain(jane);
     expect(addToCallList(db, [jane])).toEqual({ added: 0, already: 0, not_callable: 1 });
     const day = new Date(Date.now() - 86_400_000).toISOString();
-    const r = buildReport(db, { from: day, to: new Date(Date.now() + 86_400_000).toISOString(), tz: 'America/New_York' });
-    expect(r.activity).toMatchObject({ attempts: 1, contacts: 1, bad_numbers: 0 });
+    const rep = buildReport(db, { from: day, to: new Date(Date.now() + 86_400_000).toISOString(), tz: 'America/New_York' });
+    expect(rep.activity).toMatchObject({ attempts: 1, contacts: 1, bad_numbers: 0 });
     // The caller ID that reached them is remembered, as for any pickup.
     expect((db.prepare('SELECT preferred_number_id FROM lead_state WHERE lead_id = ?').get(jane) as any).preferred_number_id).toBe(num);
-    addLeadAction(db, jane, 'restore', 'asked to be called after all');
+    // Changing the outcome keeps the tick unless you untick it.
+    const cur = currentOutcome(db, r.call_id)!;
+    changeOutcome(db, r.call_id, { outcome_code: 'appointment', expected_current_id: cur.id });
+    expect(currentOutcome(db, r.call_id)).toMatchObject({ outcome_code: 'appointment', do_not_call: 1 });
+    expect((db.prepare('SELECT status FROM lead_state WHERE lead_id = ?').get(jane) as any).status).toBe('dead');
+    changeOutcome(db, r.call_id, { outcome_code: 'no_appt', expected_current_id: currentOutcome(db, r.call_id)!.id, do_not_call: false });
     expect((db.prepare('SELECT status FROM lead_state WHERE lead_id = ?').get(jane) as any).status).toBe('retry');
+  });
+
+  it('a spreadsheet status of "do not call" or "dnc" imports as Talked, no appt with the tick', () => {
+    expect(mapSheetStatus('Do Not Call')).toEqual({ outcome: 'no_appt', do_not_call: true });
+    expect(mapSheetStatus('DNC')).toEqual({ outcome: 'no_appt', do_not_call: true });
+  });
+
+  it('undoing a Do not call call takes the lead out of the dead pile and hands the tick back', () => {
+    const r = logManualCall(db, { lead_id: jane, idempotency_key: key(), outcome_code: 'no_appt', do_not_call: true });
+    expect(voidCall(db, r.call_id)).toMatchObject({ outcome_code: 'no_appt', do_not_call: true });
+    expect((db.prepare('SELECT status FROM lead_state WHERE lead_id = ?').get(jane) as any).status).toBe('new');
+  });
+
+  it('turns calls saved as the old "Do not call" outcome into Talked, no appt with the tick', () => {
+    const r = logManualCall(db, { lead_id: jane, idempotency_key: key(), outcome_code: 'no_appt' });
+    db.prepare("UPDATE call_outcome SET outcome_code = 'dnc_request', note = 'asked' WHERE call_id = ?").run(r.call_id);
+    const sql = fs.readFileSync(path.join(MIGRATIONS, '017_do_not_call_tick.sql'), 'utf8');
+    db.exec(sql.slice(sql.indexOf('INSERT INTO call_outcome'), sql.indexOf('-- Back to five')));
+    expect(currentOutcome(db, r.call_id)).toMatchObject({ outcome_code: 'no_appt', do_not_call: 1, note: 'asked' });
+    const old = db.prepare("SELECT id, entered_at FROM call_outcome WHERE call_id = ? AND outcome_code = 'dnc_request'").get(r.call_id) as any;
+    expect(currentOutcome(db, r.call_id)).toMatchObject({ supersedes_id: old.id, entered_at: old.entered_at });
+    expect(currentOutcome(db, r.call_id)!.id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+    rebuildLeadState(db, [jane]);
+    expect((db.prepare('SELECT status FROM lead_state WHERE lead_id = ?').get(jane) as any).status).toBe('dead');
   });
 
   it('a lead can still go to the dead pile from the lead page, and be restored', () => {
@@ -104,14 +139,13 @@ describe('manual call logging', () => {
     expect((db.prepare('SELECT status FROM lead_state WHERE lead_id = ?').get(jane) as any).status).toBe('retry');
   });
 
-  it('offers six outcomes on keys 1 to 6', () => {
+  it('offers five outcomes on keys 1 to 5', () => {
     expect(db.prepare('SELECT hotkey, code, label FROM outcome_code WHERE active = 1 ORDER BY sort_order').all()).toEqual([
       { hotkey: '1', code: 'no_answer', label: 'No answer' },
       { hotkey: '2', code: 'no_appt', label: 'Talked, no appt' },
       { hotkey: '3', code: 'appointment', label: 'Appt set' },
-      { hotkey: '4', code: 'dnc_request', label: 'Do not call' },
-      { hotkey: '5', code: 'bad_number', label: 'Bad number' },
-      { hotkey: '6', code: 'callback', label: 'Callback' },
+      { hotkey: '4', code: 'bad_number', label: 'Bad number' },
+      { hotkey: '5', code: 'callback', label: 'Callback' },
     ]);
     logManualCall(db, { lead_id: jane, idempotency_key: key(), outcome_code: 'no_appt' });
     expect(db.prepare('SELECT status FROM lead_state WHERE lead_id = ?').get(jane)).toEqual({ status: 'retry' }); // back after the gap
