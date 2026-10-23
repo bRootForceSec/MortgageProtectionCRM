@@ -45,6 +45,7 @@ interface CallRow {
   to_e164: string;
   from_e164: string | null;
   channel: string;
+  batch_name: string;
 }
 
 interface LeadRow {
@@ -125,9 +126,9 @@ function loadCalls(db: DB, f: ReportFilter, range: boolean): CallRow[] {
     .prepare(
       `SELECT c.id, c.lead_id, c.requested_at, c.time_known, c.dial_count, c.talk_seconds, c.to_e164, c.from_e164, c.channel,
               o.outcome_code, oc.label outcome_label, coalesce(oc.counts_as_human_contact, 0) contact, oc.grp outcome_group, n.label from_label,
-              l.county_key, l.county, l.state, l.lead_type, l.batch_id, l.time_zone,
+              l.county_key, l.county, l.state, l.lead_type, l.batch_id, l.time_zone, b.name batch_name,
               trim(coalesce(l.first_name,'') || ' ' || coalesce(l.last_name,'')) lead_name
-       FROM call c JOIN lead l ON l.id = c.lead_id
+       FROM call c JOIN lead l ON l.id = c.lead_id JOIN import_batch b ON b.id = l.batch_id
        LEFT JOIN call_outcome o ON o.call_id = c.id AND NOT EXISTS (SELECT 1 FROM call_outcome x WHERE x.supersedes_id = o.id)
        LEFT JOIN outcome_code oc ON oc.code = o.outcome_code
        LEFT JOIN caller_number n ON n.id = c.from_number_id
@@ -162,21 +163,22 @@ function loadLeads(db: DB, f: ReportFilter, calls: CallRow[]): LeadRow[] {
 // ---------- local time helpers ----------
 
 const fmts = new Map<string, Intl.DateTimeFormat>();
-function localParts(iso: string, tz: string | null | undefined, fallback: string): { hour: number; weekday: number } {
+const PARTS: Intl.DateTimeFormatOptions = { hour: 'numeric', minute: '2-digit', hourCycle: 'h23', weekday: 'short', year: 'numeric', month: '2-digit', day: '2-digit' };
+function localParts(iso: string, tz: string | null | undefined, fallback: string): { hour: number; weekday: number; date: string; time: string } {
   const zone = tz || fallback;
   let f = fmts.get(zone);
   if (!f) {
     try {
-      f = new Intl.DateTimeFormat('en-US', { timeZone: zone, hour: 'numeric', hourCycle: 'h23', weekday: 'short' });
+      f = new Intl.DateTimeFormat('en-US', { timeZone: zone, ...PARTS });
     } catch {
-      f = new Intl.DateTimeFormat('en-US', { timeZone: fallback, hour: 'numeric', hourCycle: 'h23', weekday: 'short' });
+      f = new Intl.DateTimeFormat('en-US', { timeZone: fallback, ...PARTS });
     }
     fmts.set(zone, f);
   }
-  const parts = f.formatToParts(new Date(iso));
-  const hour = Number(parts.find((p) => p.type === 'hour')?.value ?? 0) % 24;
-  const weekday = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].indexOf(parts.find((p) => p.type === 'weekday')?.value ?? 'Sun');
-  return { hour, weekday };
+  const p = Object.fromEntries(f.formatToParts(new Date(iso)).map((x) => [x.type, x.value]));
+  const hour = Number(p.hour ?? 0) % 24;
+  const weekday = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].indexOf(p.weekday ?? 'Sun');
+  return { hour, weekday, date: `${p.year}-${p.month}-${p.day}`, time: `${String(hour).padStart(2, '0')}:${p.minute}` };
 }
 
 // ---------- building ----------
@@ -205,6 +207,15 @@ function callerMatch(c: CallRow, countyCodes: Map<string, Set<string>>): CallerM
   if (!from) return 'unknown';
   const codes = (c.county_key && countyCodes.get(c.county_key)) || new Set([areaCode(c.to_e164)].filter(Boolean) as string[]);
   return codes.has(from) ? 'local' : 'out_of_area';
+}
+function loadCountyCodes(db: DB) {
+  const countyCodes = new Map<string, Set<string>>();
+  for (const r of db.prepare('SELECT county_key, area_code FROM county_area_code').all() as { county_key: string; area_code: string }[]) {
+    const set = countyCodes.get(r.county_key) ?? new Set<string>();
+    set.add(r.area_code);
+    countyCodes.set(r.county_key, set);
+  }
+  return countyCodes;
 }
 const BATCH_LEADS: LeadMetric[] = ['leads', 'cost', 'never_called', 'reached', 'booked'];
 
@@ -249,12 +260,7 @@ function buildGroups(db: DB, f: ReportFilter) {
   const allByType = groupBy(all, (c) => c.lead_type ?? '');
   const typeGroups: Group[] = [...typeLeads].map(([k, ls]) => ({ key: k, calls: allByType.get(k) ?? [], leads: ls }));
 
-  const countyCodes = new Map<string, Set<string>>();
-  for (const r of db.prepare('SELECT county_key, area_code FROM county_area_code').all() as { county_key: string; area_code: string }[]) {
-    const set = countyCodes.get(r.county_key) ?? new Set<string>();
-    set.add(r.area_code);
-    countyCodes.set(r.county_key, set);
-  }
+  const countyCodes = loadCountyCodes(db);
   const byMatch = groupBy(inRange, (c) => callerMatch(c, countyCodes));
   // Leads that called you back in these dates count under the caller ID of your last call to them before that.
   const callsByLead = groupBy(all, (c) => c.lead_id);
@@ -430,6 +436,61 @@ function leadRowsById(db: DB, ids: string[]) {
   );
 }
 
+// ---------- per-call export ----------
+
+/**
+ * Every call in the date range, one row each, for spreadsheets, other systems or analysis.
+ * Includes calls imported from a spreadsheet's Status column (time_known = no), which Activity leaves out.
+ * Health fields are never included.
+ */
+export function reportCalls(db: DB, f: ReportFilter) {
+  const countyCodes = loadCountyCodes(db);
+  return loadCalls(db, f, true).map((c) => {
+    const t = localParts(c.requested_at, f.tz, f.tz);
+    return {
+      call_id: c.id,
+      date: t.date,
+      time: c.time_known ? t.time : '',
+      time_known: c.time_known ? 'yes' : 'no',
+      called_at_utc: c.requested_at,
+      lead_id: c.lead_id,
+      lead_name: c.lead_name,
+      lead_phone: c.to_e164,
+      county: c.county ?? '',
+      state: c.state ?? '',
+      lead_type: c.lead_type ?? '',
+      batch: c.batch_name,
+      caller_id: c.from_e164 ?? '',
+      caller_id_label: c.from_label ?? '',
+      caller_id_match: callerMatch(c, countyCodes),
+      outcome_code: c.outcome_code ?? '',
+      outcome: c.outcome_label ?? '',
+      contact: c.contact ? 'yes' : 'no',
+      dials: c.dial_count,
+      talk_seconds: c.talk_seconds ?? '',
+      channel: c.channel,
+    };
+  });
+}
+
+/** The report and its calls in one JSON document, with what each number means, for another system or an AI to read. */
+export function reportJson(db: DB, f: ReportFilter) {
+  return {
+    exported_at: new Date().toISOString(),
+    notes: {
+      date_range: `Calls from ${f.from} up to (not including) ${f.to}. Local dates and times are in ${f.tz}.`,
+      activity: 'Activity and by_hour leave out calls imported from a spreadsheet (time_known = no); by_county and calls include them.',
+      all_time: 'best_time, by_batch and benchmarks are all-time for the leads in the county / area-code filter, not just this date range.',
+      dials_vs_attempts: 'An attempt is one logged call to a lead; one attempt can be several dials (redials of the same number).',
+      contact: 'A contact is a call whose outcome counts as talking to a person. Conversations are calls with 2 minutes or more of talk time.',
+      rates: 'Rates are fractions from 0 to 1 (null when there is nothing to divide by). Money is in cents.',
+      caller_id_match: 'local: the caller ID area code is one set for the lead\'s county (or the lead\'s own area code); out_of_area: it is not; unknown: no caller ID recorded.',
+    },
+    summary: buildReport(db, f),
+    calls: reportCalls(db, f),
+  };
+}
+
 // ---------- Excel ----------
 
 const CALLER_LABELS: Record<CallerMatch, string> = { local: 'Local number', out_of_area: 'Out-of-area number', unknown: 'No caller ID recorded' };
@@ -438,8 +499,8 @@ const pct = (x: number | null) => (x == null ? '' : Math.round(x * 1000) / 10);
 const money = (c: number | null) => (c == null ? '' : Math.round(c) / 100);
 const hourLabel = (h: number) => `${((h + 11) % 12) + 1} ${h < 12 ? 'AM' : 'PM'}`;
 
-/** The report as sheets for Excel. */
-export function reportSheets(r: ReturnType<typeof buildReport>) {
+/** The report as sheets for Excel, with every call in the range on the last sheet. */
+export function reportSheets(r: ReturnType<typeof buildReport>, calls: ReturnType<typeof reportCalls>) {
   const a = r.activity;
   return [
     {
@@ -490,6 +551,7 @@ export function reportSheets(r: ReturnType<typeof buildReport>) {
         cost_per_booked: money(b.cost_per_booked),
       })),
     },
+    { name: 'Calls', rows: calls },
   ];
 }
 
