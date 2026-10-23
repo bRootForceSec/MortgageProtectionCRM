@@ -304,7 +304,7 @@ export function CallingPage() {
     setSaved(null);
     try {
       const r = await api.post<{
-        lead_id: string; outcome_code: string | null; callback_due_at: string | null; callback_any_time: boolean;
+        lead_id: string; outcome_code: string | null; callback_due_at: string | null; callback_any_time: boolean; do_not_call: boolean;
         dial_count: number; talk_seconds: number | null; lead_seconds: number | null; from_number_id: string | null; note: string | null;
       }>(`/calls/${s.callId}/void`, { reason: 'undo' });
       const cb = callbackFields(r.callback_due_at, r.callback_any_time, s.tz);
@@ -318,6 +318,7 @@ export function CallingPage() {
           minutes: r.talk_seconds ? String(Math.round(r.talk_seconds / 60)) : '',
           note: r.note ?? '',
           numberId: r.from_number_id,
+          doNotCall: r.do_not_call,
         },
       });
       // The clock on this lead carries on from where it was when you saved.

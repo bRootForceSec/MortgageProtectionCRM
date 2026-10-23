@@ -91,6 +91,9 @@ a { color: var(--accent); }
 .outcomes button kbd { margin-right: 6px; }
 .outcomes button.active { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
 .outcomes button.dead { border-color: var(--bad); }
+.outcomes label.dnc { padding: 7px 9px; border: 1px dashed var(--bad); border-radius: 6px; background: var(--panel); cursor: pointer; }
+.outcomes label.dnc kbd { margin-right: 2px; }
+.outcomes label.dnc.active { background: color-mix(in srgb, var(--bad) 15%, var(--panel)); color: var(--bad); border-style: solid; font-weight: 600; }
 kbd { font-family: ui-monospace, monospace; font-size: 11px; padding: 0 5px; border: 1px solid var(--border); border-bottom-width: 2px; border-radius: 4px; background: var(--panel-2); color: var(--text); }
 
 .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
@@ -249,7 +252,7 @@ table.grid tr.selected { background: var(--selected); }
 .calling .facts { grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 4px 12px; margin: 8px 0; }
 .calling .log-box { margin-top: 6px; padding-top: 8px; }
 .calling .outcomes { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 4px; margin: 6px 0; }
-.calling .outcomes button { padding: 5px 8px; }
+.calling .outcomes button, .calling .outcomes label.dnc { padding: 5px 8px; }
 .calling .queue-list li { padding: 5px 7px; }
 .calls-notes { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; margin-top: 10px; border-top: 1px solid var(--border); padding-top: 8px; }
 .calls-notes > div { min-width: 0; }

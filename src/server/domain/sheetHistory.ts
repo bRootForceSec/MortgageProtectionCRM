@@ -8,6 +8,8 @@ import { uuidv7, nowIso } from '../ids.js';
 
 export interface SheetStatusMapping {
   outcome: string;
+  /** They asked not to be called: the call gets the "Do not call" tick. */
+  do_not_call?: boolean;
 }
 
 const STATUS_MAP: Record<string, SheetStatusMapping> = {
@@ -21,8 +23,8 @@ const STATUS_MAP: Record<string, SheetStatusMapping> = {
   disconnected: { outcome: 'bad_number' },
   'wrong number': { outcome: 'bad_number' },
   'bad number': { outcome: 'bad_number' },
-  'do not call': { outcome: 'dnc_request' },
-  dnc: { outcome: 'dnc_request' },
+  'do not call': { outcome: 'no_appt', do_not_call: true },
+  dnc: { outcome: 'no_appt', do_not_call: true },
   // How appointments went is kept in Unitrust; here they all mean "appointment set". The call's note keeps the original words.
   'appt set': { outcome: 'appointment' },
   'appointment set': { outcome: 'appointment' },
@@ -62,7 +64,7 @@ export function recordSheetHistory(
      VALUES (?, ?, 'manual', ?, 'sheet.status', 'call.from_sheet', ?, ?, ?)`,
   );
   const insOutcome = db.prepare(
-    `INSERT INTO call_outcome (id, call_id, outcome_code, entered_at, callback_due_at, note) VALUES (?,?,?,?,NULL,?)`,
+    `INSERT INTO call_outcome (id, call_id, outcome_code, entered_at, callback_due_at, note, do_not_call) VALUES (?,?,?,?,NULL,?,?)`,
   );
   const result: SheetHistoryResult = { calls: 0, unknown: [] };
   for (const it of items) {
@@ -75,7 +77,7 @@ export function recordSheetHistory(
     const note = `From spreadsheet status "${it.status}" (exact time unknown, on or before ${at.slice(0, 10)})`;
     insCall.run(callId, it.leadId, it.phone, at, `sheet:${it.leadId}`, now);
     insEvent.run(uuidv7(), callId, `sheet:${callId}`, at, now, JSON.stringify({ status: it.status }));
-    insOutcome.run(uuidv7(), callId, m.outcome, now, note);
+    insOutcome.run(uuidv7(), callId, m.outcome, now, note, m.do_not_call ? 1 : 0);
     result.calls++;
   }
   return result;

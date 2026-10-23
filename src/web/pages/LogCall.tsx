@@ -27,6 +27,8 @@ export interface FormValues {
   minutes: string;
   note: string;
   numberId: string | null;
+  /** The "Do not call" tick. */
+  doNotCall?: boolean;
 }
 
 export interface Saved {
@@ -90,6 +92,7 @@ export function LogCall({
   const [time, setTime] = useState(restore?.time ?? '');
   const [minutes, setMinutes] = useState(restore?.minutes ?? '');
   const [note, setNote] = useState(restore?.note ?? '');
+  const [doNotCall, setDoNotCall] = useState(!!restore?.doNotCall);
   const [saving, setSaving] = useState(false);
   const [key, setKey] = useState(newKey());
   const dayRef = useRef<HTMLInputElement>(null);
@@ -138,6 +141,7 @@ export function LogCall({
         outcome_code: codeNow,
         callback_due_at: cb ? cb.at.toISOString() : null,
         callback_any_time: cb ? cb.anyTime : null,
+        do_not_call: doNotCall,
         talk_seconds: minutes ? Number(minutes) * 60 : timerSeconds(o),
         dial_count: attempt.dials,
         lead_seconds: Math.round((Date.now() - attempt.shownAt) / 1000),
@@ -149,17 +153,18 @@ export function LogCall({
       setTime('');
       setMinutes('');
       setNote('');
+      setDoNotCall(false);
       setKey(newKey());
       await onSaved({
         callId: r.call_id, leadId: d.lead.id, name: [d.lead.first_name, d.lead.last_name].filter(Boolean).join(' ') || 'this lead',
-        label: o?.label ?? codeNow, dials: attempt.dials, at: Date.now(), tz: d.lead.time_zone ?? null,
+        label: `${o?.label ?? codeNow}${doNotCall ? ', do not call' : ''}`, dials: attempt.dials, at: Date.now(), tz: d.lead.time_zone ?? null,
       });
     } catch (e: any) {
       toast(e.message, 'error');
     } finally {
       setSaving(false);
     }
-  }, [code, saving, meta, day, time, key, numberId, minutes, note, d.lead.id, toast, onSaved, attempt]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [code, saving, meta, day, time, key, numberId, minutes, note, doNotCall, d.lead.id, toast, onSaved, attempt]); // eslint-disable-line react-hooks/exhaustive-deps
   const saveRef = useRef(save);
   saveRef.current = save;
 
@@ -174,6 +179,11 @@ export function LogCall({
       }
       if (isTyping(e) || e.ctrlKey || e.metaKey || e.altKey) return;
       if (e.key === 'Escape') return setCode(null);
+      if (keys.actions.do_not_call?.includes(normKey(e.key))) {
+        e.preventDefault();
+        setDoNotCall((v) => !v);
+        return;
+      }
       // Action keys win over outcome keys (Settings warns about clashes).
       if (Object.values(keys.actions).some((ks) => ks.includes(normKey(e.key)))) return;
       const c = keys.outcomes.get(normKey(e.key));
@@ -187,7 +197,7 @@ export function LogCall({
   }, [keys, code, save, choose, active]);
 
   if (!d.lead.phone_e164 && !d.lead.phone2_e164 && !d.lead.phone3_e164) return <p className="error">This lead has no valid phone number.</p>;
-  if (d.state?.status === 'dead') return <RestoreBox d={d} onSaved={onRefresh} label={d.state.block_reason ? `${d.state.block_reason}.` : d.state?.last_outcome_code === 'dnc_request' ? 'Asked not to be called again. This lead is in the dead pile.' : 'This lead is in the dead pile.'} />;
+  if (d.state?.status === 'dead') return <RestoreBox d={d} onSaved={onRefresh} label={d.state.block_reason ? `${d.state.block_reason}.` : askedNotToCall(d) ? 'Asked not to be called again. This lead is in the dead pile.' : 'This lead is in the dead pile.'} />;
 
   const k = (a: keyof KeyMap['actions']) => keyLabel(keys.actions[a]?.[0] ?? '');
   return (
@@ -248,6 +258,10 @@ export function LogCall({
             {keys.outcomeKey[o.code] && <kbd>{keyLabel(keys.outcomeKey[o.code]!)}</kbd>}{o.label}
           </button>
         ))}
+        <label className={`choice-inline dnc ${doNotCall ? 'active' : ''}`} title="They asked not to be called again. Pick what happened on the call too; the lead goes to the dead pile.">
+          <input type="checkbox" checked={doNotCall} onChange={(e) => setDoNotCall(e.target.checked)} />
+          {k('do_not_call') && <kbd>{k('do_not_call')}</kbd>}Do not call
+        </label>
       </div>
       {code && (
         <div className="row" style={{ alignItems: 'flex-end' }}>
@@ -315,4 +329,10 @@ function RestoreBox({ d, onSaved, label }: { d: LeadDetail; onSaved: () => Promi
 /** Outcomes that need nothing more than the key: no callback time, and nobody was reached (so no talk time or note). */
 function instantOutcome(o: { requires_callback_time: number | boolean; counts_as_human_contact: number | boolean }) {
   return !o.requires_callback_time && !o.counts_as_human_contact;
+}
+
+/** The lead's latest call has the "Do not call" tick. */
+function askedNotToCall(d: LeadDetail) {
+  const last = d.calls.filter((c) => !c.voided_at).sort((a, b) => b.requested_at.localeCompare(a.requested_at))[0];
+  return !!last?.outcomes.some((o) => !o.superseded && o.do_not_call);
 }

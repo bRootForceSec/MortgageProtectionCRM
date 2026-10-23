@@ -37,6 +37,8 @@ export interface LeadFacts {
     callback_due_at: string | null;
     callback_any_time?: number;
     lead_effect?: string | null;
+    /** Ticked "Do not call": the lead goes to the dead pile. */
+    do_not_call?: number;
   }[];
   actions: { action: 'skip' | 'mark_dead' | 'restore'; created_at: string }[];
   /** The lead's numbers in order: main, alternate, called-in-from. Left out in some tests: then only the main number counts. */
@@ -87,7 +89,7 @@ export function deriveLeadState(f: LeadFacts, now: string, retryGap = RETRY_GAP_
 
   const deadAt = [
     ...actions.filter((a) => a.action === 'mark_dead').map((a) => a.created_at),
-    ...outcomes.filter((o) => o.marks_dead).map((o) => o.entered_at),
+    ...outcomes.filter((o) => o.marks_dead || o.do_not_call).map((o) => o.entered_at),
   ].sort().at(-1);
 
   // Calls from a spreadsheet have no real time, so they don't start the retry gap.
@@ -179,7 +181,7 @@ export function loadLeadFacts(db: DB, leadId: string): LeadFacts {
       .all(leadId) as LeadFacts['calls'],
     outcomes: stmt(
         db,
-        `SELECT o.call_id, o.entered_at, o.outcome_code, c.grp, c.marks_dead, c.counts_as_human_contact, o.callback_due_at, o.callback_any_time, c.lead_effect
+        `SELECT o.call_id, o.entered_at, o.outcome_code, c.grp, c.marks_dead, c.counts_as_human_contact, o.callback_due_at, o.callback_any_time, c.lead_effect, o.do_not_call
          FROM call_outcome o
          JOIN call ON call.id = o.call_id
          JOIN outcome_code c ON c.code = o.outcome_code
@@ -225,7 +227,7 @@ export function loadPhoneBlocks(db: DB, leadId: string, phones: string[]): Phone
               (SELECT max(a.created_at) FROM lead_action a WHERE a.lead_id = l.id AND a.action = 'restore') restored,
               (SELECT max(a.created_at) FROM lead_action a WHERE a.lead_id = l.id AND a.action = 'mark_dead') dead_action,
               (SELECT max(o.entered_at) FROM call c JOIN call_outcome o ON o.call_id = c.id JOIN outcome_code oc ON oc.code = o.outcome_code
-                 WHERE c.lead_id = l.id AND c.voided_at IS NULL AND oc.marks_dead = 1
+                 WHERE c.lead_id = l.id AND c.voided_at IS NULL AND (oc.marks_dead = 1 OR o.do_not_call = 1)
                    AND NOT EXISTS (SELECT 1 FROM call_outcome s WHERE s.supersedes_id = o.id)) dead_outcome
        FROM lead l
        WHERE l.id != @id AND l.id IN (

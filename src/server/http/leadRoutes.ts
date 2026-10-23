@@ -137,6 +137,7 @@ export function registerLeadRoutes(app: FastifyInstance, deps: { db: DB; config:
       outcome_code: z.string().max(40),
       callback_due_at: z.string().max(40).nullish(),
       callback_any_time: z.boolean().nullish(),
+      do_not_call: z.boolean().nullish(),
       note: z.string().max(10000).nullish(),
     }).parse(req.body);
     return logManualCall(db, { ...b, lead_id: id });
@@ -149,6 +150,7 @@ export function registerLeadRoutes(app: FastifyInstance, deps: { db: DB; config:
       expected_current_id: z.string().max(64).nullable(),
       callback_due_at: z.string().max(40).nullish(),
       callback_any_time: z.boolean().nullish(),
+      do_not_call: z.boolean().nullish(),
       note: z.string().max(10000).nullish(),
     }).parse(req.body);
     return changeOutcome(db, id, b);
