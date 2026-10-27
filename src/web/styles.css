@@ -336,3 +336,17 @@ table.grid td.pick, table.grid th.pick { width: 28px; text-align: center; }
 tr.group-row td { font-weight: 600; }
 tr.child-row td { background: var(--panel-2); }
 th button.sort { background: none; border: 0; padding: 0; font: inherit; font-weight: inherit; color: inherit; cursor: pointer; }
+
+/* The funnel graphic, opened from the button in the Calling screen's corner. */
+.funnel-fab {
+  position: fixed; right: 14px; bottom: 14px; z-index: 20; width: 42px; height: 42px; border-radius: 50%;
+  display: grid; place-items: center; cursor: pointer; border: 1px solid #4f46e5;
+  background: radial-gradient(circle at 30% 30%, #1e1b4b, #070b1f); box-shadow: 0 0 14px rgba(232, 121, 249, .45);
+  transition: transform .15s, box-shadow .15s;
+}
+.funnel-fab:hover { transform: scale(1.1); box-shadow: 0 0 22px rgba(232, 121, 249, .8); }
+.funnel-back { align-items: center; padding: 12px 16px; background: rgba(2, 3, 12, .82); }
+.funnel-wrap { display: flex; flex-direction: column; align-items: center; gap: 8px; max-width: 100%; }
+.funnel-controls { justify-content: center; }
+.funnel-canvas { height: min(calc(100vh - 110px), 960px); aspect-ratio: 9 / 16; max-width: calc(100vw - 32px); border-radius: 14px; box-shadow: 0 0 40px rgba(129, 140, 248, .35); }
+.funnel-help { color: #c7d2fe; margin: 0; text-align: center; }

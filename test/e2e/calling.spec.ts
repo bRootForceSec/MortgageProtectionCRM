@@ -294,6 +294,21 @@ test('reports: numbers open the calls behind them', async ({ page }) => {
   await page.screenshot({ path: 'test-results/reports.png', fullPage: true });
 });
 
+test('the funnel button on the Calling screen shows the animated funnel', async ({ page }) => {
+  await page.goto(launchUrl);
+  await page.getByRole('button', { name: 'Calling', exact: true }).click();
+  await page.getByRole('button', { name: 'Show my funnel' }).click();
+  const dialog = page.getByRole('dialog', { name: 'My funnel' });
+  await expect(dialog.getByRole('img', { name: /Funnel/ })).toBeVisible();
+  await dialog.getByRole('button', { name: 'All time' }).click();
+  await page.waitForTimeout(1800); // let the numbers count up
+  await dialog.screenshot({ path: 'test-results/funnel.png' });
+  // Keys go to the funnel, not the Calling screen, and Escape closes it.
+  await page.keyboard.press('Escape');
+  await expect(dialog).toHaveCount(0);
+  await expect(page.locator('.phone-big')).toBeVisible();
+});
+
 test('fix the lead type on every lead in a batch, and see it by lead type in Reports', async ({ page }) => {
   await page.goto(launchUrl);
   await page.getByRole('button', { name: 'Leads', exact: true }).click();
