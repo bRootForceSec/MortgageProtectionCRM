@@ -162,13 +162,12 @@ function TodayStats() {
     </span>
   );
   return (
-    <div className="stats" title="Today, from your logged calls. Set daily goals in Settings.">
+    <div className="stats" title="Today: dials, leads called, pickups and appointments set, from your logged calls. Set daily goals in Settings.">
+      {/* The same four steps as the funnel on the Calling screen. */}
       <Goal label="Dials" n={s.dials} goal={g.dials} />
-      <span>Calls <b>{s.attempts}</b></span>
-      <span>Leads <b>{s.unique_leads}</b></span>
-      <Goal label="Contacts" n={s.human_contacts} goal={g.contacts} />
-      <span>Callbacks <b>{s.callbacks}</b></span>
-      <Goal label="Appointments" n={s.appointments} goal={g.appointments} />
+      <span title="People called (one lead can get several dials)">Leads called <b>{s.unique_leads}</b></span>
+      <Goal label="Pickups" n={s.human_contacts} goal={g.contacts} />
+      <Goal label="Appts set" n={s.appointments} goal={g.appointments} />
     </div>
   );
 }

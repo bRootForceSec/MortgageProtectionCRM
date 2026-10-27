@@ -113,8 +113,8 @@ export function CallingCard() {
         <label>Daily goals</label>
         <span className="row">
           <span>Dials <NumberField value={s.goals.dials} allowBlank onSave={(n) => set({ goals: { ...s.goals, dials: n } })} /></span>
-          <span>Contacts <NumberField value={s.goals.contacts} allowBlank onSave={(n) => set({ goals: { ...s.goals, contacts: n } })} /></span>
-          <span>Appointments <NumberField value={s.goals.appointments} allowBlank onSave={(n) => set({ goals: { ...s.goals, appointments: n } })} /></span>
+          <span>Pickups <NumberField value={s.goals.contacts} allowBlank onSave={(n) => set({ goals: { ...s.goals, contacts: n } })} /></span>
+          <span>Appts set <NumberField value={s.goals.appointments} allowBlank onSave={(n) => set({ goals: { ...s.goals, appointments: n } })} /></span>
           <span className="help">Shown in the top bar. Leave blank for none.</span>
         </span>
 
