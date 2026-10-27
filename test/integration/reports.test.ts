@@ -101,6 +101,42 @@ describe('reports', () => {
     expect(b).toMatchObject({ booked: 2 });
   });
 
+  it('breaks the numbers down by lead type', () => {
+    const b = buildReport(db, range()).benchmarks.find((x) => x.key === 'B')!;
+    // Amy, Ben and Cal: all called, Amy and Ben reached, Amy booked. Cal's spreadsheet call counts too (all time).
+    expect(b).toMatchObject({ leads: 3, never_called: 0, dials: 6, attempts: 5, contacts: 2, appointments: 1, bad_numbers: 0, called_back: 0 });
+    expect(b.dials_per_lead).toBe(2);
+    expect(b.reached_rate).toBeCloseTo(2 / 3);
+    expect(b.booked_rate).toBeCloseTo(1 / 3);
+    expect(b.cost_per_reached).toBe(1050);
+  });
+
+  it('changes the lead type on every lead matching the filters, and the report follows', async () => {
+    const setType = (payload: object) => app.inject({ method: 'POST', url: '/api/leads/set-type', headers: write, payload });
+    const price = (code: string) => (db.prepare('SELECT price_cents FROM lead_type WHERE code = ?').get(code) as { price_cents: number | null }).price_cents;
+    // Every B lead (the imported batch, minus the two CI-A ones) becomes D.
+    expect((await setType({ lead_type: 'B', set_type: 'D' })).json()).toEqual({ changed: 3, matched: 3 });
+    let r = buildReport(db, range());
+    expect(r.benchmarks.find((x) => x.key === 'B')).toBeUndefined();
+    expect(r.benchmarks.find((x) => x.key === 'D')).toMatchObject({ leads: 3, booked: 1, cost: 3 * (price('D') ?? 0) });
+    expect(r.benchmarks.find((x) => x.key === 'CI-A')).toMatchObject({ leads: 2 });
+    // The old type and price are kept in each lead's change history.
+    expect(db.prepare("SELECT old_value, new_value FROM lead_change WHERE lead_id = ? AND field = 'lead_type'").all(id.Amy)).toEqual([{ old_value: 'B', new_value: 'D' }]);
+    expect(db.prepare("SELECT old_value FROM lead_change WHERE lead_id = ? AND field = 'price_cents'").get(id.Amy)).toEqual({ old_value: '700' });
+
+    // A whole batch, with leads already of that type left alone.
+    const batch = (db.prepare('SELECT batch_id FROM lead LIMIT 1').get() as { batch_id: string }).batch_id;
+    expect((await setType({ batch_id: batch, set_type: 'D' })).json()).toEqual({ changed: 2, matched: 5 });
+    // Clearing the type, then finding those leads with the "no lead type" filter.
+    expect((await setType({ search: 'Amy', set_type: null })).json()).toEqual({ changed: 1, matched: 1 });
+    expect((await app.inject({ url: '/api/leads?lead_type=none', headers: auth })).json().rows.map((x: any) => x.first_name)).toEqual(['Amy']);
+    r = buildReport(db, range());
+    expect(r.benchmarks.find((x) => x.key === '')).toMatchObject({ label: 'No lead type', leads: 1, cost: 0 });
+
+    expect((await setType({ set_type: 'NOPE' })).statusCode).toBe(400);
+    expect((await setType({ lead_type: 'D' })).statusCode).toBe(400);
+  });
+
   it('every number matches the rows behind it', () => {
     const f = range();
     const r = buildReport(db, f);
@@ -118,7 +154,7 @@ describe('reports', () => {
     for (const h of r.by_hour) for (const m of ['dials', 'attempts', 'contacts', 'appointments']) check('by_hour', String(h.hour), m, (h as any)[m]);
     for (const c of r.by_county) for (const m of ['leads', 'dials', 'attempts', 'contacts', 'appointments']) check('by_county', c.key, m, (c as any)[m]);
     for (const b of r.by_batch) for (const m of ['leads', 'cost', 'never_called', 'dials', 'reached', 'booked']) check('by_batch', b.key, m, (b as any)[m]);
-    for (const b of r.benchmarks) for (const m of ['leads', 'reached', 'booked']) check('benchmarks', b.key, m, (b as any)[m]);
+    for (const b of r.benchmarks) for (const m of ['leads', 'cost', 'never_called', 'dials', 'attempts', 'contacts', 'appointments', 'bad_numbers', 'called_back', 'reached', 'booked']) check('benchmarks', b.key, m, (b as any)[m]);
     for (const b of r.best_time) check('best_time', b.key, 'contacts', b.contacts);
     for (const c of r.by_caller) for (const m of ['dials', 'attempts', 'leads_called', 'contacts', 'appointments', 'callbacks']) check('by_caller', c.key, m, (c as any)[m]);
   });

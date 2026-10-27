@@ -318,7 +318,7 @@ function Benchmarks({ r, N, onSaved }: { r: Report; N: any; onSaved: () => void 
   return (
     <div className="card">
       <div className="row" style={{ justifyContent: 'space-between' }}>
-        <h3>Against the flier's benchmarks <span className="muted">(all time, by lead type)</span></h3>
+        <h3>By lead type <span className="muted">(all time, against the flier's benchmarks)</span></h3>
         {edit ? (
           <div className="row"><button className="btn small primary" onClick={save}>Save targets</button><button className="btn small" onClick={() => { setT(r.targets); setEdit(false); }}>Cancel</button></div>
         ) : (
@@ -327,14 +327,29 @@ function Benchmarks({ r, N, onSaved }: { r: Report; N: any; onSaved: () => void 
       </div>
       <div className="scroll-x">
         <table className="grid">
-          <thead><tr><th>Lead type</th><th>Leads</th><th>Reached</th><th>Booked</th><th>Booked per reached</th><th>$/booked</th></tr></thead>
+          <thead>
+            <tr>
+              <th>Lead type</th><th>Leads</th><th>Cost</th><th>Never called</th><th>Dials</th><th title="Dials per lead called">Dials/lead</th>
+              <th>Contacts</th><th>Appts</th><th>Bad numbers</th><th>Called you back</th>
+              <th title="Leads reached, and the share of leads called">Reached</th><th title="Leads booked, and the share of leads called">Booked</th>
+              <th>Booked per reached</th><th>$/reached</th><th>$/booked</th>
+            </tr>
+          </thead>
           <tbody>
             {r.benchmarks.map((b: any) => {
               const cell = (metric: string, label: string) => <td><N section="benchmarks" k={b.key} metric={metric} title={`${label}: ${b.label}`}>{b[metric]}</N></td>;
+              const withRate = (metric: string, label: string, rate: number | null) => (
+                <td><N section="benchmarks" k={b.key} metric={metric} title={`${label}: ${b.label}`}>{b[metric]}</N> <span className="muted small">{pct(rate)}</span></td>
+              );
               return (
                 <tr key={b.key}>
                   <td>{b.label}</td>
-                  {cell('leads', 'Leads')}{cell('reached', 'Reached')}{cell('booked', 'Booked')}
+                  {cell('leads', 'Leads')}
+                  <td>{fmtMoney(b.cost)}</td>
+                  {cell('never_called', 'Never called')}{cell('dials', 'Dials')}
+                  <td>{b.dials_per_lead == null ? '–' : b.dials_per_lead.toFixed(1)}</td>
+                  {cell('contacts', 'Contacts')}{cell('appointments', 'Appointments')}{cell('bad_numbers', 'Bad numbers')}{cell('called_back', 'Called you back')}
+                  {withRate('reached', 'Reached', b.reached_rate)}{withRate('booked', 'Booked', b.booked_rate)}
                   <td className={vs(b.booked_per_reached, b.booked_target)}>
                     {pct(b.booked_per_reached)}{' '}
                     {edit ? (
@@ -343,6 +358,7 @@ function Benchmarks({ r, N, onSaved }: { r: Report; N: any; onSaved: () => void 
                       <span className="muted">target {pct(b.booked_target)}</span>
                     )}
                   </td>
+                  <td>{b.cost_per_reached == null ? '–' : fmtMoney(b.cost_per_reached)}</td>
                   <td>{b.cost_per_booked == null ? '–' : fmtMoney(b.cost_per_booked)}</td>
                 </tr>
               );
@@ -351,7 +367,8 @@ function Benchmarks({ r, N, onSaved }: { r: Report; N: any; onSaved: () => void 
         </table>
       </div>
       <p className="help">
-        Targets start from the flier: A 4 of 5, A1 and AA 1 of 4, B 1 of 5, C 1 of 8, D 1 of 10. Sits and apps are tracked in Unitrust.
+        Each lead counts under its type now, so fixing a batch's type on Leads moves its history here too.
+        Reached and booked count leads; the small % is out of leads called. Targets start from the flier: A 4 of 5, A1 and AA 1 of 4, B 1 of 5, C 1 of 8, D 1 of 10. Sits and apps are tracked in Unitrust.
       </p>
     </div>
   );

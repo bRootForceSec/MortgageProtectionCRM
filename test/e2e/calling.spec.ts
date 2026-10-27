@@ -294,6 +294,29 @@ test('reports: numbers open the calls behind them', async ({ page }) => {
   await page.screenshot({ path: 'test-results/reports.png', fullPage: true });
 });
 
+test('fix the lead type on every lead in a batch, and see it by lead type in Reports', async ({ page }) => {
+  await page.goto(launchUrl);
+  await page.getByRole('button', { name: 'Leads', exact: true }).click();
+  await page.getByLabel('Batch').selectOption({ index: 1 });
+  const count = page.locator('.leads-tools .muted').first();
+  await expect(count).not.toHaveText(/^0 leads/);
+  const total = Number((await count.innerText()).match(/\d+/)![0]);
+  await page.getByRole('button', { name: 'Change lead type' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Change lead type' });
+  await dialog.getByLabel('New lead type').selectOption('C');
+  await dialog.getByRole('button', { name: `Change ${total} lead${total === 1 ? '' : 's'}` }).click();
+  await expect(page.getByText(/leads? changed to/)).toBeVisible();
+  await expect(dialog).toHaveCount(0);
+  await page.getByLabel('Lead type', { exact: true }).selectOption('C');
+  await expect(count).toHaveText(new RegExp(`^${total} lead`));
+
+  await page.getByRole('button', { name: 'Reports' }).click();
+  const byType = page.locator('.card', { has: page.getByRole('heading', { name: /By lead type/ }) });
+  await expect(byType.locator('tbody tr', { hasText: /^C\b/ }).locator('td').nth(1)).toHaveText(String(total));
+  await byType.scrollIntoViewIfNeeded();
+  await page.screenshot({ path: 'test-results/reports-by-lead-type.png' });
+});
+
 test('leads open full screen like the Calling page, and step through the list', async ({ page }) => {
   await page.goto(launchUrl);
   await page.getByRole('button', { name: 'Leads', exact: true }).click();

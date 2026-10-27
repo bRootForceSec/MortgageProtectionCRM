@@ -220,6 +220,8 @@ function loadCountyCodes(db: DB) {
   return countyCodes;
 }
 const BATCH_LEADS: LeadMetric[] = ['leads', 'cost', 'never_called', 'reached', 'booked'];
+const TYPE_LEADS: LeadMetric[] = [...BATCH_LEADS, 'called_back'];
+const TYPE_CALLS: CallMetric[] = ['dials', 'attempts', 'contacts', 'appointments', 'bad_numbers'];
 
 function groupBy<T>(xs: T[], key: (x: T) => string): Map<string, T[]> {
   const m = new Map<string, T[]>();
@@ -357,12 +359,16 @@ export function buildReport(db: DB, f: ReportFilter) {
       .sort((x, y) => (y.imported_at ?? '').localeCompare(x.imported_at ?? '')),
     benchmarks: g.typeGroups
       .map((t) => {
-        const m = leadMetrics(t.leads, BATCH_LEADS);
+        const m = leadMetrics(t.leads, TYPE_LEADS);
+        const called = m.leads - m.never_called;
         return {
           key: t.key,
           label: t.key ? types.get(t.key) ?? t.key : 'No lead type',
           ...m,
-          dials: CALL_METRICS.dials.val(t.calls),
+          ...callMetrics(t.calls, TYPE_CALLS),
+          dials_per_lead: ratio(CALL_METRICS.dials.val(t.calls), called),
+          reached_rate: ratio(m.reached, called),
+          booked_rate: ratio(m.booked, called),
           booked_per_reached: ratio(m.booked, m.reached),
           booked_target: targets.booked_per_contact[t.key] ?? null,
           ...leadRatios(m),
@@ -548,11 +554,14 @@ export function reportSheets(r: ReturnType<typeof buildReport>, calls: ReturnTyp
       })),
     },
     {
-      name: 'Benchmarks',
+      name: 'By lead type',
       rows: r.benchmarks.map((b) => ({
-        lead_type: b.label, leads: b.leads, reached: b.reached, booked: b.booked,
+        lead_type: b.label, leads: b.leads, cost: money(b.cost), never_called: b.never_called, dials: b.dials,
+        dials_per_lead: b.dials_per_lead == null ? '' : Math.round(b.dials_per_lead * 10) / 10,
+        contacts: b.contacts, appointments: b.appointments, bad_numbers: b.bad_numbers, called_you_back: b.called_back,
+        reached: b.reached, booked: b.booked, reached_pct: pct(b.reached_rate), booked_pct: pct(b.booked_rate),
         booked_per_reached_pct: pct(b.booked_per_reached), target_pct: pct(b.booked_target),
-        cost_per_booked: money(b.cost_per_booked),
+        cost_per_reached: money(b.cost_per_reached), cost_per_booked: money(b.cost_per_booked),
       })),
     },
     { name: 'Calls', rows: calls },
