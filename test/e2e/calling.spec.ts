@@ -79,7 +79,8 @@ test('import a sheet, log calls by keyboard, and set a callback', async ({ page 
   await expect(page.locator('.undo-bar')).toContainText('Talked, no appt');
   await expect(page.locator('.lead-name')).not.toHaveText(first);
   const second = await page.locator('.lead-name').innerText();
-  await expect(page.locator('.topbar .stats')).toContainText('Calls 1');
+  await expect(page.locator('.topbar .stats')).toContainText('Leads called 1');
+  await expect(page.locator('.topbar .stats')).toContainText('Pickups 1');
   // The worked lead stays in the list, greyed out.
   await expect(page.getByLabel('Queue').locator('.queue-list li')).toHaveCount(4);
   await expect(page.getByLabel('Queue').locator('.queue-list li.done')).toHaveCount(1);

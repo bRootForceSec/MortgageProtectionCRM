@@ -76,7 +76,6 @@ export function FunnelShowcase({ onClose }: { onClose: () => void }) {
           <button className="btn small" onClick={onClose} aria-label="Close" autoFocus>✕</button>
         </div>
         <FunnelCanvas values={values} title={title} />
-        <p className="help funnel-help">Record your screen to post it as a story. Pickups are calls where you reached a person.</p>
       </div>
     </div>
   );
