@@ -68,7 +68,17 @@ test('import a whole folder of lead files in one go', async ({ page }) => {
   // Straight to just these leads on the Leads page, then back.
   await page.getByRole('button', { name: 'See the 452 imported leads' }).click();
   await expect(page.getByText('452 leads', { exact: false }).first()).toBeVisible();
-  await expect(page.getByLabel('Batch')).toHaveValue(/^bulk:/);
+  await expect(page.getByLabel('Batch')).toHaveText(/^Bulk import · 4 files/);
+  // The batch picker: search narrows it, and the bulk import opens to show its files.
+  await page.getByLabel('Batch').click();
+  const pop = page.getByRole('dialog', { name: 'Pick a batch' });
+  await pop.getByRole('button', { name: 'Show files' }).click();
+  await expect(pop.locator('.pick-item.indent')).not.toHaveCount(0);
+  await page.screenshot({ path: path.join(process.env.SHOT_DIR ?? os.tmpdir(), 'batch-picker.png') });
+  await pop.getByLabel('Search batches').fill('zzz no such batch');
+  await expect(pop.getByText('No batches match.')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(pop).toHaveCount(0);
   await page.getByRole('button', { name: 'Import', exact: true }).first().click();
 
   await page.getByRole('button', { name: 'Need you (1)' }).click();
@@ -76,5 +86,18 @@ test('import a whole folder of lead files in one go', async ({ page }) => {
 
   // Back on the Import page, the run is listed.
   await page.getByRole('button', { name: 'Back to Import' }).click();
-  await expect(page.getByRole('heading', { name: 'Bulk imports' })).toBeVisible();
+  const history = page.locator('.card', { has: page.getByRole('heading', { name: /Past imports/ }) });
+  await expect(history.locator('tr.group-row', { hasText: 'Bulk import · 4 files' })).toBeVisible();
+  await history.getByRole('button', { name: 'Show files' }).click();
+  await expect(history.locator('tr.child-row')).not.toHaveCount(0);
+  await page.screenshot({ path: path.join(process.env.SHOT_DIR ?? os.tmpdir(), 'past-imports.png'), fullPage: true });
+
+  // Reports by batch: the bulk import is one line, and columns sort.
+  await page.getByRole('button', { name: 'Reports' }).click();
+  const byBatch = page.locator('.card', { has: page.getByRole('heading', { name: /By batch/ }) });
+  await expect(byBatch.locator('tr.group-row', { hasText: 'Bulk import' })).toBeVisible();
+  await byBatch.getByRole('button', { name: 'Sort by Leads' }).click();
+  await expect(byBatch.getByRole('button', { name: 'Sort by Leads' })).toHaveText('Leads ▾');
+  await byBatch.getByRole('button', { name: 'Show files' }).click();
+  await expect(byBatch.locator('tr.child-row')).not.toHaveCount(0);
 });

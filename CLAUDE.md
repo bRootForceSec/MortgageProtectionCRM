@@ -37,6 +37,7 @@ Read this before changing code. New features must fit the existing structure. Do
 | Show a failure in the UI | Show the user a message. Don't write `.catch(() => {})` unless failing really is harmless, and if so, add a comment saying why. |
 | Remember a UI preference | `getStored` / `setStored` (or the `Json` versions) from `src/web/storage.ts`. Don't touch `localStorage` directly (the structure check enforces it). |
 | Work with dates and time zones | Web: `src/web/when.ts` (`startOfDay`, `addDays`, `dayRange`, `todayRange`, `ymd`, and the callback parsing). Server: `domain/normalize.ts` (`timeZoneFor`). Age from a date of birth: `src/shared/age.ts` (`ageOn`). Don't write another day-range or time-zone offset helper. |
+| List or pick batches | `src/web/components/BatchBrowse.tsx` (`BatchPicker`, `BatchFilterBar`, `ImportHistory`), backed by `browseImports` (`/api/imports/browse`). Filtering and grouping by bulk import live in `src/shared/batches.ts`. Don't add another plain list or dropdown of every batch. |
 | Share a type or helper between server and UI | Put it in `src/shared/` and import it from both sides (server: `'../../shared/x.js'`, web: `'../shared/x'`). Code there must run in both Node and the browser: no `node:` imports and nothing from `server/`, `web/` or `desktop/` (the structure check enforces it). Response shapes not moved yet are still mirrored in `src/web/api.ts` and `src/web/importTypes.ts`; when you change one, update both sides in the same PR. |
 
 ## Data rules

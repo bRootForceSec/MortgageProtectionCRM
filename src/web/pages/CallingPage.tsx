@@ -6,6 +6,7 @@ import { LeadSummary, CallHistory, Notes, StatusBadge, toggleCalledBack } from '
 import { EditLead } from '../components/EditLead';
 import { SourcePage } from '../components/SourcePage';
 import { DialQr } from '../components/DialQr';
+import { FunnelButton } from '../components/Funnel';
 import { ClearListDialog, SavedListsDialog, suggestListName } from '../components/CallListDialogs';
 import { fillScript, isAction, isTyping, keyLabel, type KeyMap } from '../shortcuts';
 import { getStored, getStoredJson, setStored, setStoredJson } from '../storage';
@@ -408,6 +409,7 @@ export function CallingPage() {
 
   return (
     <div className="calling">
+      <FunnelButton />
       <section className="panel" aria-label="Queue">
         <header>
           <div className="row list-head">

@@ -5,6 +5,7 @@ import { groupWhere } from './groupFilter.js';
 import { BOOKED_CODES } from './leadState.js';
 import { DomainError } from '../core/errors.js';
 import { loadCallingSettings } from './callingSettings.js';
+import { bulkOfBatch } from './importHistory.js';
 
 // Reports. Every number is computed from a group of rows (calls or leads), and the same group answers
 // "show me the calls behind this number", so a total and its drill-down can never disagree.
@@ -291,9 +292,10 @@ export function buildReport(db: DB, f: ReportFilter) {
       .map((r) => [r.county_key, r.codes]),
   );
   const batches = new Map(
-    (db.prepare('SELECT id, name, imported_at, lead_type FROM import_batch').all() as { id: string; name: string; imported_at: string; lead_type: string | null }[])
+    (db.prepare('SELECT id, name, file_name, imported_at FROM import_batch').all() as { id: string; name: string; file_name: string | null; imported_at: string }[])
       .map((b) => [b.id, b]),
   );
+  const bulkOf = bulkOfBatch(db);
   const types = new Map((db.prepare('SELECT code, label FROM lead_type').all() as { code: string; label: string }[]).map((t) => [t.code, t.label]));
 
   const leadRatios = (m: Record<LeadMetric, number>) => ({
@@ -348,8 +350,12 @@ export function buildReport(db: DB, f: ReportFilter) {
         return {
           key: b.key,
           name: info?.name ?? '',
+          file_name: info?.file_name ?? null,
           imported_at: info?.imported_at ?? null,
           lead_types: typesIn.join(', '),
+          type_codes: [...new Set(b.leads.map((l) => l.lead_type ?? ''))],
+          bulk_id: bulkOf.get(b.key) ?? null,
+          left: b.leads.filter((l) => l.status === 'new' || l.status === 'retry' || l.status === 'callback').length,
           ...m,
           dials: CALL_METRICS.dials.val(b.calls),
           unpriced: b.leads.filter((l) => l.price_cents == null).length,
@@ -400,7 +406,9 @@ export function drill(db: DB, f: ReportFilter, spec: DrillSpec) {
     by_batch: g.batchGroups,
     benchmarks: g.typeGroups,
   };
-  const group = pick[spec.section].find((x) => x.key === spec.key) ?? { key: spec.key, calls: [], leads: [] };
+  const group = spec.section === 'by_batch' && spec.key.startsWith('bulk:')
+    ? bulkGroup(db, g.batchGroups, spec.key)
+    : pick[spec.section].find((x) => x.key === spec.key) ?? { key: spec.key, calls: [], leads: [] };
   if (spec.metric in CALL_METRICS) {
     const m = CALL_METRICS[spec.metric as CallMetric];
     const calls = group.calls.filter(m.pred);
@@ -415,6 +423,13 @@ export function drill(db: DB, f: ReportFilter, spec: DrillSpec) {
     return { kind: 'leads' as const, rows: group.leads.filter(m.pred).map(leadOut) };
   }
   throw new DomainError(`unknown number "${spec.metric}"`);
+}
+
+/** Every batch of one bulk import as one group, for "By batch" when its files are shown together. */
+function bulkGroup(db: DB, batches: Group[], key: string): Group {
+  const bulkOf = bulkOfBatch(db);
+  const mine = batches.filter((b) => bulkOf.get(b.key) === key.slice(5));
+  return { key, calls: mine.flatMap((b) => b.calls), leads: mine.flatMap((b) => b.leads) };
 }
 
 function callOut(c: CallRow) {
