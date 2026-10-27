@@ -297,7 +297,8 @@ test('reports: numbers open the calls behind them', async ({ page }) => {
 test('fix the lead type on every lead in a batch, and see it by lead type in Reports', async ({ page }) => {
   await page.goto(launchUrl);
   await page.getByRole('button', { name: 'Leads', exact: true }).click();
-  await page.getByLabel('Batch').selectOption({ index: 1 });
+  await page.getByLabel('Batch').click();
+  await page.getByRole('dialog', { name: 'Pick a batch' }).locator('.pick-item').nth(1).click();
   const count = page.locator('.leads-tools .muted').first();
   await expect(count).not.toHaveText(/^0 leads/);
   const total = Number((await count.innerText()).match(/\d+/)![0]);

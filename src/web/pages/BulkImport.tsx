@@ -376,31 +376,3 @@ export function BulkScreen({ id, onOpenDraft, onBack }: { id: string; onOpenDraf
   );
 }
 
-/** Recent bulk imports, on the Import page. */
-export function BulkList({ onOpen }: { onOpen: (id: string) => void }) {
-  const [rows, setRows] = useState<{ id: string; created_at: string; totals: BulkTotals }[] | null>(null);
-  useEffect(() => {
-    api.get<typeof rows>('/bulk-imports').then(setRows).catch(() => setRows([]));
-  }, []);
-  if (!rows?.length) return null;
-  return (
-    <div className="card">
-      <h2>Bulk imports</h2>
-      <table className="grid">
-        <thead><tr><th>Started</th><th>Files</th><th>Leads imported</th><th>Repeats</th><th>To check</th><th></th></tr></thead>
-        <tbody>
-          {rows.map((b) => (
-            <tr key={b.id}>
-              <td>{fmtDateTime(b.created_at)}</td>
-              <td>{fmtN(b.totals.files)}{b.totals.waiting ? <span className="muted"> ({fmtN(b.totals.waiting)} reading)</span> : null}</td>
-              <td>{fmtN(b.totals.leads)}</td>
-              <td>{fmtN(b.totals.repeats)}</td>
-              <td>{b.totals.to_check ? fmtN(b.totals.to_check) : ''}</td>
-              <td><button className="btn small" onClick={() => onOpen(b.id)}>Open</button></td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-}

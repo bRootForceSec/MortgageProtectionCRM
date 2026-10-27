@@ -8,6 +8,7 @@ import { GroupPicker, useGroups } from '../components/GroupPicker';
 import { getStored, setStored } from '../storage';
 import { addDays, startOfDay } from '../when';
 import { useLeadTypes } from './ImportPage';
+import { BatchPicker } from '../components/BatchBrowse';
 import type { LeadType } from '../importTypes';
 
 // Where you pick who to call: filter the leads, tick the ones you want (or take every match),
@@ -41,8 +42,6 @@ const ago = (ms: number) => new Date(Date.now() - ms).toISOString();
 
 const CALLABLE = new Set(['new', 'retry', 'callback']);
 
-interface Batch { id: string; name: string; imported_at: string }
-interface BulkRun { id: string; created_at: string; totals: { files: number; leads: number } }
 
 const SHOW_KEY = 'mpcrm.leads.show';
 
@@ -73,8 +72,6 @@ export function LeadsPage() {
   const [leadType, setLeadType] = useState('');
   const { types } = useLeadTypes();
   const [changingType, setChangingType] = useState(false);
-  const [batches, setBatches] = useState<Batch[]>([]);
-  const [bulks, setBulks] = useState<BulkRun[]>([]);
   const [rows, setRows] = useState<any[]>([]);
   const [total, setTotal] = useState(0);
   const [picked, setPicked] = useState<Set<string>>(new Set());
@@ -90,10 +87,6 @@ export function LeadsPage() {
   const replaceNow = replace && onList > 0;
   const outcomeLabel = (c: string | null) => (c ? meta?.outcome_codes.find((o) => o.code === c)?.label ?? c : '');
 
-  useEffect(() => {
-    api.get<Batch[]>('/imports').then(setBatches).catch(() => setBatches([]));
-    api.get<BulkRun[]>('/bulk-imports').then(setBulks).catch(() => setBulks([]));
-  }, []);
 
   const filters = useMemo(() => {
     const r = (LAST_CALL.find((x) => x.key === tried) ?? LAST_CALL[0]!).range();
@@ -190,19 +183,7 @@ export function LeadsPage() {
       <div className="leads-tools">
         <input placeholder="Search name, county, phone, or area code" value={search} onChange={(e) => setSearch(e.target.value)} title="A 3-digit number finds every county under that area code" />
         <GroupPicker groups={groups} onChange={setGroups} />
-        <select value={batch} onChange={(e) => setBatch(e.target.value)} aria-label="Batch">
-          <option value="">All batches</option>
-          {bulks.length > 0 && (
-            <optgroup label="Bulk imports (every file)">
-              {bulks.map((b) => (
-                <option key={b.id} value={`bulk:${b.id}`}>Bulk import · {fmtDateTime(b.created_at)} · {b.totals.files} files</option>
-              ))}
-            </optgroup>
-          )}
-          <optgroup label="Batches">
-            {batches.map((b) => <option key={b.id} value={b.id}>{b.name} · {fmtDateTime(b.imported_at)}</option>)}
-          </optgroup>
-        </select>
+        <BatchPicker value={batch} onChange={setBatch} />
         <select value={leadType} onChange={(e) => setLeadType(e.target.value)} aria-label="Lead type">
           <option value="">All lead types</option>
           {types.map((t) => <option key={t.code} value={t.code}>{t.label}</option>)}
@@ -277,7 +258,7 @@ export function LeadsPage() {
                 </td>
                 <td>{fullName(r)}</td>
                 <td>{fmtPhone(r.phone_e164)}</td><td>{r.county ?? ''}</td><td>{[r.city, r.state].filter(Boolean).join(', ')}</td>
-                <td>{typeLabel(r.lead_type)}</td><td>{r.batch_name}</td><td><StatusBadge status={r.status} />{r.on_list && <span className="badge" style={{ marginLeft: 4 }}>on call list</span>}</td>
+                <td title={typeLabel(r.lead_type)}>{r.lead_type ?? ''}</td><td>{r.batch_name}</td><td><StatusBadge status={r.status} />{r.on_list && <span className="badge" style={{ marginLeft: 4 }}>on call list</span>}</td>
                 <td>{r.attempts_total}</td><td>{fmtDateTime(r.last_call_at)}</td><td>{outcomeLabel(r.last_outcome_code)}</td>
               </tr>
             );
