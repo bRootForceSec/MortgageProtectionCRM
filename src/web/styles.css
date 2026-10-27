@@ -44,11 +44,14 @@ a { color: var(--accent); }
 :focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
 
 .app { display: flex; flex-direction: column; height: 100vh; }
-.topbar { display: flex; align-items: center; gap: 4px; padding: 6px 12px; background: var(--panel); border-bottom: 1px solid var(--border); }
+.topbar { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 4px; padding: 6px 12px; background: var(--panel); border-bottom: 1px solid var(--border); }
 .topbar .brand { font-weight: 600; margin-right: 12px; }
 .topbar nav button { background: none; border: 0; padding: 6px 10px; border-radius: 6px; cursor: pointer; color: var(--muted); }
 .topbar nav button.active { background: var(--panel-2); color: var(--text); font-weight: 600; }
-.topbar .stats { margin-left: auto; display: flex; gap: 14px; color: var(--muted); font-size: 13px; }
+.topbar nav { display: flex; flex-wrap: wrap; min-width: 0; }
+.topbar .stats { margin-left: auto; display: flex; gap: 14px; color: var(--muted); font-size: 13px; white-space: nowrap; }
+/* In a narrow window the name goes and the day's numbers move under the tabs, so nothing gets squeezed. */
+@media (max-width: 1200px) { .topbar .brand { display: none; } }
 .topbar .stats b { color: var(--text); }
 .page { flex: 1; overflow: auto; padding: 12px; }
 
@@ -137,9 +140,6 @@ table.grid tr.click:hover { background: var(--row-hover); cursor: pointer; }
 .modal > .body { padding: 14px; }
 .help { color: var(--muted); font-size: 12px; }
 
-@media (max-width: 1100px) {
-  .calling { grid-template-columns: 1fr; overflow: auto; height: auto; }
-}
 
 .update-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 6px 12px; background: var(--panel-2); border-bottom: 1px solid var(--border); font-size: 14px; }
 .update-bar.bad { color: var(--bad); }
@@ -269,7 +269,6 @@ table.grid tr.selected { background: var(--selected); }
 .zoom-content .source-row { margin: 0; }
 .zoom-content .source-row th { position: static; width: 38%; }
 @media (max-width: 1400px) { .calling { grid-template-columns: minmax(200px, 18%) minmax(0, 1fr) minmax(320px, 38%); } }
-@media (max-width: 1100px) { .lead-page { min-height: 80vh; } }
 
 /* Incoming call lookup, above the current lead */
 .lookup { position: relative; flex: 1; }
@@ -285,10 +284,6 @@ table.grid tr.selected { background: var(--selected); }
 .lead-viewer { position: fixed; inset: 0; z-index: 40; background: var(--bg); display: flex; flex-direction: column; }
 .lead-viewer > .calling { flex: 1; min-height: 0; height: auto; }
 .lead-viewer .calling.no-list { grid-template-columns: minmax(0, 1fr) minmax(340px, 45%); }
-@media (max-width: 1100px) {
-  .lead-viewer { overflow: auto; }
-  .lead-viewer .calling.no-list { grid-template-columns: 1fr; }
-}
 
 /* The call list */
 .icon-btn { border: 0; background: none; color: var(--muted); cursor: pointer; font-size: 15px; line-height: 1; padding: 0 3px; border-radius: 4px; visibility: hidden; }
@@ -349,3 +344,23 @@ th button.sort { background: none; border: 0; padding: 0; font: inherit; font-we
 .funnel-wrap { display: flex; flex-direction: column; align-items: center; gap: 8px; max-width: 100%; }
 .funnel-controls { justify-content: center; }
 .funnel-canvas { height: min(calc(100vh - 80px), 960px); aspect-ratio: 9 / 16; max-width: calc(100vw - 32px); border-radius: 14px; box-shadow: 0 0 40px rgba(129, 140, 248, .35); }
+
+/* Narrower windows: snapped to half the screen, or a small laptop.
+   What matters on a call comes first: the current lead and its outcome buttons, then the call list, then the lead's page. */
+@media (max-width: 1200px) {
+  /* The list and the lead stay side by side and fill the window; the lead's page sits below them, a scroll away. */
+  .calling { grid-template-columns: minmax(190px, 30%) minmax(0, 1fr); grid-template-rows: 100% 90%; overflow-y: auto; }
+  .calling > .lead-page { grid-column: 1 / -1; }
+  .lead-viewer .calling.no-list { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 760px) {
+  /* One column that scrolls as a whole: the lead, then the list, then the lead's page. */
+  .calling { grid-template-columns: minmax(0, 1fr); grid-template-rows: none; grid-auto-rows: max-content; }
+  .calling > .lead-panel { order: -1; }
+  .calling > .lead-panel > .body { flex: none; }
+  .calling > .queue-panel { max-height: min(55vh, 520px); }
+  .calling > .queue-panel > .body { flex: 1 1 auto; }
+  .calling > .lead-page { height: max(360px, 80vh); }
+  .calling .lead-head { gap: 6px; }
+  .calling .phone-big { font-size: 22px; }
+}

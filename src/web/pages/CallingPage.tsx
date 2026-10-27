@@ -410,7 +410,7 @@ export function CallingPage() {
   return (
     <div className="calling">
       <FunnelButton />
-      <section className="panel" aria-label="Queue">
+      <section className="panel queue-panel" aria-label="Queue">
         <header>
           <div className="row list-head">
             <span><b>{left}</b> to call · {items.length - left} done</span>
@@ -515,7 +515,7 @@ export function CallingPage() {
         </header>
       </section>
 
-      <section className="panel" aria-label="Current lead">
+      <section className="panel lead-panel" aria-label="Current lead">
         <header>
           <CallerLookup inputRef={lookupRef} hotkey={k('lookup')} onOpen={openOutside} />
         </header>

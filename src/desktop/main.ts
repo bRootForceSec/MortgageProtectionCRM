@@ -223,8 +223,8 @@ function showWindow() {
     win = new BrowserWindow({
       width: 1400,
       height: 900,
-      minWidth: 900,
-      minHeight: 600,
+      minWidth: 480,
+      minHeight: 420,
       title: 'Mortgage Protection CRM',
       icon: path.join(assets, 'icon.png'),
       autoHideMenuBar: true,
