@@ -459,3 +459,23 @@ test('Do not call is a tick beside the outcome, toggled with D', async ({ page }
   await expect(page.getByText('Asked not to be called again. This lead is in the dead pile.')).toBeVisible();
   await expect(page.getByLabel('History').getByText('do not call')).toBeVisible();
 });
+
+test('narrow windows: the lead and its outcome buttons come first, nothing runs off the side', async ({ page }) => {
+  await page.goto(launchUrl);
+  await page.getByRole('button', { name: 'Calling', exact: true }).click();
+  await expect(page.locator('.phone-big')).toBeVisible();
+  const box = async (sel: string) => (await page.locator(sel).first().boundingBox())!;
+  for (const [width, height] of [[960, 1040], [480, 700]] as const) {
+    await page.setViewportSize({ width, height });
+    // The outcome buttons are on screen without scrolling, and the page is no wider than the window.
+    await expect(page.getByRole('group', { name: 'Outcome' }).getByRole('button', { name: /No answer/ })).toBeInViewport();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
+    const lead = await box('.lead-panel');
+    expect(lead.width).toBeGreaterThan(width * 0.6 - 40);
+  }
+  // Side by side at half a big screen; stacked with the lead on top when narrower.
+  await page.setViewportSize({ width: 960, height: 1040 });
+  expect((await box('.queue-panel')).x).toBeLessThan((await box('.lead-panel')).x);
+  await page.setViewportSize({ width: 480, height: 700 });
+  expect((await box('.lead-panel')).y).toBeLessThan((await box('.queue-panel')).y);
+});
