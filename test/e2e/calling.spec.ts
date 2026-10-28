@@ -69,6 +69,13 @@ test('import a sheet, log calls by keyboard, and set a callback', async ({ page 
   // Calling screen: first lead is selected and shows the phone.
   await expect(page.locator('.phone-big')).toBeVisible();
   const first = await page.locator('.lead-name').innerText();
+  // The window title names the open lead by last name, and goes back to normal off the Calling screen.
+  await expect(page).toHaveTitle(`MPCRM - ${first.trim().split(/\s+/).pop()}`);
+  await page.locator('.topbar nav').getByRole('button', { name: 'Settings', exact: true }).click();
+  await expect(page).toHaveTitle('Calling CRM');
+  await expect(page.getByRole('heading', { name: 'Version and updates' })).toBeVisible();
+  await page.locator('.topbar nav').getByRole('button', { name: 'Calling', exact: true }).click();
+  await expect(page.locator('.lead-name')).toHaveText(first);
   await expect(page.getByLabel('Queue').locator('.queue-list li')).toHaveCount(4);
   await page.screenshot({ path: 'test-results/calling.png', fullPage: true });
 

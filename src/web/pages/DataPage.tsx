@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api, fmtDateTime } from '../api';
 import { useApp } from '../App';
-import { UpdatePanel } from '../components/UpdateBar';
 
 const TABLES = [
   ['leads', 'Leads'], ['calls', 'Calls'], ['outcomes', 'Outcomes (every change)'], ['events', 'Raw call events'], ['notes', 'Notes'],
@@ -89,7 +88,6 @@ export function DataPage() {
         {backups.length === 0 && <div className="empty">No backups yet.</div>}
       </div>
 
-      <UpdatePanel />
     </>
   );
 }
