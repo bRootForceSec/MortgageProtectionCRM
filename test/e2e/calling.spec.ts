@@ -419,3 +419,28 @@ test('Do not call is a tick beside the outcome, toggled with D', async ({ page }
   await expect(page.getByText('Asked not to be called again. This lead is in the dead pile.')).toBeVisible();
   await expect(page.getByLabel('History').getByText('do not call')).toBeVisible();
 });
+
+test('call history: change the caller ID on ticked calls', async ({ page }) => {
+  page.on('dialog', (d) => void d.accept());
+  await page.goto(launchUrl);
+  await page.getByRole('button', { name: 'Numbers' }).click();
+  await page.getByPlaceholder('(614) 555-0199').fill('614-555-0188');
+  await page.getByPlaceholder('e.g. Sideline').fill('Office');
+  await page.getByRole('button', { name: 'Add number' }).click();
+  await expect(page.getByRole('cell', { name: '(614) 555-0188' })).toBeVisible();
+
+  await page.getByRole('button', { name: 'Call history' }).click();
+  await expect(page.getByRole('row').filter({ hasText: 'Sideline (614) 555-0199' }).nth(1)).toBeVisible();
+  // Tick the first and shift-click the second: both are ticked.
+  await page.getByRole('checkbox', { name: /^Tick the call to/ }).nth(0).click();
+  await page.getByRole('checkbox', { name: /^Tick the call to/ }).nth(1).click({ modifiers: ['Shift'] });
+  await page.getByLabel('New caller ID').selectOption({ label: 'Office (614) 555-0188' });
+  await page.screenshot({ path: 'test-results/change-caller-id.png', fullPage: true });
+  await page.getByRole('button', { name: 'Change 2 ticked' }).click();
+  await expect(page.locator('.toast')).toContainText('Caller ID changed to Office (614) 555-0188 on 2 calls');
+  await expect(page.getByRole('row').filter({ hasText: 'Office (614) 555-0188' })).toHaveCount(2);
+  await expect(page.getByRole('button', { name: /^Change/ })).toBeDisabled();
+  // The caller ID filter shows only the calls from that number.
+  await page.getByLabel('Only calls from').selectOption({ label: 'Office (614) 555-0188' });
+  await expect(page.getByRole('checkbox', { name: /^Tick the call to/ })).toHaveCount(2);
+});

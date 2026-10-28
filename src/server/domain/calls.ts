@@ -2,6 +2,7 @@ import type { DB } from '../db/connection.js';
 import { uuidv7, nowIso } from '../ids.js';
 import { rebuildLeadState } from './leadState.js';
 import { DomainError } from '../core/errors.js';
+import { audit } from '../core/audit.js';
 import { groupWhere, searchWhere } from './groupFilter.js';
 
 export interface ManualCallInput {
@@ -224,25 +225,71 @@ export function activeOutcomeCodes(db: DB) {
   return db.prepare('SELECT * FROM outcome_code WHERE active = 1 ORDER BY sort_order').all();
 }
 
-/** Call history for the Calls page: newest first, at most 2000, filtered by dates, outcome, search and county groups. */
+/**
+ * Call history for the Calls page: newest first, at most 2000, filtered by dates, outcome, search, county groups
+ * and caller ID (`fromNumber`: a number's id, or 'none' for calls with no caller ID).
+ */
 export function callHistory(
   db: DB,
-  q: { from?: string; to?: string; outcome?: string; search?: string; counties?: string[]; areaCodes?: string[] },
+  q: { from?: string; to?: string; outcome?: string; search?: string; counties?: string[]; areaCodes?: string[]; fromNumber?: string },
 ) {
   const group = groupWhere('l.county_key', q);
   const search = searchWhere(q.search);
   const rows = db
     .prepare(
-      `SELECT c.id, c.lead_id, c.channel, c.from_e164, c.to_e164, c.requested_at, c.state, c.talk_seconds, c.dial_count, c.lead_seconds, c.voided_at,
+      `SELECT c.id, c.lead_id, c.channel, c.from_number_id, c.from_e164, c.to_e164, c.requested_at, c.state, c.talk_seconds, c.dial_count, c.lead_seconds, c.voided_at,
               c.time_known,
               trim(coalesce(l.first_name,'') || ' ' || coalesce(l.last_name,'')) lead_name, l.county, n.label from_label,
               (SELECT o.outcome_code FROM call_outcome o WHERE o.call_id = c.id
                  AND NOT EXISTS (SELECT 1 FROM call_outcome x WHERE x.supersedes_id = o.id) ORDER BY o.entered_at DESC LIMIT 1) outcome_code
        FROM call c LEFT JOIN lead l ON l.id = c.lead_id LEFT JOIN caller_number n ON n.id = c.from_number_id
        WHERE (@from IS NULL OR c.requested_at >= @from) AND (@to IS NULL OR c.requested_at < @to)
+         AND (@fromNumber IS NULL OR (@fromNumber = 'none' AND c.from_number_id IS NULL) OR c.from_number_id = @fromNumber)
          AND ${group.sql} AND ${search.sql}
        ORDER BY c.requested_at DESC LIMIT 2000`,
     )
-    .all({ from: q.from ?? null, to: q.to ?? null, ...group.params, ...search.params }) as { outcome_code: string | null }[];
+    .all({ from: q.from ?? null, to: q.to ?? null, fromNumber: q.fromNumber || null, ...group.params, ...search.params }) as { outcome_code: string | null }[];
   return rows.filter((r) => !q.outcome || r.outcome_code === q.outcome);
+}
+
+/**
+ * Sets the caller ID on many calls at once, e.g. a morning of calls made from the wrong number.
+ * `numberId` null clears it ("no caller ID recorded"). Undone calls and calls already on that number are skipped.
+ * Each change is kept in the call's events and in audit_log, and the leads' remembered numbers are recalculated.
+ */
+export function changeCallerId(db: DB, callIds: string[], numberId: string | null) {
+  return db.transaction(() => {
+    let e164: string | null = null;
+    if (numberId) {
+      const n = db.prepare('SELECT e164 FROM caller_number WHERE id = ?').get(numberId) as { e164: string } | undefined;
+      if (!n) throw new DomainError('caller ID number not found');
+      e164 = n.e164;
+    }
+    const get = db.prepare('SELECT id, lead_id, from_number_id, from_e164, voided_at FROM call WHERE id = ?');
+    const set = db.prepare('UPDATE call SET from_number_id = ?, from_e164 = ? WHERE id = ?');
+    const event = db.prepare(
+      `INSERT INTO call_event (id, call_id, source, dedup_key, event_type_raw, event_type, occurred_at, received_at, payload_json)
+       VALUES (?, ?, 'manual', ?, 'manual.caller_id_changed', 'call.caller_id_changed', ?, ?, ?)`,
+    );
+    const now = nowIso();
+    const leads = new Set<string>();
+    let changed = 0, undone = 0, same = 0, missing = 0;
+    for (const id of new Set(callIds)) {
+      const c = get.get(id) as
+        | { id: string; lead_id: string | null; from_number_id: string | null; from_e164: string | null; voided_at: string | null }
+        | undefined;
+      if (!c) { missing++; continue; }
+      if (c.voided_at) { undone++; continue; }
+      if (c.from_number_id === numberId && c.from_e164 === e164) { same++; continue; }
+      const before = { from_number_id: c.from_number_id, from_e164: c.from_e164 };
+      const after = { from_number_id: numberId, from_e164: e164 };
+      set.run(numberId, e164, c.id);
+      event.run(uuidv7(), c.id, `caller_id:${c.id}:${uuidv7()}`, now, now, JSON.stringify({ before, after }));
+      audit(db, 'call', c.id, 'caller_id_changed', before, after, now);
+      if (c.lead_id) leads.add(c.lead_id);
+      changed++;
+    }
+    if (leads.size) rebuildLeadState(db, [...leads]);
+    return { changed, skipped: { undone, same, missing } };
+  })();
 }
