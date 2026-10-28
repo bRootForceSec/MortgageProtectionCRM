@@ -37,9 +37,12 @@ test('a scanned page saved as JPEG 2000 shows in the review window', async ({ pa
   page.on('console', (m) => m.type() === 'warning' && warnings.push(m.text()));
 
   await page.goto(launchUrl);
+  // No AI reader, so the scan waits for you to type it in. (A Claude Code found on the test machine could
+  // otherwise take minutes on the page, or read it as clean and import it.)
+  const off = await page.evaluate(async () => (await fetch('/api/settings/ai', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ provider: 'off' }) })).status);
+  expect(off).toBe(200);
   await page.getByRole('button', { name: 'Import', exact: true }).first().click();
   await page.locator('input[type=file]:not([webkitdirectory])').first().setInputFiles(file);
-  // With or without an AI reader set up, the page isn't a lead, so it needs a look.
   await page.getByRole('button', { name: 'Check it now' }).click({ timeout: 45_000 });
 
   const canvas = page.locator('canvas[aria-label="Page 1"]');

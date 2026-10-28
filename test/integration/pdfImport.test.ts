@@ -117,9 +117,42 @@ describe('PDF import drafts', () => {
     expect(batch.cost_total_cents).toBe(900); // 2 D leads + 1 B lead
     // Enough is kept to rebuild a spreadsheet later: what was read, by what, and what you changed.
     const raw = JSON.parse((db.prepare('SELECT raw_json FROM import_row WHERE row_number = 2').get() as any).raw_json);
-    expect(raw).toMatchObject({ __page: '2', __extractor: 'ai:fake:test', __prompt_version: 'lead-page-v3', __edited: '{"phone":"(260) 555-0186"}' });
+    expect(raw).toMatchObject({ __page: '2', __extractor: 'ai:fake:test', __prompt_version: 'lead-page-v4', __edited: '{"phone":"(260) 555-0186"}' });
     expect(fs.readdirSync(c.importsDir).some((f) => f.endsWith('IN_574_1-4.pdf'))).toBe(true);
     expect(listDrafts(db)).toEqual([]);
+  });
+
+  it('a scan the AI read cleanly goes straight in; a blank field the page does not have is only a note', async () => {
+    const clean: PageReader = {
+      name: 'ai:fake:clean',
+      async read() {
+        const r = await fakeReader().read(new Uint8Array());
+        r.answer.fields.phone = '260-555-0186';
+        // Models list blank fields too, even when the page has no such field (a mailer card has no county).
+        r.answer.uncertain = [
+          { field: 'county', best_reading: null, reason: 'not on the page' },
+          { field: 'callin_date', best_reading: null, reason: 'not on the page' },
+        ];
+        return { ...r, extractor: 'ai:fake:clean' };
+      },
+    };
+    const { db, id } = await setup([FAKE[0]!, 'scan'], clean);
+    const scan = getDraftView(db, id).rows[1]!;
+    expect(scan.review).toBe('auto');
+    expect(scan.issues.filter((i) => i.blocking)).toEqual([]);
+    expect(scan.issues.find((i) => i.field === 'county')!.message).toMatch(/not on the page/);
+
+    // A field it read but isn't sure of still holds the lead.
+    const unsure: PageReader = {
+      name: 'ai:fake:unsure',
+      async read() {
+        const r = await clean.read(new Uint8Array());
+        r.answer.uncertain = [{ field: 'address', best_reading: '2505 Sample Dr', reason: 'smudged' }];
+        return r;
+      },
+    };
+    const u = await setup(['scan'], unsure);
+    expect(getDraftView(u.db, u.id).rows[0]!.review).toBe('needs_review');
   });
 
   it('a scan the AI cannot read, or with no AI set up, is left for you to type in; discard removes it', async () => {
