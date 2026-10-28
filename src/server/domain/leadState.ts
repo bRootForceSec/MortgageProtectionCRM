@@ -10,7 +10,7 @@ import { MISSED_RESULTS, type ApptResult } from '../../shared/appointments.js';
 //
 // Appointments are tracked in Unitrust. "Appointment set" is how a call ended: the lead leaves the queue. The Firefox
 // extension reads how each appointment went off the Unitrust calendar (see unitrustAppointments.ts); when that is newer
-// than the last call, it decides: booked or sold stays out of the queue, a no-show or yellow comes back to be called.
+// than the last call, it decides: booked, rescheduled or sold stays out of the queue; a no-show or a sat-no-sale comes back to be called.
 
 /**
  * Outcomes that mean the lead booked an appointment. "Appointment sat, no sale" and "Sold" are retired, but older
@@ -212,17 +212,17 @@ export function loadLeadFacts(db: DB, leadId: string): LeadFacts {
   };
 }
 
-/** The lead's latest Unitrust appointment (by its day) and its newest result; blue (or cleared) is "not_set". */
+/** The lead's latest Unitrust appointment (by its day, leaving out ones replaced by a reschedule) and its newest result; blue (or cleared) is "not_set". */
 function latestUnitrustAppt(db: DB, leadId: string): LeadFacts['appt'] {
   const r = stmt(
     db,
     `SELECT a.created_at, (SELECT result FROM appointment_result r WHERE r.appointment_id = a.id ORDER BY entered_at DESC, id DESC LIMIT 1) result,
             (SELECT max(entered_at) FROM appointment_result r WHERE r.appointment_id = a.id) result_at
-     FROM appointment a WHERE a.lead_id = ? AND a.recorded_via = 'unitrust' AND a.internal_status <> 'canceled'
+     FROM appointment a WHERE a.lead_id = ? AND a.recorded_via = 'unitrust' AND a.internal_status = 'scheduled'
      ORDER BY a.scheduled_for DESC, a.created_at DESC LIMIT 1`,
   ).get(leadId) as { created_at: string; result: string | null; result_at: string | null } | undefined;
   if (!r) return null;
-  const result = (['sold', 'no_show', 'follow_up'] as const).find((x) => x === r.result) ?? 'not_set';
+  const result = (['sold', 'no_show', 'sat_no_sale', 'rescheduled'] as const).find((x) => x === r.result) ?? 'not_set';
   return { result, at: r.result_at ?? r.created_at };
 }
 

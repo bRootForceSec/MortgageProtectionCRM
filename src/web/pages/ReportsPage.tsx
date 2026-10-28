@@ -130,6 +130,8 @@ export function ReportsPage() {
         </div>
       )}
 
+      {r?.appointments && <Appointments a={r.appointments} onOpen={(id, list) => setOpen({ id, list })} />}
+
       {r && (
         <div className="card">
           <h3>By hour <span className="muted">(your time)</span></h3>
@@ -207,6 +209,71 @@ export function ReportsPage() {
       {drill && <DrillModal params={params} drill={drill} onClose={() => setDrill(null)} onOpen={(id, list) => setOpen({ id, list })} />}
       {open && <LeadViewer id={open.id} list={open.list} onClose={() => setOpen(null)} />}
     </>
+  );
+}
+
+const OUTCOME_LABEL: Record<string, string> = {
+  pending: 'Not updated yet', rescheduled: 'Rescheduled', sold: 'Sold', sat_no_sale: 'Sat, no sale', no_show: 'No-show',
+};
+const OUTCOME_BADGE: Record<string, string> = { pending: 'not_set', rescheduled: 'rescheduled', sold: 'sold', sat_no_sale: 'sat_no_sale', no_show: 'no_show' };
+
+/** Appointments on these days as the Unitrust calendar shows them: totals, rates by lead type, and each appointment. */
+function Appointments({ a, onOpen }: { a: any; onOpen: (id: string, list: ViewerItem[]) => void }) {
+  const [all, setAll] = useState(false);
+  const rows: any[] = a.rows;
+  const shown = all ? rows : rows.slice(0, 20);
+  const list: ViewerItem[] = rows.map((x) => ({ id: x.lead_id, name: x.lead_name }));
+  return (
+    <div className="card">
+      <h3>Appointments <span className="muted">(from your Unitrust calendar, by the appointment's day)</span></h3>
+      <div className="summary-tiles">
+        <div><b>{a.appointments}</b>Appointments</div>
+        <div><b>{a.sat}</b>Sat</div>
+        <div><b>{a.sold}</b>Sales</div>
+        <div><b>{a.sat_no_sale}</b>Sat, no sale</div>
+        <div><b>{a.no_show}</b>No-shows</div>
+        <div><b>{a.rescheduled}</b>Rescheduled</div>
+        <div><b>{a.pending}</b>Not updated yet</div>
+        <div><b>{pct(a.show_rate)}</b>Show rate</div>
+        <div><b>{pct(a.close_rate)}</b>Close rate</div>
+      </div>
+      {a.by_type.length > 0 && (
+        <table className="grid">
+          <thead><tr><th>Lead type</th><th>Appointments</th><th>Sat</th><th>Sales</th><th>No-shows</th><th>Rescheduled</th><th>Not updated</th><th>Show rate</th><th>Close rate</th></tr></thead>
+          <tbody>
+            {a.by_type.map((t: any) => (
+              <tr key={t.key}>
+                <td>{t.label}</td><td>{t.appointments}</td><td>{t.sat}</td><td>{t.sold}</td><td>{t.no_show}</td><td>{t.rescheduled}</td><td>{t.pending}</td>
+                <td>{pct(t.show_rate)}</td><td>{pct(t.close_rate)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+      {rows.length > 0 && (
+        <details>
+          <summary>Each appointment ({rows.length}{rows.length === 500 ? '+' : ''})</summary>
+          <table className="grid">
+            <thead><tr><th>Day</th><th>Time</th><th>Lead</th><th>Type</th><th>Status</th><th>In Unitrust</th></tr></thead>
+            <tbody>
+              {shown.map((x) => (
+                <tr key={x.id} className="click" onClick={() => onOpen(x.lead_id, list)}>
+                  <td>{x.day}</td><td>{x.time ?? ''}</td><td>{x.lead_name}</td><td>{x.lead_type ?? ''}</td>
+                  <td><span className={`badge appt-${OUTCOME_BADGE[x.outcome]}`}>{OUTCOME_LABEL[x.outcome] ?? x.outcome}</span></td>
+                  <td className="muted">{x.title}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {!all && rows.length > shown.length && <button className="btn small" onClick={() => setAll(true)}>Show all {rows.length}</button>}
+        </details>
+      )}
+      <p className="help">
+        Sat is sales plus sat with no sale. Show rate is sat out of sat plus no-shows; close rate is sales out of sat.
+        Rescheduled counts appointments moved off these days; the new appointment counts on its new day. Numbers change when you update a status in Unitrust
+        and the extension sees it, so keep the calendar open in Firefox.
+      </p>
+    </div>
   );
 }
 

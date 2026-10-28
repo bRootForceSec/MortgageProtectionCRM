@@ -6,6 +6,7 @@ import { BOOKED_CODES } from './leadState.js';
 import { DomainError } from '../core/errors.js';
 import { loadCallingSettings } from './callingSettings.js';
 import { bulkOfBatch } from './importHistory.js';
+import { appointmentCounts, appointmentsOnDays, hasUnitrustAppointments } from './unitrustAppointments.js';
 
 // Reports. Every number is computed from a group of rows (calls or leads), and the same group answers
 // "show me the calls behind this number", so a total and its drill-down can never disagree.
@@ -382,6 +383,22 @@ export function buildReport(db: DB, f: ReportFilter) {
       })
       .sort((x, y) => x.key.localeCompare(y.key)),
     targets,
+    appointments: unitrustSection(db, f, types),
+  };
+}
+
+/** Appointments from the Unitrust calendar on the days in the range (by the appointment's day), overall and by lead type. */
+function unitrustSection(db: DB, f: ReportFilter, types: Map<string, string>) {
+  if (!hasUnitrustAppointments(db)) return null;
+  const fromDay = localParts(f.from, f.tz, f.tz).date;
+  const toDay = localParts(new Date(Date.parse(f.to) - 1).toISOString(), f.tz, f.tz).date;
+  const rows = appointmentsOnDays(db, fromDay, toDay, groupWhere('l.county_key', f));
+  return {
+    ...appointmentCounts(rows),
+    by_type: [...groupBy(rows, (r) => r.lead_type ?? '')]
+      .map(([k, rs]) => ({ key: k, label: k ? types.get(k) ?? k : 'No lead type', ...appointmentCounts(rs) }))
+      .sort((x, y) => x.key.localeCompare(y.key)),
+    rows: rows.slice(0, 500),
   };
 }
 
@@ -583,8 +600,11 @@ export function reportSheets(r: ReturnType<typeof buildReport>, calls: ReturnTyp
   ];
 }
 
-/** The top bar's numbers for today (or any range), with the daily goals. */
-export function todayStats(db: DB, from: string, to: string) {
+/**
+ * The top bar's numbers for today (or any range), with the daily goals. With `day` (YYYY-MM-DD), also how that day's
+ * Unitrust appointments went, once the extension has sent any.
+ */
+export function todayStats(db: DB, from: string, to: string, day?: string) {
   const row = db
     .prepare(
       `WITH cur AS (
@@ -603,5 +623,6 @@ export function todayStats(db: DB, from: string, to: string) {
        FROM cur`,
     )
     .get({ from, to }) as Record<string, number>;
-  return { ...row, goals: loadCallingSettings(db).goals };
+  const appts = day && hasUnitrustAppointments(db) ? appointmentCounts(appointmentsOnDays(db, day, day)) : null;
+  return { ...row, goals: loadCallingSettings(db).goals, appts };
 }

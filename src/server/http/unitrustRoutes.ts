@@ -20,12 +20,18 @@ const events = z.object({
       }),
     )
     .max(2000),
+  /** Today on your computer, and the days the calendar showed (for telling reschedules apart). */
+  today: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  days: z.array(z.string().regex(/^\d{4}-\d{2}-\d{2}$/)).max(62).optional(),
 });
 
 export function registerUnitrustRoutes(app: FastifyInstance, deps: { db: DB; secrets: Secrets }) {
   const { db, secrets } = deps;
 
-  app.post(EXTENSION_PATH, async (req) => recordUnitrustEvents(db, events.parse(req.body).events));
+  app.post(EXTENSION_PATH, async (req) => {
+    const b = events.parse(req.body);
+    return recordUnitrustEvents(db, b.events, { today: b.today, days: b.days });
+  });
 
   app.get('/api/unitrust', async () => ({ key: secrets.get('unitrust_extension_key'), last_sync: lastUnitrustSync(db) }));
 

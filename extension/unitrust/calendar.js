@@ -114,7 +114,13 @@ globalThis.MpcrmCalendar = (function () {
       seen.add(key);
       events.push({ title: title, date: day.date, time: timeAt(box.top, hours), color: c.color });
     }
-    return { events: events, skipped: skipped, days: days.length };
+    var p2 = function (n) { return (n < 10 ? '0' : '') + n; };
+    return {
+      events: events,
+      skipped: skipped,
+      days: days.map(function (x) { return x.date; }),
+      today: today.getFullYear() + '-' + p2(today.getMonth() + 1) + '-' + p2(today.getDate()),
+    };
   }
 
   /** The time at a height on the day grid, to the quarter hour, from the hour labels down its side. */

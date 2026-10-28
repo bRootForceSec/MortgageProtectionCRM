@@ -53,6 +53,8 @@ a { color: var(--accent); }
 /* In a narrow window the name goes and the day's numbers move under the tabs, so nothing gets squeezed. */
 @media (max-width: 1200px) { .topbar .brand { display: none; } }
 .topbar .stats b { color: var(--text); }
+.topbar .stats { flex-wrap: wrap; row-gap: 2px; }
+.topbar .appt-stats { display: flex; gap: 14px; padding-left: 14px; border-left: 1px solid var(--border); }
 .page { flex: 1; overflow: auto; padding: 12px; }
 
 .calling { display: grid; grid-template-columns: minmax(220px, 19%) minmax(0, 1fr) minmax(340px, 40%); gap: 10px; height: 100%; padding: 10px; overflow: hidden; }
@@ -81,7 +83,8 @@ a { color: var(--accent); }
 .badge.appt { margin-left: 4px; }
 .badge.appt-sold { color: var(--good); border-color: var(--good); }
 .badge.appt-no_show { color: var(--bad); border-color: var(--bad); }
-.badge.appt-follow_up { color: var(--warn); border-color: var(--warn); }
+.badge.appt-sat_no_sale { color: var(--warn); border-color: var(--warn); }
+.badge.appt-rescheduled { color: var(--accent); border-color: var(--accent); }
 .badge.appt-not_set { color: var(--accent); border-color: var(--accent); }
 
 .lead-head { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; flex-wrap: wrap; }

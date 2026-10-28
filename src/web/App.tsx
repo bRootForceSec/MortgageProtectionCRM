@@ -13,7 +13,7 @@ import { UpdateBar } from './components/UpdateBar';
 import { CallbackAlerts } from './components/CallbackAlerts';
 import { buildKeyMap, type CallingSettingsResponse, type KeyMap } from './shortcuts';
 import { getStored, getStoredJson, setStored, setStoredJson } from './storage';
-import { todayRange } from './when';
+import { todayRange, ymd } from './when';
 
 export type Page = 'calling' | 'today' | 'reports' | 'import' | 'leads' | 'calls' | 'numbers' | 'data' | 'settings';
 const PAGES: { key: Page; label: string }[] = [
@@ -146,13 +146,19 @@ interface Stats {
   appointments: number;
   callbacks: number;
   goals: { dials: number | null; contacts: number | null; appointments: number | null };
+  /** How today's Unitrust appointments went (null until the extension has sent any). */
+  appts: { appointments: number; sat: number; sold: number; no_show: number; rescheduled: number; pending: number } | null;
 }
 
 function TodayStats() {
   const { statsVersion, calling } = useApp();
   const [s, setS] = useState<Stats | null>(null);
   useEffect(() => {
-    api.get<Stats>('/stats/today', todayRange()).then(setS).catch(() => {}); // refreshed often; the last numbers stay up until the next one works
+    const load = () => api.get<Stats>('/stats/today', { ...todayRange(), day: ymd(new Date()) }).then(setS).catch(() => {}); // refreshed often; the last numbers stay up until the next one works
+    void load();
+    // Unitrust results arrive from the extension, not from this window, so look again every minute.
+    const t = setInterval(load, 60_000);
+    return () => clearInterval(t);
   }, [statsVersion, calling]);
   if (!s) return null;
   const g = s.goals ?? { dials: null, contacts: null, appointments: null };
@@ -168,6 +174,16 @@ function TodayStats() {
       <span title="People called (one lead can get several dials)">Leads called <b>{s.unique_leads}</b></span>
       <Goal label="Pickups" n={s.human_contacts} goal={g.contacts} />
       <Goal label="Appts set" n={s.appointments} goal={g.appointments} />
+      {s.appts && (
+        <span
+          className="appt-stats"
+          title={`Today's appointments in Unitrust (${s.appts.appointments}): updates when you change their status there and the extension sees it.${s.appts.pending ? ` ${s.appts.pending} not updated yet.` : ''}${s.appts.rescheduled ? ` ${s.appts.rescheduled} rescheduled.` : ''}`}
+        >
+          <span>Sat <b>{s.appts.sat}</b></span>
+          <span>Sales <b>{s.appts.sold}</b></span>
+          <span>No-shows <b>{s.appts.no_show}</b></span>
+        </span>
+      )}
     </div>
   );
 }
