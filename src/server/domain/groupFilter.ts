@@ -41,7 +41,7 @@ export function searchWhere(search?: string | null): { sql: string; params: Reco
   return {
     sql: `(lower(coalesce(l.first_name,'') || ' ' || coalesce(l.last_name,'')) LIKE @sw_like
            OR lower(coalesce(l.county,'')) LIKE @sw_like
-           ${phone ? `OR coalesce(l.phone_e164,'') LIKE @sw_dlike OR coalesce(l.phone2_e164,'') LIKE @sw_dlike OR coalesce(l.phone3_e164,'') LIKE @sw_dlike` : ''})`,
+           ${phone ? `OR l.id IN (SELECT lead_id FROM lead_number WHERE e164 LIKE @sw_dlike)` : ''})`,
     params: { sw_like: `%${s}%`, ...(phone ? { sw_dlike: `%${digits}%` } : {}) },
   };
 }

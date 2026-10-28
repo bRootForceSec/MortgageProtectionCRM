@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { Fragment, useState } from 'react';
 import { api, fmtDateTime, fmtPhone, personAge, type LeadDetail } from '../api';
 import { useApp } from '../App';
 import { useLeadTypes } from '../pages/ImportPage';
@@ -9,8 +9,6 @@ const FIELDS: { key: string; label: string; wide?: boolean }[] = [
   { key: 'first_name', label: 'First name' },
   { key: 'last_name', label: 'Last name' },
   { key: 'phone', label: 'Phone' },
-  { key: 'phone2', label: 'Alternate phone' },
-  { key: 'phone3', label: 'Called in from' },
   { key: 'email', label: 'Email' },
   { key: 'address_line', label: 'Street address', wide: true },
   { key: 'city', label: 'City' },
@@ -29,8 +27,6 @@ function initial(l: LeadDetail['lead']): Record<string, string> {
     first_name: l.first_name ?? '',
     last_name: l.last_name ?? '',
     phone: ph(l.phone_e164, l.phone_raw),
-    phone2: ph(l.phone2_e164, l.phone2_raw),
-    phone3: ph(l.phone3_e164, l.phone3_raw),
     email: l.email ?? '',
     address_line: l.address_line ?? '',
     city: l.city ?? '',
@@ -44,11 +40,42 @@ function initial(l: LeadDetail['lead']): Record<string, string> {
   };
 }
 
+type PhoneRow = { number: string; label: string };
+
+function initialPhones(l: LeadDetail['lead']): PhoneRow[] {
+  return l.other_phones.map((p) => ({ number: p.e164 ? fmtPhone(p.e164) : p.raw ?? '', label: p.label ?? '' }));
+}
+
+const samePhones = (a: PhoneRow[], b: PhoneRow[]) =>
+  a.length === b.length && a.every((x, i) => x.number.trim() === b[i]!.number.trim() && x.label.trim() === b[i]!.label.trim());
+
+/** The lead's other numbers, as a list you can add to, change and remove from. */
+function OtherPhones({ rows, onChange }: { rows: PhoneRow[]; onChange: (rows: PhoneRow[]) => void }) {
+  const set = (i: number, p: Partial<PhoneRow>) => onChange(rows.map((r, j) => (j === i ? { ...r, ...p } : r)));
+  return (
+    <div className="field wide">
+      <span>Other numbers</span>
+      {rows.map((r, i) => (
+        <div key={i} className="phone-row">
+          <input value={r.number} onChange={(e) => set(i, { number: e.target.value })} placeholder="Number" aria-label={`Other number ${i + 1}`} autoComplete="off" />
+          <input value={r.label} onChange={(e) => set(i, { label: e.target.value })} placeholder="What it is (e.g. Work, Spouse)" aria-label={`Other number ${i + 1} label`} autoComplete="off" />
+          <button type="button" className="btn small" onClick={() => onChange(rows.filter((_, j) => j !== i))} title="Remove this number">Remove</button>
+        </div>
+      ))}
+      <div className="row">
+        <button type="button" className="btn small" onClick={() => onChange([...rows, { number: '', label: '' }])}>Add a number</button>
+      </div>
+    </div>
+  );
+}
+
 export function EditLead({ d, onClose, onSaved }: { d: LeadDetail; onClose: () => void; onSaved: () => Promise<void> }) {
   const { toast } = useApp();
   const { types } = useLeadTypes();
   const start = initial(d.lead);
   const [v, setV] = useState(start);
+  const startPhones = initialPhones(d.lead);
+  const [phones, setPhones] = useState(startPhones);
   const [county, setCounty] = useState<string>(d.lead.county ?? '');
   const [leadType, setLeadType] = useState<string>(d.lead.lead_type ?? '');
   const [busy, setBusy] = useState(false);
@@ -58,6 +85,9 @@ export function EditLead({ d, onClose, onSaved }: { d: LeadDetail; onClose: () =
     for (const f of FIELDS) if ((v[f.key] ?? '').trim() !== (start[f.key] ?? '').trim()) details[f.key] = v[f.key]!.trim();
     const body: Record<string, unknown> = {};
     if (Object.keys(details).length) body.details = details;
+    if (!samePhones(phones, startPhones)) {
+      body.other_phones = phones.filter((p) => p.number.trim()).map((p) => ({ number: p.number.trim(), label: p.label.trim() || null }));
+    }
     if (county.trim() !== (d.lead.county ?? '')) body.county = county.trim() || null;
     if (leadType !== (d.lead.lead_type ?? '')) body.lead_type = leadType || null;
     if (!Object.keys(body).length) return onClose();
@@ -85,10 +115,13 @@ export function EditLead({ d, onClose, onSaved }: { d: LeadDetail; onClose: () =
           }}
         >
           {FIELDS.map((f, i) => (
-            <label key={f.key} className={`field ${f.wide ? 'wide' : ''}`}>
-              <span>{f.label}</span>
-              <input autoFocus={i === 0} value={v[f.key] ?? ''} onChange={(e) => setV({ ...v, [f.key]: e.target.value })} autoComplete="off" />
-            </label>
+            <Fragment key={f.key}>
+              <label className={`field ${f.wide ? 'wide' : ''}`}>
+                <span>{f.label}</span>
+                <input autoFocus={i === 0} value={v[f.key] ?? ''} onChange={(e) => setV({ ...v, [f.key]: e.target.value })} autoComplete="off" />
+              </label>
+              {f.key === 'phone' && <OtherPhones rows={phones} onChange={setPhones} />}
+            </Fragment>
           ))}
           <label className="field">
             <span>County it was bought for</span>

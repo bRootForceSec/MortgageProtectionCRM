@@ -194,13 +194,22 @@ test('dial counter, undo, remapped keys, QR dialing, scripts and lead edits', as
   await page.keyboard.press('p');
   await expect(page.locator('.card.script')).toContainText(`this is Alex about your`);
 
-  // Edit the lead's name.
+  // Edit the lead's name, and give it two more numbers.
   await page.keyboard.press('e');
-  await expect(page.getByRole('dialog', { name: 'Edit lead' })).toBeVisible();
+  const edit = page.getByRole('dialog', { name: 'Edit lead' });
+  await expect(edit).toBeVisible();
   await page.getByLabel('First name').fill('Zed');
-  await page.getByRole('dialog', { name: 'Edit lead' }).getByRole('button', { name: /^Save/ }).click();
+  for (const [i, [n, label]] of [['317-555-0161', 'Work'], ['317-555-0162', 'Spouse']].entries()) {
+    await edit.getByRole('button', { name: 'Add a number' }).click();
+    await edit.getByLabel(`Other number ${i + 1}`, { exact: true }).fill(n!);
+    await edit.getByLabel(`Other number ${i + 1} label`).fill(label!);
+  }
+  await page.screenshot({ path: 'test-results/edit-other-numbers.png' });
+  await edit.getByRole('button', { name: /^Save/ }).click();
   await expect(page.getByRole('dialog')).toHaveCount(0);
   await expect(page.locator('.lead-name')).toContainText('Zed');
+  await expect(page.locator('.phones')).toContainText('Work');
+  await expect(page.locator('.phones')).toContainText('(317) 555-0162');
   await expect(page.locator('.card.script')).toContainText('Hi Zed,');
   await page.screenshot({ path: 'test-results/calling-refined.png', fullPage: true });
 

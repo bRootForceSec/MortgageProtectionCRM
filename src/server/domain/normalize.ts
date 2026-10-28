@@ -24,6 +24,17 @@ export function normalizeUsPhone(raw: unknown): Normalized<string> {
   return { value: `+1${digits}` };
 }
 
+/**
+ * Splits a cell holding several phone numbers ("317-555-0100 / 317-555-0101", "... or ...") into one per number.
+ * A cell that isn't clearly a list of whole numbers comes back as it was, so "317/555-0100" stays one number.
+ */
+export function splitPhones(raw: unknown): string[] {
+  const s = toText(raw);
+  if (!s) return [];
+  const parts = s.split(/[,;|/\n]+|\s+(?:or|and|&)\s+/i).map((p) => p.trim()).filter(Boolean);
+  return parts.length > 1 && parts.every((p) => p.replace(/\D/g, '').length >= 10) ? parts : [s];
+}
+
 /** "$286,000", "286000", "286k" → cents. */
 export function normalizeMoneyToCents(raw: unknown): Normalized<number> {
   if (typeof raw === 'number' && Number.isFinite(raw)) return { value: Math.round(raw * 100) };

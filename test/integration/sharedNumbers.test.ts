@@ -73,7 +73,7 @@ describe('leads that share a number', () => {
 
 describe('bad number on a lead with another number', () => {
   beforeEach(() => {
-    db.prepare("UPDATE lead SET phone2_e164 = '+16145550177', phone2_raw = '614-555-0177' WHERE id = ?").run(robert);
+    db.prepare("INSERT INTO lead_other_phone (lead_id, pos, raw, e164, label) VALUES (?, 1, '614-555-0177', '+16145550177', 'Alternate')").run(robert);
     rebuildLeadState(db, [robert]);
   });
 
@@ -111,5 +111,28 @@ describe('time zones by county', () => {
     expect(timeZoneFor('MI', 'MI|GOGEBIC')).toBe('America/Menominee');
     expect(timeZoneFor('OH', null)).toBe('America/New_York');
     expect(timeZoneFor(null, null)).toBeNull();
+  });
+});
+
+describe('a lead with many numbers', () => {
+  it('rules out a fourth number shared with a dead-pile lead, and calls the next one', () => {
+    const ins = db.prepare("INSERT INTO lead_other_phone (lead_id, pos, raw, e164, label) VALUES (?, ?, ?, ?, NULL)");
+    ['+13175550171', '+13175550172', '+13175550173', '+16145550199'].forEach((p, i) => ins.run(robert, i + 1, p, p));
+    // Ann's main number is Robert's fourth other number.
+    const ann = idOf('Ann');
+    db.prepare("UPDATE lead SET phone_e164 = '+16145550199' WHERE id = ?").run(ann);
+    rebuildLeadState(db, [robert, ann]);
+    addLeadAction(db, ann, 'mark_dead');
+    expect(JSON.parse(state(robert).blocked_phones_json)).toEqual(['+16145550199']);
+    expect(state(robert).active_phone_e164).toBe('+16145550102');
+    // Three bad numbers in a row: the lead keeps going to the next working one.
+    for (const next of ['+13175550171', '+13175550172', '+13175550173']) {
+      logManualCall(db, { lead_id: robert, idempotency_key: key(), outcome_code: 'bad_number' });
+      expect(state(robert).active_phone_e164).toBe(next);
+    }
+    logManualCall(db, { lead_id: robert, idempotency_key: key(), outcome_code: 'bad_number' });
+    // Every number is ruled out, one of them by a dead-pile lead: this lead goes to the dead pile too.
+    expect(state(robert).status).toBe('dead');
+    expect(verifyLeadState(db)).toEqual([]);
   });
 });

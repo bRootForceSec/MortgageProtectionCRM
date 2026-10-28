@@ -11,7 +11,9 @@ const HEALTH_COLS = ['tobacco_raw', 'health_heart_raw', 'health_stroke_raw', 'he
 
 export function exportRows(db: DB, table: ExportTable, opts: { includeHealth?: boolean } = {}): Record<string, unknown>[] {
   const q: Record<ExportTable, string> = {
-    leads: `SELECT l.*, b.name batch_name, s.status, s.attempts_total, s.last_call_at, s.last_outcome_code, s.next_due_at
+    leads: `SELECT l.*, (SELECT group_concat(trim(coalesce(p.label || ': ', '') || coalesce(p.e164, p.raw)), '; ')
+                          FROM (SELECT * FROM lead_other_phone WHERE lead_id = l.id ORDER BY pos) p) other_phones,
+            b.name batch_name, s.status, s.attempts_total, s.last_call_at, s.last_outcome_code, s.next_due_at
             FROM lead l JOIN import_batch b ON b.id = l.batch_id LEFT JOIN lead_state s ON s.lead_id = l.id ORDER BY l.created_at`,
     calls: `SELECT c.*, (SELECT o.outcome_code FROM call_outcome o WHERE o.call_id = c.id
               AND NOT EXISTS (SELECT 1 FROM call_outcome x WHERE x.supersedes_id = o.id) ORDER BY o.entered_at DESC LIMIT 1) current_outcome

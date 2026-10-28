@@ -111,7 +111,11 @@ describe('PDF import drafts', () => {
       [2, 'Allen', 'zip', 'B', 700],
       [3, 'Elkhart', 'page', 'D', 100],
     ]);
-    expect(leads[2]).toMatchObject({ phone_e164: '+15745550112', phone2_e164: '+15745550113', phone3_e164: '+15745550111', source_lead_id: '900000002' });
+    expect(leads[2]).toMatchObject({ phone_e164: '+15745550112', source_lead_id: '900000002' });
+    expect(db.prepare('SELECT pos, e164, label FROM lead_other_phone WHERE lead_id = ? ORDER BY pos').all(leads[2].id)).toEqual([
+      { pos: 1, e164: '+15745550113', label: 'Alternate' },
+      { pos: 2, e164: '+15745550111', label: 'Called in from' },
+    ]);
     expect(leads[0]).toMatchObject({ first_name: 'Alex', last_name: 'Sampleperson', callin_at: '2026-07-15T15:31:00.000Z' });
     const batch = db.prepare('SELECT * FROM import_batch').get() as any;
     expect(batch.cost_total_cents).toBe(900); // 2 D leads + 1 B lead

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  normalizeUsPhone, normalizeMoneyToCents, normalizeAge, coborrowerSignal, normalizeState, normalizeZip, splitName, splitStateZip,
+  normalizeUsPhone, normalizeMoneyToCents, normalizeAge, coborrowerSignal, normalizeState, normalizeZip, splitName, splitStateZip, splitPhones,
 } from '../../src/server/domain/normalize.js';
 import { suggestMapping, validateMapping } from '../../src/server/domain/mapping.js';
 
@@ -20,6 +20,18 @@ describe('phone normalization', () => {
   });
 
   it('blank is not an error', () => expect(normalizeUsPhone('  ')).toEqual({ value: null }));
+});
+
+describe('cells with several phone numbers', () => {
+  it.each([
+    ['317-555-0100 / 317-555-0101', ['317-555-0100', '317-555-0101']],
+    ['(317) 555-0100, 317.555.0101; 3175550102', ['(317) 555-0100', '317.555.0101', '3175550102']],
+    ['317-555-0100 or 317-555-0101', ['317-555-0100', '317-555-0101']],
+    ['317/555-0100', ['317/555-0100']],
+    ['317-555-0100', ['317-555-0100']],
+    ['317-555-0100 / 555-01', ['317-555-0100 / 555-01']],
+    ['', []],
+  ])('%s', (raw, out) => expect(splitPhones(raw)).toEqual(out));
 });
 
 describe('other fields', () => {
