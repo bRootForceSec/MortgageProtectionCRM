@@ -135,7 +135,9 @@ function Start({ onDraft, onBulk }: { onDraft: (id: string) => void; onBulk: (id
     setBusy(true);
     try {
       if (/\.pdf$/i.test(f.name) || f.type === 'application/pdf') {
-        const r = await api.upload<{ id: string }>(`/drafts/pdf?lead_type=${encodeURIComponent(leadType)}`, f, 'application/pdf');
+        // The lead type may not have loaded yet if a file is picked straight away; the server then uses the default.
+        const q = leadType ? `?lead_type=${encodeURIComponent(leadType)}` : '';
+        const r = await api.upload<{ id: string }>(`/drafts/pdf${q}`, f, 'application/pdf');
         onDraft(r.id);
       } else {
         setFile(f);

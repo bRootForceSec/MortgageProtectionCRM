@@ -75,6 +75,16 @@ describe('lead routes', () => {
     expect(stale.statusCode).toBeLessThan(500);
   });
 
+  it('calls/caller-id: changes the caller ID on the ticked calls', async () => {
+    const num = uuidv7();
+    db.prepare("INSERT INTO caller_number (id, e164, label, created_at) VALUES (?, '+16145550188', 'Line B', ?)").run(num, new Date().toISOString());
+    const { call_id } = logManualCall(db, { lead_id: lead('Jane'), idempotency_key: `k-${uuidv7()}`, outcome_code: 'no_answer' });
+    const r = await post('/api/calls/caller-id', { call_ids: [call_id], from_number_id: num });
+    expect(r.json()).toEqual({ changed: 1, skipped: { undone: 0, same: 0, missing: 0 } });
+    expect((await get(`/api/calls?from_number=${num}`)).json().map((c: any) => c.id)).toEqual([call_id]);
+    expect((await post('/api/calls/caller-id', { call_ids: [], from_number_id: num })).statusCode).toBe(400);
+  });
+
   it('lead-links: resolves a suggested link and audits it; unknown link is 404', async () => {
     const link = db.prepare('SELECT * FROM lead_link').get() as any;
     expect(link.status).toBe('suggested');

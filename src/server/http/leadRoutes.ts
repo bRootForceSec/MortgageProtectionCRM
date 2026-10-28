@@ -4,7 +4,7 @@ import * as z from 'zod/v4';
 import type { DB } from '../db/connection.js';
 import type { Config } from '../config.js';
 import { DomainError } from '../core/errors.js';
-import { logManualCall, changeOutcome, addLeadAction, addNote, callHistory } from '../domain/calls.js';
+import { logManualCall, changeOutcome, addLeadAction, addNote, callHistory, changeCallerId } from '../domain/calls.js';
 import { listLeads, getLeadDetail, leadPdfPage, setLinkStatus } from '../domain/leads.js';
 import { parseList } from '../domain/groupFilter.js';
 import { setLeadTypeForMatching } from '../domain/leadEdit.js';
@@ -200,7 +200,17 @@ export function registerLeadRoutes(app: FastifyInstance, deps: { db: DB; config:
       search: z.string().max(100).optional(),
       counties: z.string().max(4000).optional(),
       area_codes: z.string().max(400).optional(),
+      from_number: z.string().max(64).optional(),
     }).parse(req.query);
-    return callHistory(db, { ...q, counties: parseList(q.counties), areaCodes: parseList(q.area_codes) });
+    return callHistory(db, { ...q, counties: parseList(q.counties), areaCodes: parseList(q.area_codes), fromNumber: q.from_number });
+  });
+
+  // Fix the caller ID on many calls at once (null: no caller ID recorded).
+  app.post('/api/calls/caller-id', async (req) => {
+    const b = z.object({
+      call_ids: z.array(z.string().max(64)).min(1).max(5000),
+      from_number_id: z.string().max(64).nullable(),
+    }).parse(req.body);
+    return changeCallerId(db, b.call_ids, b.from_number_id);
   });
 }

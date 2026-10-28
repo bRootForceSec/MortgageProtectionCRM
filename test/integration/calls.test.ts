@@ -6,7 +6,7 @@ import { tempDb, sampleCsv, dueLeads } from '../helpers.js';
 import { parseSpreadsheet } from '../../src/server/domain/spreadsheet.js';
 import { suggestMapping } from '../../src/server/domain/mapping.js';
 import { commitImport } from '../../src/server/domain/importer.js';
-import { logManualCall, changeOutcome, currentOutcome, addLeadAction, voidCall } from '../../src/server/domain/calls.js';
+import { logManualCall, changeOutcome, currentOutcome, addLeadAction, voidCall, changeCallerId, callHistory } from '../../src/server/domain/calls.js';
 import { DomainError } from '../../src/server/core/errors.js';
 import { addToCallList } from '../../src/server/domain/callList.js';
 import { mapSheetStatus } from '../../src/server/domain/sheetHistory.js';
@@ -197,5 +197,35 @@ describe('manual call logging', () => {
     expect(() =>
       logManualCall(db, { lead_id: jane, idempotency_key: key(), outcome_code: 'no_answer', occurred_at: new Date(Date.now() + 3_600_000).toISOString() }),
     ).toThrow(/future/);
+  });
+});
+
+describe('changing the caller ID on many calls', () => {
+  it('moves the calls to the new number, keeps a record, and fixes the remembered number', () => {
+    const other = uuidv7();
+    db.prepare("INSERT INTO caller_number (id, e164, label, created_at) VALUES (?, '+16145550188', 'Line B', ?)").run(other, new Date().toISOString());
+    const a = logManualCall(db, { lead_id: jane, idempotency_key: key(), outcome_code: 'no_appt', from_number_id: num }).call_id;
+    const b = logManualCall(db, { lead_id: jane, idempotency_key: key(), outcome_code: 'no_answer', from_number_id: num }).call_id;
+    const done = logManualCall(db, { lead_id: jane, idempotency_key: key(), outcome_code: 'no_answer', from_number_id: other }).call_id;
+    const undone = logManualCall(db, { lead_id: jane, idempotency_key: key(), outcome_code: 'no_answer', from_number_id: num }).call_id;
+    voidCall(db, undone);
+    expect((db.prepare('SELECT preferred_number_id FROM lead_state WHERE lead_id = ?').get(jane) as any).preferred_number_id).toBe(num);
+
+    const r = changeCallerId(db, [a, b, done, undone, 'nope', a], other);
+    expect(r).toEqual({ changed: 2, skipped: { undone: 1, same: 1, missing: 1 } });
+    expect(db.prepare('SELECT from_number_id, from_e164 FROM call WHERE id = ?').get(a)).toEqual({ from_number_id: other, from_e164: '+16145550188' });
+    expect((db.prepare('SELECT from_number_id FROM call WHERE id = ?').get(undone) as any).from_number_id).toBe(num);
+    expect((db.prepare('SELECT preferred_number_id FROM lead_state WHERE lead_id = ?').get(jane) as any).preferred_number_id).toBe(other);
+    const log = db.prepare("SELECT old_json, new_json FROM audit_log WHERE table_name = 'call' AND row_id = ?").get(a) as any;
+    expect(JSON.parse(log.old_json)).toEqual({ from_number_id: num, from_e164: '+16145550199' });
+    expect(JSON.parse(log.new_json)).toEqual({ from_number_id: other, from_e164: '+16145550188' });
+    expect(db.prepare("SELECT count(*) n FROM call_event WHERE call_id = ? AND event_type = 'call.caller_id_changed'").get(a)).toEqual({ n: 1 });
+
+    // Call history filters by caller ID, including calls with none.
+    expect(callHistory(db, { fromNumber: num }).map((c: any) => c.id)).toEqual([undone]);
+    changeCallerId(db, [b], null);
+    expect((db.prepare('SELECT from_number_id, from_e164 FROM call WHERE id = ?').get(b) as any)).toEqual({ from_number_id: null, from_e164: null });
+    expect(callHistory(db, { fromNumber: 'none' }).map((c: any) => c.id)).toEqual([b]);
+    expect(() => changeCallerId(db, [a], 'nope')).toThrow(/not found/);
   });
 });
