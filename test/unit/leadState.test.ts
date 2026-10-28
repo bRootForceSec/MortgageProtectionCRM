@@ -90,4 +90,13 @@ describe('deriveLeadState', () => {
     const s = deriveLeadState({ ...empty, calls: [{ ...call('c1', '2026-10-17T10:00:00.000Z'), initiation_result: 'blocked_hours' }] }, NOW);
     expect(s).toMatchObject({ status: 'new', attempts_total: 0 });
   });
+
+  it('Unitrust: a newer no-show brings a booked lead back now; an older one or the dead pile does not', () => {
+    const booked = { ...empty, calls: [call('c1', '2026-10-17T10:00:00.000Z')], outcomes: [out('c1', 'appointment', '2026-10-17T10:01:00.000Z', { grp: 'contact', counts_as_human_contact: 1 })] };
+    expect(deriveLeadState({ ...booked, appt: { result: 'no_show', at: '2026-10-17T12:00:00.000Z' } }, NOW)).toMatchObject({ status: 'retry', next_due_at: null, appt_missed: 1, appt_result: 'no_show' });
+    expect(deriveLeadState({ ...booked, appt: { result: 'no_show', at: '2026-10-17T09:00:00.000Z' } }, NOW)).toMatchObject({ status: 'appointment_set', appt_missed: 0, appt_result: 'no_show' });
+    expect(deriveLeadState({ ...booked, appt: { result: 'sold', at: '2026-10-17T12:00:00.000Z' } }, NOW)).toMatchObject({ status: 'appointment_set' });
+    const dead = { ...booked, actions: [{ action: 'mark_dead' as const, created_at: '2026-10-17T11:00:00.000Z' }] };
+    expect(deriveLeadState({ ...dead, appt: { result: 'no_show', at: '2026-10-17T12:00:00.000Z' } }, NOW).status).toBe('dead');
+  });
 });

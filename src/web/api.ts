@@ -192,6 +192,10 @@ export interface LeadDetail {
     /** The lead's numbers that are ruled out (JSON list). */
     blocked_phones_json: string | null;
     block_reason: string | null;
+    /** How the latest appointment in Unitrust went, read by the extension. */
+    appt_result: string | null;
+    /** 1 when a no-show or yellow in Unitrust put the lead back to be called. */
+    appt_missed: number;
   } | null;
   batch: { id: string; name: string; imported_at: string; cost_per_lead_cents: number | null; lead_type: string | null; lead_age_label: string | null; file_name: string | null };
   import_row: { row_number: number; warnings_json: string | null; raw_json: string | null } | null;

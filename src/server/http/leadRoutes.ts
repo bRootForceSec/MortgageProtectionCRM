@@ -22,7 +22,7 @@ export function registerLeadRoutes(app: FastifyInstance, deps: { db: DB; config:
 
   // ---------- leads ----------
   const leadFilter = z.object({
-    status: z.enum(['dead', 'invalid', 'appointment_set', 'callback', 'retry', 'no_answer', 'talked', 'new', 'all']).default('all'),
+    status: z.enum(['dead', 'invalid', 'appointment_set', 'appt_missed', 'callback', 'retry', 'no_answer', 'talked', 'new', 'all']).default('all'),
     search: z.string().max(100).optional(),
     batch_id: z.string().max(64).optional(),
     bulk_id: z.string().max(64).optional(),

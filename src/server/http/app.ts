@@ -24,6 +24,7 @@ import { registerCallingRoutes } from './callingRoutes.js';
 import { registerNumberRoutes } from './numberRoutes.js';
 import { registerReportRoutes } from './reportRoutes.js';
 import { registerDataRoutes } from './dataRoutes.js';
+import { registerUnitrustRoutes } from './unitrustRoutes.js';
 import { KdeConnect } from '../dialer.js';
 
 export interface AppDeps {
@@ -64,7 +65,8 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       : false,
   });
 
-  registerSecurity(app, { token: deps.token, port: config.port });
+  const secrets = deps.secrets ?? Secrets.inDataDir(config.dataDir);
+  registerSecurity(app, { token: deps.token, port: config.port, extensionKey: () => secrets.get('unitrust_extension_key') });
 
   app.addContentTypeParser('application/octet-stream', { parseAs: 'buffer', bodyLimit: MAX_UPLOAD_BYTES }, (_req, body, done) =>
     done(null, body),
@@ -79,7 +81,6 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     return reply.code(500).send({ error: 'Something went wrong. Details are in the app log.' });
   });
 
-  const secrets = deps.secrets ?? Secrets.inDataDir(config.dataDir);
   const drafts = deps.drafts ?? new DraftWorker(db, secrets);
   const bulk = deps.bulk ?? new BulkImporter(db, config.importsDir, drafts);
   const pageChecker = deps.pageChecker ?? new PageChecker(db, config.importsDir, () => makeReader(loadAiSettings(db), secrets));
@@ -89,6 +90,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   registerNumberRoutes(app, { db });
   registerReportRoutes(app, { db });
   registerDataRoutes(app, { db, config });
+  registerUnitrustRoutes(app, { db, secrets });
 
   // ---------- version & updates ----------
   const updates = deps.updates ?? new Updates(null, { commit: 'dev', built_at: null });

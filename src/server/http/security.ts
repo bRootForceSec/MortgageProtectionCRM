@@ -8,8 +8,14 @@ export const COOKIE = 'mpcrm_session';
 //  - Host must be 127.0.0.1/localhost on our port (blocks DNS-rebinding from web pages);
 //  - every /api request needs the access-token cookie, which is set by opening the launch URL once;
 //  - state-changing requests must come from our own Origin.
+// The one exception is EXTENSION_PATH: the Firefox extension posts there with its own key (made in Settings)
+// instead of the cookie, from its own origin. That key opens nothing else.
 
-export function registerSecurity(app: FastifyInstance, opts: { token: string; port: number }) {
+/** Where the Unitrust extension sends what it reads off the calendar. */
+export const EXTENSION_PATH = '/api/unitrust/events';
+export const EXTENSION_KEY_HEADER = 'x-mpcrm-extension-key';
+
+export function registerSecurity(app: FastifyInstance, opts: { token: string; port: number; extensionKey?: () => string | null }) {
   const allowedHosts = new Set([`127.0.0.1:${opts.port}`, `localhost:${opts.port}`]);
   const allowedOrigins = new Set([...allowedHosts].map((h) => `http://${h}`));
 
@@ -27,6 +33,15 @@ export function registerSecurity(app: FastifyInstance, opts: { token: string; po
       reply.header('set-cookie', `${COOKIE}=${opts.token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=31536000`);
       url.searchParams.delete('t');
       return reply.redirect(url.pathname + (url.search || ''), 303);
+    }
+
+    if (url.pathname === EXTENSION_PATH && req.method === 'POST') {
+      const key = opts.extensionKey?.() ?? null;
+      const given = req.headers[EXTENSION_KEY_HEADER];
+      if (!key || typeof given !== 'string' || !safeEqual(given, key)) {
+        return reply.code(401).send({ error: 'Wrong or missing extension key. Copy it again from the CRM: Settings → Unitrust extension.' });
+      }
+      return;
     }
 
     if (req.url.startsWith('/api/')) {

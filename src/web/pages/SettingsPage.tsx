@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { api } from '../api';
+import { api, fmtDateTime } from '../api';
 import { useApp } from '../App';
 import { useLeadTypes } from './ImportPage';
 import { CallingCard, ShortcutsCard, ScriptsCard } from './CallingSettingsCards';
@@ -32,12 +32,68 @@ export function SettingsPage() {
       <CallingCard />
       <ShortcutsCard />
       <ScriptsCard />
+      <UnitrustCard />
       <AiCard />
       <LeadPagesCard />
       <LeadTypesCard />
       <CountiesCard />
       <UpdatePanel />
     </>
+  );
+}
+
+interface UnitrustView {
+  key: string | null;
+  last_sync: { at: string; seen: number; matched: number; added: number; changed: number; unmatched: string[] } | null;
+}
+
+/** The Firefox extension that reads appointment colors off the Unitrust calendar: its key, and what it last found. */
+function UnitrustCard() {
+  const { toast } = useApp();
+  const [v, setV] = useState<UnitrustView | null>(null);
+  const load = useCallback(() => api.get<UnitrustView>('/unitrust').then(setV).catch((e) => toast(e.message, 'error')), [toast]);
+  useEffect(() => void load(), [load]);
+  if (!v) return null;
+  const newKey = async () => {
+    if (v.key && !window.confirm('Make a new key? The extension stops sending until you paste the new one into it.')) return;
+    try {
+      const r = await api.post<{ key: string }>('/unitrust/key', {});
+      setV({ ...v, key: r.key });
+      toast('New key made. Paste it into the extension.');
+    } catch (e: any) {
+      toast(e.message, 'error');
+    }
+  };
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(v.key ?? '');
+      toast('Key copied');
+    } catch {
+      toast('Could not copy. Select the key and copy it by hand.', 'error');
+    }
+  };
+  const s = v.last_sync;
+  return (
+    <div className="card">
+      <h3>Unitrust extension</h3>
+      <p className="help">
+        The Firefox extension reads your Unitrust calendar while you have it open and sends each appointment's color here:
+        blue booked, green sold, red no-show, yellow rescheduled or sat with no sale. Red and yellow leads come back to be called
+        (Leads → No-shows &amp; yellows). It needs this key to send.
+      </p>
+      <div className="row">
+        {v.key ? <code aria-label="Extension key">{v.key}</code> : <span className="muted">No key yet.</span>}
+        {v.key && <button className="btn small" onClick={copy}>Copy</button>}
+        <button className="btn small" onClick={newKey}>{v.key ? 'Make a new key' : 'Make a key'}</button>
+        <button className="btn small" onClick={() => void load()}>Refresh</button>
+      </div>
+      <p className="help" aria-label="Last Unitrust sync">
+        {s
+          ? <>Last sent {fmtDateTime(s.at)}: {s.seen} appointment{s.seen === 1 ? '' : 's'}, {s.matched} matched to leads, {s.added} new, {s.changed} changed color.
+              {s.unmatched.length > 0 && <> Not found in the CRM: {s.unmatched.slice(0, 10).join('; ')}{s.unmatched.length > 10 ? ` and ${s.unmatched.length - 10} more` : ''}.</>}</>
+          : 'Nothing sent yet. Open your Unitrust calendar in Firefox with the extension installed.'}
+      </p>
+    </div>
   );
 }
 

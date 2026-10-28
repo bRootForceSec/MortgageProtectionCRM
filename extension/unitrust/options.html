@@ -1,0 +1,19 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    body { font: 14px/1.4 system-ui, sans-serif; padding: 12px; min-width: 360px; }
+    label { display: block; margin: 8px 0; }
+    input { width: 100%; box-sizing: border-box; padding: 4px; }
+    .help { color: #666; font-size: 12px; }
+  </style>
+</head>
+<body>
+  <label>Key from the CRM (Settings → Unitrust extension)<input id="key" type="password" autocomplete="off"></label>
+  <label>CRM address<input id="url" placeholder="http://127.0.0.1:5170"></label>
+  <button id="save">Save</button> <span id="msg"></span>
+  <p class="help">Open your Unitrust calendar afterwards. A note in the corner shows what was sent.</p>
+  <script src="options.js"></script>
+</body>
+</html>
