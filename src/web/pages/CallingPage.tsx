@@ -155,6 +155,16 @@ export function CallingPage() {
   }, []);
   useEffect(() => void loadDetail(selected), [selected, loadDetail]);
 
+  // The window title names the open lead (MPCRM - Smith), so the right window is easy to find.
+  const lastName = detail?.lead.id === selected ? (detail?.lead.last_name as string | null | undefined)?.trim() : null;
+  useEffect(() => {
+    const was = document.title;
+    if (lastName) document.title = `MPCRM - ${lastName}`;
+    return () => {
+      document.title = was;
+    };
+  }, [lastName]);
+
   // A new lead starts a new attempt, unless an undo is putting the last one back.
   useEffect(() => {
     if (restore && restore.leadId === selected) return;
