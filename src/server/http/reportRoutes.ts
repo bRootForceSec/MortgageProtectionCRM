@@ -74,7 +74,7 @@ export function registerReportRoutes(app: FastifyInstance, deps: { db: DB }) {
   });
 
   app.get('/api/stats/today', async (req) => {
-    const q = z.object({ from: z.string().max(40), to: z.string().max(40) }).parse(req.query);
-    return todayStats(db, q.from, q.to);
+    const q = z.object({ from: z.string().max(40), to: z.string().max(40), day: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional() }).parse(req.query);
+    return todayStats(db, q.from, q.to, q.day);
   });
 }

@@ -78,8 +78,8 @@ function UnitrustCard() {
       <h3>Unitrust extension</h3>
       <p className="help">
         The Firefox extension reads your Unitrust calendar while you have it open and sends each appointment's color here:
-        blue booked, green sold, red no-show, yellow rescheduled or sat with no sale. Red and yellow leads come back to be called
-        (Leads → No-shows &amp; yellows). It needs this key to send.
+        blue booked, green sold, red no-show, yellow sat with no sale (or rescheduled, when it moved to a later day). No-shows and
+        no sales come back to be called (Leads → No-shows &amp; no sales). It needs this key to send.
       </p>
       <div className="row">
         {v.key ? <code aria-label="Extension key">{v.key}</code> : <span className="muted">No key yet.</span>}

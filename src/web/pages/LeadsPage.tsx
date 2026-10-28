@@ -19,8 +19,8 @@ const STATUSES = [
   { key: 'all', label: 'All' }, { key: 'new', label: 'Never called' },
   { key: 'no_answer', label: 'No answer', title: 'Called, but the last call didn\'t reach them' },
   { key: 'talked', label: 'Talked, no appt' }, { key: 'callback', label: 'Callbacks' },
-  { key: 'appointment_set', label: 'Appointment set', title: 'Booked, or sold in Unitrust' },
-  { key: 'appt_missed', label: 'No-shows & yellows', title: 'Red or yellow on the Unitrust calendar, not called since' },
+  { key: 'appointment_set', label: 'Appointment set', title: 'Booked, rescheduled or sold in Unitrust' },
+  { key: 'appt_missed', label: 'No-shows & no sales', title: 'No-show (red) or sat with no sale (yellow) on the Unitrust calendar, not called since' },
   { key: 'invalid', label: 'Bad numbers' }, { key: 'dead', label: 'Dead pile' },
 ];
 

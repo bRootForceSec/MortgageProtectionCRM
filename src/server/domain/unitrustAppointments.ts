@@ -3,11 +3,15 @@ import { uuidv7, nowIso } from '../ids.js';
 import { getSetting, setSetting } from '../core/settings.js';
 import { rebuildLeadState } from './leadState.js';
 import { normalizeUsPhone } from './normalize.js';
-import { parseUnitrustTitle, RESULT_FOR_COLOR, type ApptResult, type UnitrustColor } from '../../shared/appointments.js';
+import { parseUnitrustTitle, type ApptResult, type UnitrustColor } from '../../shared/appointments.js';
 
 // Appointments read off the Unitrust calendar by the Firefox extension. Each event is matched to a lead by its phone
 // (then by name), stored once per day and phone, and each change of color adds a result row. Leads whose appointment
-// changed get their state rebuilt, so a no-show or yellow comes back to be called.
+// changed get their state rebuilt, so a no-show or a sat-no-sale comes back to be called.
+//
+// Yellow is either "sat, no sale" or "rescheduled". Unitrust moves a rescheduled event to its new day, so a yellow
+// event is a reschedule when it is on a later day than today, or when the lead's earlier appointment has gone from a
+// day the calendar is showing. The appointment it replaced is marked 'rescheduled' (internal_status) and no longer counts.
 
 export interface UnitrustEvent {
   title: string;
@@ -36,8 +40,18 @@ export function lastUnitrustSync(db: DB): UnitrustSync | null {
   return getSetting<UnitrustSync>(db, SETTING);
 }
 
+/** What the calendar was showing when it was read. */
+export interface CalendarView {
+  /** Today on your computer, YYYY-MM-DD. Defaults to today in UTC. */
+  today?: string;
+  /** The days the calendar was showing, YYYY-MM-DD. */
+  days?: string[];
+}
+
 /** Stores what the extension saw on the calendar. Returns what it found. */
-export function recordUnitrustEvents(db: DB, events: UnitrustEvent[], now = nowIso()): UnitrustSync {
+export function recordUnitrustEvents(db: DB, events: UnitrustEvent[], view: CalendarView = {}, now = nowIso()): UnitrustSync {
+  const today = view.today ?? now.slice(0, 10);
+  const shown = new Set(view.days ?? []);
   const sync: UnitrustSync = { at: now, seen: 0, matched: 0, added: 0, changed: 0, unmatched: [] };
   const touched = new Set<string>();
   const byKey = db.prepare("SELECT id, lead_id FROM appointment WHERE unitrust_key = ?");
@@ -49,41 +63,67 @@ export function recordUnitrustEvents(db: DB, events: UnitrustEvent[], now = nowI
   const updateAppt = db.prepare('UPDATE appointment SET scheduled_for = ?, title = ? WHERE id = ?');
   const insertResult = db.prepare('INSERT INTO appointment_result (id, appointment_id, result, entered_at) VALUES (?,?,?,?)');
 
+  const earlier = db.prepare(
+    `SELECT a.id, substr(a.scheduled_for, 1, 10) day, a.unitrust_key,
+            (SELECT result FROM appointment_result r WHERE r.appointment_id = a.id ORDER BY entered_at DESC, id DESC LIMIT 1) result
+     FROM appointment a
+     WHERE a.lead_id = ? AND a.recorded_via = 'unitrust' AND a.internal_status = 'scheduled' AND a.id <> ? AND substr(a.scheduled_for, 1, 10) < ?
+     ORDER BY a.scheduled_for DESC`,
+  );
+  const markRescheduled = db.prepare("UPDATE appointment SET internal_status = 'rescheduled' WHERE id = ?");
+
+  // One per day and phone; your own events are left out.
+  const read = new Map<string, { e: UnitrustEvent; name: string; phone: string }>();
+  for (const e of events) {
+    const t = parseUnitrustTitle(e.title);
+    const key = t ? `${e.date}|${t.phone}` : null;
+    if (t && key && !read.has(key)) read.set(key, { e, name: t.name, phone: t.phone });
+  }
+
+  /** Yellow: a reschedule (and the appointment it replaced is marked) or a sat-no-sale. */
+  const yellow = (apptId: string, leadId: string, day: string): ApptResult => {
+    const before = earlier.all(leadId, apptId, day) as { id: string; day: string; unitrust_key: string | null; result: string | null }[];
+    const gone = before.filter((a) => shown.has(a.day) && a.unitrust_key && !read.has(a.unitrust_key));
+    if (!gone.length && day <= today) return 'sat_no_sale';
+    const pending = before.find((a) => a.result == null || a.result === 'cleared' || a.result === 'rescheduled');
+    for (const a of gone.length ? gone : pending ? [pending] : []) markRescheduled.run(a.id);
+    return 'rescheduled';
+  };
+
   db.transaction(() => {
-    const seenKeys = new Set<string>();
-    for (const e of events) {
-      const t = parseUnitrustTitle(e.title);
-      if (!t) continue;
-      const key = `${e.date}|${t.phone}`;
-      if (seenKeys.has(key)) continue;
-      seenKeys.add(key);
+    for (const [key, { e, name, phone }] of read) {
       sync.seen++;
       const scheduled = e.time ? `${e.date}T${e.time}` : e.date;
-      const result = RESULT_FOR_COLOR[e.color];
       const existing = byKey.get(key) as { id: string; lead_id: string } | undefined;
-      if (existing) {
-        sync.matched++;
-        updateAppt.run(scheduled, e.title, existing.id);
-        const was = (current.get(existing.id) as { result: string } | undefined)?.result ?? null;
-        const add = storedResult(result, was);
-        if (add) {
-          insertResult.run(uuidv7(), existing.id, add, now);
-          sync.changed++;
-          touched.add(existing.lead_id);
-        }
-        continue;
-      }
-      const leadId = findLead(db, t.phone, t.name);
+      const leadId = existing?.lead_id ?? findLead(db, phone, name);
       if (!leadId) {
         sync.unmatched.push(e.title);
         continue;
       }
       sync.matched++;
-      sync.added++;
-      const id = uuidv7();
-      insertAppt.run({ id, lead_id: leadId, scheduled_for: scheduled, created_at: now, unitrust_key: key, title: e.title });
-      if (result !== 'not_set') insertResult.run(uuidv7(), id, result, now);
-      touched.add(leadId);
+      let apptId = existing?.id;
+      if (apptId) {
+        updateAppt.run(scheduled, e.title, apptId);
+      } else {
+        apptId = uuidv7();
+        insertAppt.run({ id: apptId, lead_id: leadId, scheduled_for: scheduled, created_at: now, unitrust_key: key, title: e.title });
+        sync.added++;
+        touched.add(leadId);
+      }
+      const was = (current.get(apptId) as { result: string } | undefined)?.result ?? null;
+      const result: ApptResult =
+        e.color === 'yellow'
+          ? was === 'sat_no_sale' ? was
+            // A rescheduled appointment still yellow after its day was sat with no sale (Unitrust keeps it yellow).
+            : was === 'rescheduled' ? (e.date < today ? 'sat_no_sale' : was)
+            : yellow(apptId, leadId, e.date)
+          : e.color === 'green' ? 'sold' : e.color === 'red' ? 'no_show' : 'not_set';
+      const add = storedResult(result, was);
+      if (add) {
+        insertResult.run(uuidv7(), apptId, add, now);
+        if (existing) sync.changed++;
+        touched.add(leadId);
+      }
     }
     sync.unmatched = sync.unmatched.slice(0, 100);
     setSetting(db, SETTING, sync);
@@ -119,4 +159,67 @@ function findLead(db: DB, phoneDigits: string, name: string): string | null {
   }
   const byName = db.prepare(`SELECT l.id FROM lead l WHERE ${fullName} = ? LIMIT 2`).all(upper) as { id: string }[];
   return byName.length === 1 ? byName[0]!.id : null;
+}
+
+// ---------- for Reports and the top bar ----------
+
+/** How one appointment went, for counting: rescheduled means it was moved to another day. */
+export type ApptOutcome = 'pending' | 'rescheduled' | 'sold' | 'sat_no_sale' | 'no_show';
+
+export interface ApptRow {
+  id: string;
+  lead_id: string;
+  lead_name: string;
+  lead_type: string | null;
+  day: string;
+  time: string | null;
+  title: string | null;
+  outcome: ApptOutcome;
+}
+
+/** Unitrust appointments on the days from `fromDay` to `toDay` (YYYY-MM-DD, both included), optionally only some leads. */
+export function appointmentsOnDays(db: DB, fromDay: string, toDay: string, leadWhere = { sql: '1', params: {} as Record<string, unknown> }): ApptRow[] {
+  const rows = db
+    .prepare(
+      `SELECT a.id, a.lead_id, trim(coalesce(l.first_name,'') || ' ' || coalesce(l.last_name,'')) lead_name, l.lead_type,
+              substr(a.scheduled_for, 1, 10) day, CASE WHEN length(a.scheduled_for) > 10 THEN substr(a.scheduled_for, 12, 5) END time,
+              a.title, a.internal_status,
+              (SELECT result FROM appointment_result r WHERE r.appointment_id = a.id ORDER BY entered_at DESC, id DESC LIMIT 1) result
+       FROM appointment a JOIN lead l ON l.id = a.lead_id
+       WHERE a.recorded_via = 'unitrust' AND substr(a.scheduled_for, 1, 10) BETWEEN @from AND @to AND ${leadWhere.sql}
+       ORDER BY a.scheduled_for, lead_name`,
+    )
+    .all({ ...leadWhere.params, from: fromDay, to: toDay }) as (Omit<ApptRow, 'outcome'> & { internal_status: string; result: string | null })[];
+  return rows.map(({ internal_status, result, ...r }) => ({
+    ...r,
+    outcome: internal_status === 'rescheduled' ? 'rescheduled'
+      : result === 'sold' || result === 'no_show' || result === 'sat_no_sale' ? result
+      : 'pending',
+  }));
+}
+
+/** Counts and rates over some appointments. Sat is sold plus sat-no-sale. */
+export function appointmentCounts(rows: ApptRow[]) {
+  const n = (o: ApptOutcome) => rows.filter((r) => r.outcome === o).length;
+  const sold = n('sold');
+  const sat = sold + n('sat_no_sale');
+  const noShow = n('no_show');
+  return {
+    appointments: rows.length,
+    sat,
+    sold,
+    sat_no_sale: n('sat_no_sale'),
+    no_show: noShow,
+    rescheduled: n('rescheduled'),
+    pending: n('pending'),
+    /** Of the appointments that happened or didn't: how many sat. */
+    show_rate: sat + noShow ? sat / (sat + noShow) : null,
+    /** Of the ones that sat: how many bought. */
+    close_rate: sat ? sold / sat : null,
+  };
+}
+
+/** Whether the extension has sent any appointments yet. */
+export function hasUnitrustAppointments(db: DB): boolean {
+  return !!db.prepare("SELECT 1 FROM appointment WHERE recorded_via = 'unitrust' LIMIT 1").get();
 }

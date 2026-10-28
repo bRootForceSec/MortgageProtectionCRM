@@ -4,20 +4,23 @@
 /** Event colors on the Unitrust calendar. */
 export type UnitrustColor = 'blue' | 'green' | 'red' | 'yellow';
 
-/** What a color means. Yellow is either a reschedule or "sat, no sale": Unitrust doesn't tell them apart. */
-export type ApptResult = 'not_set' | 'sold' | 'no_show' | 'follow_up';
-
-export const RESULT_FOR_COLOR: Record<UnitrustColor, ApptResult> = { blue: 'not_set', green: 'sold', red: 'no_show', yellow: 'follow_up' };
+/**
+ * How an appointment stands. Yellow means either "sat, no sale" or "rescheduled": a rescheduled appointment moves to
+ * its new day on the calendar, so a yellow event on a later day (or one whose old day lost it) is a reschedule, still
+ * to come; a yellow that stays on its day is "sat, no sale".
+ */
+export type ApptResult = 'not_set' | 'rescheduled' | 'sold' | 'no_show' | 'sat_no_sale';
 
 export const APPT_RESULT_LABEL: Record<ApptResult, string> = {
   not_set: 'Appt booked',
+  rescheduled: 'Rescheduled',
   sold: 'Sold',
   no_show: 'No-show',
-  follow_up: 'Resched / no sale',
+  sat_no_sale: 'Sat, no sale',
 };
 
 /** Results that put the lead back to be called. */
-export const MISSED_RESULTS: readonly ApptResult[] = ['no_show', 'follow_up'];
+export const MISSED_RESULTS: readonly ApptResult[] = ['no_show', 'sat_no_sale'];
 
 export interface UnitrustTitle {
   state: string;

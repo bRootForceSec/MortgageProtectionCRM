@@ -11,7 +11,7 @@ browser.runtime.onMessage.addListener(function (msg) {
     return fetch(o.url.replace(/\/+$/, '') + '/api/unitrust/events', {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'x-mpcrm-extension-key': o.key },
-      body: JSON.stringify({ events: msg.events }),
+      body: JSON.stringify({ events: msg.events, days: msg.days, today: msg.today }),
     }).then(function (res) {
       return res.json().then(function (body) {
         return res.ok ? { ok: true, sync: body } : { ok: false, error: body.error || 'the CRM said ' + res.status };

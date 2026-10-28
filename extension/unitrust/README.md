@@ -6,8 +6,13 @@ Reads your Unitrust calendar while you have it open and sends each appointment's
 |---|---|---|
 | Blue | Booked, not sat yet | Appointment set |
 | Green | Sold | Appointment set, marked Sold |
-| Red | No-show | Back to be called: Leads → **No-shows & yellows** |
-| Yellow | Rescheduled, or sat with no sale | Back to be called: Leads → **No-shows & yellows** |
+| Red | No-show | Back to be called: Leads → **No-shows & no sales** |
+| Yellow, on its own day | Sat with no sale | Back to be called: Leads → **No-shows & no sales** |
+| Yellow, moved to a later day | Rescheduled | Appointment set, badge "Rescheduled" |
+
+Unitrust moves a rescheduled appointment to its new day and keeps it yellow. So a yellow event on a later day than today,
+or one whose earlier appointment disappeared from a day the calendar shows, counts as a reschedule; the one it replaced
+counts as "Rescheduled" on its old day. A rescheduled appointment still yellow after its new day counts as sat with no sale.
 
 Each appointment is matched to a lead by the phone number in its title (then by name). Your own events, like
 "DONT BOOK! CHURCH", are left alone. A note in the corner of the Unitrust page says what was sent; click it to hide it.

@@ -31,7 +31,7 @@
     }
     var sig = JSON.stringify(r.events);
     if (sig === last && Date.now() - lastAt < 5 * 60 * 1000) return;
-    browser.runtime.sendMessage({ type: 'events', events: r.events }).then(function (res) {
+    browser.runtime.sendMessage({ type: 'events', events: r.events, days: r.days, today: r.today }).then(function (res) {
       if (!res || !res.ok) {
         show('CRM: ' + ((res && res.error) || 'not sent'), true);
         return;
