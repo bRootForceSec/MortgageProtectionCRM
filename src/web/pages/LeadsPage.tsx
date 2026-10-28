@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api, fmtDateTime, fmtMoney, fmtPhone, fullName, type AddResult, type CallListResponse } from '../api';
 import { ClearListDialog, suggestListName } from '../components/CallListDialogs';
 import { useApp } from '../App';
-import { StatusBadge } from '../components/LeadDetails';
+import { ApptBadge, StatusBadge } from '../components/LeadDetails';
 import { LeadViewer } from '../components/LeadViewer';
 import { GroupPicker, useGroups } from '../components/GroupPicker';
 import { getStored, setStored } from '../storage';
@@ -19,7 +19,9 @@ const STATUSES = [
   { key: 'all', label: 'All' }, { key: 'new', label: 'Never called' },
   { key: 'no_answer', label: 'No answer', title: 'Called, but the last call didn\'t reach them' },
   { key: 'talked', label: 'Talked, no appt' }, { key: 'callback', label: 'Callbacks' },
-  { key: 'appointment_set', label: 'Appointment set' }, { key: 'invalid', label: 'Bad numbers' }, { key: 'dead', label: 'Dead pile' },
+  { key: 'appointment_set', label: 'Appointment set', title: 'Booked, or sold in Unitrust' },
+  { key: 'appt_missed', label: 'No-shows & yellows', title: 'Red or yellow on the Unitrust calendar, not called since' },
+  { key: 'invalid', label: 'Bad numbers' }, { key: 'dead', label: 'Dead pile' },
 ];
 
 /** Midnight at the start of today, your time, `days` days back. */
@@ -258,7 +260,7 @@ export function LeadsPage() {
                 </td>
                 <td>{fullName(r)}</td>
                 <td>{fmtPhone(r.phone_e164)}</td><td>{r.county ?? ''}</td><td>{[r.city, r.state].filter(Boolean).join(', ')}</td>
-                <td title={typeLabel(r.lead_type)}>{r.lead_type ?? ''}</td><td>{r.batch_name}</td><td><StatusBadge status={r.status} />{r.on_list && <span className="badge" style={{ marginLeft: 4 }}>on call list</span>}</td>
+                <td title={typeLabel(r.lead_type)}>{r.lead_type ?? ''}</td><td>{r.batch_name}</td><td><StatusBadge status={r.status} /><ApptBadge result={r.appt_result} />{r.on_list && <span className="badge" style={{ marginLeft: 4 }}>on call list</span>}</td>
                 <td>{r.attempts_total}</td><td>{fmtDateTime(r.last_call_at)}</td><td>{outcomeLabel(r.last_outcome_code)}</td>
               </tr>
             );

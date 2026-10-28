@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api, fmtDateTime, fmtDob, fmtDuration, fmtMoney, fmtPhone, fullName, localTime, personAge, type LeadDetail, type Call } from '../api';
 import { useApp } from '../App';
+import { APPT_RESULT_LABEL, type ApptResult } from '../../shared/appointments';
 
 const STATUS_LABEL: Record<string, string> = {
   new: 'New', retry: 'Tried', callback: 'Callback', appointment_set: 'Appointment set', invalid: 'Bad number', dead: 'Dead lead',
@@ -19,6 +20,12 @@ const COUNTY_SOURCE: Record<string, string> = { page: 'from the lead page', zip:
 
 export function StatusBadge({ status }: { status: string }) {
   return <span className={`badge ${status}`}>{STATUS_LABEL[status] ?? status}</span>;
+}
+
+/** How the lead's latest appointment went in Unitrust (color on its calendar), when the extension has seen one. */
+export function ApptBadge({ result }: { result: string | null | undefined }) {
+  if (!result || !(result in APPT_RESULT_LABEL)) return null;
+  return <span className={`badge appt appt-${result}`} title="From the Unitrust calendar">{APPT_RESULT_LABEL[result as ApptResult]}</span>;
 }
 
 /** "They called me back": flips the mark on a lead and says so. Returns the new value. */
@@ -91,7 +98,7 @@ export function LeadSummary({
       <div className="lead-head">
         <div>
           <h2>
-            <span className="lead-name">{fullName(l)}</span> {d.state && <StatusBadge status={d.state.status} />}
+            <span className="lead-name">{fullName(l)}</span> {d.state && <StatusBadge status={d.state.status} />}{d.state && <ApptBadge result={d.state.appt_result} />}
             {onEdit && <button className="btn small" onClick={onEdit} title="Edit this lead's details">Edit {editKey && <kbd>{editKey}</kbd>}</button>}
             <label className={`called-back ${backAt ? 'on' : ''}`} title={backAt ? `Marked ${fmtDateTime(backAt)}` : 'Tick when this lead calls you back'}>
               <input type="checkbox" checked={!!backAt} onChange={() => void flipBack()} />

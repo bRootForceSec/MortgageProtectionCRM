@@ -24,7 +24,7 @@ Read this before changing code. New features must fit the existing structure. Do
 | You need to… | Do this |
 |---|---|
 | Add an endpoint | Put it in the route file for its feature (`src/server/http/*Routes.ts`). Keep the handler thin: validate input with zod, call a domain function, return the result. **No SQL in route files** (the structure check enforces it). |
-| Find the route file | `importRoutes` (uploads, drafts, bulk import, import history), `leadRoutes` (leads, call list, lead page, calls and outcomes), `callingRoutes`, `numberRoutes` (caller IDs and their checks), `reportRoutes`, `dataRoutes` (export and backups). `app.ts` only wires these together. |
+| Find the route file | `importRoutes` (uploads, drafts, bulk import, import history), `leadRoutes` (leads, call list, lead page, calls and outcomes), `callingRoutes`, `numberRoutes` (caller IDs and their checks), `reportRoutes`, `dataRoutes` (export and backups), `unitrustRoutes` (what the Unitrust Firefox extension sends, and its key). `app.ts` only wires these together. |
 | Add business logic or queries | `src/server/domain/<feature>.ts`. Domain functions take `db` and know nothing about HTTP. |
 | Signal a user-facing error | `throw new DomainError(message, status?)` from `src/server/core/errors.ts`. The error handler turns it into a 4xx with `{ error }`. Don't throw a plain `Error` for user mistakes, and don't catch and rewrap errors in routes. |
 | Store a setting | Use `getSetting` / `setSetting` from `src/server/core/settings.ts` (`app_setting` table). Don't create a new settings table or file. Secrets go in `Secrets` (0600 `secrets.json`), never in the DB. |
@@ -38,6 +38,7 @@ Read this before changing code. New features must fit the existing structure. Do
 | Remember a UI preference | `getStored` / `setStored` (or the `Json` versions) from `src/web/storage.ts`. Don't touch `localStorage` directly (the structure check enforces it). |
 | Work with dates and time zones | Web: `src/web/when.ts` (`startOfDay`, `addDays`, `dayRange`, `todayRange`, `ymd`, and the callback parsing). Server: `domain/normalize.ts` (`timeZoneFor`). Age from a date of birth: `src/shared/age.ts` (`ageOn`). Don't write another day-range or time-zone offset helper. |
 | List or pick batches | `src/web/components/BatchBrowse.tsx` (`BatchPicker`, `BatchFilterBar`, `ImportHistory`), backed by `browseImports` (`/api/imports/browse`). Filtering and grouping by bulk import live in `src/shared/batches.ts`. Don't add another plain list or dropdown of every batch. |
+| Change how Unitrust appointments are read | The Firefox extension is in `extension/unitrust/` (plain JS, no build; see its README). It posts to `/api/unitrust/events` with its own key, the one request that skips the cookie (`security.ts`). Storing and matching: `domain/unitrustAppointments.ts`; colors and titles: `src/shared/appointments.ts`. |
 | Share a type or helper between server and UI | Put it in `src/shared/` and import it from both sides (server: `'../../shared/x.js'`, web: `'../shared/x'`). Code there must run in both Node and the browser: no `node:` imports and nothing from `server/`, `web/` or `desktop/` (the structure check enforces it). Response shapes not moved yet are still mirrored in `src/web/api.ts` and `src/web/importTypes.ts`; when you change one, update both sides in the same PR. |
 
 ## Data rules

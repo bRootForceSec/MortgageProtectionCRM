@@ -78,6 +78,11 @@ a { color: var(--accent); }
 .badge.callback_due, .badge.callback { color: var(--warn); border-color: var(--warn); }
 .badge.dead, .badge.invalid { color: var(--bad); border-color: var(--bad); }
 .badge.appointment_set { color: var(--good); border-color: var(--good); }
+.badge.appt { margin-left: 4px; }
+.badge.appt-sold { color: var(--good); border-color: var(--good); }
+.badge.appt-no_show { color: var(--bad); border-color: var(--bad); }
+.badge.appt-follow_up { color: var(--warn); border-color: var(--warn); }
+.badge.appt-not_set { color: var(--accent); border-color: var(--accent); }
 
 .lead-head { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; flex-wrap: wrap; }
 .lead-head h2 { margin: 0 0 2px; font-size: 22px; }

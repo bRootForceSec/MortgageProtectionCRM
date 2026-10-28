@@ -35,7 +35,7 @@ export function saveAiSettings(db: DB, input: unknown): AiSettings {
   return s;
 }
 
-export type SecretName = 'anthropic_api_key' | 'openai_api_key';
+export type SecretName = 'anthropic_api_key' | 'openai_api_key' | 'unitrust_extension_key';
 
 export class Secrets {
   constructor(private file: string) {}
@@ -63,7 +63,7 @@ export class Secrets {
     fs.renameSync(tmp, this.file);
   }
   /** Which keys are saved, without their values. */
-  present(): Record<SecretName, boolean> {
+  present(): Record<'anthropic_api_key' | 'openai_api_key', boolean> {
     const all = this.read();
     return { anthropic_api_key: !!all.anthropic_api_key, openai_api_key: !!all.openai_api_key };
   }

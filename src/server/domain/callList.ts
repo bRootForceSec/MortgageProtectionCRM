@@ -34,12 +34,14 @@ export function leadFilterWhere(f: LeadFilter): { sql: string; params: Record<st
   const group = groupWhere('l.county_key', { counties: f.counties, areaCodes: f.areaCodes });
   const search = searchWhere(f.search);
   // "Tried" leads split by how the last call went: not reached (no answer) or talked with no appointment.
+  // Leads a no-show or yellow in Unitrust put back to be called have their own tab ("appt_missed"), not these two.
   const tried = f.status === 'no_answer' || f.status === 'talked' ? f.status : null;
-  const status = tried ? 'retry' : f.status && f.status !== 'all' ? f.status : null;
+  const missed = f.status === 'appt_missed';
+  const status = tried || missed ? 'retry' : f.status && f.status !== 'all' ? f.status : null;
   const talked = "coalesce((SELECT grp FROM outcome_code WHERE code = s.last_outcome_code), '') = 'contact'";
   const parts = [
     '(@lf_status IS NULL OR s.status = @lf_status)',
-    tried === 'talked' ? talked : tried === 'no_answer' ? `NOT ${talked}` : '1',
+    tried === 'talked' ? `${talked} AND s.appt_missed = 0` : tried === 'no_answer' ? `NOT ${talked} AND s.appt_missed = 0` : missed ? 's.appt_missed = 1' : '1',
     '(@lf_batch IS NULL OR l.batch_id = @lf_batch)',
     "(@lf_type IS NULL OR coalesce(l.lead_type, '') = @lf_type)",
     f.bulk_id

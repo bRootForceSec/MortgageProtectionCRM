@@ -2,13 +2,15 @@ import type { Statement } from 'better-sqlite3';
 import type { DB } from '../db/connection.js';
 import { nowIso } from '../ids.js';
 import { retryGapMs } from './callingSettings.js';
+import { MISSED_RESULTS, type ApptResult } from '../../shared/appointments.js';
 
 // lead_state is a derived projection. It is computed only from authoritative facts:
 // calls, current outcomes and lead actions (skip / dead / restore).
 // `rebuildLeadState` can be run at any time and must produce the same result.
 //
-// Appointments are tracked in Unitrust, not here. "Appointment set" is just how a call ended: the lead leaves the
-// queue and has no date or time here.
+// Appointments are tracked in Unitrust. "Appointment set" is how a call ended: the lead leaves the queue. The Firefox
+// extension reads how each appointment went off the Unitrust calendar (see unitrustAppointments.ts); when that is newer
+// than the last call, it decides: booked or sold stays out of the queue, a no-show or yellow comes back to be called.
 
 /**
  * Outcomes that mean the lead booked an appointment. "Appointment sat, no sale" and "Sold" are retired, but older
@@ -45,6 +47,8 @@ export interface LeadFacts {
   phones?: string[];
   /** Numbers ruled out on other leads that share them: marked bad there, or that lead is in the dead pile. */
   blocks?: PhoneBlock[];
+  /** How the lead's latest Unitrust appointment stands, and since when. */
+  appt?: { result: ApptResult; at: string } | null;
 }
 
 export interface PhoneBlock {
@@ -71,6 +75,10 @@ export interface DerivedLeadState {
   blocked_phones_json: string | null;
   /** Why a number is ruled out, when another lead ruled it out or the main number is bad. */
   block_reason: string | null;
+  /** How the latest Unitrust appointment went, if there is one. */
+  appt_result: ApptResult | null;
+  /** 1 when a no-show or yellow in Unitrust (newer than the last call) is what put the lead back to be called. */
+  appt_missed: number;
 }
 
 /** Pure function: facts in, state out. */
@@ -108,7 +116,12 @@ export function deriveLeadState(f: LeadFacts, now: string, retryGap = RETRY_GAP_
     skipped_at: skippedAt,
     preferred_number_id: preferred,
     due_any_time: 0,
+    appt_result: f.appt?.result ?? null,
+    appt_missed: 0,
   };
+  // Unitrust's word counts only when it came after the last outcome (and after a restore).
+  const unitrust = f.appt && f.appt.at > (lastOutcome?.entered_at ?? '') && f.appt.at > lastRestore ? f.appt : null;
+  const missed = !!unitrust && MISSED_RESULTS.includes(unitrust.result);
 
   // Which numbers are ruled out. A bad number counts for the number that was dialed, so a lead with an alternate
   // stays in rotation on the alternate. Other leads with the same number pass on "bad" and "dead pile".
@@ -141,8 +154,9 @@ export function deriveLeadState(f: LeadFacts, now: string, retryGap = RETRY_GAP_
   };
 
   if (deadAt && deadAt > lastRestore) return { ...withPhones, status: 'dead', next_due_at: null, block_reason: null };
-  // Booked: out of the queue until a later call says otherwise (or you restore it).
-  if (lastOutcome && BOOKED_CODES.has(lastOutcome.outcome_code) && lastOutcome.entered_at > lastRestore) {
+  // Booked: out of the queue until a later call (or Unitrust) says otherwise, or you restore it.
+  const booked = unitrust ? !missed : !!lastOutcome && BOOKED_CODES.has(lastOutcome.outcome_code) && lastOutcome.entered_at > lastRestore;
+  if (booked) {
     return { ...withPhones, status: 'appointment_set', next_due_at: null };
   }
   if (!active) {
@@ -150,6 +164,8 @@ export function deriveLeadState(f: LeadFacts, now: string, retryGap = RETRY_GAP_
     const dead = phones.some((p) => blocked.get(p)?.kind === 'dead');
     return { ...withPhones, status: dead ? 'dead' : 'invalid', next_due_at: null };
   }
+  // A no-show or yellow in Unitrust: due now, to set it up again.
+  if (missed) return { ...withPhones, status: 'retry', next_due_at: null, appt_missed: 1 };
   // The last call found a bad number but there's another one to try: due now, on the other number.
   if (lastOutcome?.grp === 'invalid' && lastOutcome.entered_at > lastRestore) {
     return { ...withPhones, status: 'retry', next_due_at: null };
@@ -180,6 +196,7 @@ export function loadLeadFacts(db: DB, leadId: string): LeadFacts {
   return {
     phones,
     blocks: loadPhoneBlocks(db, leadId, phones),
+    appt: latestUnitrustAppt(db, leadId),
     calls: stmt(db, 'SELECT id, requested_at, from_number_id, initiation_result, time_known, to_e164 FROM call WHERE lead_id = ? AND voided_at IS NULL')
       .all(leadId) as LeadFacts['calls'],
     outcomes: stmt(
@@ -193,6 +210,20 @@ export function loadLeadFacts(db: DB, leadId: string): LeadFacts {
       .all(leadId) as LeadFacts['outcomes'],
     actions: stmt(db, 'SELECT action, created_at FROM lead_action WHERE lead_id = ?').all(leadId) as LeadFacts['actions'],
   };
+}
+
+/** The lead's latest Unitrust appointment (by its day) and its newest result; blue (or cleared) is "not_set". */
+function latestUnitrustAppt(db: DB, leadId: string): LeadFacts['appt'] {
+  const r = stmt(
+    db,
+    `SELECT a.created_at, (SELECT result FROM appointment_result r WHERE r.appointment_id = a.id ORDER BY entered_at DESC, id DESC LIMIT 1) result,
+            (SELECT max(entered_at) FROM appointment_result r WHERE r.appointment_id = a.id) result_at
+     FROM appointment a WHERE a.lead_id = ? AND a.recorded_via = 'unitrust' AND a.internal_status <> 'canceled'
+     ORDER BY a.scheduled_for DESC, a.created_at DESC LIMIT 1`,
+  ).get(leadId) as { created_at: string; result: string | null; result_at: string | null } | undefined;
+  if (!r) return null;
+  const result = (['sold', 'no_show', 'follow_up'] as const).find((x) => x === r.result) ?? 'not_set';
+  return { result, at: r.result_at ?? r.created_at };
 }
 
 const NAME = "trim(coalesce(l.first_name,'') || ' ' || coalesce(l.last_name,''))";
@@ -277,15 +308,16 @@ export function leadsSharingPhones(db: DB, leadIds: string[]): string[] {
 }
 
 const UPSERT = `INSERT INTO lead_state (lead_id, status, attempts_total, last_call_at, last_outcome_code, next_due_at,
-    due_any_time, skipped_at, preferred_number_id, active_phone_e164, blocked_phones_json, block_reason, derived_at)
+    due_any_time, skipped_at, preferred_number_id, active_phone_e164, blocked_phones_json, block_reason, appt_result, appt_missed, derived_at)
   VALUES (@lead_id, @status, @attempts_total, @last_call_at, @last_outcome_code, @next_due_at, @due_any_time, @skipped_at,
-    @preferred_number_id, @active_phone_e164, @blocked_phones_json, @block_reason, @derived_at)
+    @preferred_number_id, @active_phone_e164, @blocked_phones_json, @block_reason, @appt_result, @appt_missed, @derived_at)
   ON CONFLICT(lead_id) DO UPDATE SET status = excluded.status, attempts_total = excluded.attempts_total,
     last_call_at = excluded.last_call_at, last_outcome_code = excluded.last_outcome_code, next_due_at = excluded.next_due_at,
     due_any_time = excluded.due_any_time,
     skipped_at = excluded.skipped_at, preferred_number_id = excluded.preferred_number_id,
     active_phone_e164 = excluded.active_phone_e164, blocked_phones_json = excluded.blocked_phones_json,
-    block_reason = excluded.block_reason, derived_at = excluded.derived_at`;
+    block_reason = excluded.block_reason, appt_result = excluded.appt_result, appt_missed = excluded.appt_missed,
+    derived_at = excluded.derived_at`;
 
 /**
  * Recomputes lead_state for the given leads (all leads when omitted), and for every lead that shares a number with
@@ -308,6 +340,7 @@ export function verifyLeadState(db: DB, now = nowIso()): string[] {
   const rows = db.prepare('SELECT * FROM lead_state').all() as (DerivedLeadState & { lead_id: string })[];
   const keys: (keyof DerivedLeadState)[] = [
     'attempts_total', 'last_call_at', 'last_outcome_code', 'skipped_at', 'preferred_number_id', 'active_phone_e164', 'blocked_phones_json',
+    'appt_result', 'appt_missed',
   ];
   const bad: string[] = [];
   const gap = retryGapMs(db);
