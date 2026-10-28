@@ -5,12 +5,14 @@ import { type ColumnMapping, type LeadFieldKey, validateMapping, headerKey } fro
 import type { ParsedSheet } from './spreadsheet.js';
 import {
   coborrowerSignal, normalizeAge, normalizeDob, normalizeCallinDate, normalizeMoneyToCents, normalizeState, normalizeUsPhone,
-  normalizeZip, splitName, splitStateZip, toText, timeZoneFor,
+  normalizeZip, splitName, splitPhones, splitStateZip, toText, timeZoneFor,
 } from './normalize.js';
 import { resolveCounty, lookupZip } from './county.js';
 import { rebuildLeadState } from './leadState.js';
 import { recordSheetHistory } from './sheetHistory.js';
 import { ageOn } from '../../shared/age.js';
+import type { OtherPhone } from '../../shared/phones.js';
+import { writeOtherPhones } from './leadPhones.js';
 
 export type RowStatus = 'accepted' | 'duplicate_in_file' | 'already_imported' | 'rejected';
 
@@ -20,10 +22,8 @@ export interface LeadDraft {
   full_name_raw: string | null;
   phone_raw: string | null;
   phone_e164: string | null;
-  phone2_raw: string | null;
-  phone2_e164: string | null;
-  phone3_raw: string | null;
-  phone3_e164: string | null;
+  /** Numbers besides the main one, in order. */
+  other_phones: OtherPhone[];
   email: string | null;
   lender: string | null;
   loan_amount_cents: number | null;
@@ -122,21 +122,24 @@ export function mapFields(f: FieldValues, extra: Record<string, string> = {}): {
   if (full && !first && !last) ({ first, last } = splitName(full));
   if (!first && !last) errors.push('no name');
 
-  const phones: { raw: string | null; e164: string | null }[] = [];
-  const phoneRaw = txt(f.phone);
+  // A cell can hold several numbers ("317-555-0100 / 317-555-0101"): the first in the Phone cell is the main one,
+  // and every other number is kept, in order, unless it repeats one before it.
+  const [phoneRaw = null, ...moreMain] = splitPhones(f.phone);
   const phone = normalizeUsPhone(phoneRaw);
   if (!phoneRaw) errors.push('no phone number');
   else if (phone.problem) errors.push(phone.problem);
-  phones.push({ raw: phoneRaw, e164: phone.value });
-  // Extra numbers: kept only when they differ from the ones before them.
-  for (const [k, label] of [['phone2', 'second'], ['phone3', 'third']] as const) {
-    const r = txt(f[k]);
+  const others: OtherPhone[] = [];
+  const more = [
+    ...moreMain.map((r) => ({ r, label: null, what: 'phone' })),
+    ...splitPhones(f.phone2).map((r) => ({ r, label: 'Alternate', what: 'second' })),
+    ...splitPhones(f.phone3).map((r) => ({ r, label: 'Called in from', what: 'third' })),
+  ];
+  for (const { r, label, what } of more) {
     const n = normalizeUsPhone(r);
-    if (n.problem) warnings.push(`${label} ${n.problem}`);
-    if (r && n.value && phones.some((p) => p.e164 === n.value)) continue;
-    if (r) phones.push({ raw: r, e164: n.value });
+    if (n.problem) warnings.push(`${what} ${n.problem}`);
+    if (n.value && (n.value === phone.value || others.some((p) => p.e164 === n.value))) continue;
+    others.push({ raw: r, e164: n.value, label });
   }
-  while (phones.length < 3) phones.push({ raw: null, e164: null });
 
   const loanRaw = txt(f.loan_amount);
   const loan = normalizeMoneyToCents(loanRaw);
@@ -187,12 +190,9 @@ export function mapFields(f: FieldValues, extra: Record<string, string> = {}): {
       first_name: first,
       last_name: last,
       full_name_raw: full,
-      phone_raw: phones[0]!.raw,
-      phone_e164: phones[0]!.e164,
-      phone2_raw: phones[1]!.raw,
-      phone2_e164: phones[1]!.e164,
-      phone3_raw: phones[2]!.raw,
-      phone3_e164: phones[2]!.e164,
+      phone_raw: phoneRaw,
+      phone_e164: phone.value,
+      other_phones: others,
       email: txt(f.email),
       lender: txt(f.lender),
       loan_amount_cents: loan.value,
@@ -410,11 +410,11 @@ export function commitRows(
     );
     const insLead = db.prepare(
       `INSERT INTO lead (id, batch_id, import_row_id, first_name, last_name, full_name_raw, phone_raw, phone_e164, phone_valid,
-        phone2_raw, phone2_e164, phone3_raw, phone3_e164, email, lender, loan_amount_cents, loan_amount_raw, age, age_raw, dob, dob_raw,
+        email, lender, loan_amount_cents, loan_amount_raw, age, age_raw, dob, dob_raw,
         coborrower_raw, coborrower_signal, address_line, city, state, zip, county, county_key, county_source, time_zone,
         tobacco_raw, health_heart_raw, health_stroke_raw, health_cancer_raw, health_diabetes_raw, extra_json,
         lead_type, price_cents, source_lead_id, callin_at, callin_raw, source_page, created_at)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     );
     const insLink = db.prepare(
       `INSERT OR IGNORE INTO lead_link (id, lead_a, lead_b, reason, created_at) VALUES (?,?,?,'same_phone',?)`,
@@ -435,13 +435,14 @@ export function commitRows(
       const price = l.lead_type ? prices.get(l.lead_type) ?? null : perLead;
       insLead.run(
         leadId, batchId, rowId, l.first_name, l.last_name, l.full_name_raw, l.phone_raw, l.phone_e164, l.phone_e164 ? 1 : 0,
-        l.phone2_raw, l.phone2_e164, l.phone3_raw, l.phone3_e164, l.email, l.lender, l.loan_amount_cents, l.loan_amount_raw,
+        l.email, l.lender, l.loan_amount_cents, l.loan_amount_raw,
         l.age, l.age_raw, l.dob, l.dob_raw, l.coborrower_raw, l.coborrower_signal, l.address_line, l.city, l.state, l.zip,
         l.county, l.county_key, l.county_source, l.time_zone, l.tobacco_raw,
         l.health_heart_raw, l.health_stroke_raw, l.health_cancer_raw, l.health_diabetes_raw,
         Object.keys(l.extra).length ? JSON.stringify(l.extra) : null,
         l.lead_type, price, l.source_lead_id, l.callin_at, l.callin_raw, r.page, now,
       );
+      if (l.other_phones.length) writeOtherPhones(db, leadId, l.other_phones);
       newLeadIds.push(leadId);
       if (l.status_raw && l.phone_e164) history.push({ leadId, status: l.status_raw, phone: l.phone_e164 });
       for (const other of r.samePhoneLeadIds) insLink.run(uuidv7(), other, leadId, now);

@@ -1,4 +1,5 @@
 import { ageOn } from '../shared/age';
+import type { OtherPhone } from '../shared/phones';
 
 // Thin client for the local API. All requests are same-origin; the access cookie is sent automatically.
 
@@ -181,7 +182,10 @@ export interface Call {
 }
 
 export interface LeadDetail {
-  lead: Record<string, any> & { id: string; extra: Record<string, string> };
+  lead: Record<string, any> & { id: string; extra: Record<string, string>;
+    /** Numbers besides the main one, in order. */
+    other_phones: OtherPhone[];
+  };
   state: { status: string; attempts_total: number; last_call_at: string | null; last_outcome_code: string | null; next_due_at: string | null; preferred_number_id: string | null;
     /** The number to call now: the first of the lead's numbers that isn't ruled out. */
     active_phone_e164: string | null;

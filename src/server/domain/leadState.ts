@@ -170,10 +170,13 @@ function byKey<K extends string>(k: K) {
 }
 
 export function loadLeadFacts(db: DB, leadId: string): LeadFacts {
-  const lead = stmt(db, 'SELECT phone_e164, phone2_e164, phone3_e164 FROM lead WHERE id = ?').get(leadId) as
-    | { phone_e164: string | null; phone2_e164: string | null; phone3_e164: string | null }
-    | undefined;
-  const phones = [...new Set([lead?.phone_e164, lead?.phone2_e164, lead?.phone3_e164].filter((p): p is string => !!p))];
+  // The main number first, then the others in order.
+  const rows = stmt(
+    db,
+    `SELECT phone_e164 e164 FROM lead WHERE id = @id AND phone_e164 IS NOT NULL
+     UNION ALL SELECT e164 FROM (SELECT e164 FROM lead_other_phone WHERE lead_id = @id AND e164 IS NOT NULL ORDER BY pos)`,
+  ).all({ id: leadId }) as { e164: string }[];
+  const phones = [...new Set(rows.map((r) => r.e164))];
   return {
     phones,
     blocks: loadPhoneBlocks(db, leadId, phones),
@@ -223,24 +226,22 @@ export function loadPhoneBlocks(db: DB, leadId: string, phones: string[]): Phone
   // Another lead with the same number that is in the dead pile.
   const others = stmt(
     db,
-      `SELECT l.id, ${NAME} who, l.phone_e164, l.phone2_e164, l.phone3_e164,
+      `SELECT l.id, ${NAME} who,
+              (SELECT json_group_array(n.e164) FROM lead_number n WHERE n.lead_id = l.id) numbers_json,
               (SELECT max(a.created_at) FROM lead_action a WHERE a.lead_id = l.id AND a.action = 'restore') restored,
               (SELECT max(a.created_at) FROM lead_action a WHERE a.lead_id = l.id AND a.action = 'mark_dead') dead_action,
               (SELECT max(o.entered_at) FROM call c JOIN call_outcome o ON o.call_id = c.id JOIN outcome_code oc ON oc.code = o.outcome_code
                  WHERE c.lead_id = l.id AND c.voided_at IS NULL AND (oc.marks_dead = 1 OR o.do_not_call = 1)
                    AND NOT EXISTS (SELECT 1 FROM call_outcome s WHERE s.supersedes_id = o.id)) dead_outcome
        FROM lead l
-       WHERE l.id != @id AND l.id IN (
-         SELECT id FROM lead WHERE phone_e164 IN (SELECT value FROM json_each(@phones))
-         UNION SELECT id FROM lead WHERE phone2_e164 IN (SELECT value FROM json_each(@phones))
-         UNION SELECT id FROM lead WHERE phone3_e164 IN (SELECT value FROM json_each(@phones)))`,
+       WHERE l.id != @id AND l.id IN (SELECT lead_id FROM lead_number WHERE e164 IN (SELECT value FROM json_each(@phones)))`,
     )
-    .all(p) as { who: string; phone_e164: string | null; phone2_e164: string | null; phone3_e164: string | null; restored: string | null; dead_action: string | null; dead_outcome: string | null }[];
+    .all(p) as { who: string; numbers_json: string; restored: string | null; dead_action: string | null; dead_outcome: string | null }[];
   for (const o of others) {
     const deadAt = [o.dead_action, o.dead_outcome].filter((x): x is string => !!x).sort().at(-1);
     if (!deadAt || deadAt <= (o.restored ?? '')) continue;
-    for (const ph of [o.phone_e164, o.phone2_e164, o.phone3_e164]) {
-      if (ph && phones.includes(ph)) blocks.push({ phone: ph, at: deadAt, kind: 'dead', who: o.who || 'another lead' });
+    for (const ph of new Set(JSON.parse(o.numbers_json) as string[])) {
+      if (phones.includes(ph)) blocks.push({ phone: ph, at: deadAt, kind: 'dead', who: o.who || 'another lead' });
     }
   }
   return blocks;
@@ -255,9 +256,7 @@ export function leadsSharingPhones(db: DB, leadIds: string[]): string[] {
   const phones = (
     db
       .prepare(
-        `SELECT phone_e164 p FROM lead WHERE id IN (SELECT value FROM json_each(@ids))
-         UNION SELECT phone2_e164 FROM lead WHERE id IN (SELECT value FROM json_each(@ids))
-         UNION SELECT phone3_e164 FROM lead WHERE id IN (SELECT value FROM json_each(@ids))
+        `SELECT e164 p FROM lead_number WHERE lead_id IN (SELECT value FROM json_each(@ids))
          UNION SELECT to_e164 FROM call WHERE lead_id IN (SELECT value FROM json_each(@ids))`,
       )
       .all({ ids }) as { p: string | null }[]
@@ -269,9 +268,7 @@ export function leadsSharingPhones(db: DB, leadIds: string[]): string[] {
   return (
     db
       .prepare(
-        `SELECT id FROM lead WHERE phone_e164 IN (SELECT value FROM json_each(@ph))
-         UNION SELECT id FROM lead WHERE phone2_e164 IN (SELECT value FROM json_each(@ph))
-         UNION SELECT id FROM lead WHERE phone3_e164 IN (SELECT value FROM json_each(@ph))`,
+        `SELECT DISTINCT lead_id id FROM lead_number WHERE e164 IN (SELECT value FROM json_each(@ph))`,
       )
       .all({ ph }) as { id: string }[]
   )

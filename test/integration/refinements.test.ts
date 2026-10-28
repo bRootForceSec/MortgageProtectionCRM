@@ -178,15 +178,47 @@ describe('editing a lead', () => {
   it('changes details, keeps the old values, and refuses a bad phone', async () => {
     const r = await app.inject({
       method: 'PATCH', url: `/api/leads/${jane}`, headers: write,
-      payload: { details: { first_name: 'Janet', phone2: '(614) 555-0177', state: 'IN', loan_amount: '300k' } },
+      payload: { details: { first_name: 'Janet', state: 'IN', loan_amount: '300k' }, other_phones: [{ number: '(614) 555-0177', label: 'Alternate' }] },
     });
     expect(r.statusCode).toBe(200);
-    expect(r.json()).toMatchObject({ first_name: 'Janet', phone2_e164: '+16145550177', state: 'IN', time_zone: 'America/Indiana/Indianapolis', loan_amount_cents: 30000000 });
+    expect(r.json()).toMatchObject({
+      first_name: 'Janet', state: 'IN', time_zone: 'America/Indiana/Indianapolis', loan_amount_cents: 30000000,
+      other_phones: [{ raw: '(614) 555-0177', e164: '+16145550177', label: 'Alternate' }],
+    });
     const changes = db.prepare("SELECT field, old_value, new_value FROM lead_change WHERE lead_id = ? AND field = 'first_name'").all(jane);
     expect(changes).toEqual([{ field: 'first_name', old_value: 'Jane', new_value: 'Janet' }]);
     const bad = await app.inject({ method: 'PATCH', url: `/api/leads/${jane}`, headers: write, payload: { details: { phone: '555-01' } } });
     expect(bad.statusCode).toBe(400);
     expect(bad.json().error).toMatch(/Phone/);
+  });
+
+  it('keeps a list of any number of other numbers, and the old list in the change log', async () => {
+    const list = ['317-555-0141', '317-555-0142', '317-555-0143', '317-555-0144', '317-555-0145'];
+    const r = await app.inject({
+      method: 'PATCH', url: `/api/leads/${jane}`, headers: write,
+      payload: { other_phones: [...list.map((number, i) => ({ number, label: i === 0 ? 'Work' : null })), { number: '  ', label: 'blank rows are dropped' }] },
+    });
+    expect(r.statusCode).toBe(200);
+    const detail = (await app.inject({ url: `/api/leads/${jane}`, headers: auth })).json();
+    expect(detail.lead.other_phones.map((p: any) => p.e164)).toEqual(list.map((n) => `+1${n.replace(/\D/g, '')}`));
+    expect(detail.lead.other_phones[0].label).toBe('Work');
+    // Remove one and reorder: the list is replaced, and the change log has both versions.
+    await app.inject({ method: 'PATCH', url: `/api/leads/${jane}`, headers: write, payload: { other_phones: [{ number: list[4] }, { number: list[0], label: 'Work' }] } });
+    expect((db.prepare('SELECT e164 FROM lead_other_phone WHERE lead_id = ? ORDER BY pos').all(jane) as any[]).map((p) => p.e164)).toEqual(['+13175550145', '+13175550141']);
+    const log = db.prepare("SELECT old_value, new_value FROM lead_change WHERE lead_id = ? AND field = 'other_phones' ORDER BY created_at, rowid").all(jane) as any[];
+    expect(log).toHaveLength(2);
+    expect(log[1]).toEqual({ old_value: expect.stringContaining('Work +13175550141, +13175550142'), new_value: '+13175550145, Work +13175550141' });
+    // Saving the same list again changes nothing.
+    await app.inject({ method: 'PATCH', url: `/api/leads/${jane}`, headers: write, payload: { other_phones: [{ number: list[4] }, { number: list[0], label: 'Work' }] } });
+    expect(db.prepare("SELECT COUNT(*) n FROM lead_change WHERE lead_id = ? AND field = 'other_phones'").get(jane)).toEqual({ n: 2 });
+    // A bad number is refused, and nothing is changed.
+    const bad = await app.inject({ method: 'PATCH', url: `/api/leads/${jane}`, headers: write, payload: { other_phones: [{ number: '555-01' }] } });
+    expect(bad.statusCode).toBe(400);
+    expect(bad.json().error).toMatch(/Other number "555-01"/);
+    expect(db.prepare('SELECT COUNT(*) n FROM lead_other_phone WHERE lead_id = ?').get(jane)).toEqual({ n: 2 });
+    // Search finds the lead by any of its numbers.
+    const found = (await app.inject({ url: `/api/leads?search=${encodeURIComponent('555-0145')}`, headers: auth })).json();
+    expect(found.rows.map((x: any) => x.id)).toEqual([jane]);
   });
 });
 

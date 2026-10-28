@@ -346,6 +346,7 @@ export function registerImportRoutes(
       lead_type: typeCode.nullable().optional(),
       county: z.string().max(100).nullable().optional(),
       details: z.partialRecord(z.enum(EDITABLE_FIELDS), z.string().max(500).nullable()).optional(),
+      other_phones: z.array(z.object({ number: z.string().max(100), label: z.string().max(60).nullable().optional() })).max(50).optional(),
     }).parse(req.body);
     return editLead(db, id, b);
   });

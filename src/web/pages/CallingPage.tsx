@@ -717,7 +717,7 @@ function ScriptPanel({ d }: { d: LeadDetail }) {
 export function otherNumber(d: LeadDetail): string | null {
   const blocked: string[] = d.state?.blocked_phones_json ? JSON.parse(d.state.blocked_phones_json) : [];
   const now = d.state?.active_phone_e164 ?? d.lead.phone_e164;
-  return [d.lead.phone_e164, d.lead.phone2_e164, d.lead.phone3_e164].find((p) => p && p !== now && !blocked.includes(p)) ?? null;
+  return [d.lead.phone_e164, ...d.lead.other_phones.map((p) => p.e164)].find((p) => p && p !== now && !blocked.includes(p)) ?? null;
 }
 
 /** The last outcomes you set, newest first: click one to open that lead and fix it, even after clearing the list. */
