@@ -80,10 +80,9 @@ export function LeadSummary({
   const blocked: string[] = d.state?.blocked_phones_json ? JSON.parse(d.state.blocked_phones_json) : [];
   const main = d.state?.active_phone_e164 ?? l.phone_e164;
   const others = ([
-    ['Main', l.phone_e164, l.phone_raw],
-    ['Alternate', l.phone2_e164, l.phone2_raw],
-    ['Called in from', l.phone3_e164, l.phone3_raw],
-  ] as [string, string | null, string | null][]).filter(([label, e, r]) => (e || r) && !(e && e === main) && !(label === 'Main' && !e));
+    ...(l.phone_e164 ? [['Main', l.phone_e164, l.phone_raw]] : []),
+    ...d.lead.other_phones.map((p) => [p.label || 'Other', p.e164, p.raw]),
+  ] as [string, string | null, string | null][]).filter(([, e, r]) => (e || r) && !(e && e === main));
   const age = personAge(l);
   const firstOther = others.find(([, e]) => e && !blocked.includes(e))?.[1] ?? null;
   return (
@@ -109,10 +108,10 @@ export function LeadSummary({
         <div className="phones">
           <div className="phone-big">{main ? fmtPhone(main) : <span className="error">no valid phone</span>}</div>
           {main && <button className="btn small" onClick={() => copy(main)}>{dialLabel} {dialKey && <kbd>{dialKey}</kbd>}</button>}
-          {others.map(([label, e164, raw]) => {
+          {others.map(([label, e164, raw], i) => {
             const bad = !!e164 && blocked.includes(e164);
             return (
-              <div key={label} className="row" style={{ justifyContent: 'flex-end' }}>
+              <div key={i} className="row" style={{ justifyContent: 'flex-end' }}>
                 <span className="muted">{label}</span>
                 <span className="alt" style={bad ? { textDecoration: 'line-through' } : undefined}>{e164 ? fmtPhone(e164) : raw}</span>
                 {bad && <span className="warn">bad number</span>}

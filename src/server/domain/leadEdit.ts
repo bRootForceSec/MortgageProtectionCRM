@@ -7,19 +7,21 @@ import {
 import { countyKey, countyDisplayName } from './county.js';
 import { rebuildLeadState, leadsSharingPhones } from './leadState.js';
 import { ageOn } from '../../shared/age.js';
+import type { OtherPhone } from '../../shared/phones.js';
+import { otherPhones, writeOtherPhones, describePhones } from './leadPhones.js';
 import { matchingLeadIds, type LeadFilter } from './callList.js';
 
 // Editing a lead's details by hand. The lead row holds the current value; every change is also written to
 // lead_change (old and new value), so nothing you typed over is lost.
 
 export const EDITABLE_FIELDS = [
-  'first_name', 'last_name', 'phone', 'phone2', 'phone3', 'email', 'address_line', 'city', 'state', 'zip',
+  'first_name', 'last_name', 'phone', 'email', 'address_line', 'city', 'state', 'zip',
   'lender', 'loan_amount', 'age', 'dob', 'coborrower',
 ] as const;
 export type EditableField = (typeof EDITABLE_FIELDS)[number];
 
 const LABEL: Record<EditableField, string> = {
-  first_name: 'First name', last_name: 'Last name', phone: 'Phone', phone2: 'Alternate phone', phone3: 'Called-in-from phone',
+  first_name: 'First name', last_name: 'Last name', phone: 'Phone',
   email: 'Email', address_line: 'Address', city: 'City', state: 'State', zip: 'ZIP', lender: 'Lender',
   loan_amount: 'Mortgage amount', age: 'Age', dob: 'Date of birth', coborrower: 'Co-borrower',
 };
@@ -35,14 +37,12 @@ export function editLeadDetails(db: DB, leadId: string, edits: Partial<Record<Ed
     if (!EDITABLE_FIELDS.includes(field)) continue;
     const v = toText(rawValue ?? '');
     switch (field) {
-      case 'phone':
-      case 'phone2':
-      case 'phone3': {
+      case 'phone': {
         const p = normalizeUsPhone(v);
         if (v && !p.value) problems.push(`${LABEL[field]}: ${p.problem}`);
-        set[`${field}_raw`] = v || null;
-        set[`${field}_e164`] = p.value;
-        if (field === 'phone') set.phone_valid = p.value ? 1 : 0;
+        set.phone_raw = v || null;
+        set.phone_e164 = p.value;
+        set.phone_valid = p.value ? 1 : 0;
         break;
       }
       case 'state': {
@@ -106,6 +106,34 @@ export function editLeadDetails(db: DB, leadId: string, edits: Partial<Record<Ed
 }
 
 /**
+ * Replaces the lead's other numbers (besides the main one) with this list, inside the caller's transaction.
+ * Blank rows are dropped. The old list is kept in lead_change. Returns whether anything changed.
+ */
+export function setOtherPhones(db: DB, leadId: string, list: { number: string; label?: string | null }[], now = nowIso()): boolean {
+  const problems: string[] = [];
+  const next: OtherPhone[] = [];
+  for (const item of list) {
+    const raw = toText(item.number);
+    if (!raw) continue;
+    const p = normalizeUsPhone(raw);
+    if (!p.value) {
+      problems.push(`Other number "${raw}": ${p.problem}`);
+      continue;
+    }
+    next.push({ raw, e164: p.value, label: toText(item.label ?? '') || null });
+  }
+  if (problems.length) throw new DomainError(problems.join('; '));
+  const before = otherPhones(db, leadId);
+  const same = (a: OtherPhone, b: OtherPhone) => a.e164 === b.e164 && (a.e164 ? true : a.raw === b.raw) && a.label === b.label;
+  if (before.length === next.length && before.every((b, i) => same(b, next[i]!))) return false;
+  db.prepare('INSERT INTO lead_change (id, lead_id, field, old_value, new_value, created_at) VALUES (?,?,?,?,?,?)').run(
+    uuidv7(), leadId, 'other_phones', describePhones(before), describePhones(next), now,
+  );
+  writeOtherPhones(db, leadId, next);
+  return true;
+}
+
+/**
  * Sets the lead type on these leads, inside the caller's transaction. The price follows the type, so cost per
  * appointment stays right, and both old values are kept in lead_change. Returns how many leads changed.
  */
@@ -142,7 +170,12 @@ export function setLeadTypeForMatching(db: DB, f: LeadFilter, code: string | nul
 export function editLead(
   db: DB,
   id: string,
-  b: { lead_type?: string | null; county?: string | null; details?: Partial<Record<EditableField, string | null>> },
+  b: {
+    lead_type?: string | null;
+    county?: string | null;
+    details?: Partial<Record<EditableField, string | null>>;
+    other_phones?: { number: string; label?: string | null }[];
+  },
 ) {
   const now = nowIso();
   return db.transaction(() => {
@@ -155,6 +188,7 @@ export function editLead(
       // A new state matters for the county below.
       lead.state = (db.prepare('SELECT state FROM lead WHERE id = ?').get(id) as { state: string | null }).state;
     }
+    if (b.other_phones) setOtherPhones(db, id, b.other_phones, now);
     if (b.lead_type !== undefined) setLeadType(db, [id], b.lead_type, now);
     if (b.county !== undefined) {
       if (b.county && !lead.state) throw new DomainError('this lead has no state, so the county can\'t be set');
@@ -172,6 +206,6 @@ export function editLead(
     if (tz !== after.time_zone) db.prepare('UPDATE lead SET time_zone = ? WHERE id = ?').run(tz, id);
     // Leads that shared a phone with this one before the edit are rechecked too.
     rebuildLeadState(db, [id, ...sharedBefore]);
-    return db.prepare('SELECT * FROM lead WHERE id = ?').get(id);
+    return { ...(db.prepare('SELECT * FROM lead WHERE id = ?').get(id) as object), other_phones: otherPhones(db, id) };
   })();
 }

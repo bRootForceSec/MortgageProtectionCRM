@@ -43,6 +43,7 @@ Read this before changing code. New features must fit the existing structure. Do
 ## Data rules
 
 - **`lead_state` is derived.** Change the source tables and rebuild (`rebuildLeadState`); never edit `lead_state` directly.
+- **A lead has any number of phone numbers.** The main one is on `lead` (`phone_e164`); the rest are rows in `lead_other_phone`, in order, read and written through `domain/leadPhones.ts`. To find leads by a number, use the `lead_number` view (every number of every lead), not `lead.phone_e164` alone.
 - **Outcomes are append-only.** A change adds a new outcome that supersedes the old one. Calls are voided, not deleted.
 - **Health fields** (`tobacco_raw`, `health_*_raw`) are excluded from exports unless the user asks for them. Keep it that way.
 

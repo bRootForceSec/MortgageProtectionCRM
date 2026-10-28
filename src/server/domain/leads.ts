@@ -4,6 +4,7 @@ import { DomainError } from '../core/errors.js';
 import { audit } from '../core/audit.js';
 import { leadFilterWhere, onCallList, type LeadFilter } from './callList.js';
 import { batchPdf } from './pageTurn.js';
+import { otherPhones } from './leadPhones.js';
 
 // Reading leads for the Leads page and the lead view, and resolving "same person?" links.
 
@@ -61,7 +62,7 @@ export function getLeadDetail(db: DB, importsDir: string, id: string) {
     )
     .all({ id });
   return {
-    lead: { ...lead, extra: lead.extra_json ? JSON.parse(lead.extra_json) : {} },
+    lead: { ...lead, extra: lead.extra_json ? JSON.parse(lead.extra_json) : {}, other_phones: otherPhones(db, id) },
     state: db.prepare('SELECT * FROM lead_state WHERE lead_id = ?').get(id),
     batch: db.prepare('SELECT * FROM import_batch WHERE id = ?').get(lead.batch_id),
     import_row: db.prepare('SELECT row_number, warnings_json, raw_json FROM import_row WHERE id = ?').get(lead.import_row_id),
