@@ -25,6 +25,8 @@ export interface LeadFilter {
   tried_after?: string;
   /** Only leads that aren't waiting on the call list (worked ones count as off it). */
   not_on_list?: boolean;
+  /** Only leads of this lead type code, or '' for leads with none. */
+  lead_type?: string;
 }
 
 /** SQL condition over `lead l JOIN lead_state s` for the Leads page filters. */
@@ -39,6 +41,7 @@ export function leadFilterWhere(f: LeadFilter): { sql: string; params: Record<st
     '(@lf_status IS NULL OR s.status = @lf_status)',
     tried === 'talked' ? talked : tried === 'no_answer' ? `NOT ${talked}` : '1',
     '(@lf_batch IS NULL OR l.batch_id = @lf_batch)',
+    "(@lf_type IS NULL OR coalesce(l.lead_type, '') = @lf_type)",
     f.bulk_id
       ? `l.batch_id IN (SELECT b.value FROM import_bulk_file f, json_each(f.summary_json, '$.batches') b WHERE f.bulk_id = @lf_bulk AND f.summary_json IS NOT NULL)`
       : '1',
@@ -50,7 +53,7 @@ export function leadFilterWhere(f: LeadFilter): { sql: string; params: Record<st
   ];
   return {
     sql: parts.join(' AND '),
-    params: { lf_status: status, lf_batch: f.batch_id ?? null, ...(f.bulk_id ? { lf_bulk: f.bulk_id } : {}), lf_before: f.tried_before ?? null, lf_after: f.tried_after ?? null, ...group.params, ...search.params },
+    params: { lf_status: status, lf_batch: f.batch_id ?? null, lf_type: f.lead_type ?? null, ...(f.bulk_id ? { lf_bulk: f.bulk_id } : {}), lf_before: f.tried_before ?? null, lf_after: f.tried_after ?? null, ...group.params, ...search.params },
   };
 }
 
@@ -142,9 +145,10 @@ export function addToCallList(db: DB, leadIds: string[], now = nowIso()): AddRes
 }
 
 /** Adds every lead matching the Leads page filters, in import order (newest batch last, file order). */
-export function addMatchingToCallList(db: DB, f: LeadFilter, now = nowIso()): AddResult {
+/** Every lead matching the Leads page filters, in import order. */
+export function matchingLeadIds(db: DB, f: LeadFilter): string[] {
   const w = leadFilterWhere(f);
-  const ids = db
+  return db
     .prepare(
       `SELECT l.id FROM lead l JOIN lead_state s ON s.lead_id = l.id JOIN import_batch b ON b.id = l.batch_id
        JOIN import_row r ON r.id = l.import_row_id
@@ -152,7 +156,10 @@ export function addMatchingToCallList(db: DB, f: LeadFilter, now = nowIso()): Ad
     )
     .all(w.params)
     .map((r: any) => r.id as string);
-  return addToCallList(db, ids, now);
+}
+
+export function addMatchingToCallList(db: DB, f: LeadFilter, now = nowIso()): AddResult {
+  return addToCallList(db, matchingLeadIds(db, f), now);
 }
 
 /** Adds a batch's leads (just imported) in file order. */

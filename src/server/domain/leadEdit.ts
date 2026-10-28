@@ -7,6 +7,7 @@ import {
 import { countyKey, countyDisplayName } from './county.js';
 import { rebuildLeadState, leadsSharingPhones } from './leadState.js';
 import { ageOn } from '../../shared/age.js';
+import { matchingLeadIds, type LeadFilter } from './callList.js';
 
 // Editing a lead's details by hand. The lead row holds the current value; every change is also written to
 // lead_change (old and new value), so nothing you typed over is lost.
@@ -104,6 +105,39 @@ export function editLeadDetails(db: DB, leadId: string, edits: Partial<Record<Ed
   return changed.length;
 }
 
+/**
+ * Sets the lead type on these leads, inside the caller's transaction. The price follows the type, so cost per
+ * appointment stays right, and both old values are kept in lead_change. Returns how many leads changed.
+ */
+export function setLeadType(db: DB, leadIds: string[], code: string | null, now = nowIso()): number {
+  const t = code ? (db.prepare('SELECT price_cents FROM lead_type WHERE code = ?').get(code) as { price_cents: number | null } | undefined) : null;
+  if (code && !t) throw new DomainError(`unknown lead type "${code}"`);
+  const price = t?.price_cents ?? null;
+  const get = db.prepare('SELECT lead_type, price_cents FROM lead WHERE id = ?');
+  const change = db.prepare('INSERT INTO lead_change (id, lead_id, field, old_value, new_value, created_at) VALUES (?,?,?,?,?,?)');
+  const update = db.prepare('UPDATE lead SET lead_type = ?, price_cents = ? WHERE id = ?');
+  const str = (n: number | null) => (n == null ? null : String(n));
+  let changed = 0;
+  for (const id of leadIds) {
+    const lead = get.get(id) as { lead_type: string | null; price_cents: number | null } | undefined;
+    if (!lead) throw new DomainError('lead not found', 404);
+    if (lead.lead_type === code) continue;
+    change.run(uuidv7(), id, 'lead_type', lead.lead_type, code, now);
+    change.run(uuidv7(), id, 'price_cents', str(lead.price_cents), str(price), now);
+    update.run(code, price, id);
+    changed++;
+  }
+  return changed;
+}
+
+/** Sets the lead type on every lead matching the Leads page filters, in one transaction. */
+export function setLeadTypeForMatching(db: DB, f: LeadFilter, code: string | null): { changed: number; matched: number } {
+  return db.transaction(() => {
+    const ids = matchingLeadIds(db, f);
+    return { changed: setLeadType(db, ids, code), matched: ids.length };
+  })();
+}
+
 /** Changes a lead's details, type or county by hand. Every change is kept in lead_change; the time zone and lead state follow. */
 export function editLead(
   db: DB,
@@ -121,14 +155,7 @@ export function editLead(
       // A new state matters for the county below.
       lead.state = (db.prepare('SELECT state FROM lead WHERE id = ?').get(id) as { state: string | null }).state;
     }
-    if (b.lead_type !== undefined && b.lead_type !== lead.lead_type) {
-      const t = b.lead_type ? (db.prepare('SELECT price_cents FROM lead_type WHERE code = ?').get(b.lead_type) as { price_cents: number | null } | undefined) : null;
-      if (b.lead_type && !t) throw new DomainError(`unknown lead type "${b.lead_type}"`);
-      change.run(uuidv7(), id, 'lead_type', lead.lead_type, b.lead_type, now);
-      // The price follows the type, so cost per appointment stays right.
-      change.run(uuidv7(), id, 'price_cents', lead.price_cents == null ? null : String(lead.price_cents), t?.price_cents == null ? null : String(t.price_cents), now);
-      db.prepare('UPDATE lead SET lead_type = ?, price_cents = ? WHERE id = ?').run(b.lead_type, t?.price_cents ?? null, id);
-    }
+    if (b.lead_type !== undefined) setLeadType(db, [id], b.lead_type, now);
     if (b.county !== undefined) {
       if (b.county && !lead.state) throw new DomainError('this lead has no state, so the county can\'t be set');
       const key = b.county ? countyKey(lead.state, b.county) : null;

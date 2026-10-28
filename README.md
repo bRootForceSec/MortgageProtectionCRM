@@ -70,7 +70,7 @@ Your data lives in `~/.local/share/mpcrm/` (database, backups, copies of importe
 - The app checks GitHub for a new version every hour. It builds the new version and runs its tests next to the running copy, without touching it.
 - When a new version is ready, a bar appears at the top of the app: **Update ready · What's new · Restart now · Later**. The app never restarts while you're working. If you leave the bar, the update installs itself at 3 AM.
 - Every update takes a verified backup first. If the new version doesn't start, the app goes back to the previous version and the data as it was just before the update, and tells you so.
-- **Export & backup → Version and updates** shows the version you're running and lets you check for updates now.
+- **Settings → Version and updates** shows the version you're running and lets you check for updates now.
 
 To remove the app (your data is kept): `bash ~/.local/share/mpcrm-app/repo/scripts/install.sh --uninstall`.
 

@@ -6,6 +6,7 @@ import { LeadSummary, CallHistory, Notes, StatusBadge, toggleCalledBack } from '
 import { EditLead } from '../components/EditLead';
 import { SourcePage } from '../components/SourcePage';
 import { DialQr } from '../components/DialQr';
+import { FunnelButton } from '../components/Funnel';
 import { ClearListDialog, SavedListsDialog, suggestListName } from '../components/CallListDialogs';
 import { fillScript, isAction, isTyping, keyLabel, type KeyMap } from '../shortcuts';
 import { getStored, getStoredJson, setStored, setStoredJson } from '../storage';
@@ -153,6 +154,16 @@ export function CallingPage() {
     }
   }, []);
   useEffect(() => void loadDetail(selected), [selected, loadDetail]);
+
+  // The window title names the open lead (MPCRM - Smith), so the right window is easy to find.
+  const lastName = detail?.lead.id === selected ? (detail?.lead.last_name as string | null | undefined)?.trim() : null;
+  useEffect(() => {
+    const was = document.title;
+    if (lastName) document.title = `MPCRM - ${lastName}`;
+    return () => {
+      document.title = was;
+    };
+  }, [lastName]);
 
   // A new lead starts a new attempt, unless an undo is putting the last one back.
   useEffect(() => {
@@ -408,7 +419,8 @@ export function CallingPage() {
 
   return (
     <div className="calling">
-      <section className="panel" aria-label="Queue">
+      <FunnelButton />
+      <section className="panel queue-panel" aria-label="Queue">
         <header>
           <div className="row list-head">
             <span><b>{left}</b> to call · {items.length - left} done</span>
@@ -513,7 +525,7 @@ export function CallingPage() {
         </header>
       </section>
 
-      <section className="panel" aria-label="Current lead">
+      <section className="panel lead-panel" aria-label="Current lead">
         <header>
           <CallerLookup inputRef={lookupRef} hotkey={k('lookup')} onOpen={openOutside} />
         </header>

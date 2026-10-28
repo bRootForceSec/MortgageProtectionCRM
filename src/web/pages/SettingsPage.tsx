@@ -3,8 +3,9 @@ import { api } from '../api';
 import { useApp } from '../App';
 import { useLeadTypes } from './ImportPage';
 import { CallingCard, ShortcutsCard, ScriptsCard } from './CallingSettingsCards';
+import { UpdatePanel } from '../components/UpdateBar';
 
-// Settings: which AI reads scanned lead pages, lead types and prices, and the area codes each county is called under.
+// Settings: which AI reads scanned lead pages, lead types and prices, the area codes each county is called under, and the app's version and updates.
 
 interface AiSettings {
   provider: 'claude_code' | 'anthropic_api' | 'openai_compatible' | 'off';
@@ -35,6 +36,7 @@ export function SettingsPage() {
       <LeadPagesCard />
       <LeadTypesCard />
       <CountiesCard />
+      <UpdatePanel />
     </>
   );
 }

@@ -7,6 +7,7 @@ import { DomainError } from '../core/errors.js';
 import { logManualCall, changeOutcome, addLeadAction, addNote, callHistory, changeCallerId } from '../domain/calls.js';
 import { listLeads, getLeadDetail, leadPdfPage, setLinkStatus } from '../domain/leads.js';
 import { parseList } from '../domain/groupFilter.js';
+import { setLeadTypeForMatching } from '../domain/leadEdit.js';
 import { batchPdf, turnPdfPages, normTurn } from '../domain/pageTurn.js';
 import type { PageChecker } from '../domain/pageTurnFix.js';
 import {
@@ -30,6 +31,8 @@ export function registerLeadRoutes(app: FastifyInstance, deps: { db: DB; config:
     tried_before: z.string().max(40).optional(),
     tried_after: z.string().max(40).optional(),
     not_on_list: z.union([z.boolean(), z.enum(['1', '0', 'true', 'false'])]).optional(),
+    /** A lead type code, or "none" for leads with no type. */
+    lead_type: z.string().max(20).optional(),
   });
   const toFilter = (q: z.infer<typeof leadFilter>): LeadFilter => ({
     status: q.status,
@@ -41,9 +44,16 @@ export function registerLeadRoutes(app: FastifyInstance, deps: { db: DB; config:
     tried_before: q.tried_before || undefined,
     tried_after: q.tried_after || undefined,
     not_on_list: q.not_on_list === true || q.not_on_list === '1' || q.not_on_list === 'true',
+    lead_type: !q.lead_type ? undefined : q.lead_type === 'none' ? '' : q.lead_type,
   });
 
   app.get('/api/leads', async (req) => listLeads(db, toFilter(leadFilter.parse(req.query))));
+  // Fixes the lead type after import: every lead matching the filters (e.g. one batch) gets the new type and its price.
+  app.post('/api/leads/set-type', async (req) => {
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const { set_type } = z.object({ set_type: z.string().min(1).max(20).regex(/^[A-Za-z0-9-]+$/).nullable() }).parse(body);
+    return setLeadTypeForMatching(db, toFilter(leadFilter.parse(body)), set_type);
+  });
 
   // ---------- the call list ----------
   const savedName = z.string().trim().max(120);

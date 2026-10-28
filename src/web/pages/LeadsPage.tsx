@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { api, fmtDateTime, fmtPhone, fullName, type AddResult, type CallListResponse } from '../api';
+import { api, fmtDateTime, fmtMoney, fmtPhone, fullName, type AddResult, type CallListResponse } from '../api';
 import { ClearListDialog, suggestListName } from '../components/CallListDialogs';
 import { useApp } from '../App';
 import { StatusBadge } from '../components/LeadDetails';
@@ -7,6 +7,9 @@ import { LeadViewer } from '../components/LeadViewer';
 import { GroupPicker, useGroups } from '../components/GroupPicker';
 import { getStored, setStored } from '../storage';
 import { addDays, startOfDay } from '../when';
+import { useLeadTypes } from './ImportPage';
+import { BatchPicker } from '../components/BatchBrowse';
+import type { LeadType } from '../importTypes';
 
 // Where you pick who to call: filter the leads, tick the ones you want (or take every match),
 // and add them to the bottom of the call list on the Calling page, or put them in place of it.
@@ -39,8 +42,6 @@ const ago = (ms: number) => new Date(Date.now() - ms).toISOString();
 
 const CALLABLE = new Set(['new', 'retry', 'callback']);
 
-interface Batch { id: string; name: string; imported_at: string }
-interface BulkRun { id: string; created_at: string; totals: { files: number; leads: number } }
 
 const SHOW_KEY = 'mpcrm.leads.show';
 
@@ -67,8 +68,10 @@ export function LeadsPage() {
   const [batch, setBatch] = useState(takeShown);
   const [tried, setTried] = useState('');
   const [notOnList, setNotOnList] = useState(false);
-  const [batches, setBatches] = useState<Batch[]>([]);
-  const [bulks, setBulks] = useState<BulkRun[]>([]);
+  /** A lead type code, "none" for leads with no type, or '' for any. */
+  const [leadType, setLeadType] = useState('');
+  const { types } = useLeadTypes();
+  const [changingType, setChangingType] = useState(false);
   const [rows, setRows] = useState<any[]>([]);
   const [total, setTotal] = useState(0);
   const [picked, setPicked] = useState<Set<string>>(new Set());
@@ -84,10 +87,6 @@ export function LeadsPage() {
   const replaceNow = replace && onList > 0;
   const outcomeLabel = (c: string | null) => (c ? meta?.outcome_codes.find((o) => o.code === c)?.label ?? c : '');
 
-  useEffect(() => {
-    api.get<Batch[]>('/imports').then(setBatches).catch(() => setBatches([]));
-    api.get<BulkRun[]>('/bulk-imports').then(setBulks).catch(() => setBulks([]));
-  }, []);
 
   const filters = useMemo(() => {
     const r = (LAST_CALL.find((x) => x.key === tried) ?? LAST_CALL[0]!).range();
@@ -99,9 +98,10 @@ export function LeadsPage() {
       tried_before: r.before,
       tried_after: r.after,
       not_on_list: notOnList ? '1' : undefined,
+      lead_type: leadType || undefined,
       ...groupParams,
     };
-  }, [status, search, batch, tried, notOnList, groupParams.counties, groupParams.area_codes]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [status, search, batch, tried, notOnList, leadType, groupParams.counties, groupParams.area_codes]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const load = useCallback(
     () => api.get<{ rows: any[]; total: number }>('/leads', filters).then((r) => { setRows(r.rows); setTotal(r.total); }),
@@ -123,14 +123,16 @@ export function LeadsPage() {
     return n;
   });
 
-  const filtered = status !== 'all' || !!search || !!batch || !!tried || notOnList;
+  const filtered = status !== 'all' || !!search || !!batch || !!tried || notOnList || !!leadType;
   const clearFilters = () => {
     setStatus('all');
     setSearch('');
     setBatch('');
     setTried('');
     setNotOnList(false);
+    setLeadType('');
   };
+  const typeLabel = (code: string | null) => (code ? types.find((t) => t.code === code)?.label ?? code : '');
 
   const report = (r: AddResult, replaced = false) => {
     if (replaced) {
@@ -181,18 +183,11 @@ export function LeadsPage() {
       <div className="leads-tools">
         <input placeholder="Search name, county, phone, or area code" value={search} onChange={(e) => setSearch(e.target.value)} title="A 3-digit number finds every county under that area code" />
         <GroupPicker groups={groups} onChange={setGroups} />
-        <select value={batch} onChange={(e) => setBatch(e.target.value)} aria-label="Batch">
-          <option value="">All batches</option>
-          {bulks.length > 0 && (
-            <optgroup label="Bulk imports (every file)">
-              {bulks.map((b) => (
-                <option key={b.id} value={`bulk:${b.id}`}>Bulk import · {fmtDateTime(b.created_at)} · {b.totals.files} files</option>
-              ))}
-            </optgroup>
-          )}
-          <optgroup label="Batches">
-            {batches.map((b) => <option key={b.id} value={b.id}>{b.name} · {fmtDateTime(b.imported_at)}</option>)}
-          </optgroup>
+        <BatchPicker value={batch} onChange={setBatch} />
+        <select value={leadType} onChange={(e) => setLeadType(e.target.value)} aria-label="Lead type">
+          <option value="">All lead types</option>
+          {types.map((t) => <option key={t.code} value={t.code}>{t.label}</option>)}
+          <option value="none">No lead type</option>
         </select>
         <select value={tried} onChange={(e) => setTried(e.target.value)} aria-label="Last call">
           {LAST_CALL.map((t) => <option key={t.key} value={t.key}>{t.label}</option>)}
@@ -221,6 +216,9 @@ export function LeadsPage() {
           >
             {replaceNow ? `Replace with all ${total} matching` : `Add all ${total} matching`}
           </button>
+          <button className="btn" disabled={!total} onClick={() => setChangingType(true)} title="Fix the lead type on every lead matching these filters, e.g. one batch">
+            Change lead type
+          </button>
           <button className="btn" onClick={() => go('calling')}>Go to Calling</button>
         </div>
       </div>
@@ -236,7 +234,7 @@ export function LeadsPage() {
                 onChange={() => setPicked(allPicked ? new Set() : new Set(pickable.map((r) => r.id)))}
               />
             </th>
-            <th>Name</th><th>Phone</th><th>County</th><th>Location</th><th>Batch</th><th>Status</th><th>Attempts</th><th>Last call</th><th>Last outcome</th>
+            <th>Name</th><th>Phone</th><th>County</th><th>Location</th><th>Type</th><th>Batch</th><th>Status</th><th>Attempts</th><th>Last call</th><th>Last outcome</th>
           </tr>
         </thead>
         <tbody>
@@ -260,7 +258,7 @@ export function LeadsPage() {
                 </td>
                 <td>{fullName(r)}</td>
                 <td>{fmtPhone(r.phone_e164)}</td><td>{r.county ?? ''}</td><td>{[r.city, r.state].filter(Boolean).join(', ')}</td>
-                <td>{r.batch_name}</td><td><StatusBadge status={r.status} />{r.on_list && <span className="badge" style={{ marginLeft: 4 }}>on call list</span>}</td>
+                <td title={typeLabel(r.lead_type)}>{r.lead_type ?? ''}</td><td>{r.batch_name}</td><td><StatusBadge status={r.status} />{r.on_list && <span className="badge" style={{ marginLeft: 4 }}>on call list</span>}</td>
                 <td>{r.attempts_total}</td><td>{fmtDateTime(r.last_call_at)}</td><td>{outcomeLabel(r.last_outcome_code)}</td>
               </tr>
             );
@@ -278,6 +276,27 @@ export function LeadsPage() {
           onCancel={() => setReplacing(null)}
         />
       )}
+      {changingType && (
+        <ChangeTypeDialog
+          total={total}
+          types={types}
+          scope={filtered ? 'matching these filters' : 'in the CRM'}
+          onCancel={() => setChangingType(false)}
+          onConfirm={async (code) => {
+            try {
+              const r = await api.post<{ changed: number; matched: number }>('/leads/set-type', { ...filters, set_type: code });
+              const to = code ? typeLabel(code) : 'no lead type';
+              toast(`${r.changed} lead${r.changed === 1 ? '' : 's'} changed to ${to}${r.matched > r.changed ? `; ${r.matched - r.changed} already were` : ''}`);
+              setChangingType(false);
+              // The type filter may no longer match, so show where the leads went.
+              if (leadType) setLeadType(code ?? 'none');
+              else await load();
+            } catch (e: any) {
+              toast(e.message, 'error');
+            }
+          }}
+        />
+      )}
       {open && (
         <LeadViewer
           id={open}
@@ -286,5 +305,59 @@ export function LeadsPage() {
         />
       )}
     </>
+  );
+}
+
+/** Picks the new lead type for every lead matching the filters. The price follows the type. */
+function ChangeTypeDialog(props: {
+  total: number;
+  types: LeadType[];
+  scope: string;
+  onConfirm: (code: string | null) => Promise<void>;
+  onCancel: () => void;
+}) {
+  const [code, setCode] = useState('');
+  const [busy, setBusy] = useState(false);
+  const picked = props.types.find((t) => t.code === code);
+  const n = `${props.total} lead${props.total === 1 ? '' : 's'}`;
+  return (
+    <div className="modal-back" onKeyDown={(e) => e.key === 'Escape' && (e.stopPropagation(), props.onCancel())}>
+      <form
+        className="modal small-modal"
+        role="dialog"
+        aria-label="Change lead type"
+        onSubmit={async (e) => {
+          e.preventDefault();
+          setBusy(true);
+          try {
+            await props.onConfirm(code === 'none' ? null : code);
+          } finally {
+            setBusy(false);
+          }
+        }}
+      >
+        <header><b>Change the lead type of all {n} {props.scope}</b></header>
+        <div className="body">
+          <label className="field">
+            <span>New lead type</span>
+            <select value={code} onChange={(e) => setCode(e.target.value)} autoFocus aria-label="New lead type">
+              <option value="">Pick a type…</option>
+              {props.types.map((t) => (
+                <option key={t.code} value={t.code}>{t.label}{t.price_cents != null ? ` · ${fmtMoney(t.price_cents)}` : ''}</option>
+              ))}
+              <option value="none">No lead type</option>
+            </select>
+          </label>
+          <p className="help">
+            {picked ? `Each lead's price becomes ${picked.price_cents != null ? fmtMoney(picked.price_cents) : 'unset'}, so cost in Reports follows. ` : ''}
+            Calls and outcomes stay as they are, and each lead keeps the old type in its change history.
+          </p>
+          <div className="row">
+            <button className="btn primary" type="submit" disabled={busy || !code}>Change {n}</button>
+            <button className="btn" type="button" onClick={props.onCancel}>Cancel</button>
+          </div>
+        </div>
+      </form>
+    </div>
   );
 }

@@ -123,11 +123,15 @@ export function assessRow(data: DraftRowData, edits: FieldValues | null): ReadIs
       existing.message += `. The AI wasn't sure: ${why}`;
       continue;
     }
+    // A field left blank with no reading at all only matters if the lead can't do without it, and the
+    // checks above already hold those (no name, phone, address or county). Otherwise it's often just
+    // not on this kind of page (mailer cards print no county; the ZIP fills it in), so it's a note.
+    const nothingRead = !fields[field as LeadFieldKey] && !u.best_reading?.trim();
     issues.push({
       field,
       kind: 'uncertain',
       message: `Not sure of this: ${why}`,
-      blocking: ['full_name', 'phone', 'address', 'city', 'state', 'zip', 'county'].includes(field),
+      blocking: !nothingRead && ['full_name', 'phone', 'address', 'city', 'state', 'zip', 'county'].includes(field),
     });
   }
   for (const w of warnings) issues.push({ field: '', message: w, blocking: false, kind: 'note' });
@@ -384,8 +388,8 @@ export class DraftWorker {
             up.run({
               draft_id: id, row_number: page, page, fields_json: JSON.stringify(data), edits_json: null,
               issues_json: JSON.stringify(issues), notes: a.notes, extractor: result.extractor,
-              // Anything the AI read is shown to you once, unless it was a clean typed layout.
-              review: a.layout === 'call_in_notice' ? reviewFor('auto', issues) : 'needs_review', lead_type: null, updated_at: now(),
+                // Goes straight in when nothing needs a look, whatever the layout. Doubts on the fields that matter still hold it.
+              review: reviewFor('auto', issues), lead_type: null, updated_at: now(),
             });
             progress.ai_done++;
             progress.cost_usd += result.cost_usd ?? 0;

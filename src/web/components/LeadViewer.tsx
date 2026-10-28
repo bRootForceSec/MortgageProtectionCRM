@@ -99,7 +99,7 @@ export function LeadViewer({ id, list = [], onClose }: { id: string; list?: View
     <div className="lead-viewer" role="dialog" aria-modal="true" aria-label="Lead">
       <div className={`calling${showList ? '' : ' no-list'}`}>
         {showList && (
-          <section className="panel" aria-label="Lead list">
+          <section className="panel queue-panel" aria-label="Lead list">
             <header>
               <span><b>{idx + 1}</b> of {items.length}</span>
               <span className="help" style={{ marginLeft: 'auto' }}><kbd>↑</kbd><kbd>↓</kbd> move</span>
@@ -118,7 +118,7 @@ export function LeadViewer({ id, list = [], onClose }: { id: string; list?: View
           </section>
         )}
 
-        <section className="panel" aria-label="Current lead">
+        <section className="panel lead-panel" aria-label="Current lead">
           <header>
             <button className="btn small" onClick={onClose}>← Back <kbd>Esc</kbd></button>
             <div className="row" style={{ marginLeft: 'auto' }}>

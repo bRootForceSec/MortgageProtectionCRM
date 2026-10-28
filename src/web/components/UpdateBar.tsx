@@ -124,7 +124,7 @@ export function UpdateBar() {
   );
 }
 
-/** Version and update details for the Export & backup page. */
+/** Version and update details for the Settings page. */
 export function UpdatePanel() {
   const { toast } = useApp();
   const { status, reload } = useUpdateStatus(30_000);

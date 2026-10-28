@@ -4,9 +4,10 @@ import { useApp } from '../App';
 import { ReviewWindow } from '../components/ReviewWindow';
 import type { DraftListItem, DraftView, DraftRow, LeadType, DraftSummary } from '../importTypes';
 import {
-  BulkConfirm, BulkList, BulkScreen, leadFilesOnly, pickedFromDrop, pickedFromInput, startSending, isSending, type PickedFile,
+  BulkConfirm, BulkScreen, leadFilesOnly, pickedFromDrop, pickedFromInput, startSending, isSending, type PickedFile,
 } from './BulkImport';
 import { showImportedLeads } from './LeadsPage';
+import { ImportHistory } from '../components/BatchBrowse';
 import { getStored, setStored } from '../storage';
 
 // Import: a lead PDF (read page by page, scans by AI) or a spreadsheet. Every import goes through a draft
@@ -90,7 +91,7 @@ export function ImportPage() {
 // ---------------------------------------------------------------------------------------------
 
 function Start({ onDraft, onBulk }: { onDraft: (id: string) => void; onBulk: (id: string) => void }) {
-  const { toast } = useApp();
+  const { toast, go } = useApp();
   const { types } = useLeadTypes();
   const [leadType, setLeadType] = useState('');
   const [busy, setBusy] = useState(false);
@@ -204,9 +205,8 @@ function Start({ onDraft, onBulk }: { onDraft: (id: string) => void; onBulk: (id
           complete leads go straight in, repeats are skipped, and anything that needs a look waits below.
         </p>
       </div>
-      <BulkList onOpen={onBulk} />
       <Drafts onOpen={onDraft} />
-      <BatchList />
+      <ImportHistory onOpenBulk={onBulk} onSeeLeads={(what) => { showImportedLeads(what); go('leads'); }} />
     </>
   );
 }
@@ -701,38 +701,6 @@ function Done({ r, onAgain }: { r: { batch_id: string; summary: DraftSummary; ca
         <button className="btn" onClick={() => go('settings')}>County area codes</button>
         <button className="btn" onClick={onAgain}>Import another file</button>
       </div>
-    </div>
-  );
-}
-
-function BatchList() {
-  const { go } = useApp();
-  const [rows, setRows] = useState<any[] | null>(null);
-  useEffect(() => {
-    api.get<any[]>('/imports').then(setRows).catch(() => setRows([]));
-  }, []);
-  if (!rows?.length) return null;
-  return (
-    <div className="card">
-      <h2>Previous imports</h2>
-      <table className="grid">
-        <thead><tr><th>Batch</th><th>Imported</th><th>File</th><th>Leads</th><th>Not imported</th><th>Repeats</th><th>Cost</th><th></th></tr></thead>
-        <tbody>
-          {rows.map((b) => (
-            <tr key={b.id}>
-              <td>{b.name}</td><td>{fmtDateTime(b.imported_at)}</td><td className="muted">{b.file_name}</td>
-              <td>{b.rows_accepted}</td><td>{b.rows_rejected}</td><td>{b.rows_repeat}</td>
-              <td>{b.cost_total_cents != null ? fmtMoney(b.cost_total_cents) : <span className="muted">unknown</span>}</td>
-              <td className="row" style={{ gap: 8 }}>
-                {b.rows_accepted > 0 && (
-                  <button className="btn small" onClick={() => { showImportedLeads({ batch: b.id }); go('leads'); }}>See leads</button>
-                )}
-                {b.rows_total > b.rows_accepted && <a href={`/api/imports/${b.id}/problems.csv`}>leads not imported</a>}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
     </div>
   );
 }

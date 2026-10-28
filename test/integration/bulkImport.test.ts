@@ -131,10 +131,10 @@ describe('bulk import', () => {
     await bulk.whenIdle();
     const s = bulk.status(id);
     expect(s.files[0]).toMatchObject({ state: 'imported', summary: { leads: 2 } });
-    // The scan always gets a look; the typed page went in.
-    expect(s.files[1]).toMatchObject({ state: 'needs_review', summary: { leads: 1, to_check: 1 } });
-    expect(s.totals).toMatchObject({ leads: 3, to_check: 1, waiting: 0 });
-    expect((db.prepare('SELECT COUNT(*) n FROM lead').get() as { n: number }).n).toBe(3);
+    // The AI read the scan cleanly, so it went in with the typed page.
+    expect(s.files[1]).toMatchObject({ state: 'imported', summary: { leads: 2, to_check: 0 } });
+    expect(s.totals).toMatchObject({ leads: 4, to_check: 0, waiting: 0 });
+    expect((db.prepare('SELECT COUNT(*) n FROM lead').get() as { n: number }).n).toBe(4);
   });
 
   it('picks up PDFs that were still being read after a restart', async () => {

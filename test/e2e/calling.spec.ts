@@ -69,6 +69,13 @@ test('import a sheet, log calls by keyboard, and set a callback', async ({ page 
   // Calling screen: first lead is selected and shows the phone.
   await expect(page.locator('.phone-big')).toBeVisible();
   const first = await page.locator('.lead-name').innerText();
+  // The window title names the open lead by last name, and goes back to normal off the Calling screen.
+  await expect(page).toHaveTitle(`MPCRM - ${first.trim().split(/\s+/).pop()}`);
+  await page.locator('.topbar nav').getByRole('button', { name: 'Settings', exact: true }).click();
+  await expect(page).toHaveTitle('Calling CRM');
+  await expect(page.getByRole('heading', { name: 'Version and updates' })).toBeVisible();
+  await page.locator('.topbar nav').getByRole('button', { name: 'Calling', exact: true }).click();
+  await expect(page.locator('.lead-name')).toHaveText(first);
   await expect(page.getByLabel('Queue').locator('.queue-list li')).toHaveCount(4);
   await page.screenshot({ path: 'test-results/calling.png', fullPage: true });
 
@@ -79,7 +86,8 @@ test('import a sheet, log calls by keyboard, and set a callback', async ({ page 
   await expect(page.locator('.undo-bar')).toContainText('Talked, no appt');
   await expect(page.locator('.lead-name')).not.toHaveText(first);
   const second = await page.locator('.lead-name').innerText();
-  await expect(page.locator('.topbar .stats')).toContainText('Calls 1');
+  await expect(page.locator('.topbar .stats')).toContainText('Leads called 1');
+  await expect(page.locator('.topbar .stats')).toContainText('Pickups 1');
   // The worked lead stays in the list, greyed out.
   await expect(page.getByLabel('Queue').locator('.queue-list li')).toHaveCount(4);
   await expect(page.getByLabel('Queue').locator('.queue-list li.done')).toHaveCount(1);
@@ -294,6 +302,45 @@ test('reports: numbers open the calls behind them', async ({ page }) => {
   await page.screenshot({ path: 'test-results/reports.png', fullPage: true });
 });
 
+test('the funnel button on the Calling screen shows the animated funnel', async ({ page }) => {
+  await page.goto(launchUrl);
+  await page.getByRole('button', { name: 'Calling', exact: true }).click();
+  await page.getByRole('button', { name: 'Show my funnel' }).click();
+  const dialog = page.getByRole('dialog', { name: 'My funnel' });
+  await expect(dialog.getByRole('img', { name: /Funnel/ })).toBeVisible();
+  await dialog.getByRole('button', { name: 'All time' }).click();
+  await page.waitForTimeout(1800); // let the numbers count up
+  await dialog.screenshot({ path: 'test-results/funnel.png' });
+  // Keys go to the funnel, not the Calling screen, and Escape closes it.
+  await page.keyboard.press('Escape');
+  await expect(dialog).toHaveCount(0);
+  await expect(page.locator('.phone-big')).toBeVisible();
+});
+
+test('fix the lead type on every lead in a batch, and see it by lead type in Reports', async ({ page }) => {
+  await page.goto(launchUrl);
+  await page.getByRole('button', { name: 'Leads', exact: true }).click();
+  await page.getByLabel('Batch').click();
+  await page.getByRole('dialog', { name: 'Pick a batch' }).locator('.pick-item').nth(1).click();
+  const count = page.locator('.leads-tools .muted').first();
+  await expect(count).not.toHaveText(/^0 leads/);
+  const total = Number((await count.innerText()).match(/\d+/)![0]);
+  await page.getByRole('button', { name: 'Change lead type' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Change lead type' });
+  await dialog.getByLabel('New lead type').selectOption('C');
+  await dialog.getByRole('button', { name: `Change ${total} lead${total === 1 ? '' : 's'}` }).click();
+  await expect(page.getByText(/leads? changed to/)).toBeVisible();
+  await expect(dialog).toHaveCount(0);
+  await page.getByLabel('Lead type', { exact: true }).selectOption('C');
+  await expect(count).toHaveText(new RegExp(`^${total} lead`));
+
+  await page.getByRole('button', { name: 'Reports' }).click();
+  const byType = page.locator('.card', { has: page.getByRole('heading', { name: /By lead type/ }) });
+  await expect(byType.locator('tbody tr', { hasText: /^C\b/ }).locator('td').nth(1)).toHaveText(String(total));
+  await byType.scrollIntoViewIfNeeded();
+  await page.screenshot({ path: 'test-results/reports-by-lead-type.png' });
+});
+
 test('leads open full screen like the Calling page, and step through the list', async ({ page }) => {
   await page.goto(launchUrl);
   await page.getByRole('button', { name: 'Leads', exact: true }).click();
@@ -443,4 +490,24 @@ test('call history: change the caller ID on ticked calls', async ({ page }) => {
   // The caller ID filter shows only the calls from that number.
   await page.getByLabel('Only calls from').selectOption({ label: 'Office (614) 555-0188' });
   await expect(page.getByRole('checkbox', { name: /^Tick the call to/ })).toHaveCount(2);
+});
+
+test('narrow windows: the lead and its outcome buttons come first, nothing runs off the side', async ({ page }) => {
+  await page.goto(launchUrl);
+  await page.getByRole('button', { name: 'Calling', exact: true }).click();
+  await expect(page.locator('.phone-big')).toBeVisible();
+  const box = async (sel: string) => (await page.locator(sel).first().boundingBox())!;
+  for (const [width, height] of [[960, 1040], [480, 700]] as const) {
+    await page.setViewportSize({ width, height });
+    // The outcome buttons are on screen without scrolling, and the page is no wider than the window.
+    await expect(page.getByRole('group', { name: 'Outcome' }).getByRole('button', { name: /No answer/ })).toBeInViewport();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
+    const lead = await box('.lead-panel');
+    expect(lead.width).toBeGreaterThan(width * 0.6 - 40);
+  }
+  // Side by side at half a big screen; stacked with the lead on top when narrower.
+  await page.setViewportSize({ width: 960, height: 1040 });
+  expect((await box('.queue-panel')).x).toBeLessThan((await box('.lead-panel')).x);
+  await page.setViewportSize({ width: 480, height: 700 });
+  expect((await box('.lead-panel')).y).toBeLessThan((await box('.queue-panel')).y);
 });

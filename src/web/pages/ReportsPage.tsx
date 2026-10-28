@@ -5,6 +5,8 @@ import { GroupPicker, useGroups } from '../components/GroupPicker';
 import { LeadViewer, type ViewerItem } from '../components/LeadViewer';
 import { getStored, setStored } from '../storage';
 import { addDays, startOfDay, ymd } from '../when';
+import { BatchFilterBar } from '../components/BatchBrowse';
+import { batchMatches, groupByImport, type BatchFilter } from '../../shared/batches';
 
 // Your numbers: activity, by hour, best time to call, by county, local vs out-of-area caller ID, by batch, and against the flier's benchmarks.
 // Every number opens the calls or leads behind it.
@@ -198,33 +200,7 @@ export function ReportsPage() {
         </div>
       )}
 
-      {r && (
-        <div className="card">
-          <h3>By batch <span className="muted">(all time)</span></h3>
-          <div className="scroll-x">
-            <table className="grid">
-              <thead><tr><th>Batch</th><th>Type</th><th>Leads</th><th>Cost</th><th>Never called</th><th>Dials</th><th>Reached</th><th>Booked</th><th>$/reached</th><th>$/booked</th></tr></thead>
-              <tbody>
-                {r.by_batch.map((b: any) => {
-                  const cell = (metric: string, label: string, v: React.ReactNode = b[metric]) => <td><N section="by_batch" k={b.key} metric={metric} title={`${label}: ${b.name}`}>{v}</N></td>;
-                  return (
-                    <tr key={b.key}>
-                      <td>{b.name}<div className="muted small">{fmtDateTime(b.imported_at)}</div></td>
-                      <td>{b.lead_types}</td>
-                      {cell('leads', 'Leads')}
-                      <td>{fmtMoney(b.cost)}{b.unpriced > 0 && <div className="warn small">{b.unpriced} with no price</div>}</td>
-                      {cell('never_called', 'Never called')}{cell('dials', 'Dials')}{cell('reached', 'Reached')}{cell('booked', 'Booked')}
-                      <td>{b.cost_per_reached == null ? '–' : fmtMoney(b.cost_per_reached)}</td>
-                      <td>{b.cost_per_booked == null ? '–' : fmtMoney(b.cost_per_booked)}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-          <p className="help">Reached and booked count leads, not calls. How appointments went is in Unitrust. Cost comes from each lead's own price.</p>
-        </div>
-      )}
+      {r && <ByBatch rows={r.by_batch} N={N} />}
 
       {r && <Benchmarks r={r} N={N} onSaved={load} />}
 
@@ -295,6 +271,111 @@ function BestTime({ rows, onPick }: { rows: any[]; onPick: (key: string, label: 
   );
 }
 
+type BatchCol = 'imported_at' | 'leads' | 'cost' | 'never_called' | 'left' | 'dials' | 'reached' | 'booked' | 'cost_per_reached' | 'cost_per_booked';
+const BATCH_COLS: [BatchCol, string, string?][] = [
+  ['leads', 'Leads'], ['cost', 'Cost'], ['never_called', 'Never called'], ['left', 'Left to call', 'Never called, no answer yet, or a callback'],
+  ['dials', 'Dials'], ['reached', 'Reached'], ['booked', 'Booked'], ['cost_per_reached', '$/reached'], ['cost_per_booked', '$/booked'],
+];
+const SUMMED = ['leads', 'cost', 'never_called', 'left', 'dials', 'reached', 'booked', 'unpriced'] as const;
+
+/** By batch: each bulk import is one line (open it for its files), with search, filters, sorting and "show more". */
+function ByBatch({ rows, N }: { rows: any[]; N: any }) {
+  const [filter, setFilter] = useState<BatchFilter>({});
+  const [sort, setSort] = useState<{ col: BatchCol; desc: boolean }>({ col: 'imported_at', desc: true });
+  const [limit, setLimit] = useState(25);
+  const [opened, setOpened] = useState<Set<string>>(new Set());
+  useEffect(() => setLimit(25), [filter, sort]);
+  const groups = useMemo(() => {
+    const shown = rows
+      .filter((b) => batchMatches({ ...b, lead_types: b.type_codes }, filter))
+      .sort((a, b) => (b.imported_at ?? '').localeCompare(a.imported_at ?? ''));
+    const all = groupByImport(rows);
+    const sizes = new Map(all.filter((g) => g.bulk_id).map((g) => [g.bulk_id!, g.rows.length]));
+    const out = groupByImport(shown).map((g) => {
+      const sum = Object.fromEntries(SUMMED.map((k) => [k, g.rows.reduce((n: number, b: any) => n + (b[k] ?? 0), 0)])) as Record<(typeof SUMMED)[number], number>;
+      return {
+        key: g.bulk_id ? `bulk:${g.bulk_id}` : g.rows[0].key,
+        bulk: !!g.bulk_id,
+        // Only a whole bulk import opens the leads behind its totals; a filtered part of one shows plain numbers.
+        whole: !g.bulk_id || g.rows.length === sizes.get(g.bulk_id),
+        name: g.bulk_id ? `Bulk import · ${g.rows.length} file${g.rows.length === 1 ? '' : 's'}${g.rows.length < (sizes.get(g.bulk_id) ?? 0) ? ` (of ${sizes.get(g.bulk_id)})` : ''}` : g.rows[0].name,
+        imported_at: g.rows.reduce((m: string, b: any) => (b.imported_at && b.imported_at > m ? b.imported_at : m), ''),
+        lead_types: [...new Set(g.rows.flatMap((b: any) => (b.lead_types ? b.lead_types.split(', ') : [])))].join(', '),
+        ...sum,
+        cost_per_reached: sum.reached ? sum.cost / sum.reached : null,
+        cost_per_booked: sum.booked ? sum.cost / sum.booked : null,
+        rows: g.rows,
+      };
+    });
+    const v = (g: any) => (sort.col === 'imported_at' ? g.imported_at : g[sort.col]);
+    return out.sort((a, b) => {
+      const x = v(a), y = v(b);
+      if (x == null || y == null) return x == null ? (y == null ? 0 : 1) : -1; // blanks last
+      const c = typeof x === 'string' ? x.localeCompare(y) : x - y;
+      return sort.desc ? -c : c;
+    });
+  }, [rows, filter, sort]);
+  const by = (col: BatchCol) => setSort((s) => ({ col, desc: s.col === col ? !s.desc : true }));
+  const head = (col: BatchCol, label: string, title?: string) => (
+    <th key={col} title={title}>
+      <button className="sort" onClick={() => by(col)} aria-label={`Sort by ${label}`}>{label}{sort.col === col ? (sort.desc ? ' ▾' : ' ▴') : ''}</button>
+    </th>
+  );
+  const line = (b: any, child: boolean, drill: boolean) => {
+    const cell = (metric: string, label: string, v: React.ReactNode = b[metric]) => (
+      <td>{drill ? <N section="by_batch" k={b.key} metric={metric} title={`${label}: ${b.name}`}>{v}</N> : v}</td>
+    );
+    const money = (x: number | null) => (x == null ? '–' : fmtMoney(x));
+    return (
+      <tr key={b.key} className={child ? 'child-row' : b.bulk ? 'group-row' : undefined}>
+        <td className={child ? 'indent' : undefined}>
+          {b.bulk && (
+            <button className="btn small" style={{ marginRight: 6 }} aria-label={opened.has(b.key) ? 'Hide files' : 'Show files'}
+              onClick={() => setOpened((o) => { const n = new Set(o); if (n.has(b.key)) n.delete(b.key); else n.add(b.key); return n; })}>
+              {opened.has(b.key) ? '▾' : '▸'}
+            </button>
+          )}
+          {b.name}<div className="muted small">{fmtDateTime(b.imported_at)}</div>
+        </td>
+        <td>{b.lead_types}</td>
+        {cell('leads', 'Leads')}
+        <td>{fmtMoney(b.cost)}{b.unpriced > 0 && <div className="warn small">{b.unpriced} with no price</div>}</td>
+        {cell('never_called', 'Never called')}<td>{b.left}</td>{cell('dials', 'Dials')}{cell('reached', 'Reached')}{cell('booked', 'Booked')}
+        <td>{money(b.cost_per_reached)}</td><td>{money(b.cost_per_booked)}</td>
+      </tr>
+    );
+  };
+  return (
+    <div className="card">
+      <h3>By batch <span className="muted">(all time · {groups.length} line{groups.length === 1 ? '' : 's'})</span></h3>
+      <BatchFilterBar value={filter} onChange={setFilter} />
+      <div className="scroll-x">
+        <table className="grid">
+          <thead>
+            <tr>{head('imported_at', 'Batch')}<th>Type</th>{BATCH_COLS.map(([c, l, t]) => head(c, l, t))}</tr>
+          </thead>
+          <tbody>
+            {groups.slice(0, limit).flatMap((g) => [
+              line(g, false, g.whole),
+              ...(g.bulk && opened.has(g.key) ? g.rows.map((b: any) => line(b, true, true)) : []),
+            ])}
+          </tbody>
+        </table>
+      </div>
+      {groups.length === 0 && <div className="empty">No batches match.</div>}
+      {groups.length > limit && (
+        <div className="row" style={{ justifyContent: 'center', marginTop: 8 }}>
+          <button className="btn small" onClick={() => setLimit((n) => n + 25)}>Show more ({groups.length - limit} more)</button>
+        </div>
+      )}
+      <p className="help">
+        Each bulk import is one line; open it to see its files. Click a column to sort. Reached and booked count leads, not calls.
+        How appointments went is in Unitrust. Cost comes from each lead's own price.
+      </p>
+    </div>
+  );
+}
+
 function Benchmarks({ r, N, onSaved }: { r: Report; N: any; onSaved: () => void }) {
   const { toast } = useApp();
   const [edit, setEdit] = useState(false);
@@ -318,7 +399,7 @@ function Benchmarks({ r, N, onSaved }: { r: Report; N: any; onSaved: () => void 
   return (
     <div className="card">
       <div className="row" style={{ justifyContent: 'space-between' }}>
-        <h3>Against the flier's benchmarks <span className="muted">(all time, by lead type)</span></h3>
+        <h3>By lead type <span className="muted">(all time, against the flier's benchmarks)</span></h3>
         {edit ? (
           <div className="row"><button className="btn small primary" onClick={save}>Save targets</button><button className="btn small" onClick={() => { setT(r.targets); setEdit(false); }}>Cancel</button></div>
         ) : (
@@ -327,14 +408,29 @@ function Benchmarks({ r, N, onSaved }: { r: Report; N: any; onSaved: () => void 
       </div>
       <div className="scroll-x">
         <table className="grid">
-          <thead><tr><th>Lead type</th><th>Leads</th><th>Reached</th><th>Booked</th><th>Booked per reached</th><th>$/booked</th></tr></thead>
+          <thead>
+            <tr>
+              <th>Lead type</th><th>Leads</th><th>Cost</th><th>Never called</th><th>Dials</th><th title="Dials per lead called">Dials/lead</th>
+              <th>Contacts</th><th>Appts</th><th>Bad numbers</th><th>Called you back</th>
+              <th title="Leads reached, and the share of leads called">Reached</th><th title="Leads booked, and the share of leads called">Booked</th>
+              <th>Booked per reached</th><th>$/reached</th><th>$/booked</th>
+            </tr>
+          </thead>
           <tbody>
             {r.benchmarks.map((b: any) => {
               const cell = (metric: string, label: string) => <td><N section="benchmarks" k={b.key} metric={metric} title={`${label}: ${b.label}`}>{b[metric]}</N></td>;
+              const withRate = (metric: string, label: string, rate: number | null) => (
+                <td><N section="benchmarks" k={b.key} metric={metric} title={`${label}: ${b.label}`}>{b[metric]}</N> <span className="muted small">{pct(rate)}</span></td>
+              );
               return (
                 <tr key={b.key}>
                   <td>{b.label}</td>
-                  {cell('leads', 'Leads')}{cell('reached', 'Reached')}{cell('booked', 'Booked')}
+                  {cell('leads', 'Leads')}
+                  <td>{fmtMoney(b.cost)}</td>
+                  {cell('never_called', 'Never called')}{cell('dials', 'Dials')}
+                  <td>{b.dials_per_lead == null ? '–' : b.dials_per_lead.toFixed(1)}</td>
+                  {cell('contacts', 'Contacts')}{cell('appointments', 'Appointments')}{cell('bad_numbers', 'Bad numbers')}{cell('called_back', 'Called you back')}
+                  {withRate('reached', 'Reached', b.reached_rate)}{withRate('booked', 'Booked', b.booked_rate)}
                   <td className={vs(b.booked_per_reached, b.booked_target)}>
                     {pct(b.booked_per_reached)}{' '}
                     {edit ? (
@@ -343,6 +439,7 @@ function Benchmarks({ r, N, onSaved }: { r: Report; N: any; onSaved: () => void 
                       <span className="muted">target {pct(b.booked_target)}</span>
                     )}
                   </td>
+                  <td>{b.cost_per_reached == null ? '–' : fmtMoney(b.cost_per_reached)}</td>
                   <td>{b.cost_per_booked == null ? '–' : fmtMoney(b.cost_per_booked)}</td>
                 </tr>
               );
@@ -351,7 +448,8 @@ function Benchmarks({ r, N, onSaved }: { r: Report; N: any; onSaved: () => void 
         </table>
       </div>
       <p className="help">
-        Targets start from the flier: A 4 of 5, A1 and AA 1 of 4, B 1 of 5, C 1 of 8, D 1 of 10. Sits and apps are tracked in Unitrust.
+        Each lead counts under its type now, so fixing a batch's type on Leads moves its history here too.
+        Reached and booked count leads; the small % is out of leads called. Targets start from the flier: A 4 of 5, A1 and AA 1 of 4, B 1 of 5, C 1 of 8, D 1 of 10. Sits and apps are tracked in Unitrust.
       </p>
     </div>
   );

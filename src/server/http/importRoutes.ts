@@ -10,7 +10,7 @@ import type { Config } from '../config.js';
 import { parseSpreadsheet, type ParsedFile } from '../domain/spreadsheet.js';
 import { suggestMapping } from '../domain/mapping.js';
 import { savedMappingFor } from '../domain/importer.js';
-import { listImportBatches, batchesFromFile, importProblems, bulkImportProblems } from '../domain/importHistory.js';
+import { listImportBatches, browseImports, batchesFromFile, importProblems, bulkImportProblems } from '../domain/importHistory.js';
 import { toCsv } from '../domain/exporter.js';
 import { uuidv7 } from '../ids.js';
 import type { ColumnMapping } from '../domain/mapping.js';
@@ -126,6 +126,24 @@ export function registerImportRoutes(
 
 
   app.get('/api/imports', async () => listImportBatches(db));
+  // The batch lists: newest first, a page at a time, each bulk import as one line.
+  app.get('/api/imports/browse', async (req) => {
+    const q = z.object({
+      search: z.string().max(100).optional(),
+      days: z.coerce.number().int().min(1).max(3650).optional(),
+      /** A lead type code, or "none". */
+      lead_type: z.string().max(20).optional(),
+      left: z.enum(['1', '0', 'true', 'false']).optional(),
+      key: z.string().max(80).optional(),
+      limit: z.coerce.number().int().min(1).max(200).default(25),
+      offset: z.coerce.number().int().min(0).default(0),
+    }).parse(req.query);
+    return browseImports(db, {
+      ...q,
+      lead_type: !q.lead_type ? undefined : q.lead_type === 'none' ? '' : q.lead_type,
+      left: q.left === '1' || q.left === 'true',
+    });
+  });
 
   app.get('/api/imports/:id/problems.csv', async (req, reply) => {
     const { id } = z.object({ id: z.string().max(64) }).parse(req.params);
