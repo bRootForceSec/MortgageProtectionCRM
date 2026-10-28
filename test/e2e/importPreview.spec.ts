@@ -36,6 +36,11 @@ test('a scanned page saved as JPEG 2000 shows in the review window', async ({ pa
   const warnings: string[] = [];
   page.on('console', (m) => m.type() === 'warning' && warnings.push(m.text()));
 
+  // The default lead type arrives late, as on a slow machine: a file picked before then must still import.
+  await page.route('**/api/import-defaults', async (r) => {
+    await new Promise((done) => setTimeout(done, 2000));
+    await r.continue();
+  });
   await page.goto(launchUrl);
   // No AI reader, so the scan waits for you to type it in. (A Claude Code found on the test machine could
   // otherwise take minutes on the page, or read it as clean and import it.)
