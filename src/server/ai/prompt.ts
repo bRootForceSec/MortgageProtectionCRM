@@ -4,7 +4,7 @@ import * as z from 'zod/v4';
 // Adapted from Alistair's "AI Prompt Lead Conversion" rules: blank beats a guess, read handwriting digit
 // by digit, labelled fields only. The app does the spreadsheet, duplicate and formatting work itself.
 
-export const PROMPT_VERSION = 'lead-page-v3';
+export const PROMPT_VERSION = 'lead-page-v4';
 
 const val = z.string().nullable();
 
@@ -40,7 +40,7 @@ export const PageAnswer = z.object({
         reason: z.string(),
       }),
     )
-    .describe('every field you left blank or are not sure of because it was hard to read'),
+    .describe('fields printed on the page that were hard to read or that you are not sure of; leave out fields this page does not have'),
   notes: val.describe('one short sentence when something about the page needs explaining, else null'),
 });
 export type PageAnswer = z.infer<typeof PageAnswer>;
@@ -60,7 +60,7 @@ Rules:
 5. Lender names may be cut off by the form. Copy what is printed; do not complete them.
 6. county: only when the page prints a county. Do not work it out from the city.
 7. Handwritten marks (X, "NO NEED", strike-throughs) do not change printed values. Mention them in notes.
-8. Put a field in "uncertain" whenever you were not fully sure of it, even if you returned a value.
+8. Put a field in "uncertain" whenever it is printed or written on the page and you were not fully sure of it, even if you returned a value. Do not list fields the page simply does not have (for example a mailer card has no county, call-in date or Mortgage Identification Number): just return null for those.
 9. notes: null for a straightforward page.
 10. turn: look at the page as it is shown. If the printed text runs sideways or upside down, give how many degrees clockwise the page must be turned so it reads normally ("90" when the text runs bottom to top, "270" when it runs top to bottom, "180" when it is upside down). Otherwise "0".`;
 
