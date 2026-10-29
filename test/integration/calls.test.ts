@@ -7,6 +7,7 @@ import { parseSpreadsheet } from '../../src/server/domain/spreadsheet.js';
 import { suggestMapping } from '../../src/server/domain/mapping.js';
 import { commitImport } from '../../src/server/domain/importer.js';
 import { logManualCall, changeOutcome, currentOutcome, addLeadAction, voidCall, changeCallerId, callHistory } from '../../src/server/domain/calls.js';
+import { loadCallingSettings, saveCallingSettings } from '../../src/server/domain/callingSettings.js';
 import { DomainError } from '../../src/server/core/errors.js';
 import { activeObjectionCodes, objectionCounts } from '../../src/server/domain/objections.js';
 import { addToCallList } from '../../src/server/domain/callList.js';
@@ -186,6 +187,26 @@ describe('manual call logging', () => {
     expect(objectionCounts(db, '2000-01-01', '2100-01-01').map((o) => [o.code, o.n])).toEqual([['price', 1], ['spouse', 1]]);
     expect(() => logManualCall(db, { lead_id: jane, idempotency_key: key(), outcome_code: 'appt_prezi', objections: [{ code: 'nope' }] })).toThrow(DomainError);
     expect(db.prepare("SELECT COUNT(*) n FROM call WHERE lead_id = ? AND voided_at IS NULL").get(jane)).toEqual({ n: 1 });
+  });
+
+  it('notes which opener was in Settings for each call logged live', () => {
+    const live = () => logManualCall(db, { lead_id: jane, idempotency_key: key(), outcome_code: 'no_answer' }).call_id;
+    const version = (id: string) => (db.prepare('SELECT sv.body FROM call c LEFT JOIN script_version sv ON sv.id = c.script_version_id WHERE c.id = ?').get(id) as { body: string | null }).body;
+    expect(version(live())).toBeNull(); // no opener written yet
+    const setOpener = (opener: string) => saveCallingSettings(db, { ...loadCallingSettings(db), scripts: { ...loadCallingSettings(db).scripts, opener } });
+    setOpener('Hi {first_name}, version one');
+    const a = live();
+    const b = live();
+    setOpener('Hi {first_name}, version two');
+    const c = live();
+    expect([version(a), version(b), version(c)]).toEqual(['Hi {first_name}, version one', 'Hi {first_name}, version one', 'Hi {first_name}, version two']);
+    expect(db.prepare('SELECT COUNT(*) n FROM script_version').get()).toEqual({ n: 2 });
+    // Going back to an earlier opener reuses its version.
+    setOpener('Hi {first_name}, version one');
+    expect(db.prepare('SELECT script_version_id FROM call WHERE id = ?').get(live())).toEqual(db.prepare('SELECT script_version_id FROM call WHERE id = ?').get(a));
+    // A call entered for an earlier time doesn't say.
+    const earlier = logManualCall(db, { lead_id: jane, idempotency_key: key(), outcome_code: 'no_answer', occurred_at: new Date(Date.now() - 3600_000).toISOString() });
+    expect(version(earlier.call_id)).toBeNull();
   });
 
   it('keeps when you pressed Dial and when you saved, for calls logged as they happen', () => {
