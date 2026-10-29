@@ -232,9 +232,10 @@ test('dial counter, undo, remapped keys, QR dialing, scripts and lead edits', as
   await page.keyboard.press('j');
   await expect(page.getByText(/worked the whole list/)).toBeVisible();
 
-  await page.getByRole('button', { name: 'Callbacks', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Callbacks' })).toBeVisible();
+  await page.getByRole('button', { name: 'Today', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Today', exact: true })).toBeVisible();
   await expect(page.getByText('Coming up (next two weeks)')).toBeVisible();
+  await expect(page.getByRole('heading', { name: /Appointments today/ })).toBeVisible();
 });
 
 test('clear worked leads, add more from Leads, and look up an incoming call without losing the list', async ({ page }) => {
@@ -289,7 +290,7 @@ test('clear worked leads, add more from Leads, and look up an incoming call with
   const doneBefore = await queue.locator('.queue-list li.done').count();
   await page.keyboard.press('1');
   await expect(queue.locator('.queue-list li.done')).toHaveCount(doneBefore + 1);
-  await page.getByRole('button', { name: 'Callbacks', exact: true }).click();
+  await page.getByRole('button', { name: 'Today', exact: true }).click();
   await page.getByRole('button', { name: 'Calling', exact: true }).click();
   await expect(queue.locator('.queue-list li.done')).toHaveCount(doneBefore + 1);
   await expect(queue.locator('.queue-list li.done', { hasText: current })).toHaveCount(1);

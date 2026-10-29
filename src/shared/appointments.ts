@@ -90,3 +90,31 @@ export function parseUnitrustTitle(title: string): UnitrustTitle | null {
   if (!m) return null;
   return { state: m[1]!.toUpperCase(), lender: m[2]!.trim(), name: m[3]!.trim(), phone: `${m[4]}${m[5]}${m[6]}` };
 }
+
+/** One appointment on the Today page, with what you want to know before it starts. */
+export interface PrepCard {
+  appointment_id: string;
+  lead_id: string;
+  /** In your time: "YYYY-MM-DD" (no time yet) or "YYYY-MM-DDTHH:MM". */
+  scheduled_for: string;
+  source: 'app' | 'unitrust';
+  name: string;
+  phone_e164: string | null;
+  city: string | null;
+  state: string | null;
+  time_zone: string | null;
+  lead_type: string | null;
+  lender: string | null;
+  loan_amount_cents: number | null;
+  dob: string | null;
+  age: number | null;
+  coborrower_raw: string | null;
+  tobacco_raw: string | null;
+  health_heart_raw: string | null;
+  health_stroke_raw: string | null;
+  health_cancer_raw: string | null;
+  health_diabetes_raw: string | null;
+  status: string | null;
+  appt_result: string | null;
+  last_note: string | null;
+}

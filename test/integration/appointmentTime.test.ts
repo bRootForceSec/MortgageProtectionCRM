@@ -4,7 +4,7 @@ import { parseSpreadsheet } from '../../src/server/domain/spreadsheet.js';
 import { suggestMapping } from '../../src/server/domain/mapping.js';
 import { commitImport } from '../../src/server/domain/importer.js';
 import { changeOutcome, currentOutcome, logManualCall, voidCall } from '../../src/server/domain/calls.js';
-import { currentAppointment } from '../../src/server/domain/appointments.js';
+import { appointmentsOnDay, currentAppointment } from '../../src/server/domain/appointments.js';
 import { DomainError } from '../../src/server/core/errors.js';
 import type { DB } from '../../src/server/db/connection.js';
 import { uuidv7 } from '../../src/server/ids.js';
@@ -60,5 +60,30 @@ describe('appointment time on Appt set', () => {
     expect(currentAppointment(db, lead)).toEqual({ scheduled_for: '2099-10-30T15:00', source: 'unitrust' });
     // Lead status and counting still go by Unitrust and the calls, as before.
     expect((db.prepare('SELECT status FROM lead_state WHERE lead_id = ?').get(lead) as { status: string }).status).toBe('appointment_set');
+  });
+});
+
+describe('appointments of a day (the Today page)', () => {
+  it('lists the day\'s appointments earliest first, with the prep details and the last note', () => {
+    db.prepare("UPDATE lead SET lender = 'Union Savings', loan_amount_cents = 18500000, tobacco_raw = 'No' WHERE id = ?").run(lead);
+    logManualCall(db, { lead_id: lead, idempotency_key: key(), outcome_code: 'appointment', appointment_for: '2099-10-30T14:00', note: 'Wife on the loan too' });
+    const other = (db.prepare("SELECT id FROM lead WHERE id != ? LIMIT 1").get(lead) as { id: string }).id;
+    logManualCall(db, { lead_id: other, idempotency_key: key(), outcome_code: 'appointment', appointment_for: '2099-10-30' });
+    logManualCall(db, { lead_id: other, idempotency_key: key(), outcome_code: 'appointment', appointment_for: '2099-10-31T09:00' });
+    const day = appointmentsOnDay(db, '2099-10-30');
+    expect(day.map((p) => [p.lead_id, p.scheduled_for, p.source])).toEqual([[other, '2099-10-30', 'app'], [lead, '2099-10-30T14:00', 'app']]);
+    expect(day[1]).toMatchObject({ lender: 'Union Savings', loan_amount_cents: 18500000, tobacco_raw: 'No', last_note: 'Wife on the loan too' });
+    expect(appointmentsOnDay(db, '2099-10-29')).toEqual([]);
+  });
+
+  it('leaves out undone ones, and a typed time once Unitrust sends the appointment', () => {
+    const call = set('2099-10-30T14:00');
+    voidCall(db, call);
+    expect(appointmentsOnDay(db, '2099-10-30')).toEqual([]);
+    set('2099-10-30T14:00');
+    db.prepare(
+      "INSERT INTO appointment (id, lead_id, scheduled_for, recorded_via, created_at, unitrust_key) VALUES (?, ?, '2099-10-30T15:00', 'unitrust', ?, 'k1')",
+    ).run(uuidv7(), lead, new Date(Date.now() + 1000).toISOString());
+    expect(appointmentsOnDay(db, '2099-10-30').map((p) => [p.scheduled_for, p.source])).toEqual([['2099-10-30T15:00', 'unitrust']]);
   });
 });

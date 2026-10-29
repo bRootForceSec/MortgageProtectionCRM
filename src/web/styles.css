@@ -387,3 +387,13 @@ th button.sort { background: none; border: 0; padding: 0; font: inherit; font-we
   .calling .lead-head { gap: 6px; }
   .calling .phone-big { font-size: 22px; }
 }
+
+/* ---------- Today: appointment prep cards ---------- */
+.prep-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 10px; margin-bottom: 12px; }
+.prep-card { border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; }
+.prep-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.prep-head .prep-name { font-weight: 600; flex: 1; }
+.prep-facts { display: flex; flex-wrap: wrap; gap: 4px 16px; margin: 8px 0 0; }
+.prep-facts dt { font-size: 0.8em; opacity: 0.7; }
+.prep-facts dd { margin: 0; }
+.prep-note { margin: 8px 0 0; white-space: pre-wrap; }
