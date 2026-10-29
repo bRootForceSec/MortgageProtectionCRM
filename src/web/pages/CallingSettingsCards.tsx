@@ -131,7 +131,7 @@ export function CallingCard() {
           <br />
           Alert <NumberField value={s.alerts.minutes_before} onSave={(n) => set({ alerts: { ...s.alerts, minutes_before: n ?? 0 } })} width={70} /> minutes before a callback is due
           <br />
-          Alert <NumberField value={s.alerts.appt_minutes_before} onSave={(n) => set({ alerts: { ...s.alerts, appt_minutes_before: n } })} width={70} /> minutes before an appointment
+          Alert <NumberField value={s.alerts.appt_minutes_before} allowBlank onSave={(n) => set({ alerts: { ...s.alerts, appt_minutes_before: n } })} width={70} /> minutes before an appointment
           <span className="help"> (leave it empty for no appointment alerts)</span>
           <br />
           <span className="help"> (only while the app is open)</span>
