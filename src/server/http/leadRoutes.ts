@@ -22,7 +22,7 @@ export function registerLeadRoutes(app: FastifyInstance, deps: { db: DB; config:
 
   // ---------- leads ----------
   const leadFilter = z.object({
-    status: z.enum(['dead', 'invalid', 'appointment_set', 'appt_missed', 'callback', 'retry', 'no_answer', 'talked', 'new', 'all']).default('all'),
+    status: z.enum(['dead', 'invalid', 'appointment_set', 'appt_missed', 'appt_no_show', 'appt_sat_no_sale', 'appt_prezi', 'appt_sold', 'callback', 'retry', 'no_answer', 'talked', 'new', 'all']).default('all'),
     search: z.string().max(100).optional(),
     batch_id: z.string().max(64).optional(),
     bulk_id: z.string().max(64).optional(),
@@ -149,6 +149,7 @@ export function registerLeadRoutes(app: FastifyInstance, deps: { db: DB; config:
       callback_any_time: z.boolean().nullish(),
       do_not_call: z.boolean().nullish(),
       note: z.string().max(10000).nullish(),
+      objections: z.array(z.object({ code: z.string().max(40), note: z.string().max(2000).nullish() })).max(20).nullish(),
     }).parse(req.body);
     return logManualCall(db, { ...b, lead_id: id });
   });

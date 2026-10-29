@@ -3,7 +3,7 @@ import { uuidv7, nowIso } from '../ids.js';
 import { getSetting, setSetting } from '../core/settings.js';
 import { rebuildLeadState } from './leadState.js';
 import { normalizeUsPhone } from './normalize.js';
-import { parseUnitrustTitle, type ApptResult, type UnitrustColor } from '../../shared/appointments.js';
+import { APPT_OUTCOME_RESULT, parseUnitrustTitle, type ApptResult, type UnitrustColor } from '../../shared/appointments.js';
 
 // Appointments read off the Unitrust calendar by the Firefox extension. Each event is matched to a lead by its phone
 // (then by name), stored once per day and phone, and each change of color adds a result row. Leads whose appointment
@@ -161,12 +161,13 @@ function findLead(db: DB, phoneDigits: string, name: string): string | null {
   return byName.length === 1 ? byName[0]!.id : null;
 }
 
-// ---------- for Reports and the top bar ----------
+// ---------- for Reports, the funnel and the top bar ----------
 
 /** How one appointment went, for counting: rescheduled means it was moved to another day. */
-export type ApptOutcome = 'pending' | 'rescheduled' | 'sold' | 'sat_no_sale' | 'no_show';
+export type ApptOutcome = 'pending' | 'rescheduled' | 'sold' | 'sat_no_sale' | 'prezi' | 'no_show';
 
 export interface ApptRow {
+  /** The Unitrust appointment's id, or the call's id for an appointment logged only here. */
   id: string;
   lead_id: string;
   lead_name: string;
@@ -175,40 +176,83 @@ export interface ApptRow {
   time: string | null;
   title: string | null;
   outcome: ApptOutcome;
+  /** Where the outcome came from: an appointment call logged here, or the Unitrust color. */
+  source: 'app' | 'unitrust';
 }
 
-/** Unitrust appointments on the days from `fromDay` to `toDay` (YYYY-MM-DD, both included), optionally only some leads. */
+const LEAD_NAME = "trim(coalesce(l.first_name,'') || ' ' || coalesce(l.last_name,''))";
+/** Appointment calls logged here (not undone), with their current outcome. */
+const APP_CALLS = `
+  SELECT c.id, c.lead_id, c.requested_at, date(c.requested_at, 'localtime') day, o.outcome_code
+  FROM call c JOIN call_outcome o ON o.call_id = c.id AND NOT EXISTS (SELECT 1 FROM call_outcome x WHERE x.supersedes_id = o.id)
+  JOIN outcome_code oc ON oc.code = o.outcome_code
+  WHERE c.voided_at IS NULL AND c.initiation_result = 'accepted' AND oc.kind = 'appointment'`;
+
+/**
+ * Appointments on the days from `fromDay` to `toDay` (YYYY-MM-DD, both included), optionally only some leads.
+ * A Unitrust appointment takes the outcome you logged here for it (the latest appointment call on or after its day,
+ * before the lead's next appointment), else its color. An appointment call with no Unitrust appointment behind it
+ * counts on the day of the call.
+ */
 export function appointmentsOnDays(db: DB, fromDay: string, toDay: string, leadWhere = { sql: '1', params: {} as Record<string, unknown> }): ApptRow[] {
+  const scheduled = "a2.lead_id = a.lead_id AND a2.recorded_via = 'unitrust' AND a2.internal_status = 'scheduled'";
   const rows = db
     .prepare(
-      `SELECT a.id, a.lead_id, trim(coalesce(l.first_name,'') || ' ' || coalesce(l.last_name,'')) lead_name, l.lead_type,
+      `WITH app AS (${APP_CALLS})
+       SELECT a.id, a.lead_id, ${LEAD_NAME} lead_name, l.lead_type,
               substr(a.scheduled_for, 1, 10) day, CASE WHEN length(a.scheduled_for) > 10 THEN substr(a.scheduled_for, 12, 5) END time,
               a.title, a.internal_status,
-              (SELECT result FROM appointment_result r WHERE r.appointment_id = a.id ORDER BY entered_at DESC, id DESC LIMIT 1) result
+              (SELECT result FROM appointment_result r WHERE r.appointment_id = a.id ORDER BY entered_at DESC, id DESC LIMIT 1) result,
+              (SELECT app.outcome_code FROM app WHERE app.lead_id = a.lead_id AND app.day >= substr(a.scheduled_for, 1, 10)
+                 AND NOT EXISTS (SELECT 1 FROM appointment a2 WHERE ${scheduled}
+                   AND substr(a2.scheduled_for, 1, 10) > substr(a.scheduled_for, 1, 10) AND substr(a2.scheduled_for, 1, 10) <= app.day)
+               ORDER BY app.requested_at DESC LIMIT 1) app_code
        FROM appointment a JOIN lead l ON l.id = a.lead_id
        WHERE a.recorded_via = 'unitrust' AND substr(a.scheduled_for, 1, 10) BETWEEN @from AND @to AND ${leadWhere.sql}
        ORDER BY a.scheduled_for, lead_name`,
     )
-    .all({ ...leadWhere.params, from: fromDay, to: toDay }) as (Omit<ApptRow, 'outcome'> & { internal_status: string; result: string | null })[];
-  return rows.map(({ internal_status, result, ...r }) => ({
-    ...r,
-    outcome: internal_status === 'rescheduled' ? 'rescheduled'
-      : result === 'sold' || result === 'no_show' || result === 'sat_no_sale' ? result
-      : 'pending',
+    .all({ ...leadWhere.params, from: fromDay, to: toDay }) as (Omit<ApptRow, 'outcome' | 'source'> & { internal_status: string; result: string | null; app_code: string | null })[];
+  const fromUnitrust: ApptRow[] = rows.map(({ internal_status, result, app_code, ...r }) => {
+    const app = app_code ? APPT_OUTCOME_RESULT[app_code] : undefined;
+    return {
+      ...r,
+      source: app ? 'app' : 'unitrust',
+      outcome: internal_status === 'rescheduled' ? 'rescheduled'
+        : app ?? (result === 'sold' || result === 'no_show' || result === 'sat_no_sale' ? result : 'pending'),
+    };
+  });
+  // Appointment calls with no Unitrust appointment on or before their day.
+  const own = db
+    .prepare(
+      `WITH app AS (${APP_CALLS})
+       SELECT app.id, app.lead_id, ${LEAD_NAME} lead_name, l.lead_type, app.day, app.outcome_code
+       FROM app JOIN lead l ON l.id = app.lead_id
+       WHERE app.day BETWEEN @from AND @to AND ${leadWhere.sql}
+         AND NOT EXISTS (SELECT 1 FROM appointment a WHERE a.lead_id = app.lead_id AND a.recorded_via = 'unitrust' AND substr(a.scheduled_for, 1, 10) <= app.day)
+       ORDER BY app.requested_at`,
+    )
+    .all({ ...leadWhere.params, from: fromDay, to: toDay }) as { id: string; lead_id: string; lead_name: string; lead_type: string | null; day: string; outcome_code: string }[];
+  const fromApp: ApptRow[] = own.map(({ outcome_code, ...r }) => ({
+    ...r, time: null, title: null, source: 'app', outcome: APPT_OUTCOME_RESULT[outcome_code] ?? 'pending',
   }));
+  return [...fromUnitrust, ...fromApp].sort((x, y) => x.day.localeCompare(y.day) || x.lead_name.localeCompare(y.lead_name));
 }
 
-/** Counts and rates over some appointments. Sat is sold plus sat-no-sale. */
 export function appointmentCounts(rows: ApptRow[]) {
   const n = (o: ApptOutcome) => rows.filter((r) => r.outcome === o).length;
   const sold = n('sold');
-  const sat = sold + n('sat_no_sale');
+  const prezis = sold + n('prezi');
+  const sat = prezis + n('sat_no_sale');
   const noShow = n('no_show');
   return {
     appointments: rows.length,
+    /** Picked up for the appointment: sat no sale, prezi or sale. */
     sat,
+    /** Presented: prezi or sale. */
+    prezis,
     sold,
     sat_no_sale: n('sat_no_sale'),
+    prezi: n('prezi'),
     no_show: noShow,
     rescheduled: n('rescheduled'),
     pending: n('pending'),
@@ -219,7 +263,10 @@ export function appointmentCounts(rows: ApptRow[]) {
   };
 }
 
-/** Whether the extension has sent any appointments yet. */
-export function hasUnitrustAppointments(db: DB): boolean {
-  return !!db.prepare("SELECT 1 FROM appointment WHERE recorded_via = 'unitrust' LIMIT 1").get();
+/** Whether there are any appointments to count yet: from the extension, or appointment calls logged here. */
+export function hasAppointments(db: DB): boolean {
+  return !!db.prepare(
+    `SELECT 1 WHERE EXISTS (SELECT 1 FROM appointment WHERE recorded_via = 'unitrust')
+       OR EXISTS (SELECT 1 FROM call_outcome o JOIN outcome_code oc ON oc.code = o.outcome_code WHERE oc.kind = 'appointment')`,
+  ).get();
 }

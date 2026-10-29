@@ -174,10 +174,11 @@ function TodayStats() {
       <span title="People called (one lead can get several dials)">Leads called <b>{s.unique_leads}</b></span>
       <Goal label="Pickups" n={s.human_contacts} goal={g.contacts} />
       <Goal label="Appts set" n={s.appointments} goal={g.appointments} />
-      {s.appts && (
+      {/* Only on days with appointments, so it takes no room on a short screen otherwise. */}
+      {s.appts && s.appts.appointments > 0 && (
         <span
           className="appt-stats"
-          title={`Today's appointments in Unitrust (${s.appts.appointments}): updates when you change their status there and the extension sees it.${s.appts.pending ? ` ${s.appts.pending} not updated yet.` : ''}${s.appts.rescheduled ? ` ${s.appts.rescheduled} rescheduled.` : ''}`}
+          title={`Today's appointments (${s.appts.appointments}): from what you log on the Appointment side, or the Unitrust calendar when the extension sees a change.${s.appts.pending ? ` ${s.appts.pending} not updated yet.` : ''}${s.appts.rescheduled ? ` ${s.appts.rescheduled} rescheduled.` : ''}`}
         >
           <span>Sat <b>{s.appts.sat}</b></span>
           <span>Sales <b>{s.appts.sold}</b></span>

@@ -2,7 +2,7 @@ import type { Statement } from 'better-sqlite3';
 import type { DB } from '../db/connection.js';
 import { nowIso } from '../ids.js';
 import { retryGapMs } from './callingSettings.js';
-import { MISSED_RESULTS, type ApptResult } from '../../shared/appointments.js';
+import { APPT_OUTCOME_RESULT, MISSED_RESULTS, type ApptResult } from '../../shared/appointments.js';
 
 // lead_state is a derived projection. It is computed only from authoritative facts:
 // calls, current outcomes and lead actions (skip / dead / restore).
@@ -11,6 +11,8 @@ import { MISSED_RESULTS, type ApptResult } from '../../shared/appointments.js';
 // Appointments are tracked in Unitrust. "Appointment set" is how a call ended: the lead leaves the queue. The Firefox
 // extension reads how each appointment went off the Unitrust calendar (see unitrustAppointments.ts); when that is newer
 // than the last call, it decides: booked, rescheduled or sold stays out of the queue; a no-show or a sat-no-sale comes back to be called.
+// An appointment call logged here (the Appointment side of the Calling screen) decides the same way, and it wins over
+// the Unitrust color of that appointment: Unitrust has no color for a prezi.
 
 /**
  * Outcomes that mean the lead booked an appointment. "Appointment sat, no sale" and "Sold" are retired, but older
@@ -48,7 +50,7 @@ export interface LeadFacts {
   /** Numbers ruled out on other leads that share them: marked bad there, or that lead is in the dead pile. */
   blocks?: PhoneBlock[];
   /** How the lead's latest Unitrust appointment stands, and since when. */
-  appt?: { result: ApptResult; at: string } | null;
+  appt?: { result: ApptResult; at: string; /** The appointment's day, YYYY-MM-DD. */ day?: string } | null;
 }
 
 export interface PhoneBlock {
@@ -75,9 +77,9 @@ export interface DerivedLeadState {
   blocked_phones_json: string | null;
   /** Why a number is ruled out, when another lead ruled it out or the main number is bad. */
   block_reason: string | null;
-  /** How the latest Unitrust appointment went, if there is one. */
+  /** How the latest appointment went (logged here, or read from Unitrust), if there is one. */
   appt_result: ApptResult | null;
-  /** 1 when a no-show or yellow in Unitrust (newer than the last call) is what put the lead back to be called. */
+  /** 1 when a no-show, sat-no-sale or prezi (logged here, or in Unitrust after the last call) put the lead back to be called. */
   appt_missed: number;
 }
 
@@ -109,6 +111,15 @@ export function deriveLeadState(f: LeadFacts, now: string, retryGap = RETRY_GAP_
     [...placed].reverse().find((c) => outcomes.some((o) => o.call_id === c.id && o.counts_as_human_contact))?.from_number_id ??
     null;
 
+  // The latest appointment call logged here. It beats Unitrust's color for that appointment (on or after its day).
+  const inApp = [...outcomes].reverse().find((o) => o.outcome_code in APPT_OUTCOME_RESULT) ?? null;
+  const inAppResult = inApp ? APPT_OUTCOME_RESULT[inApp.outcome_code]! : null;
+  const inAppDay = inApp ? (callTime.get(inApp.call_id) ?? inApp.entered_at).slice(0, 10) : '';
+  const overridden = !!inApp && !!f.appt && inAppDay >= (f.appt.day ?? '');
+  // An appointment booked again (on a first call) after the last appointment result: that result is old news.
+  const rebooked = !!inApp && outcomes.slice(outcomes.indexOf(inApp) + 1).some((o) => BOOKED_CODES.has(o.outcome_code));
+  const apptResult: ApptResult | null = inAppResult && (!f.appt || overridden) ? (rebooked ? 'not_set' : inAppResult) : f.appt?.result ?? null;
+
   const base = {
     attempts_total: placed.length,
     last_call_at: lastCall?.requested_at ?? null,
@@ -116,12 +127,15 @@ export function deriveLeadState(f: LeadFacts, now: string, retryGap = RETRY_GAP_
     skipped_at: skippedAt,
     preferred_number_id: preferred,
     due_any_time: 0,
-    appt_result: f.appt?.result ?? null,
+    appt_result: apptResult,
     appt_missed: 0,
   };
-  // Unitrust's word counts only when it came after the last outcome (and after a restore).
-  const unitrust = f.appt && f.appt.at > (lastOutcome?.entered_at ?? '') && f.appt.at > lastRestore ? f.appt : null;
-  const missed = !!unitrust && MISSED_RESULTS.includes(unitrust.result);
+  // Unitrust's word counts only when it came after the last outcome (and after a restore), and you haven't logged
+  // how that appointment went here.
+  const unitrust = f.appt && !overridden && f.appt.at > (lastOutcome?.entered_at ?? '') && f.appt.at > lastRestore ? f.appt : null;
+  // Otherwise the last call decides, and it may be an appointment call.
+  const lastAppt = !unitrust && lastOutcome && lastOutcome.entered_at > lastRestore ? APPT_OUTCOME_RESULT[lastOutcome.outcome_code] ?? null : null;
+  const missed = unitrust ? MISSED_RESULTS.includes(unitrust.result) : !!lastAppt && MISSED_RESULTS.includes(lastAppt);
 
   // Which numbers are ruled out. A bad number counts for the number that was dialed, so a lead with an alternate
   // stays in rotation on the alternate. Other leads with the same number pass on "bad" and "dead pile".
@@ -155,7 +169,9 @@ export function deriveLeadState(f: LeadFacts, now: string, retryGap = RETRY_GAP_
 
   if (deadAt && deadAt > lastRestore) return { ...withPhones, status: 'dead', next_due_at: null, block_reason: null };
   // Booked: out of the queue until a later call (or Unitrust) says otherwise, or you restore it.
-  const booked = unitrust ? !missed : !!lastOutcome && BOOKED_CODES.has(lastOutcome.outcome_code) && lastOutcome.entered_at > lastRestore;
+  const booked = unitrust
+    ? !missed
+    : lastAppt ? !missed : !!lastOutcome && BOOKED_CODES.has(lastOutcome.outcome_code) && lastOutcome.entered_at > lastRestore;
   if (booked) {
     return { ...withPhones, status: 'appointment_set', next_due_at: null };
   }
@@ -164,7 +180,7 @@ export function deriveLeadState(f: LeadFacts, now: string, retryGap = RETRY_GAP_
     const dead = phones.some((p) => blocked.get(p)?.kind === 'dead');
     return { ...withPhones, status: dead ? 'dead' : 'invalid', next_due_at: null };
   }
-  // A no-show or yellow in Unitrust: due now, to set it up again.
+  // A no-show, sat-no-sale or prezi (here or in Unitrust): due now, to set it up again.
   if (missed) return { ...withPhones, status: 'retry', next_due_at: null, appt_missed: 1 };
   // The last call found a bad number but there's another one to try: due now, on the other number.
   if (lastOutcome?.grp === 'invalid' && lastOutcome.entered_at > lastRestore) {
@@ -216,14 +232,14 @@ export function loadLeadFacts(db: DB, leadId: string): LeadFacts {
 function latestUnitrustAppt(db: DB, leadId: string): LeadFacts['appt'] {
   const r = stmt(
     db,
-    `SELECT a.created_at, (SELECT result FROM appointment_result r WHERE r.appointment_id = a.id ORDER BY entered_at DESC, id DESC LIMIT 1) result,
+    `SELECT a.created_at, substr(a.scheduled_for, 1, 10) day, (SELECT result FROM appointment_result r WHERE r.appointment_id = a.id ORDER BY entered_at DESC, id DESC LIMIT 1) result,
             (SELECT max(entered_at) FROM appointment_result r WHERE r.appointment_id = a.id) result_at
      FROM appointment a WHERE a.lead_id = ? AND a.recorded_via = 'unitrust' AND a.internal_status = 'scheduled'
      ORDER BY a.scheduled_for DESC, a.created_at DESC LIMIT 1`,
-  ).get(leadId) as { created_at: string; result: string | null; result_at: string | null } | undefined;
+  ).get(leadId) as { created_at: string; day: string | null; result: string | null; result_at: string | null } | undefined;
   if (!r) return null;
   const result = (['sold', 'no_show', 'sat_no_sale', 'rescheduled'] as const).find((x) => x === r.result) ?? 'not_set';
-  return { result, at: r.result_at ?? r.created_at };
+  return { result, at: r.result_at ?? r.created_at, day: r.day ?? '' };
 }
 
 const NAME = "trim(coalesce(l.first_name,'') || ' ' || coalesce(l.last_name,''))";

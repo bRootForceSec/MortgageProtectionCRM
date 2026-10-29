@@ -4,8 +4,10 @@ import { api, fmtPhone, newKey, type LeadDetail } from '../api';
 import { useApp } from '../App';
 import { isTyping, keyLabel, normKey, type KeyMap } from '../shortcuts';
 import { getStored, setStored } from '../storage';
+import type { CallMode } from '../../shared/appointments';
 
 // The "log the call" form on the Calling screen: number used, outcome, callback time, minutes and note.
+// It has two sides with the same layout: First call (no answer, appt set, ...) and Appointment (no show, prezi, sale, ...).
 
 const LAST_NUMBER_KEY = 'mpcrm.lastNumber';
 
@@ -62,9 +64,11 @@ function Timer({ start, onReset }: { start: number; onReset: () => void }) {
  * Phase 2 replaces "log" with "call" but keeps this outcome panel.
  */
 export function LogCall({
-  d, attempt, setDials, resetTimer, restore, active, onSaved, onRefresh,
+  d, mode, attempt, setDials, resetTimer, restore, active, onSaved, onRefresh,
 }: {
   d: LeadDetail;
+  /** Which outcomes to offer: the First call side or the Appointment side. */
+  mode: CallMode;
   attempt: Attempt;
   setDials: (n: number) => void;
   resetTimer: () => void;
@@ -101,7 +105,8 @@ export function LogCall({
     if (!numberId && defaultNumber.id) setNumberId(defaultNumber.id);
   }, [defaultNumber.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const outcome = meta?.outcome_codes.find((o) => o.code === code) ?? null;
+  const outcomes = useMemo(() => (meta?.outcome_codes ?? []).filter((o) => (o.kind ?? 'first_call') === mode), [meta, mode]);
+  const outcome = outcomes.find((o) => o.code === code) ?? null;
   const needsWhen = !!outcome?.requires_callback_time;
   const changed = numberId !== defaultNumber.id;
 
@@ -186,7 +191,7 @@ export function LogCall({
       }
       // Action keys win over outcome keys (Settings warns about clashes).
       if (Object.values(keys.actions).some((ks) => ks.includes(normKey(e.key)))) return;
-      const c = keys.outcomes.get(normKey(e.key));
+      const c = keys.outcomes[mode].get(normKey(e.key));
       if (c) {
         e.preventDefault();
         choose(c);
@@ -194,14 +199,14 @@ export function LogCall({
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [keys, code, save, choose, active]);
+  }, [keys, code, save, choose, active, mode]);
 
   if (!d.lead.phone_e164 && !d.lead.other_phones.some((p) => p.e164)) return <p className="error">This lead has no valid phone number.</p>;
   if (d.state?.status === 'dead') return <RestoreBox d={d} onSaved={onRefresh} label={d.state.block_reason ? `${d.state.block_reason}.` : askedNotToCall(d) ? 'Asked not to be called again. This lead is in the dead pile.' : 'This lead is in the dead pile.'} />;
 
   const k = (a: keyof KeyMap['actions']) => keyLabel(keys.actions[a]?.[0] ?? '');
   return (
-    <div className="log-box">
+    <div className={`log-box${mode === 'appointment' ? ' appointment' : ''}`}>
       <div className="row">
         <div className="dial-counter" aria-label="Dials this attempt">
           <button className="btn small" onClick={() => setDials(attempt.dials - 1)} disabled={attempt.dials <= 1} aria-label="One less dial">− <kbd>{k('dials_down')}</kbd></button>
@@ -252,8 +257,9 @@ export function LogCall({
         })()}
         {activeNumbers.length === 0 && <span className="help">Add your numbers on the Numbers page to record which one you used.</span>}
       </div>
-      <div className="outcomes" role="group" aria-label="Outcome">
-        {meta?.outcome_codes.map((o) => (
+      {mode === 'appointment' && <div className="mode-label">How the appointment went</div>}
+      <div className="outcomes" role="group" aria-label={mode === 'appointment' ? 'Appointment outcome' : 'Outcome'}>
+        {outcomes.map((o) => (
           <button key={o.code} className={`${code === o.code ? 'active' : ''} ${o.marks_dead ? 'dead' : ''}`} onClick={() => choose(o.code)}>
             {keys.outcomeKey[o.code] && <kbd>{keyLabel(keys.outcomeKey[o.code]!)}</kbd>}{o.label}
           </button>
@@ -298,7 +304,9 @@ export function LogCall({
       {!code && (
         <p className="help">
           {calling?.settings.instant_save !== false
-            ? 'After the call, press the outcome key. No answer and Bad number save right away; the others save with Enter.'
+            ? mode === 'appointment'
+              ? 'After the appointment, press the outcome key. No show saves right away; the others save with Enter.'
+              : 'After the call, press the outcome key. No answer and Bad number save right away; the others save with Enter.'
             : 'After the call, press the outcome key, then Enter.'}{' '}
           Dialed more than once? Press <kbd>{k('dials_up')}</kbd> for each extra dial first.
         </p>

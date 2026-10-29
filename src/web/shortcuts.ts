@@ -1,7 +1,9 @@
 import type { OutcomeCode } from './api';
 import type { CallingSettings, ShortcutAction } from '../shared/callingSettings';
+import type { CallMode } from '../shared/appointments';
 
 // Keyboard shortcuts you can change in Settings. Each action can have several keys; each outcome has one.
+// Outcome keys belong to a side of the Calling screen (First call or Appointment), so both sides can use 1 to 5.
 
 export interface CallingSettingsResponse {
   settings: CallingSettings;
@@ -10,10 +12,12 @@ export interface CallingSettingsResponse {
 
 export interface KeyMap {
   actions: Record<ShortcutAction, string[]>;
-  /** key -> outcome code */
-  outcomes: Map<string, string>;
+  /** For each side of the Calling screen: key -> outcome code */
+  outcomes: Record<CallMode, Map<string, string>>;
   /** outcome code -> key */
   outcomeKey: Record<string, string | null>;
+  /** outcome code -> its side of the Calling screen */
+  kinds: Record<string, CallMode>;
 }
 
 /** Keys are stored as KeyboardEvent.key values; letters in lower case. */
@@ -27,27 +31,31 @@ export function buildKeyMap(r: CallingSettingsResponse | null, outcomes: Outcome
     actions[a] = (r?.settings.shortcuts.actions[a] ?? def.keys).map(normKey);
   }
   const outcomeKey: Record<string, string | null> = {};
-  const map = new Map<string, string>();
+  const map: KeyMap['outcomes'] = { first_call: new Map(), appointment: new Map() };
   for (const o of outcomes) {
     const over = r?.settings.shortcuts.outcomes[o.code];
     const k = over !== undefined ? over : o.hotkey;
     outcomeKey[o.code] = k ? normKey(k) : null;
-    if (k) map.set(normKey(k), o.code);
+    if (k) map[o.kind ?? 'first_call'].set(normKey(k), o.code);
   }
-  return { actions, outcomes: map, outcomeKey };
+  return { actions, outcomes: map, outcomeKey, kinds: Object.fromEntries(outcomes.map((o) => [o.code, o.kind ?? 'first_call'])) };
 }
 
 export function isAction(km: KeyMap, a: ShortcutAction, e: KeyboardEvent): boolean {
   return (km.actions[a] ?? []).includes(normKey(e.key));
 }
 
-/** Keys used by more than one action or outcome. */
+/** Keys used by more than one action, by an action and an outcome, or by two outcomes on the same side. */
 export function conflicts(km: KeyMap): Map<string, string[]> {
-  const by = new Map<string, string[]>();
-  const add = (k: string, who: string) => by.set(k, [...(by.get(k) ?? []), who]);
-  for (const [a, keys] of Object.entries(km.actions)) for (const k of keys) add(k, a);
-  for (const [code, k] of Object.entries(km.outcomeKey)) if (k) add(k, `outcome:${code}`);
-  return new Map([...by].filter(([, v]) => v.length > 1));
+  const by = new Map<string, { who: string; side: CallMode | null }[]>();
+  const add = (k: string, who: string, side: CallMode | null) => by.set(k, [...(by.get(k) ?? []), { who, side }]);
+  for (const [a, keys] of Object.entries(km.actions)) for (const k of keys) add(k, a, null);
+  for (const [code, k] of Object.entries(km.outcomeKey)) if (k) add(k, `outcome:${code}`, km.kinds[code] ?? 'first_call');
+  const clash = (v: { side: CallMode | null }[]) =>
+    v.filter((x) => x.side === null).length > 1 ||
+    (v.some((x) => x.side === null) && v.some((x) => x.side !== null)) ||
+    (['first_call', 'appointment'] as const).some((m) => v.filter((x) => x.side === m).length > 1);
+  return new Map([...by].filter(([, v]) => clash(v)).map(([k, v]) => [k, v.map((x) => x.who)]));
 }
 
 const NAMES: Record<string, string> = {

@@ -163,3 +163,47 @@ describe('appointments from the Unitrust calendar', () => {
     expect([result(later_), result(same)]).toEqual(['rescheduled', 'sat_no_sale']);
   });
 });
+
+describe('appointment calls logged here', () => {
+  const log = (leadId: string, code: string, at: string) => logManualCall(db, { lead_id: leadId, idempotency_key: `k-${uuidv7()}`, outcome_code: code, occurred_at: at });
+
+  it('a prezi logged here beats the yellow Unitrust shows for that appointment', () => {
+    const robert = id('Robert');
+    log(robert, 'appointment', '2026-10-24T15:00:00.000Z');
+    recordUnitrustEvents(db, [ev('blue')], { today: '2026-10-25' }, '2026-10-25T12:00:00.000Z');
+    log(robert, 'appt_prezi', '2026-10-26T15:00:00.000Z');
+    expect(state(robert)).toMatchObject({ status: 'retry', appt_result: 'prezi', appt_missed: 1 });
+    // Later you mark it yellow in Unitrust: still a prezi.
+    recordUnitrustEvents(db, [ev('yellow')], { today: '2026-10-26' }, later(1));
+    expect(state(robert)).toMatchObject({ status: 'retry', appt_result: 'prezi', appt_missed: 1 });
+    expect(appointmentsOnDays(db, '2026-10-26', '2026-10-26').map((a) => [a.outcome, a.source])).toEqual([['prezi', 'app']]);
+    expect(inTab('appt_prezi')).toEqual(['Robert']);
+    expect(inTab('appt_sat_no_sale')).toEqual([]);
+    expect(verifyLeadState(db)).toEqual([]);
+  });
+
+  it('appointments logged only here count too, and each result has its own tab', () => {
+    log(id('Robert'), 'appt_sale', '2026-10-28T15:00:00.000Z');
+    log(id('Ann'), 'appt_no_show', '2026-10-28T16:00:00.000Z');
+    log(id('John'), 'appt_sat_no_sale', '2026-10-28T17:00:00.000Z');
+    expect(inTab('appt_sold')).toEqual(['Robert']);
+    expect(inTab('appt_no_show')).toEqual(['Ann']);
+    expect(inTab('appt_sat_no_sale')).toEqual(['John']);
+    expect(appointmentCounts(appointmentsOnDays(db, '2026-10-28', '2026-10-28'))).toMatchObject({
+      appointments: 3, sat: 2, prezis: 1, sold: 1, sat_no_sale: 1, no_show: 1, prezi: 0,
+    });
+  });
+
+  it('the funnel: dials, pickups and appointments set count first calls only; sat, prezis and sales below them', () => {
+    const robert = id('Robert'), ann = id('Ann');
+    log(robert, 'appointment', '2026-10-28T14:00:00.000Z');
+    log(ann, 'appointment', '2026-10-28T14:10:00.000Z');
+    log(robert, 'appt_sale', '2026-10-28T20:00:00.000Z');
+    log(ann, 'appt_prezi', '2026-10-28T21:00:00.000Z');
+    const t = todayStats(db, '2026-10-28T04:00:00.000Z', '2026-10-29T04:00:00.000Z', undefined, { from: '2026-10-28', to: '2026-10-28' });
+    expect(t).toMatchObject({ dials: 2, unique_leads: 2, human_contacts: 2, appointments: 2, funnel: { sat: 2, prezis: 2, sales: 1 } });
+    const r = buildReport(db, { from: '2026-10-28T04:00:00.000Z', to: '2026-10-29T04:00:00.000Z', tz: 'America/New_York' });
+    expect(r.activity).toMatchObject({ dials: 2, contacts: 2, appointments: 2 });
+    expect(r.appointments).toMatchObject({ appointments: 2, sold: 1, prezi: 1, sat: 2 });
+  });
+});

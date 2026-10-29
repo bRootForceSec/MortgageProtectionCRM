@@ -6,7 +6,7 @@ import { BOOKED_CODES } from './leadState.js';
 import { DomainError } from '../core/errors.js';
 import { loadCallingSettings } from './callingSettings.js';
 import { bulkOfBatch } from './importHistory.js';
-import { appointmentCounts, appointmentsOnDays, hasUnitrustAppointments } from './unitrustAppointments.js';
+import { appointmentCounts, appointmentsOnDays, hasAppointments } from './unitrustAppointments.js';
 
 // Reports. Every number is computed from a group of rows (calls or leads), and the same group answers
 // "show me the calls behind this number", so a total and its drill-down can never disagree.
@@ -15,6 +15,8 @@ import { appointmentCounts, appointmentsOnDays, hasUnitrustAppointments } from '
 //   spreadsheet's Status column, since their real time isn't known; by county includes them.
 // - Local vs out-of-area caller ID uses the date range.
 // - Best time to call, batches and benchmarks are all-time, for the leads in your county / area-code filter.
+// - Calls count only first calls. Appointment calls (the Appointment side of the Calling screen) are counted in the
+//   appointments section instead, so dials and pickups keep meaning first calls.
 
 export interface ReportFilter {
   from: string;
@@ -136,7 +138,7 @@ function loadCalls(db: DB, f: ReportFilter, range: boolean): CallRow[] {
        LEFT JOIN call_outcome o ON o.call_id = c.id AND NOT EXISTS (SELECT 1 FROM call_outcome x WHERE x.supersedes_id = o.id)
        LEFT JOIN outcome_code oc ON oc.code = o.outcome_code
        LEFT JOIN caller_number n ON n.id = c.from_number_id
-       WHERE c.initiation_result = 'accepted' AND c.voided_at IS NULL AND ${g.sql}
+       WHERE c.initiation_result = 'accepted' AND c.voided_at IS NULL AND coalesce(oc.kind, 'first_call') = 'first_call' AND ${g.sql}
          ${range ? 'AND c.requested_at >= @from AND c.requested_at < @to' : ''}
        ORDER BY c.requested_at`,
     )
@@ -387,9 +389,9 @@ export function buildReport(db: DB, f: ReportFilter) {
   };
 }
 
-/** Appointments from the Unitrust calendar on the days in the range (by the appointment's day), overall and by lead type. */
+/** Appointments on the days in the range (by the appointment's day, from Unitrust or logged here), overall and by lead type. */
 function unitrustSection(db: DB, f: ReportFilter, types: Map<string, string>) {
-  if (!hasUnitrustAppointments(db)) return null;
+  if (!hasAppointments(db)) return null;
   const fromDay = localParts(f.from, f.tz, f.tz).date;
   const toDay = localParts(new Date(Date.parse(f.to) - 1).toISOString(), f.tz, f.tz).date;
   const rows = appointmentsOnDays(db, fromDay, toDay, groupWhere('l.county_key', f));
@@ -604,7 +606,12 @@ export function reportSheets(r: ReturnType<typeof buildReport>, calls: ReturnTyp
  * The top bar's numbers for today (or any range), with the daily goals. With `day` (YYYY-MM-DD), also how that day's
  * Unitrust appointments went, once the extension has sent any.
  */
-export function todayStats(db: DB, from: string, to: string, day?: string) {
+/**
+ * Your numbers for a time range (the top bar and the funnel). Dials, leads called, pickups and appointments set
+ * count first calls made from `from` to `to`. `day` adds that day's appointments (top bar); `days` adds sat, prezis
+ * and sales for appointments on those days (funnel), whether you logged them here or in Unitrust.
+ */
+export function todayStats(db: DB, from: string, to: string, day?: string, days?: { from: string; to: string }) {
   const row = db
     .prepare(
       `WITH cur AS (
@@ -613,6 +620,8 @@ export function todayStats(db: DB, from: string, to: string, day?: string) {
            AND NOT EXISTS (SELECT 1 FROM call_outcome x WHERE x.supersedes_id = o.id)
          LEFT JOIN outcome_code oc ON oc.code = o.outcome_code
          WHERE c.requested_at >= @from AND c.requested_at < @to AND c.initiation_result = 'accepted' AND c.voided_at IS NULL
+           -- First calls only: appointment calls are counted below as sat, prezis and sales.
+           AND coalesce(oc.kind, 'first_call') = 'first_call'
            -- Calls from a spreadsheet's history have a date but no real time, so they aren't today's work (same as Reports).
            AND c.time_known <> 0)
        SELECT COUNT(DISTINCT id) attempts, COUNT(DISTINCT lead_id) unique_leads,
@@ -623,6 +632,8 @@ export function todayStats(db: DB, from: string, to: string, day?: string) {
        FROM cur`,
     )
     .get({ from, to }) as Record<string, number>;
-  const appts = day && hasUnitrustAppointments(db) ? appointmentCounts(appointmentsOnDays(db, day, day)) : null;
-  return { ...row, goals: loadCallingSettings(db).goals, appts };
+  const appts = day && hasAppointments(db) ? appointmentCounts(appointmentsOnDays(db, day, day)) : null;
+  const inRange = days ? appointmentCounts(appointmentsOnDays(db, days.from, days.to)) : null;
+  const funnel = inRange ? { sat: inRange.sat, prezis: inRange.prezis, sales: inRange.sold } : null;
+  return { ...row, goals: loadCallingSettings(db).goals, appts, funnel };
 }

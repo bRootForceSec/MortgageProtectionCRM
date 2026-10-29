@@ -209,7 +209,7 @@ export function ShortcutsCard() {
             const waiting = capture?.kind === 'outcome' && capture.id === o.code;
             return (
               <tr key={o.code}>
-                <td>Outcome: {o.label}</td>
+                <td>{o.kind === 'appointment' ? 'Appointment' : 'First call'} outcome: {o.label}</td>
                 <td>
                   {k || waiting ? (
                     <Key k={k ?? ''} waiting={waiting} onClick={() => setCapture({ kind: 'outcome', id: o.code })}

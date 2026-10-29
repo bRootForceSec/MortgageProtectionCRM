@@ -1,4 +1,5 @@
 import type { DB } from '../db/connection.js';
+import type { ApptResult } from '../../shared/appointments.js';
 import { nowIso, uuidv7 } from '../ids.js';
 import { groupWhere, searchWhere } from './groupFilter.js';
 import { DomainError } from '../core/errors.js';
@@ -29,6 +30,11 @@ export interface LeadFilter {
   lead_type?: string;
 }
 
+/** Leads page tabs for how the latest appointment went (lead_state.appt_result). */
+export const APPT_TABS: Record<string, ApptResult> = {
+  appt_no_show: 'no_show', appt_sat_no_sale: 'sat_no_sale', appt_prezi: 'prezi', appt_sold: 'sold',
+};
+
 /** SQL condition over `lead l JOIN lead_state s` for the Leads page filters. */
 export function leadFilterWhere(f: LeadFilter): { sql: string; params: Record<string, unknown> } {
   const group = groupWhere('l.county_key', { counties: f.counties, areaCodes: f.areaCodes });
@@ -37,11 +43,14 @@ export function leadFilterWhere(f: LeadFilter): { sql: string; params: Record<st
   // Leads a no-show or yellow in Unitrust put back to be called have their own tab ("appt_missed"), not these two.
   const tried = f.status === 'no_answer' || f.status === 'talked' ? f.status : null;
   const missed = f.status === 'appt_missed';
-  const status = tried || missed ? 'retry' : f.status && f.status !== 'all' ? f.status : null;
+  // How the lead's latest appointment went, whatever its status now: each result is its own tab.
+  const appt = f.status ? APPT_TABS[f.status] ?? null : null;
+  const status = tried || missed ? 'retry' : appt ? null : f.status && f.status !== 'all' ? f.status : null;
   const talked = "coalesce((SELECT grp FROM outcome_code WHERE code = s.last_outcome_code), '') = 'contact'";
   const parts = [
     '(@lf_status IS NULL OR s.status = @lf_status)',
     tried === 'talked' ? `${talked} AND s.appt_missed = 0` : tried === 'no_answer' ? `NOT ${talked} AND s.appt_missed = 0` : missed ? 's.appt_missed = 1' : '1',
+    appt ? 's.appt_result = @lf_appt' : '1',
     '(@lf_batch IS NULL OR l.batch_id = @lf_batch)',
     "(@lf_type IS NULL OR coalesce(l.lead_type, '') = @lf_type)",
     f.bulk_id
@@ -55,7 +64,7 @@ export function leadFilterWhere(f: LeadFilter): { sql: string; params: Record<st
   ];
   return {
     sql: parts.join(' AND '),
-    params: { lf_status: status, lf_batch: f.batch_id ?? null, lf_type: f.lead_type ?? null, ...(f.bulk_id ? { lf_bulk: f.bulk_id } : {}), lf_before: f.tried_before ?? null, lf_after: f.tried_after ?? null, ...group.params, ...search.params },
+    params: { lf_status: status, ...(appt ? { lf_appt: appt } : {}), lf_batch: f.batch_id ?? null, lf_type: f.lead_type ?? null, ...(f.bulk_id ? { lf_bulk: f.bulk_id } : {}), lf_before: f.tried_before ?? null, lf_after: f.tried_after ?? null, ...group.params, ...search.params },
   };
 }
 
@@ -75,13 +84,15 @@ export interface CallListItem {
   callback_due_at: string | null;
   /** When you marked that this lead called you back. */
   called_back_at: string | null;
+  /** How the lead's latest appointment went (lead_state.appt_result). */
+  appt_result: string | null;
 }
 
 export function getCallList(db: DB): CallListItem[] {
   const rows = db
     .prepare(
       `SELECT i.lead_id, i.added_at, trim(coalesce(l.first_name,'') || ' ' || coalesce(l.last_name,'')) name,
-              coalesce(s.active_phone_e164, l.phone_e164) phone_e164, l.state, l.county, s.status, s.attempts_total, s.last_call_at,
+              coalesce(s.active_phone_e164, l.phone_e164) phone_e164, l.state, l.county, s.status, s.attempts_total, s.last_call_at, s.appt_result,
               CASE WHEN s.status = 'callback' THEN s.next_due_at END callback_due_at, cb.at called_back_at,
               w.id call_id, w.requested_at worked_at, w.dial_count,
               (SELECT oc.label FROM call_outcome o JOIN outcome_code oc ON oc.code = o.outcome_code
@@ -109,6 +120,7 @@ export function getCallList(db: DB): CallListItem[] {
     added_at: r.added_at,
     callback_due_at: r.callback_due_at,
     called_back_at: r.called_back_at ?? null,
+    appt_result: r.appt_result ?? null,
     done: r.call_id ? { label: r.label ?? 'Called', dials: r.dial_count ?? 1, call_id: r.call_id, at: r.worked_at } : null,
   }));
 }

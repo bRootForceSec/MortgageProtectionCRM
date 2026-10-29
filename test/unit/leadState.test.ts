@@ -99,4 +99,47 @@ describe('deriveLeadState', () => {
     const dead = { ...booked, actions: [{ action: 'mark_dead' as const, created_at: '2026-10-17T11:00:00.000Z' }] };
     expect(deriveLeadState({ ...dead, appt: { result: 'no_show', at: '2026-10-17T12:00:00.000Z' } }, NOW).status).toBe('dead');
   });
+  describe('appointment calls logged here', () => {
+    const contact = { grp: 'contact', counts_as_human_contact: 1 };
+    const booked = { ...empty, calls: [call('c1', '2026-10-16T10:00:00.000Z')], outcomes: [out('c1', 'appointment', '2026-10-16T10:01:00.000Z', contact)] };
+    const appt = (code: string, at = '2026-10-17T13:00:00.000Z', extra = contact): LeadFacts => ({
+      ...booked, calls: [...booked.calls, call('c2', at)], outcomes: [...booked.outcomes, out('c2', code, at, extra)],
+    });
+
+    it('no show, sat no sale and prezi come back to be called now, each with its own tag', () => {
+      expect(deriveLeadState(appt('appt_no_show', undefined, { grp: 'no_contact', counts_as_human_contact: 0 }), NOW))
+        .toMatchObject({ status: 'retry', next_due_at: null, appt_missed: 1, appt_result: 'no_show' });
+      expect(deriveLeadState(appt('appt_sat_no_sale'), NOW)).toMatchObject({ status: 'retry', appt_missed: 1, appt_result: 'sat_no_sale' });
+      expect(deriveLeadState(appt('appt_prezi'), NOW)).toMatchObject({ status: 'retry', appt_missed: 1, appt_result: 'prezi' });
+    });
+
+    it('a sale or a reschedule stays out of the queue', () => {
+      expect(deriveLeadState(appt('appt_sale'), NOW)).toMatchObject({ status: 'appointment_set', appt_result: 'sold', appt_missed: 0 });
+      expect(deriveLeadState(appt('appt_rescheduled'), NOW)).toMatchObject({ status: 'appointment_set', appt_result: 'rescheduled' });
+    });
+
+    it('beats a later Unitrust color for the same appointment (Unitrust has no color for a prezi)', () => {
+      const s = deriveLeadState({ ...appt('appt_prezi'), appt: { result: 'sat_no_sale', at: '2026-10-17T14:00:00.000Z', day: '2026-10-17' } }, NOW);
+      expect(s).toMatchObject({ status: 'retry', appt_result: 'prezi', appt_missed: 1 });
+      const sold = deriveLeadState({ ...appt('appt_sale'), appt: { result: 'sat_no_sale', at: '2026-10-17T14:00:00.000Z', day: '2026-10-17' } }, NOW);
+      expect(sold).toMatchObject({ status: 'appointment_set', appt_result: 'sold' });
+    });
+
+    it('a newer Unitrust appointment (they booked again) counts again', () => {
+      const s = deriveLeadState({ ...appt('appt_prezi'), appt: { result: 'not_set', at: '2026-10-17T14:00:00.000Z', day: '2026-10-20' } }, NOW);
+      expect(s).toMatchObject({ status: 'appointment_set', appt_result: 'not_set', appt_missed: 0 });
+    });
+
+    it('booked again on a first call after a prezi: booked, and the old result no longer shows', () => {
+      const f = appt('appt_prezi');
+      const again = { ...f, calls: [...f.calls, call('c3', '2026-10-17T14:00:00.000Z')], outcomes: [...f.outcomes, out('c3', 'appointment', '2026-10-17T14:00:00.000Z', contact)] };
+      expect(deriveLeadState(again, NOW)).toMatchObject({ status: 'appointment_set', appt_result: 'not_set', appt_missed: 0 });
+    });
+
+    it('a first call after a no-show starts the usual retry and keeps the tag', () => {
+      const f = appt('appt_no_show', undefined, { grp: 'no_contact', counts_as_human_contact: 0 });
+      const later = { ...f, calls: [...f.calls, call('c3', '2026-10-17T14:00:00.000Z')], outcomes: [...f.outcomes, out('c3', 'no_answer', '2026-10-17T14:00:00.000Z')] };
+      expect(deriveLeadState(later, NOW)).toMatchObject({ status: 'retry', appt_missed: 0, appt_result: 'no_show' });
+    });
+  });
 });

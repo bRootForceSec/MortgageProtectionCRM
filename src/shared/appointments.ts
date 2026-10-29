@@ -9,7 +9,7 @@ export type UnitrustColor = 'blue' | 'green' | 'red' | 'yellow';
  * its new day on the calendar, so a yellow event on a later day (or one whose old day lost it) is a reschedule, still
  * to come; a yellow that stays on its day is "sat, no sale".
  */
-export type ApptResult = 'not_set' | 'rescheduled' | 'sold' | 'no_show' | 'sat_no_sale';
+export type ApptResult = 'not_set' | 'rescheduled' | 'sold' | 'no_show' | 'sat_no_sale' | 'prezi';
 
 export const APPT_RESULT_LABEL: Record<ApptResult, string> = {
   not_set: 'Appt booked',
@@ -17,10 +17,26 @@ export const APPT_RESULT_LABEL: Record<ApptResult, string> = {
   sold: 'Sold',
   no_show: 'No-show',
   sat_no_sale: 'Sat, no sale',
+  prezi: 'Prezi, no sale',
 };
 
 /** Results that put the lead back to be called. */
-export const MISSED_RESULTS: readonly ApptResult[] = ['no_show', 'sat_no_sale'];
+export const MISSED_RESULTS: readonly ApptResult[] = ['no_show', 'sat_no_sale', 'prezi'];
+
+/**
+ * The Appointment side of the Calling screen: each outcome and the result it gives the appointment.
+ * "Sat, no sale" means they picked up and that's it; "Prezi" means you presented and lost them.
+ */
+export const APPT_OUTCOME_RESULT: Record<string, Exclude<ApptResult, 'not_set'>> = {
+  appt_no_show: 'no_show',
+  appt_sat_no_sale: 'sat_no_sale',
+  appt_prezi: 'prezi',
+  appt_sale: 'sold',
+  appt_rescheduled: 'rescheduled',
+};
+
+/** The two sides of the Calling screen. */
+export type CallMode = 'first_call' | 'appointment';
 
 export interface UnitrustTitle {
   state: string;

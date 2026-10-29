@@ -21,6 +21,7 @@ export const SHORTCUT_ACTIONS = {
   lookup: { label: 'Look up an incoming caller by number', keys: ['l'] },
   called_back: { label: 'Mark (or unmark) that this lead called you back', keys: ['b'] },
   do_not_call: { label: 'Tick (or untick) "Do not call" for this call', keys: ['d'] },
+  switch_mode: { label: 'Switch between First call and Appointment', keys: ['m'] },
 } as const;
 export type ShortcutAction = keyof typeof SHORTCUT_ACTIONS;
 
