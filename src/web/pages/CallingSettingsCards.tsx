@@ -105,6 +105,11 @@ export function CallingCard() {
           <label className="choice-inline"><input type="checkbox" checked={s.instant_save} onChange={(e) => set({ instant_save: e.target.checked })} /> No answer and Bad number save as soon as I press the key (no Enter). Undo still works.</label>
         </span>
 
+        <label>Missed appointments</label>
+        <span>
+          <label className="choice-inline"><input type="checkbox" checked={s.missed_appts_first} onChange={(e) => set({ missed_appts_first: e.target.checked })} /> put a lead a no-show, sat no sale or prezi sent back at the top of the call list when I add it</label>
+        </span>
+
         <label>Call timer</label>
         <span>
           <label className="choice-inline"><input type="checkbox" checked={s.use_timer} onChange={(e) => set({ use_timer: e.target.checked })} /> start when I dial, and fill talk minutes when someone picks up</label>

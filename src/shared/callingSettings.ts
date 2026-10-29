@@ -39,6 +39,8 @@ export const CallingSettings = z.object({
   use_timer: z.boolean().default(true),
   /** No answer and Bad number save as soon as you press the key, without Enter. */
   instant_save: z.boolean().default(true),
+  /** A lead an appointment put back (no-show, sat no sale, prezi) goes to the top of the call list when you add it, not the bottom. */
+  missed_appts_first: z.boolean().default(true),
   /** With KDE Connect, send the next lead's number to your phone as soon as you save or skip. */
   auto_send_next: z.boolean().default(true),
   shortcuts: z
