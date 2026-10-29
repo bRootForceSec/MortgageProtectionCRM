@@ -79,8 +79,12 @@ test('import a sheet, log calls by keyboard, and set a callback', async ({ page 
   await expect(page.getByLabel('Queue').locator('.queue-list li')).toHaveCount(4);
   await page.screenshot({ path: 'test-results/calling.png', fullPage: true });
 
-  // Talked, no appt: press 2 then Enter. Enter saves and moves straight on to the next lead.
+  // Talked, no appt: press 2, then Shift+1 for the Price objection (optional), then Enter. Enter saves and moves straight on to the next lead.
   await page.keyboard.press('2');
+  const objections = page.getByRole('group', { name: 'Objections' });
+  await expect(objections.getByRole('button')).toHaveText([/Price/, /Spouse/, /Already covered/, /Think about it/, /Health/, /Trust/, /Other/]);
+  await page.keyboard.press('Shift+Digit1');
+  await expect(objections.getByRole('button', { name: /Price/ })).toHaveAttribute('aria-pressed', 'true');
   await page.keyboard.press('Enter');
   await expect(page.locator('.undo-bar')).toContainText(`Saved for ${first}`);
   await expect(page.locator('.undo-bar')).toContainText('Talked, no appt');
@@ -163,7 +167,11 @@ test('dial counter, undo, remapped keys, QR dialing, scripts and lead edits', as
   await expect(page.getByRole('button', { name: /No answer/ })).toHaveClass(/active/);
   await expect(page.locator('.topbar .stats')).toContainText('Dials 2');
   await page.keyboard.press('Escape');
+  // Appt set offers the appointment's day and time (optional). Type tomorrow at 2, then Enter.
   await page.keyboard.press('3');
+  await expect(page.getByLabel('Appointment on (optional)')).toBeFocused();
+  await page.keyboard.type('m');
+  await page.getByLabel(/^At \(optional/).fill('2');
   await page.keyboard.press('Enter');
   await expect(page.locator('.undo-bar')).toContainText('Appt set · 2 dials');
   await expect(page.locator('.lead-name')).not.toHaveText(lead);
@@ -224,9 +232,10 @@ test('dial counter, undo, remapped keys, QR dialing, scripts and lead edits', as
   await page.keyboard.press('j');
   await expect(page.getByText(/worked the whole list/)).toBeVisible();
 
-  await page.getByRole('button', { name: 'Callbacks', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Callbacks' })).toBeVisible();
+  await page.getByRole('button', { name: 'Today', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Today', exact: true })).toBeVisible();
   await expect(page.getByText('Coming up (next two weeks)')).toBeVisible();
+  await expect(page.getByRole('heading', { name: /Appointments today/ })).toBeVisible();
 });
 
 test('clear worked leads, add more from Leads, and look up an incoming call without losing the list', async ({ page }) => {
@@ -281,7 +290,7 @@ test('clear worked leads, add more from Leads, and look up an incoming call with
   const doneBefore = await queue.locator('.queue-list li.done').count();
   await page.keyboard.press('1');
   await expect(queue.locator('.queue-list li.done')).toHaveCount(doneBefore + 1);
-  await page.getByRole('button', { name: 'Callbacks', exact: true }).click();
+  await page.getByRole('button', { name: 'Today', exact: true }).click();
   await page.getByRole('button', { name: 'Calling', exact: true }).click();
   await expect(queue.locator('.queue-list li.done')).toHaveCount(doneBefore + 1);
   await expect(queue.locator('.queue-list li.done', { hasText: current })).toHaveCount(1);
@@ -491,6 +500,9 @@ test('First call | Appointment: an appointment set opens on the Appointment side
   // Ann Lee had an appointment set earlier: she opens on the Appointment side.
   await lookUp('Ann Lee');
   await expect(tabs.getByRole('tab', { name: 'Appointment' })).toHaveAttribute('aria-selected', 'true');
+  // The time typed on Appt set shows until Unitrust sends its own.
+  await expect(page.getByLabel('Current lead').locator('.appt-when')).toContainText('Tomorrow');
+  await expect(page.getByLabel('Current lead').locator('.appt-when')).toContainText('not in Unitrust yet');
   const outcomes = page.getByRole('group', { name: 'Appointment outcome' });
   await expect(outcomes.getByRole('button')).toHaveText([/No show/, /Sat, no sale/, /Prezi/, /Sale/, /Rescheduled/]);
   // M flips the side, and back.
@@ -568,4 +580,31 @@ test('best time first: the list can be shown and worked in that order, and it st
   await page.reload();
   await expect(page.getByRole('group', { name: 'Order' }).getByRole('button', { name: 'Best time first' })).toHaveAttribute('aria-pressed', 'true');
   await page.getByRole('group', { name: 'Order' }).getByRole('button', { name: 'As set' }).click();
+});
+
+test('an appointment about to start: an alert, and its prep card on Today', async ({ page }) => {
+  await page.goto(launchUrl);
+  await page.getByRole('button', { name: 'Today', exact: true }).click();
+  // Book Zed for ten minutes from now (in the browser's time), as Appt set with a time does; a minute ago near midnight.
+  await page.evaluate(async () => {
+    const leads = await (await fetch('/api/leads?search=Zed')).json();
+    const now = new Date();
+    let at = new Date(now.getTime() + 10 * 60_000);
+    if (at.getDate() !== now.getDate()) at = new Date(now.getTime() - 60_000);
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const wall = `${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())}T${pad(at.getHours())}:${pad(at.getMinutes())}`;
+    const r = await fetch(`/api/leads/${leads.rows[0].id}/calls`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ idempotency_key: `e2e-${Date.now()}`, outcome_code: 'appointment', appointment_for: wall }),
+    });
+    if (!r.ok) throw new Error(await r.text());
+  });
+  await page.reload();
+  await expect(page.locator('.alert-bar')).toContainText('Appointment:');
+  await expect(page.locator('.alert-bar')).toContainText('Zed');
+  const card = page.locator('.prep-card', { hasText: 'Zed' });
+  await expect(card).toBeVisible();
+  await expect(card).toContainText('not in Unitrust yet');
+  await page.screenshot({ path: 'test-results/today-appointments.png', fullPage: true });
 });

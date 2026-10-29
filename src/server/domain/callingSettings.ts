@@ -2,6 +2,7 @@ import type { DB } from '../db/connection.js';
 import { getSetting, setSetting } from '../core/settings.js';
 import { DomainError } from '../core/errors.js';
 import { CallingSettings, SHORTCUT_ACTIONS } from '../../shared/callingSettings.js';
+import type { FollowUpPlans } from '../../shared/followUps.js';
 
 // Loads and saves the Calling screen settings (the schema is in src/shared/callingSettings.ts).
 
@@ -23,4 +24,8 @@ export function saveCallingSettings(db: DB, input: unknown): CallingSettings {
 
 export function retryGapMs(db: DB): number {
   return loadCallingSettings(db).retry_gap_minutes * 60_000;
+}
+
+export function followUpPlans(db: DB): FollowUpPlans {
+  return loadCallingSettings(db).follow_ups;
 }

@@ -115,6 +115,10 @@ a { color: var(--accent); }
 .outcomes label.dnc { padding: 7px 9px; border: 1px dashed var(--bad); border-radius: 6px; background: var(--panel); cursor: pointer; }
 .outcomes label.dnc kbd { margin-right: 2px; }
 .outcomes label.dnc.active { background: color-mix(in srgb, var(--bad) 15%, var(--panel)); color: var(--bad); border-style: solid; font-weight: 600; }
+.objections { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 0 0 8px; }
+.objections button { padding: 3px 10px; border: 1px solid var(--border); border-radius: 14px; background: var(--panel); cursor: pointer; font-size: 13px; }
+.objections button kbd { margin-right: 5px; }
+.objections button.active { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
 kbd { font-family: ui-monospace, monospace; font-size: 11px; padding: 0 5px; border: 1px solid var(--border); border-bottom-width: 2px; border-radius: 4px; background: var(--panel-2); color: var(--text); }
 
 .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
@@ -383,3 +387,13 @@ th button.sort { background: none; border: 0; padding: 0; font: inherit; font-we
   .calling .lead-head { gap: 6px; }
   .calling .phone-big { font-size: 22px; }
 }
+
+/* ---------- Today: appointment prep cards ---------- */
+.prep-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 10px; margin-bottom: 12px; }
+.prep-card { border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; }
+.prep-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.prep-head .prep-name { font-weight: 600; flex: 1; }
+.prep-facts { display: flex; flex-wrap: wrap; gap: 4px 16px; margin: 8px 0 0; }
+.prep-facts dt { font-size: 0.8em; opacity: 0.7; }
+.prep-facts dd { margin: 0; }
+.prep-note { margin: 8px 0 0; white-space: pre-wrap; }

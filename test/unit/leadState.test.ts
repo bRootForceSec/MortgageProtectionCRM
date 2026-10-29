@@ -143,3 +143,43 @@ describe('deriveLeadState', () => {
     });
   });
 });
+
+describe('follow-up plans after a missed appointment', () => {
+  const contact = { grp: 'contact', counts_as_human_contact: 1 };
+  const plans = { no_show: ['15m', '1d@09:00'], prezi: ['2d'] };
+  const noShowAt = '2026-10-17T13:00:00.000Z';
+  const base: LeadFacts = {
+    ...empty,
+    calls: [call('c1', '2026-10-16T10:00:00.000Z'), call('c2', noShowAt)],
+    outcomes: [out('c1', 'appointment', '2026-10-16T10:01:00.000Z', contact), out('c2', 'appt_no_show', noShowAt)],
+  };
+  const tryAgain = (f: LeadFacts, id: string, at: string, code = 'no_answer', extra = {}): LeadFacts =>
+    ({ ...f, calls: [...f.calls, call(id, at)], outcomes: [...f.outcomes, out(id, code, at, extra)] });
+
+  it('the first step is a callback timed from the result, and keeps the tag', () => {
+    expect(deriveLeadState(base, NOW, undefined, plans)).toMatchObject({ status: 'callback', next_due_at: '2026-10-17T13:15:00.000Z', appt_missed: 1, appt_result: 'no_show' });
+  });
+
+  it('each unanswered try moves to the next step, then the usual retry', () => {
+    const one = tryAgain(base, 'c3', '2026-10-17T13:20:00.000Z');
+    const s = deriveLeadState(one, NOW, undefined, plans);
+    const tomorrowNine = new Date(Date.parse('2026-10-17T13:20:00.000Z'));
+    tomorrowNine.setDate(tomorrowNine.getDate() + 1);
+    tomorrowNine.setHours(9, 0, 0, 0);
+    expect(s).toMatchObject({ status: 'callback', next_due_at: tomorrowNine.toISOString(), appt_result: 'no_show' });
+    const two = tryAgain(one, 'c4', '2026-10-18T13:00:00.000Z');
+    expect(deriveLeadState(two, '2026-10-18T14:00:00.000Z', undefined, plans)).toMatchObject({ status: 'retry', next_due_at: '2026-10-18T17:00:00.000Z' });
+  });
+
+  it('an answer ends the plan; no plan for that result means due now, as before', () => {
+    const answered = tryAgain(base, 'c3', '2026-10-17T13:20:00.000Z', 'not_interested', contact);
+    expect(deriveLeadState(answered, NOW, undefined, plans).status).not.toBe('callback');
+    expect(deriveLeadState(base, NOW, undefined, {})).toMatchObject({ status: 'retry', next_due_at: null, appt_missed: 1 });
+  });
+
+  it('runs from a Unitrust no-show too', () => {
+    const booked: LeadFacts = { ...empty, calls: [call('c1', '2026-10-16T10:00:00.000Z')], outcomes: [out('c1', 'appointment', '2026-10-16T10:01:00.000Z', contact)] };
+    expect(deriveLeadState({ ...booked, appt: { result: 'no_show', at: '2026-10-17T12:00:00.000Z' } }, NOW, undefined, plans))
+      .toMatchObject({ status: 'callback', next_due_at: '2026-10-17T12:15:00.000Z', appt_missed: 1 });
+  });
+});

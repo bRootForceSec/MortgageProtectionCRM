@@ -5,6 +5,7 @@ import { isCallable } from '../../shared/leadStatus.js';
 import { nowIso, uuidv7 } from '../ids.js';
 import { groupWhere, searchWhere } from './groupFilter.js';
 import { DomainError } from '../core/errors.js';
+import { loadCallingSettings } from './callingSettings.js';
 
 // The call list: the leads you chose to call, worked top to bottom. Leads get here only when you add them
 // (from Leads, or with an import); nothing is added, removed or moved on its own.
@@ -134,27 +135,37 @@ export interface AddResult {
   not_callable: number;
 }
 
-/** Adds leads to the bottom of the list, in the order given. */
+/**
+ * Adds leads to the bottom of the list, in the order given. Leads an appointment put back go to the top instead, so the
+ * rebook call comes first (Settings can turn that off). After that the list is yours: S still moves them down.
+ */
 export function addToCallList(db: DB, leadIds: string[], now = nowIso()): AddResult {
   const res: AddResult = { added: 0, already: 0, not_callable: 0 };
-  const status = db.prepare('SELECT status FROM lead_state WHERE lead_id = ?');
+  const missedFirst = loadCallingSettings(db).missed_appts_first;
+  const status = db.prepare('SELECT status, appt_missed FROM lead_state WHERE lead_id = ?');
   const has = db.prepare(`SELECT ${WORKED} worked FROM call_list_item i WHERE i.lead_id = ?`);
   const ins = db.prepare('INSERT INTO call_list_item (lead_id, position, added_at) VALUES (?, ?, ?)');
   const again = db.prepare('UPDATE call_list_item SET position = ?, added_at = ? WHERE lead_id = ?');
   db.transaction(() => {
     let pos = bottom(db);
+    const toAdd: { id: string; on: boolean; top: boolean }[] = [];
     for (const id of new Set(leadIds)) {
-      const s = status.get(id) as { status: string } | undefined;
+      const s = status.get(id) as { status: string; appt_missed: number } | undefined;
       if (!s) continue;
       const on = has.get(id) as { worked: number } | undefined;
       if (on && !on.worked) res.already++;
       else if (!isCallable(s.status)) res.not_callable++;
-      else {
-        // Already called from this list: it goes back to the bottom as "to call".
-        if (on) again.run(++pos, now, id);
-        else ins.run(id, ++pos, now);
-        res.added++;
-      }
+      else toAdd.push({ id, on: !!on, top: missedFirst && s.appt_missed === 1 });
+    }
+    // The ones going to the top keep the order given, above everything already there.
+    const tops = toAdd.filter((a) => a.top);
+    let topPos = top(db) - tops.length;
+    for (const a of toAdd) {
+      const p = a.top ? topPos++ : ++pos;
+      // Already called from this list: it goes back as "to call".
+      if (a.on) again.run(p, now, a.id);
+      else ins.run(a.id, p, now);
+      res.added++;
     }
   })();
   return res;
@@ -230,6 +241,9 @@ export function recentOutcomes(db: DB, limit = 10) {
 
 function bottom(db: DB): number {
   return (db.prepare('SELECT coalesce(max(position), 0) p FROM call_list_item').get() as { p: number }).p;
+}
+function top(db: DB): number {
+  return (db.prepare('SELECT coalesce(min(position), 1) p FROM call_list_item').get() as { p: number }).p;
 }
 
 // ---------- saved lists ----------
