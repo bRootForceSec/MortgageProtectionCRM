@@ -2,6 +2,15 @@
 
 A running log of the stabilization work. Newest first.
 
+## 2026-10-29: Consolidation P3, statuses, appointment results and the funnel
+
+- `src/shared/leadStatus.ts`: lead statuses (label, callable, timeless) and the Leads tabs. Replaces `STATUS_LABEL` (LeadDetails), `STATUSES` and `CALLABLE` (LeadsPage), `CALLABLE` (callList), the `'new','retry','callback'` checks in LeadViewer, CallingPage, reports, importHistory and areaCodes, the timeless list in `verifyLeadState`, and the Leads filter enum in `leadRoutes`.
+- `APPT_RESULTS` in `src/shared/appointments.ts`: each appointment result's label, whether it puts the lead back, its Leads tab, the funnel steps it reaches and its Unitrust color. `APPT_RESULT_LABEL`, `MISSED_RESULTS`, `APPT_TABS`, the color → result mapping, the sat/prezi/sale roll-up in `appointmentCounts` and the stored-result check in `latestUnitrustAppt` come from it.
+- `src/shared/funnel.ts`: the funnel steps and their names, used by the funnel graphic and the top bar; `funnelStepsOf(code)` says which steps an outcome reaches.
+- `openingSide` (which side of the Calling screen a lead opens on) moved from CallingPage to `shared/appointments.ts`, with a test.
+- `sqlList` in `db/sql.ts` for fixed lists in SQL.
+- **User-visible fix:** Reports showed a prezi appointment as the raw word "prezi" with no badge color, and had no prezi count. It now reads "Prezi, no sale" like everywhere else, with a "Prezi, no sale" tile.
+
 ## 2026-10-29: Consolidation P2, one outcome registry
 
 - `src/shared/outcomes.ts` (`OUTCOMES`) now defines every call outcome: label, side, key, pickup, callback, dead pile, booked, appointment set and appointment result. Adding an outcome means adding one entry.

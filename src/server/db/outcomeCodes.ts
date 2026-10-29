@@ -1,4 +1,5 @@
 import type { DB } from './connection.js';
+import { sqlList } from './sql.js';
 import { OUTCOMES, outcomeCodes, type OutcomeDef } from '../../shared/outcomes.js';
 
 // The outcome_code table is a copy of the registry in src/shared/outcomes.ts, so SQL can join on it. It is brought
@@ -45,6 +46,5 @@ export function syncOutcomeCodes(db: DB): number {
 
 /** An SQL list of the codes for which `test` holds, e.g. `('appointment')`. The codes are fixed strings, never input. */
 export function sqlCodes(test: (o: OutcomeDef) => boolean): string {
-  const codes = outcomeCodes(test);
-  return codes.length ? `(${codes.map((c) => `'${c}'`).join(', ')})` : '(NULL)';
+  return sqlList(outcomeCodes(test));
 }

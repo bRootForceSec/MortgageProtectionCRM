@@ -1,4 +1,6 @@
 import type { DB } from '../db/connection.js';
+import { sqlList } from '../db/sql.js';
+import { CALLABLE_STATUSES } from '../../shared/leadStatus.js';
 import { batchMatches, groupByImport, type BatchFilter, type BatchListRow, type ImportGroup } from '../../shared/batches.js';
 
 // Past imports: the batch list, and the rows each import left out.
@@ -37,7 +39,7 @@ function batchRows(db: DB): BatchListRow[] {
          FROM import_row GROUP BY batch_id),
        ls AS (
          SELECT l.batch_id, group_concat(DISTINCT coalesce(l.lead_type, '')) types,
-                SUM(s.status IN ('new','retry','callback')) left_to_call, SUM(l.price_cents) price
+                SUM(s.status IN ${sqlList(CALLABLE_STATUSES)}) left_to_call, SUM(l.price_cents) price
          FROM lead l JOIN lead_state s ON s.lead_id = l.id GROUP BY l.batch_id)
        SELECT b.id, b.name, b.file_name, b.imported_at, coalesce(b.cost_total_cents, ls.price) cost_cents,
               coalesce(rs.total, 0) rows_total, coalesce(rs.accepted, 0) rows_accepted, coalesce(rs.rejected, 0) rows_rejected,

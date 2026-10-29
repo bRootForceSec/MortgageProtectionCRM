@@ -2,7 +2,8 @@ import type { Statement } from 'better-sqlite3';
 import type { DB } from '../db/connection.js';
 import { nowIso } from '../ids.js';
 import { retryGapMs } from './callingSettings.js';
-import { MISSED_RESULTS, type ApptResult } from '../../shared/appointments.js';
+import { MISSED_RESULTS, isApptResult, type ApptResult } from '../../shared/appointments.js';
+import { LEAD_STATUSES, type LeadStatus } from '../../shared/leadStatus.js';
 import { BOOKED_CODES, outcomeDef } from '../../shared/outcomes.js';
 
 // lead_state is a derived projection. It is computed only from authoritative facts:
@@ -15,7 +16,7 @@ import { BOOKED_CODES, outcomeDef } from '../../shared/outcomes.js';
 // An appointment call logged here (the Appointment side of the Calling screen) decides the same way, and it wins over
 // the Unitrust color of that appointment: Unitrust has no color for a prezi.
 
-export type LeadStatus = 'new' | 'retry' | 'callback' | 'appointment_set' | 'invalid' | 'dead';
+export type { LeadStatus };
 
 /** Default gap before an unanswered lead comes back. You can change it in Settings. */
 export const RETRY_GAP_MS = 4 * 60 * 60 * 1000;
@@ -232,7 +233,8 @@ function latestUnitrustAppt(db: DB, leadId: string): LeadFacts['appt'] {
      ORDER BY a.scheduled_for DESC, a.created_at DESC LIMIT 1`,
   ).get(leadId) as { created_at: string; day: string | null; result: string | null; result_at: string | null } | undefined;
   if (!r) return null;
-  const result = (['sold', 'no_show', 'sat_no_sale', 'rescheduled'] as const).find((x) => x === r.result) ?? 'not_set';
+  // Blue and 'cleared' are stored as no result: booked, not set yet.
+  const result: ApptResult = isApptResult(r.result) ? r.result : 'not_set';
   return { result, at: r.result_at ?? r.created_at, day: r.day ?? '' };
 }
 
@@ -358,7 +360,7 @@ export function verifyLeadState(db: DB, now = nowIso()): string[] {
     const d = deriveLeadState(loadLeadFacts(db, r.lead_id), now, gap);
     // Status/next_due depend on "now" for retries, so compare the time-independent fields
     // plus status for leads whose status cannot change with time.
-    const timeless = ['dead', 'invalid', 'new', 'callback', 'appointment_set'].includes(d.status);
+    const timeless = LEAD_STATUSES[d.status].timeless;
     if (keys.some((k) => d[k] !== r[k]) || (timeless && d.status !== r.status)) bad.push(r.lead_id);
   }
   const missing = db.prepare('SELECT id FROM lead WHERE id NOT IN (SELECT lead_id FROM lead_state)').all() as { id: string }[];

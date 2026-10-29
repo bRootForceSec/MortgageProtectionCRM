@@ -11,7 +11,8 @@ import { ClearListDialog, SavedListsDialog, suggestListName } from '../component
 import { fillScript, isAction, isTyping, keyLabel, type KeyMap } from '../shortcuts';
 import { getStored, getStoredJson, setStored, setStoredJson } from '../storage';
 import { LogCall, type Attempt, type FormValues, type Saved } from './LogCall';
-import type { CallMode } from '../../shared/appointments';
+import { openingSide, type CallMode } from '../../shared/appointments';
+import { isCallable } from '../../shared/leadStatus';
 
 const SELECTED_KEY = 'mpcrm.selectedLead';
 /** A lead opened outside the list (looked up for an incoming call, or from Today), and where to go back to. */
@@ -23,14 +24,6 @@ const freshAttempt = (): Attempt => ({ dials: 1, timerStart: null, to: null, sho
 
 /** A lead on your call list. The list is kept by the app; it only changes when you add, skip, remove or clear. */
 type WorkItem = CallListItem;
-
-/**
- * Which side of the lead section to show first: Appointment when the lead has an appointment booked (or rescheduled)
- * with no result yet, from Appt set or from Unitrust; otherwise First call.
- */
-export function defaultMode(d: LeadDetail): CallMode {
-  return d.state?.status === 'appointment_set' && d.state.appt_result !== 'sold' ? 'appointment' : 'first_call';
-}
 
 interface Opened {
   leadId: string;
@@ -65,7 +58,7 @@ export function CallingPage() {
   const [listDialog, setListDialog] = useState<'clear' | 'saved' | null>(null);
   /** The side you picked for a lead, when it isn't the one it opened on. */
   const [modePick, setModePick] = useState<{ leadId: string; mode: CallMode } | null>(null);
-  const mode: CallMode = detail ? (modePick?.leadId === detail.lead.id ? modePick.mode : defaultMode(detail)) : 'first_call';
+  const mode: CallMode = detail ? (modePick?.leadId === detail.lead.id ? modePick.mode : openingSide(detail.state)) : 'first_call';
   const switchMode = (m: CallMode) => detail && setModePick({ leadId: detail.lead.id, mode: m });
   const listRef = useRef<HTMLUListElement>(null);
   /** After a save or skip with KDE Connect: the next lead's number goes to your phone once that lead is shown. */
@@ -192,7 +185,7 @@ export function CallingPage() {
     if (!detail || autoSend.current !== detail.lead.id || detail.lead.id !== selected) return;
     autoSend.current = null;
     const phone = detail.state?.active_phone_e164 ?? detail.lead.phone_e164;
-    if (phone && ['new', 'retry', 'callback'].includes(detail.state?.status ?? 'new')) void dial(phone);
+    if (phone && isCallable(detail.state?.status ?? 'new')) void dial(phone);
   }, [detail]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /** Shows a lead (looked up for an incoming call, or from Today) without touching your list. */
