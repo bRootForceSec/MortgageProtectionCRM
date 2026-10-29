@@ -9,6 +9,7 @@ import { sqlCodes } from '../db/outcomeCodes.js';
 import { DomainError } from '../core/errors.js';
 import { loadCallingSettings } from './callingSettings.js';
 import { bulkOfBatch } from './importHistory.js';
+import { callsAskingObjections, objectionCounts } from './objections.js';
 import { appointmentCounts, appointmentsOnDays, hasAppointments } from './unitrustAppointments.js';
 
 // Reports. Every number is computed from a group of rows (calls or leads), and the same group answers
@@ -389,6 +390,20 @@ export function buildReport(db: DB, f: ReportFilter) {
       .sort((x, y) => x.key.localeCompare(y.key)),
     targets,
     appointments: unitrustSection(db, f, types),
+    objections: objectionSection(db, f, types),
+  };
+}
+
+/** Objections noted on calls in the range, in total and by lead type, with how many calls offered the chips. */
+function objectionSection(db: DB, f: ReportFilter, types: Map<string, string>) {
+  const rows = objectionCounts(db, f.from, f.to, f);
+  if (!rows.length) return null;
+  const asked = callsAskingObjections(db, f.from, f.to, f);
+  const keys = [...new Set(rows.flatMap((r) => Object.keys(r.by_type)))].sort();
+  return {
+    calls: asked.n,
+    types: keys.map((k) => ({ key: k, label: k ? types.get(k) ?? k : 'No lead type', calls: asked.by_type[k] ?? 0 })),
+    rows,
   };
 }
 
@@ -601,6 +616,15 @@ export function reportSheets(r: ReturnType<typeof buildReport>, calls: ReturnTyp
         cost_per_reached: money(b.cost_per_reached), cost_per_booked: money(b.cost_per_booked),
       })),
     },
+    ...(r.objections
+      ? [{
+        name: 'Objections',
+        rows: r.objections.rows.map((o) => ({
+          objection: o.label, all: o.n,
+          ...Object.fromEntries(r.objections!.types.map((t) => [t.label, o.by_type[t.key] ?? 0])),
+        })),
+      }]
+      : []),
     { name: 'Calls', rows: calls },
   ];
 }

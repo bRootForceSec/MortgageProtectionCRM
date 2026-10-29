@@ -205,6 +205,7 @@ export function ReportsPage() {
 
       {r && <ByBatch rows={r.by_batch} N={N} />}
 
+      {r?.objections && <Objections o={r.objections} />}
       {r && <Benchmarks r={r} N={N} onSaved={load} />}
 
       {drill && <DrillModal params={params} drill={drill} onClose={() => setDrill(null)} onOpen={(id, list) => setOpen({ id, list })} />}
@@ -571,6 +572,33 @@ function DrillModal({ params, drill, onClose, onOpen }: { params: Record<string,
           {d && !d.rows.length && <div className="empty">Nothing here.</div>}
         </div>
       </div>
+    </div>
+  );
+}
+
+/** Why leads said no on calls in these dates, by lead type: each count, and its share of the calls that offered the chips. */
+function Objections({ o }: { o: any }) {
+  const share = (n: number, of: number) => (of ? <span className="muted small"> {pct(n / of)}</span> : null);
+  return (
+    <div className="card">
+      <h3>Objections <span className="muted">({o.calls} talked, sat or prezi call{o.calls === 1 ? '' : 's'} in these dates)</span></h3>
+      <div className="scroll-x">
+        <table className="grid">
+          <thead>
+            <tr><th>Objection</th><th>All</th>{o.types.map((t: any) => <th key={t.key} title={`${t.calls} calls`}>{t.label}</th>)}</tr>
+          </thead>
+          <tbody>
+            {o.rows.map((r: any) => (
+              <tr key={r.code}>
+                <td>{r.label}</td>
+                <td>{r.n}{share(r.n, o.calls)}</td>
+                {o.types.map((t: any) => <td key={t.key}>{r.by_type[t.key] ?? 0}{share(r.by_type[t.key] ?? 0, t.calls)}</td>)}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p className="help">The chips you ticked after Talked, no appt, Sat, no sale and Prezi. The small % is out of those calls; a call can have more than one.</p>
     </div>
   );
 }

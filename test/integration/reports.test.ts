@@ -294,3 +294,16 @@ describe('backup restore check', () => {
     expect((await app.inject({ url: '/api/backups/check', headers: auth })).json().ok).toBe(false);
   });
 });
+
+describe('objections in Reports', () => {
+  it('counts them by lead type, out of the calls that offered the chips', () => {
+    expect(buildReport(db, range()).objections).toBeNull();
+    log('Cal', 'no_appt', { objections: [{ code: 'price' }] });
+    log('Dee', 'no_appt', { objections: [{ code: 'price' }, { code: 'spouse' }] });
+    const o = buildReport(db, range()).objections!;
+    // Talked-no-appt calls: Ben's from the setup, Cal's and Dee's.
+    expect(o.calls).toBe(3);
+    expect(o.types).toEqual([{ key: 'B', label: 'B', calls: 2 }, { key: 'CI-A', label: 'CI-A', calls: 1 }].map((t) => ({ ...t, label: expect.any(String) })));
+    expect(o.rows.map((r) => [r.code, r.n, r.by_type])).toEqual([['price', 2, { B: 1, 'CI-A': 1 }], ['spouse', 1, { 'CI-A': 1 }]]);
+  });
+});
