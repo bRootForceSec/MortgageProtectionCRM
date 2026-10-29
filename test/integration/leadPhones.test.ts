@@ -49,7 +49,7 @@ describe('migration 018', () => {
     expect((d.prepare("SELECT lead_id FROM lead_number WHERE e164 = '+13175550103'").all() as any[]).map((x) => x.lead_id)).toEqual([both]);
     expect(d.pragma('foreign_key_check')).toEqual([]);
     d.close();
-    // Runs every migration twice over a file database: slow on Windows CI runners (33s seen), so it gets more time.
+    // Runs every migration on a file database: slow on Windows CI runners (33s seen), so it gets more time.
   }, 90_000);
 });
 
