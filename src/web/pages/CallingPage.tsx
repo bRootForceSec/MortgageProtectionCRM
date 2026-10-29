@@ -20,7 +20,7 @@ const SELECTED_KEY = 'mpcrm.selectedLead';
 export const OPENED_KEY = 'mpcrm.openedLead';
 const SCRIPT_KEY = 'mpcrm.script.open';
 
-const freshAttempt = (): Attempt => ({ dials: 1, timerStart: null, to: null, shownAt: Date.now() });
+const freshAttempt = (): Attempt => ({ dials: 1, timerStart: null, dialedAt: null, to: null, shownAt: Date.now() });
 
 /** A lead on your call list. The list is kept by the app; it only changes when you add, skip, remove or clear. */
 type WorkItem = CallListItem;
@@ -289,7 +289,7 @@ export function CallingPage() {
     async (e164: string | null | undefined) => {
       if (!e164) return;
       const method = settings?.dial_method ?? 'copy';
-      setAttempt((a) => ({ ...a, to: e164, timerStart: a.timerStart ?? (settings?.use_timer === false ? null : Date.now()) }));
+      setAttempt((a) => ({ ...a, to: e164, dialedAt: a.dialedAt ?? Date.now(), timerStart: a.timerStart ?? (settings?.use_timer === false ? null : Date.now()) }));
       const copy = async () => {
         try {
           await navigator.clipboard.writeText(e164.replace(/^\+1/, ''));
@@ -324,6 +324,8 @@ export function CallingPage() {
         lead_id: string; outcome_code: string | null; callback_due_at: string | null; callback_any_time: boolean; do_not_call: boolean;
         dial_count: number; talk_seconds: number | null; lead_seconds: number | null; from_number_id: string | null; note: string | null;
         appointment_for: string | null;
+        dialed_at: string | null;
+        objections: string[];
       }>(`/calls/${s.callId}/void`, { reason: 'undo' });
       const appt = r.appointment_for ? fromWall(r.appointment_for) : null;
       const cb = appt ? callbackFields(appt.at.toISOString(), appt.anyTime, s.tz) : callbackFields(r.callback_due_at, r.callback_any_time, s.tz);
@@ -340,10 +342,11 @@ export function CallingPage() {
           note: r.note ?? '',
           numberId: r.from_number_id,
           doNotCall: r.do_not_call,
+          objections: r.objections,
         },
       });
       // The clock on this lead carries on from where it was when you saved.
-      setAttempt({ dials: r.dial_count, timerStart: null, to: null, shownAt: Date.now() - (r.lead_seconds ?? 0) * 1000 });
+      setAttempt({ dials: r.dial_count, timerStart: null, dialedAt: r.dialed_at ? Date.parse(r.dialed_at) : null, to: null, shownAt: Date.now() - (r.lead_seconds ?? 0) * 1000 });
       markDone(s.leadId, null);
       void loadList();
       // A looked-up lead outside the list comes back as one, so the list stays as it is.

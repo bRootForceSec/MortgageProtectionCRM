@@ -5,6 +5,7 @@ import { StatusBadge } from '../components/LeadDetails';
 import { fillScript } from '../shortcuts';
 import type { Saved } from './LogCall';
 import type { CallMode } from '../../shared/appointments';
+import { needsAllPartyConsent } from '../../shared/recordingConsent';
 
 // The smaller parts of the Calling screen: the incoming-call lookup, the First call | Appointment switch, the undo
 // bar, the script and the recent outcomes.
@@ -154,7 +155,13 @@ export function ScriptPanel({ d }: { d: LeadDetail }) {
   }
   return (
     <div className="card script">
-      {sc.opener && (<><b>Opener</b><p>{fillScript(sc.opener, values)}</p></>)}
+      {sc.opener && (
+        <>
+          <b>Opener</b>
+          {calling?.settings.recording.on && needsAllPartyConsent(l.state) && <p className="warn"><b>{calling.settings.recording.disclosure}</b></p>}
+          <p>{fillScript(sc.opener, values)}</p>
+        </>
+      )}
       {sc.voicemail && (<><b>Voicemail</b><p>{fillScript(sc.voicemail, values)}</p></>)}
     </div>
   );
