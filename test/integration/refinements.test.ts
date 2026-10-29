@@ -164,13 +164,15 @@ describe('agenda', () => {
     const soon = new Date(Date.now() + 3600_000).toISOString();
     logManualCall(db, { lead_id: jane, idempotency_key: key(), outcome_code: 'callback', callback_due_at: soon });
     const ann = (db.prepare("SELECT id FROM lead WHERE first_name = 'Ann'").get() as any).id;
-    logManualCall(db, { lead_id: ann, idempotency_key: key(), outcome_code: 'appointment' });
+    logManualCall(db, { lead_id: ann, idempotency_key: key(), outcome_code: 'appointment', appointment_for: '2099-10-30T14:00' });
     const from = new Date(Date.now() - 3600_000).toISOString();
     const to = new Date(Date.now() + 86400_000).toISOString();
     const a = (await app.inject({ url: `/api/agenda?from=${from}&to=${to}`, headers: auth })).json();
     expect(a.callbacks.map((c: any) => c.lead_id)).toEqual([jane]);
-    expect(a.appointments).toBeUndefined(); // appointments live in Unitrust
+    expect(a.appointments).toEqual([]); // only for a day asked for
     expect(a.callbacks[0].time_zone).toBe('America/New_York');
+    const day = (await app.inject({ url: `/api/agenda?from=${from}&to=${to}&day=2099-10-30`, headers: auth })).json();
+    expect(day.appointments.map((p: any) => [p.lead_id, p.scheduled_for])).toEqual([[ann, '2099-10-30T14:00']]);
   });
 });
 

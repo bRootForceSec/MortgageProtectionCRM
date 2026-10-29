@@ -19,7 +19,7 @@ import { FUNNEL_LABEL } from '../shared/funnel';
 export type Page = 'calling' | 'today' | 'reports' | 'import' | 'leads' | 'calls' | 'numbers' | 'data' | 'settings';
 const PAGES: { key: Page; label: string }[] = [
   { key: 'calling', label: 'Calling' },
-  { key: 'today', label: 'Callbacks' },
+  { key: 'today', label: 'Today' },
   { key: 'reports', label: 'Reports' },
   { key: 'leads', label: 'Leads' },
   { key: 'calls', label: 'Call history' },

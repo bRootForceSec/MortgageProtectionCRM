@@ -3,6 +3,7 @@ import { api, fmtDateTime, fmtPhone } from '../api';
 import { useApp } from '../App';
 import { getStoredJson, setStoredJson } from '../storage';
 import { todayRange } from '../when';
+import type { PrepCard } from '../../shared/appointments';
 
 // Tells you when a callback comes due: a desktop notification, a short sound, and a bar in the app.
 // Checks once a minute while the app is open.
@@ -20,6 +21,8 @@ export interface AgendaItem {
 }
 export interface Agenda {
   callbacks: AgendaItem[];
+  /** The appointments of the `day` asked for (none when no day is sent). */
+  appointments: PrepCard[];
 }
 
 const SEEN_KEY = 'mpcrm.alerts.seen';
