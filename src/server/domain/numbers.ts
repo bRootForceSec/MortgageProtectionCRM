@@ -3,6 +3,7 @@ import { nowIso, uuidv7 } from '../ids.js';
 import { DomainError } from '../core/errors.js';
 import { audit } from '../core/audit.js';
 import { normalizeUsPhone } from './normalize.js';
+import { sqlCodes } from '../db/outcomeCodes.js';
 
 // Caller ID numbers: how each one is doing, and the reputation checks you do by hand.
 // Nothing here switches, buys or rotates numbers; that's always your call.
@@ -89,7 +90,7 @@ export function numberStats(db: DB, todayFrom: string, now = new Date()) {
          (SELECT count(*) FROM c WHERE c.id = n.id AND requested_at >= @d7 AND h = 1) contacts_7d,
          (SELECT count(*) FROM c WHERE c.id = n.id AND requested_at >= @d30) calls_30d,
          (SELECT coalesce(sum(dial_count), 0) FROM c WHERE c.id = n.id AND requested_at >= @d30) dials_30d,
-         (SELECT count(*) FROM c WHERE c.id = n.id AND outcome_code = 'appointment') appointments
+         (SELECT count(*) FROM c WHERE c.id = n.id AND outcome_code IN ${sqlCodes((o) => o.apptSet)}) appointments
        FROM caller_number n`,
     )
     .all({ today: todayFrom, d7: since7, d30: since30 }) as Record<string, number | string>[];

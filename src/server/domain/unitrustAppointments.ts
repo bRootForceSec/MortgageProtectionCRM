@@ -3,7 +3,8 @@ import { uuidv7, nowIso } from '../ids.js';
 import { getSetting, setSetting } from '../core/settings.js';
 import { rebuildLeadState } from './leadState.js';
 import { normalizeUsPhone } from './normalize.js';
-import { APPT_OUTCOME_RESULT, parseUnitrustTitle, type ApptResult, type UnitrustColor } from '../../shared/appointments.js';
+import { outcomeDef } from '../../shared/outcomes.js';
+import { parseUnitrustTitle, type ApptResult, type UnitrustColor } from '../../shared/appointments.js';
 
 // Appointments read off the Unitrust calendar by the Firefox extension. Each event is matched to a lead by its phone
 // (then by name), stored once per day and phone, and each change of color adds a result row. Leads whose appointment
@@ -213,7 +214,7 @@ export function appointmentsOnDays(db: DB, fromDay: string, toDay: string, leadW
     )
     .all({ ...leadWhere.params, from: fromDay, to: toDay }) as (Omit<ApptRow, 'outcome' | 'source'> & { internal_status: string; result: string | null; app_code: string | null })[];
   const fromUnitrust: ApptRow[] = rows.map(({ internal_status, result, app_code, ...r }) => {
-    const app = app_code ? APPT_OUTCOME_RESULT[app_code] : undefined;
+    const app = outcomeDef(app_code)?.apptResult ?? undefined;
     return {
       ...r,
       source: app ? 'app' : 'unitrust',
@@ -233,7 +234,7 @@ export function appointmentsOnDays(db: DB, fromDay: string, toDay: string, leadW
     )
     .all({ ...leadWhere.params, from: fromDay, to: toDay }) as { id: string; lead_id: string; lead_name: string; lead_type: string | null; day: string; outcome_code: string }[];
   const fromApp: ApptRow[] = own.map(({ outcome_code, ...r }) => ({
-    ...r, time: null, title: null, source: 'app', outcome: APPT_OUTCOME_RESULT[outcome_code] ?? 'pending',
+    ...r, time: null, title: null, source: 'app', outcome: outcomeDef(outcome_code)?.apptResult ?? 'pending',
   }));
   return [...fromUnitrust, ...fromApp].sort((x, y) => x.day.localeCompare(y.day) || x.lead_name.localeCompare(y.lead_name));
 }

@@ -2,6 +2,7 @@ import Database from 'better-sqlite3';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { syncOutcomeCodes } from './outcomeCodes.js';
 
 export type DB = Database.Database;
 
@@ -21,6 +22,8 @@ export function openDatabase(file: string): DB {
   db.pragma('foreign_keys = ON');
   db.pragma('busy_timeout = 5000');
   migrate(db);
+  // Outcomes are defined in src/shared/outcomes.ts; the table is kept as a copy of them.
+  syncOutcomeCodes(db);
   return db;
 }
 

@@ -23,18 +23,6 @@ export const APPT_RESULT_LABEL: Record<ApptResult, string> = {
 /** Results that put the lead back to be called. */
 export const MISSED_RESULTS: readonly ApptResult[] = ['no_show', 'sat_no_sale', 'prezi'];
 
-/**
- * The Appointment side of the Calling screen: each outcome and the result it gives the appointment.
- * "Sat, no sale" means they picked up and that's it; "Prezi" means you presented and lost them.
- */
-export const APPT_OUTCOME_RESULT: Record<string, Exclude<ApptResult, 'not_set'>> = {
-  appt_no_show: 'no_show',
-  appt_sat_no_sale: 'sat_no_sale',
-  appt_prezi: 'prezi',
-  appt_sale: 'sold',
-  appt_rescheduled: 'rescheduled',
-};
-
 /** The two sides of the Calling screen. */
 export type CallMode = 'first_call' | 'appointment';
 

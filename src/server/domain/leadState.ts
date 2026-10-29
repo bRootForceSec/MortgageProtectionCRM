@@ -2,7 +2,8 @@ import type { Statement } from 'better-sqlite3';
 import type { DB } from '../db/connection.js';
 import { nowIso } from '../ids.js';
 import { retryGapMs } from './callingSettings.js';
-import { APPT_OUTCOME_RESULT, MISSED_RESULTS, type ApptResult } from '../../shared/appointments.js';
+import { MISSED_RESULTS, type ApptResult } from '../../shared/appointments.js';
+import { BOOKED_CODES, outcomeDef } from '../../shared/outcomes.js';
 
 // lead_state is a derived projection. It is computed only from authoritative facts:
 // calls, current outcomes and lead actions (skip / dead / restore).
@@ -13,12 +14,6 @@ import { APPT_OUTCOME_RESULT, MISSED_RESULTS, type ApptResult } from '../../shar
 // than the last call, it decides: booked, rescheduled or sold stays out of the queue; a no-show or a sat-no-sale comes back to be called.
 // An appointment call logged here (the Appointment side of the Calling screen) decides the same way, and it wins over
 // the Unitrust color of that appointment: Unitrust has no color for a prezi.
-
-/**
- * Outcomes that mean the lead booked an appointment. "Appointment sat, no sale" and "Sold" are retired, but older
- * history (and spreadsheets) can still carry them; they mean the lead was booked.
- */
-export const BOOKED_CODES = new Set(['appointment', 'sat_no_sale', 'sold']);
 
 export type LeadStatus = 'new' | 'retry' | 'callback' | 'appointment_set' | 'invalid' | 'dead';
 
@@ -40,7 +35,6 @@ export interface LeadFacts {
     counts_as_human_contact: number;
     callback_due_at: string | null;
     callback_any_time?: number;
-    lead_effect?: string | null;
     /** Ticked "Do not call": the lead goes to the dead pile. */
     do_not_call?: number;
   }[];
@@ -112,8 +106,8 @@ export function deriveLeadState(f: LeadFacts, now: string, retryGap = RETRY_GAP_
     null;
 
   // The latest appointment call logged here. It beats Unitrust's color for that appointment (on or after its day).
-  const inApp = [...outcomes].reverse().find((o) => o.outcome_code in APPT_OUTCOME_RESULT) ?? null;
-  const inAppResult = inApp ? APPT_OUTCOME_RESULT[inApp.outcome_code]! : null;
+  const inApp = [...outcomes].reverse().find((o) => outcomeDef(o.outcome_code)?.apptResult) ?? null;
+  const inAppResult = outcomeDef(inApp?.outcome_code)?.apptResult ?? null;
   const inAppDay = inApp ? (callTime.get(inApp.call_id) ?? inApp.entered_at).slice(0, 10) : '';
   const overridden = !!inApp && !!f.appt && inAppDay >= (f.appt.day ?? '');
   // An appointment booked again (on a first call) after the last appointment result: that result is old news.
@@ -134,7 +128,7 @@ export function deriveLeadState(f: LeadFacts, now: string, retryGap = RETRY_GAP_
   // how that appointment went here.
   const unitrust = f.appt && !overridden && f.appt.at > (lastOutcome?.entered_at ?? '') && f.appt.at > lastRestore ? f.appt : null;
   // Otherwise the last call decides, and it may be an appointment call.
-  const lastAppt = !unitrust && lastOutcome && lastOutcome.entered_at > lastRestore ? APPT_OUTCOME_RESULT[lastOutcome.outcome_code] ?? null : null;
+  const lastAppt = !unitrust && lastOutcome && lastOutcome.entered_at > lastRestore ? outcomeDef(lastOutcome.outcome_code)?.apptResult ?? null : null;
   const missed = unitrust ? MISSED_RESULTS.includes(unitrust.result) : !!lastAppt && MISSED_RESULTS.includes(lastAppt);
 
   // Which numbers are ruled out. A bad number counts for the number that was dialed, so a lead with an alternate
@@ -187,7 +181,7 @@ export function deriveLeadState(f: LeadFacts, now: string, retryGap = RETRY_GAP_
     return { ...withPhones, status: 'retry', next_due_at: null };
   }
   // A callback without a time (e.g. "reschedule" in a spreadsheet) is due now and listed as "needs a time".
-  if (lastOutcome?.outcome_code === 'callback') {
+  if (lastOutcome && outcomeDef(lastOutcome.outcome_code)?.callback) {
     const due = lastOutcome.callback_due_at ?? null;
     return { ...withPhones, status: 'callback', next_due_at: due, due_any_time: due && lastOutcome.callback_any_time ? 1 : 0 };
   }
@@ -217,7 +211,7 @@ export function loadLeadFacts(db: DB, leadId: string): LeadFacts {
       .all(leadId) as LeadFacts['calls'],
     outcomes: stmt(
         db,
-        `SELECT o.call_id, o.entered_at, o.outcome_code, c.grp, c.marks_dead, c.counts_as_human_contact, o.callback_due_at, o.callback_any_time, c.lead_effect, o.do_not_call
+        `SELECT o.call_id, o.entered_at, o.outcome_code, c.grp, c.marks_dead, c.counts_as_human_contact, o.callback_due_at, o.callback_any_time, o.do_not_call
          FROM call_outcome o
          JOIN call ON call.id = o.call_id
          JOIN outcome_code c ON c.code = o.outcome_code

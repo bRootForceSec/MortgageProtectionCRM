@@ -2,7 +2,8 @@ import * as z from 'zod/v4';
 import type { DB } from '../db/connection.js';
 import { getSetting, setSetting } from '../core/settings.js';
 import { groupWhere } from './groupFilter.js';
-import { BOOKED_CODES } from './leadState.js';
+import { BOOKED_CODES, outcomeDef } from '../../shared/outcomes.js';
+import { sqlCodes } from '../db/outcomeCodes.js';
 import { DomainError } from '../core/errors.js';
 import { loadCallingSettings } from './callingSettings.js';
 import { bulkOfBatch } from './importHistory.js';
@@ -82,8 +83,8 @@ const CALL_METRICS: Record<CallMetric, { pred: (c: CallRow) => boolean; val: (cs
   contacts: { pred: (c) => c.contact === 1, val: (cs) => cs.length },
   conversations: { pred: (c) => (c.talk_seconds ?? 0) >= 120, val: (cs) => cs.length },
   talk_minutes: { pred: (c) => (c.talk_seconds ?? 0) > 0, val: (cs) => Math.round(cs.reduce((n, c) => n + (c.talk_seconds ?? 0), 0) / 60) },
-  appointments: { pred: (c) => c.outcome_code === 'appointment', val: (cs) => cs.length },
-  callbacks: { pred: (c) => c.outcome_code === 'callback', val: (cs) => cs.length },
+  appointments: { pred: (c) => !!outcomeDef(c.outcome_code)?.apptSet, val: (cs) => cs.length },
+  callbacks: { pred: (c) => !!outcomeDef(c.outcome_code)?.callback, val: (cs) => cs.length },
   bad_numbers: { pred: (c) => c.outcome_group === 'invalid', val: (cs) => cs.length },
 };
 const LEAD_METRICS: Record<LeadMetric, { pred: (l: LeadRow) => boolean; val: (ls: LeadRow[]) => number }> = {
@@ -627,8 +628,8 @@ export function todayStats(db: DB, from: string, to: string, day?: string, days?
        SELECT COUNT(DISTINCT id) attempts, COUNT(DISTINCT lead_id) unique_leads,
               (SELECT coalesce(SUM(dial_count), 0) FROM call WHERE id IN (SELECT id FROM cur)) dials,
               COUNT(DISTINCT CASE WHEN h = 1 THEN id END) human_contacts,
-              COUNT(DISTINCT CASE WHEN outcome_code = 'appointment' THEN id END) appointments,
-              COUNT(DISTINCT CASE WHEN outcome_code = 'callback' THEN id END) callbacks
+              COUNT(DISTINCT CASE WHEN outcome_code IN ${sqlCodes((o) => o.apptSet)} THEN id END) appointments,
+              COUNT(DISTINCT CASE WHEN outcome_code IN ${sqlCodes((o) => o.callback)} THEN id END) callbacks
        FROM cur`,
     )
     .get({ from, to }) as Record<string, number>;
