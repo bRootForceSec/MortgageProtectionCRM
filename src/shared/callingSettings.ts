@@ -39,6 +39,8 @@ export const CallingSettings = z.object({
   use_timer: z.boolean().default(true),
   /** Outcomes can save as soon as you press the key, without Enter. Off means every outcome waits for Enter. */
   instant_save: z.boolean().default(true),
+  /** A lead an appointment put back (no-show, sat no sale, prezi) goes to the top of the call list when you add it, not the bottom. */
+  missed_appts_first: z.boolean().default(true),
   /** Which outcomes save without Enter (outcome code -> on/off). Outcomes not listed keep their default: those with nothing more to fill in. */
   instant_outcomes: z.record(z.string(), z.boolean()).default({}),
   /** With KDE Connect, send the next lead's number to your phone as soon as you save or skip. */

@@ -118,6 +118,11 @@ export function CallingCard() {
           {s.instant_save && <span className="help">Ticked outcomes save without Enter. Talk minutes come from the timer. Callbacks always wait for their day.</span>}
         </span>
 
+        <label>Missed appointments</label>
+        <span>
+          <label className="choice-inline"><input type="checkbox" checked={s.missed_appts_first} onChange={(e) => set({ missed_appts_first: e.target.checked })} /> put a lead a no-show, sat no sale or prezi sent back at the top of the call list when I add it</label>
+        </span>
+
         <label>Call timer</label>
         <span>
           <label className="choice-inline"><input type="checkbox" checked={s.use_timer} onChange={(e) => set({ use_timer: e.target.checked })} /> start when I dial, and fill talk minutes when someone picks up</label>
