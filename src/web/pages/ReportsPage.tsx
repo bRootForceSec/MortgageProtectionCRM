@@ -206,6 +206,7 @@ export function ReportsPage() {
       {r && <ByBatch rows={r.by_batch} N={N} />}
 
       {r && <Benchmarks r={r} N={N} onSaved={load} />}
+      {r?.weekly && <Weekly w={r.weekly} targets={r.targets} />}
 
       {drill && <DrillModal params={params} drill={drill} onClose={() => setDrill(null)} onOpen={(id, list) => setOpen({ id, list })} />}
       {open && <LeadViewer id={open.id} list={open.list} onClose={() => setOpen(null)} />}
@@ -477,6 +478,12 @@ function Benchmarks({ r, N, onSaved }: { r: Report; N: any; onSaved: () => void 
           <button className="btn small" onClick={() => setEdit(true)}>Edit targets</button>
         )}
       </div>
+      {edit && (
+        <div className="row">
+          <span>Show rate target <P v={t.show_rate} on={(n) => setT({ ...t, show_rate: n ?? 0 })} />%</span>
+          <span>Close rate target <P v={t.close_rate} on={(n) => setT({ ...t, close_rate: n ?? 0 })} />%</span>
+        </div>
+      )}
       <div className="scroll-x">
         <table className="grid">
           <thead>
@@ -579,6 +586,48 @@ function DrillModal({ params, drill, onClose, onOpen }: { params: Record<string,
           {d && !d.rows.length && <div className="empty">Nothing here.</div>}
         </div>
       </div>
+    </div>
+  );
+}
+
+/** This week next to the 4 before it, against the targets: appointments per pickup (overall and by lead type), show and close rate. */
+function Weekly({ w, targets }: { w: any; targets: any }) {
+  const weekLabel = (start: string, i: number) =>
+    i === 0 ? 'This week' : i === 1 ? 'Last week' : `Week of ${new Date(`${start}T12:00:00`).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`;
+  const vs = (actual: number | null, target: number | null | undefined) =>
+    actual == null || target == null ? '' : actual >= target ? 'good' : 'bad';
+  const Row = ({ label, get, target, count }: { label: string; get: (wk: any) => number | null; target?: number | null; count?: (wk: any) => string }) => (
+    <tr>
+      <td>{label}</td>
+      {w.weeks.map((wk: any) => (
+        <td key={wk.start} className={vs(get(wk), target)}>{pct(get(wk))}{count && <span className="muted small"> {count(wk)}</span>}</td>
+      ))}
+      <td className="muted">{target == null ? '–' : pct(target)}</td>
+    </tr>
+  );
+  return (
+    <div className="card">
+      <h3>Week by week <span className="muted">(Monday to Sunday, whatever dates are picked above)</span></h3>
+      <div className="scroll-x">
+        <table className="grid weekly">
+          <thead>
+            <tr><th></th>{w.weeks.map((wk: any, i: number) => <th key={wk.start} title={`${wk.start} to ${wk.end}`}>{weekLabel(wk.start, i)}</th>)}<th>Target</th></tr>
+          </thead>
+          <tbody>
+            <Row label="Appts set per pickup" get={(wk) => wk.booked_per_pickup} count={(wk) => `${wk.appointments}/${wk.pickups}`} />
+            {w.types.map((t: any) => (
+              <Row key={t.key} label={`· ${t.label}`} get={(wk) => wk.by_type[t.key]?.booked_per_pickup ?? null}
+                target={targets.booked_per_contact[t.key] ?? null} count={(wk) => `${wk.by_type[t.key]?.appointments ?? 0}/${wk.by_type[t.key]?.pickups ?? 0}`} />
+            ))}
+            <Row label="Show rate" get={(wk) => wk.show_rate} target={targets.show_rate} count={(wk) => `${wk.sat}/${wk.sat + wk.no_show}`} />
+            <Row label="Close rate" get={(wk) => wk.close_rate} target={targets.close_rate} count={(wk) => `${wk.sold}/${wk.sat}`} />
+          </tbody>
+        </table>
+      </div>
+      <p className="help">
+        Appts per pickup counts first calls in that week. Show and close rate count the appointments on that week's days,
+        from Unitrust or logged here. Targets start from the flier (80% sit, 50% close); change them with Edit targets above.
+      </p>
     </div>
   );
 }

@@ -122,6 +122,10 @@ export const ReportTargets = z.object({
   booked_per_contact: z.record(z.string(), z.number().min(0).max(1)).default({
     'FE-A': 0.8, 'CI-A': 0.8, 'DM-A': 0.8, 'CI-A1': 0.25, 'CI-AA': 0.25, 'DM-AA': 0.25, B: 0.2, C: 0.125, D: 0.1,
   }),
+  /** Of the appointments that happened or didn't, how many sat (the flier: 4 of 5). */
+  show_rate: z.number().min(0).max(1).default(0.8),
+  /** Of the ones that sat, how many bought (the flier: 1 of 2). */
+  close_rate: z.number().min(0).max(1).default(0.5),
 });
 export type ReportTargets = z.infer<typeof ReportTargets>;
 const TARGETS = 'report_targets';
@@ -311,7 +315,7 @@ function buildGroups(db: DB, f: ReportFilter) {
   const callerGroups: Group[] = CALLER_MATCH_ORDER.filter((k) => byMatch.has(k) || backByMatch.has(k))
     .map((k) => ({ key: k, calls: byMatch.get(k) ?? [], leads: backByMatch.get(k) ?? [] }));
 
-  return { activity, hourGroups, bestGroups, countyGroups, batchGroups, typeGroups, callerGroups, timedCount: timed.length, untimedInRange: inRange.length - timed.length };
+  return { activity, hourGroups, bestGroups, countyGroups, batchGroups, typeGroups, callerGroups, allCalls: all, timedCount: timed.length, untimedInRange: inRange.length - timed.length };
 }
 
 export function buildReport(db: DB, f: ReportFilter) {
@@ -418,6 +422,47 @@ export function buildReport(db: DB, f: ReportFilter) {
       .sort((x, y) => x.key.localeCompare(y.key)),
     targets,
     appointments: unitrustSection(db, f, types),
+    weekly: weeklyRatios(db, f, g.allCalls, types),
+  };
+}
+
+/** Adds days to a YYYY-MM-DD date. */
+function addDay(day: string, n: number): string {
+  const [y, m, d] = day.split('-').map(Number) as [number, number, number];
+  return new Date(Date.UTC(y, m - 1, d + n)).toISOString().slice(0, 10);
+}
+
+/**
+ * This week and the 4 before it (Monday to Sunday, your time), whatever dates are on screen: appointments set per
+ * pickup on first calls, overall and by lead type, and how the appointments on those days went (show and close rate).
+ */
+export function weeklyRatios(db: DB, f: ReportFilter, all: CallRow[], types: Map<string, string>, now = new Date()) {
+  const today = localParts(now.toISOString(), f.tz, f.tz);
+  const monday = addDay(today.date, -((today.weekday + 6) % 7));
+  const starts = [0, 1, 2, 3, 4].map((w) => addDay(monday, -7 * w));
+  const oldest = starts.at(-1)!;
+  const calls = all.filter((c) => c.time_known !== 0).map((c) => ({ c, day: localParts(c.requested_at, f.tz, f.tz).date })).filter((x) => x.day >= oldest);
+  const appts = appointmentsOnDays(db, oldest, addDay(monday, 6), groupWhere('l.county_key', f));
+  const picks = (cs: CallRow[]) => {
+    const pickups = cs.filter(CALL_METRICS.contacts.pred).length;
+    const set = cs.filter(CALL_METRICS.appointments.pred).length;
+    return { pickups, appointments: set, booked_per_pickup: ratio(set, pickups) };
+  };
+  const typeKeys = [...new Set(calls.map((x) => x.c.lead_type ?? ''))].sort();
+  return {
+    types: typeKeys.map((k) => ({ key: k, label: k ? types.get(k) ?? k : 'No lead type' })),
+    weeks: starts.map((start) => {
+      const end = addDay(start, 6);
+      const inWeek = calls.filter((x) => x.day >= start && x.day <= end).map((x) => x.c);
+      const a = appointmentCounts(appts.filter((r) => r.day >= start && r.day <= end));
+      return {
+        start,
+        end,
+        ...picks(inWeek),
+        by_type: Object.fromEntries(typeKeys.map((k) => [k, picks(inWeek.filter((c) => (c.lead_type ?? '') === k))])),
+        sat: a.sat, sold: a.sold, no_show: a.no_show, show_rate: a.show_rate, close_rate: a.close_rate,
+      };
+    }),
   };
 }
 
