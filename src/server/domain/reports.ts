@@ -1,5 +1,6 @@
 import * as z from 'zod/v4';
 import type { DB } from '../db/connection.js';
+import type { BestTimes } from '../../shared/bestTime.js';
 import { LEAD_NAME, CURRENT_OUTCOME } from '../db/sql.js';
 import { getSetting, setSetting } from '../core/settings.js';
 import { groupWhere } from './groupFilter.js';
@@ -188,6 +189,19 @@ function localParts(iso: string, tz: string | null | undefined, fallback: string
   const hour = Number(p.hour ?? 0) % 24;
   const weekday = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].indexOf(p.weekday ?? 'Sun');
   return { hour, weekday, date: `${p.year}-${p.month}-${p.day}`, time: `${String(hour).padStart(2, '0')}:${p.minute}` };
+}
+
+/** Attempts and pickups by the lead's local weekday and hour, all time, for "Best time first" on the call list. */
+export function bestTimes(db: DB, tz: string): BestTimes {
+  const out: BestTimes = {};
+  for (const c of loadCalls(db, { from: '', to: '', tz }, false)) {
+    if (c.time_known === 0) continue;
+    const p = localParts(c.requested_at, c.time_zone, tz);
+    const t = (out[`${p.weekday}:${p.hour}`] ??= { attempts: 0, pickups: 0 });
+    t.attempts++;
+    if (c.contact) t.pickups++;
+  }
+  return out;
 }
 
 // ---------- building ----------

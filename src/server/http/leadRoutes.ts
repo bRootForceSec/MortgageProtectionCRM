@@ -15,6 +15,7 @@ import {
   recentOutcomes, removeFromCallList, type LeadFilter, callListName, listSavedLists, clearCallList, loadSavedList, deleteSavedList, setCalledBack,
 } from '../domain/callList.js';
 import { LEAD_FILTERS } from '../../shared/leadStatus.js';
+import { bestTimes } from '../domain/reports.js';
 
 // Leads, the call list, logging calls, and call history.
 
@@ -58,9 +59,13 @@ export function registerLeadRoutes(app: FastifyInstance, deps: { db: DB; config:
 
   // ---------- the call list ----------
   const savedName = z.string().trim().max(120);
-  app.get('/api/call-list', async () => ({
-    items: getCallList(db), recent: recentOutcomes(db), name: callListName(db), saved_lists: listSavedLists(db),
-  }));
+  app.get('/api/call-list', async (req) => {
+    const { tz } = z.object({ tz: z.string().max(64).optional() }).parse(req.query);
+    return {
+      items: getCallList(db), recent: recentOutcomes(db), name: callListName(db), saved_lists: listSavedLists(db),
+      best_times: bestTimes(db, tz || Intl.DateTimeFormat().resolvedOptions().timeZone),
+    };
+  });
   // `replace` empties the list first (kept as a saved list named `save_current_as`, if given).
   const replaceOpts = z.object({ replace: z.boolean().optional(), save_current_as: savedName.nullish() });
   app.post('/api/call-list', async (req) => {

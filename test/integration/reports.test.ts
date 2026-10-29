@@ -7,7 +7,7 @@ import { suggestMapping } from '../../src/server/domain/mapping.js';
 import { commitImport } from '../../src/server/domain/importer.js';
 import { logManualCall, voidCall } from '../../src/server/domain/calls.js';
 import { seedCountyAreaCodes } from '../../src/server/domain/areaCodes.js';
-import { buildReport, drill, reportCalls, type ReportFilter } from '../../src/server/domain/reports.js';
+import { bestTimes, buildReport, drill, reportCalls, type ReportFilter } from '../../src/server/domain/reports.js';
 import { setCalledBack } from '../../src/server/domain/callList.js';
 import { buildApp } from '../../src/server/http/app.js';
 import { createBackup, checkLatestBackup, listBackups } from '../../src/server/backup.js';
@@ -292,5 +292,19 @@ describe('backup restore check', () => {
     const r = (await app.inject({ method: 'POST', url: '/api/backups/check', headers: write, payload: {} })).json();
     expect(r.ok).toBe(false);
     expect((await app.inject({ url: '/api/backups/check', headers: auth })).json().ok).toBe(false);
+  });
+});
+
+describe('best time first on the call list', () => {
+  it('counts attempts and pickups by the lead\'s weekday and hour, and comes with the call list', async () => {
+    const tz = 'America/Indiana/Indianapolis';
+    const before = bestTimes(db, tz)['4:18'] ?? { attempts: 0, pickups: 0 };
+    // 6 PM on a Thursday in Indiana (Eastern).
+    log('Amy', 'no_answer', { occurred_at: '2026-10-22T22:10:00.000Z' });
+    log('Ben', 'no_appt', { occurred_at: '2026-10-22T22:40:00.000Z' });
+    expect(bestTimes(db, tz)['4:18']).toEqual({ attempts: before.attempts + 2, pickups: before.pickups + 1 });
+    const r = (await app.inject({ url: `/api/call-list?tz=${tz}`, headers: auth })).json();
+    expect(r.best_times['4:18']).toEqual({ attempts: before.attempts + 2, pickups: before.pickups + 1 });
+    expect(r.items.every((i: any) => 'time_zone' in i)).toBe(true);
   });
 });

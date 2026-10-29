@@ -553,3 +553,19 @@ test('narrow windows: the lead and its outcome buttons come first, nothing runs 
   await page.setViewportSize({ width: 480, height: 700 });
   expect((await box('.lead-panel')).y).toBeLessThan((await box('.queue-panel')).y);
 });
+
+test('best time first: the list can be shown and worked in that order, and it stays chosen', async ({ page }) => {
+  await page.goto(launchUrl);
+  await page.getByRole('button', { name: 'Calling', exact: true }).click();
+  const order = page.getByRole('group', { name: 'Order' });
+  const queue = page.getByLabel('Queue');
+  await expect(queue.locator('.queue-list li').first()).toBeVisible();
+  const n = await queue.locator('.queue-list li').count();
+  await order.getByRole('button', { name: 'Best time first' }).click();
+  await expect(order.getByRole('button', { name: 'Best time first' })).toHaveAttribute('aria-pressed', 'true');
+  await expect(queue.locator('.queue-list li')).toHaveCount(n);
+  await page.screenshot({ path: 'test-results/best-time-first.png' });
+  await page.reload();
+  await expect(page.getByRole('group', { name: 'Order' }).getByRole('button', { name: 'Best time first' })).toHaveAttribute('aria-pressed', 'true');
+  await page.getByRole('group', { name: 'Order' }).getByRole('button', { name: 'As set' }).click();
+});
