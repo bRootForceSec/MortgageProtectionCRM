@@ -115,6 +115,10 @@ a { color: var(--accent); }
 .outcomes label.dnc { padding: 7px 9px; border: 1px dashed var(--bad); border-radius: 6px; background: var(--panel); cursor: pointer; }
 .outcomes label.dnc kbd { margin-right: 2px; }
 .outcomes label.dnc.active { background: color-mix(in srgb, var(--bad) 15%, var(--panel)); color: var(--bad); border-style: solid; font-weight: 600; }
+.objections { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 0 0 8px; }
+.objections button { padding: 3px 10px; border: 1px solid var(--border); border-radius: 14px; background: var(--panel); cursor: pointer; font-size: 13px; }
+.objections button kbd { margin-right: 5px; }
+.objections button.active { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
 kbd { font-family: ui-monospace, monospace; font-size: 11px; padding: 0 5px; border: 1px solid var(--border); border-bottom-width: 2px; border-radius: 4px; background: var(--panel-2); color: var(--text); }
 
 .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }

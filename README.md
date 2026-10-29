@@ -98,7 +98,7 @@ Choose it in **Settings**. The default is **Claude with your Claude account**: i
 
 1. **Import** a batch: Import → pick the lead type → choose the PDF or spreadsheet → (spreadsheet: check the column matches → Continue) → check any leads that need a look → set types for mixed orders → Import.
 2. **Numbers**: add your Sideline number once, so each call records which caller ID you used.
-3. **Calling**: the current lead's details are in the middle. Press `C` to dial (copy, QR code or KDE Connect, chosen in Settings), call on your phone, press `→` for each extra dial, then press the outcome key. `1` (No answer) and `5` (Bad number) save and move on by themselves; the others save with `Enter`. A callback suggests tomorrow; type `t` for today or any other day.
+3. **Calling**: the current lead's details are in the middle. Press `C` to dial (copy, QR code or KDE Connect, chosen in Settings), call on your phone, press `→` for each extra dial, then press the outcome key. `1` (No answer) and `5` (Bad number) save and move on by themselves; the others save with `Enter`. A callback suggests tomorrow; type `t` for today or any other day. After Talked no appt, Sat no sale or Prezi, chips ask what held them back (Price, Spouse, Already covered…): click them or press `Shift`+`1`–`7`, or just press `Enter` to skip.
 
 These are the starting keys. Change any of them in **Settings → Keyboard shortcuts**.
 
