@@ -82,3 +82,9 @@ describe('recording consent', () => {
     expect(Object.keys(ALL_PARTY_CONSENT_STATES)).toHaveLength(14);
   });
 });
+
+describe('objections', () => {
+  it('are asked after a talk with no appointment, a sat no sale and a prezi', () => {
+    expect(Object.entries(OUTCOMES).filter(([, o]) => o.objections).map(([c]) => c)).toEqual(['no_appt', 'appt_sat_no_sale', 'appt_prezi']);
+  });
+});

@@ -9,6 +9,7 @@ import { MAX_UPLOAD_BYTES } from '../domain/spreadsheet.js';
 import { LEAD_FIELDS } from '../domain/mapping.js';
 import { MappingError } from '../domain/importer.js';
 import { activeOutcomeCodes } from '../domain/calls.js';
+import { activeObjectionCodes } from '../domain/objections.js';
 import { DomainError } from '../core/errors.js';
 import { listNumbers } from '../domain/numbers.js';
 import { Updates } from '../updates.js';
@@ -117,6 +118,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   // ---------- meta ----------
   app.get('/api/meta', async () => ({
     outcome_codes: activeOutcomeCodes(db),
+    objection_codes: activeObjectionCodes(db),
     lead_fields: LEAD_FIELDS.map(({ key, label }) => ({ key, label })),
     numbers: listNumbers(db),
     data_dir: config.dataDir,
