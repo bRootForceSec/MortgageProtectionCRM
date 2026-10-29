@@ -561,3 +561,30 @@ test('narrow windows: the lead and its outcome buttons come first, nothing runs 
   await page.setViewportSize({ width: 480, height: 700 });
   expect((await box('.lead-panel')).y).toBeLessThan((await box('.queue-panel')).y);
 });
+
+test('an appointment about to start: an alert, and its prep card on Today', async ({ page }) => {
+  await page.goto(launchUrl);
+  await page.getByRole('button', { name: 'Today', exact: true }).click();
+  // Book Zed for ten minutes from now (in the browser's time), as Appt set with a time does; a minute ago near midnight.
+  await page.evaluate(async () => {
+    const leads = await (await fetch('/api/leads?search=Zed')).json();
+    const now = new Date();
+    let at = new Date(now.getTime() + 10 * 60_000);
+    if (at.getDate() !== now.getDate()) at = new Date(now.getTime() - 60_000);
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const wall = `${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())}T${pad(at.getHours())}:${pad(at.getMinutes())}`;
+    const r = await fetch(`/api/leads/${leads.rows[0].id}/calls`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ idempotency_key: `e2e-${Date.now()}`, outcome_code: 'appointment', appointment_for: wall }),
+    });
+    if (!r.ok) throw new Error(await r.text());
+  });
+  await page.reload();
+  await expect(page.locator('.alert-bar')).toContainText('Appointment:');
+  await expect(page.locator('.alert-bar')).toContainText('Zed');
+  const card = page.locator('.prep-card', { hasText: 'Zed' });
+  await expect(card).toBeVisible();
+  await expect(card).toContainText('not in Unitrust yet');
+  await page.screenshot({ path: 'test-results/today-appointments.png', fullPage: true });
+});

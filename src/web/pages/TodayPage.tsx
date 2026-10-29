@@ -88,7 +88,7 @@ export function TodayPage() {
       <Section title="Callbacks later today" items={later} />
       <Section title="Callbacks that need a time" items={noTime} />
       <Section title="Coming up (next two weeks)" items={comingUp} />
-      <p className="help">Appointments come from the time you type on Appt set and from the Unitrust calendar; once Unitrust has the appointment, its time wins. The group picker narrows callbacks only. Callbacks stay off your call list; Open shows the lead on the Calling page beside your list. You get a desktop alert and a sound when a callback with a time comes due, while the app is open. Change that in Settings.</p>
+      <p className="help">Appointments come from the time you type on Appt set and from the Unitrust calendar; once Unitrust has the appointment, its time wins. The group picker narrows callbacks only. Callbacks stay off your call list; Open shows the lead on the Calling page beside your list. You get a desktop alert and a sound when a callback with a time comes due, and shortly before an appointment with a time, while the app is open. Change that in Settings.</p>
     </div>
   );
 }
@@ -97,6 +97,7 @@ export function TodayPage() {
 function Prep({ p, onOpen }: { p: PrepCard; onOpen: () => void }) {
   const { types } = useLeadTypes();
   const when = fromWall(p.scheduled_for);
+  const myZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
   const age = personAge({ dob: p.dob, age: p.age });
   const health = ([
     ['Tobacco', p.tobacco_raw], ['Heart attack', p.health_heart_raw], ['Stroke', p.health_stroke_raw], ['Cancer', p.health_cancer_raw], ['Diabetes', p.health_diabetes_raw],
@@ -112,7 +113,7 @@ function Prep({ p, onOpen }: { p: PrepCard; onOpen: () => void }) {
     <div className="prep-card" aria-label={`Appointment with ${p.name || 'no name'}`}>
       <div className="prep-head">
         <b className="nowrap">{when.anyTime ? 'No time yet' : when.at.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}</b>
-        {!when.anyTime && theirTime(when.at.toISOString(), p.time_zone) && <span className="muted nowrap">{theirTime(when.at.toISOString(), p.time_zone)} theirs</span>}
+        {!when.anyTime && p.time_zone !== myZone && theirTime(when.at.toISOString(), p.time_zone) && <span className="muted nowrap">{theirTime(when.at.toISOString(), p.time_zone)} theirs</span>}
         <span className="prep-name">{p.name || '(no name)'}</span>
         <ApptBadge result={p.appt_result} />
         <button className="btn small primary" onClick={onOpen}>Open</button>

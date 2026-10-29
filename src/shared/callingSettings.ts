@@ -67,7 +67,9 @@ export const CallingSettings = z.object({
       desktop: z.boolean().default(true),
       sound: z.boolean().default(true),
       minutes_before: z.number().int().min(0).max(120).default(0),
+      /** Minutes before an appointment with a time to alert; null turns appointment alerts off. */
+      appt_minutes_before: z.number().int().min(0).max(240).nullable().default(15),
     })
-    .default({ desktop: true, sound: true, minutes_before: 0 }),
+    .default({ desktop: true, sound: true, minutes_before: 0, appt_minutes_before: 15 }),
 });
 export type CallingSettings = z.infer<typeof CallingSettings>;
