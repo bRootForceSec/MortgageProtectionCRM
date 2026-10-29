@@ -188,6 +188,25 @@ describe('manual call logging', () => {
     expect(db.prepare("SELECT COUNT(*) n FROM call WHERE lead_id = ? AND voided_at IS NULL").get(jane)).toEqual({ n: 1 });
   });
 
+  it('keeps when you pressed Dial and when you saved, for calls logged as they happen', () => {
+    const dialed = new Date(Date.now() - 5 * 60_000).toISOString();
+    const live = logManualCall(db, { lead_id: jane, idempotency_key: key(), outcome_code: 'no_appt', dialed_at: dialed });
+    const row = () => db.prepare('SELECT requested_at, started_at, ended_at FROM call WHERE id = ?');
+    const r = row().get(live.call_id) as Record<string, string>;
+    expect(r.started_at).toBe(dialed);
+    expect(r.ended_at).toBe(r.requested_at);
+    expect(voidCall(db, live.call_id).dialed_at).toBe(dialed);
+    // Without a Dial press, started is the call time and there is no dial time to give back.
+    const plain = logManualCall(db, { lead_id: jane, idempotency_key: key(), outcome_code: 'no_answer' });
+    expect(voidCall(db, plain.call_id).dialed_at).toBeNull();
+    // A call entered for an earlier time wasn't saved as it happened.
+    const earlier = new Date(Date.now() - 3600_000).toISOString();
+    const late = logManualCall(db, { lead_id: jane, idempotency_key: key(), outcome_code: 'no_answer', occurred_at: earlier, dialed_at: dialed });
+    expect(row().get(late.call_id)).toEqual({ requested_at: earlier, started_at: earlier, ended_at: null });
+    const future = new Date(Date.now() + 60_000).toISOString();
+    expect(() => logManualCall(db, { lead_id: jane, idempotency_key: key(), outcome_code: 'no_answer', dialed_at: future })).toThrow(DomainError);
+  });
+
   it('offers the objections in order, and an undo gives back the ones you picked', () => {
     expect(activeObjectionCodes(db).map((o) => o.label)).toEqual(['Price', 'Spouse', 'Already covered', 'Think about it', 'Health', 'Trust', 'Other']);
     const { call_id } = logManualCall(db, { lead_id: jane, idempotency_key: key(), outcome_code: 'no_appt', objections: [{ code: 'think_about_it' }, { code: 'price' }] });
