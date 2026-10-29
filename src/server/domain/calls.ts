@@ -1,4 +1,5 @@
 import type { DB } from '../db/connection.js';
+import { LEAD_NAME, CURRENT_OUTCOME } from '../db/sql.js';
 import { uuidv7, nowIso } from '../ids.js';
 import { rebuildLeadState } from './leadState.js';
 import { DomainError } from '../core/errors.js';
@@ -156,7 +157,7 @@ export function currentOutcome(db: DB, callId: string) {
   return db
     .prepare(
       `SELECT * FROM call_outcome o WHERE o.call_id = ?
-       AND NOT EXISTS (SELECT 1 FROM call_outcome s WHERE s.supersedes_id = o.id)
+       AND ${CURRENT_OUTCOME}
        ORDER BY entered_at DESC LIMIT 1`,
     )
     .get(callId) as { id: string; outcome_code: string; callback_due_at: string | null; callback_any_time: number; do_not_call: number } | undefined;
@@ -243,9 +244,9 @@ export function callHistory(
     .prepare(
       `SELECT c.id, c.lead_id, c.channel, c.from_number_id, c.from_e164, c.to_e164, c.requested_at, c.state, c.talk_seconds, c.dial_count, c.lead_seconds, c.voided_at,
               c.time_known,
-              trim(coalesce(l.first_name,'') || ' ' || coalesce(l.last_name,'')) lead_name, l.county, n.label from_label,
+              ${LEAD_NAME} lead_name, l.county, n.label from_label,
               (SELECT o.outcome_code FROM call_outcome o WHERE o.call_id = c.id
-                 AND NOT EXISTS (SELECT 1 FROM call_outcome x WHERE x.supersedes_id = o.id) ORDER BY o.entered_at DESC LIMIT 1) outcome_code
+                 AND ${CURRENT_OUTCOME} ORDER BY o.entered_at DESC LIMIT 1) outcome_code
        FROM call c LEFT JOIN lead l ON l.id = c.lead_id LEFT JOIN caller_number n ON n.id = c.from_number_id
        WHERE (@from IS NULL OR c.requested_at >= @from) AND (@to IS NULL OR c.requested_at < @to)
          AND (@fromNumber IS NULL OR (@fromNumber = 'none' AND c.from_number_id IS NULL) OR c.from_number_id = @fromNumber)

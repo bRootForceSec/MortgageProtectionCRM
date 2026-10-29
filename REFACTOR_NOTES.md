@@ -2,6 +2,15 @@
 
 A running log of the stabilization work. Newest first.
 
+## 2026-10-29: Consolidation P4, SQL pieces, file splits, dead code
+
+- `db/sql.ts`: `CURRENT_OUTCOME` replaces the "nothing supersedes this outcome" subquery written out 12 times in 7 domain files, and `LEAD_NAME` the lead-name expression written 11 times.
+- `CallingPage.tsx` (767 lines) → 593, with the incoming-call lookup, First call | Appointment switch, undo bar, script and recent outcomes in `CallingPanels.tsx`. `ImportPage.tsx` (712) → 331, with the draft screen and the import summary in `DraftScreen.tsx`. Pure moves.
+- `useLeadTypes` moved from `ImportPage.tsx` to `src/web/leadTypes.ts`. Five screens used it, and LeadsPage and ImportPage imported each other because of it.
+- Removed the `kind ?? 'first_call'` fallbacks in the UI; every outcome has a kind.
+- Checked for unused exports: none left (some are exported but only used in their own file; left alone).
+- No behavior change.
+
 ## 2026-10-29: Consolidation P3, statuses, appointment results and the funnel
 
 - `src/shared/leadStatus.ts`: lead statuses (label, callable, timeless) and the Leads tabs. Replaces `STATUS_LABEL` (LeadDetails), `STATUSES` and `CALLABLE` (LeadsPage), `CALLABLE` (callList), the `'new','retry','callback'` checks in LeadViewer, CallingPage, reports, importHistory and areaCodes, the timeless list in `verifyLeadState`, and the Leads filter enum in `leadRoutes`.

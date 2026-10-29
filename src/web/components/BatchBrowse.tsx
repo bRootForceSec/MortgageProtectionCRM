@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, fmtDateTime, fmtMoney } from '../api';
 import { useApp } from '../App';
-import { useLeadTypes } from '../pages/ImportPage';
+import { useLeadTypes } from '../leadTypes';
 import type { BatchFilter, BatchListRow as BatchRow, ImportGroup } from '../../shared/batches';
 
 // Finding batches once there are hundreds: the filter bar used on Import, Leads and Reports, the batch

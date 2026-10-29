@@ -1,5 +1,6 @@
 import type { Statement } from 'better-sqlite3';
 import type { DB } from '../db/connection.js';
+import { LEAD_NAME, CURRENT_OUTCOME } from '../db/sql.js';
 import { nowIso } from '../ids.js';
 import { retryGapMs } from './callingSettings.js';
 import { MISSED_RESULTS, isApptResult, type ApptResult } from '../../shared/appointments.js';
@@ -216,7 +217,7 @@ export function loadLeadFacts(db: DB, leadId: string): LeadFacts {
          FROM call_outcome o
          JOIN call ON call.id = o.call_id
          JOIN outcome_code c ON c.code = o.outcome_code
-         WHERE call.lead_id = ? AND call.voided_at IS NULL AND NOT EXISTS (SELECT 1 FROM call_outcome s WHERE s.supersedes_id = o.id)`,
+         WHERE call.lead_id = ? AND call.voided_at IS NULL AND ${CURRENT_OUTCOME}`,
       )
       .all(leadId) as LeadFacts['outcomes'],
     actions: stmt(db, 'SELECT action, created_at FROM lead_action WHERE lead_id = ?').all(leadId) as LeadFacts['actions'],
@@ -238,7 +239,6 @@ function latestUnitrustAppt(db: DB, leadId: string): LeadFacts['appt'] {
   return { result, at: r.result_at ?? r.created_at, day: r.day ?? '' };
 }
 
-const NAME = "trim(coalesce(l.first_name,'') || ' ' || coalesce(l.last_name,''))";
 
 // Prepared once per database: these run for every lead on a full rebuild.
 const prepared = new WeakMap<DB, Map<string, Statement>>();
@@ -258,24 +258,24 @@ export function loadPhoneBlocks(db: DB, leadId: string, phones: string[]): Phone
   // A bad number found on another lead's call, unless that lead was restored afterwards.
   const bad = stmt(
     db,
-      `SELECT c.to_e164 phone, o.entered_at at, ${NAME} who,
+      `SELECT c.to_e164 phone, o.entered_at at, ${LEAD_NAME} who,
               (SELECT max(a.created_at) FROM lead_action a WHERE a.lead_id = c.lead_id AND a.action = 'restore') restored
        FROM call c JOIN call_outcome o ON o.call_id = c.id JOIN outcome_code oc ON oc.code = o.outcome_code JOIN lead l ON l.id = c.lead_id
        WHERE c.to_e164 IN (SELECT value FROM json_each(@phones)) AND c.lead_id != @id AND c.voided_at IS NULL AND oc.grp = 'invalid'
-         AND NOT EXISTS (SELECT 1 FROM call_outcome s WHERE s.supersedes_id = o.id)`,
+         AND ${CURRENT_OUTCOME}`,
     )
     .all(p) as { phone: string; at: string; who: string; restored: string | null }[];
   for (const b of bad) if (b.at > (b.restored ?? '')) blocks.push({ phone: b.phone, at: b.at, kind: 'bad', who: b.who || 'another lead' });
   // Another lead with the same number that is in the dead pile.
   const others = stmt(
     db,
-      `SELECT l.id, ${NAME} who,
+      `SELECT l.id, ${LEAD_NAME} who,
               (SELECT json_group_array(n.e164) FROM lead_number n WHERE n.lead_id = l.id) numbers_json,
               (SELECT max(a.created_at) FROM lead_action a WHERE a.lead_id = l.id AND a.action = 'restore') restored,
               (SELECT max(a.created_at) FROM lead_action a WHERE a.lead_id = l.id AND a.action = 'mark_dead') dead_action,
               (SELECT max(o.entered_at) FROM call c JOIN call_outcome o ON o.call_id = c.id JOIN outcome_code oc ON oc.code = o.outcome_code
                  WHERE c.lead_id = l.id AND c.voided_at IS NULL AND (oc.marks_dead = 1 OR o.do_not_call = 1)
-                   AND NOT EXISTS (SELECT 1 FROM call_outcome s WHERE s.supersedes_id = o.id)) dead_outcome
+                   AND ${CURRENT_OUTCOME}) dead_outcome
        FROM lead l
        WHERE l.id != @id AND l.id IN (SELECT lead_id FROM lead_number WHERE e164 IN (SELECT value FROM json_each(@phones)))`,
     )
