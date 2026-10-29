@@ -8,6 +8,7 @@ import {
   addBatchToCallList, addMatchingToCallList, addToCallList, clearWorked, getCallList, moveToBottom, recentOutcomes, removeFromCallList,
   callListName, clearCallList, deleteSavedList, listSavedLists, loadSavedList, setCalledBack, leadFilterWhere,
 } from '../../src/server/domain/callList.js';
+import { loadCallingSettings, saveCallingSettings } from '../../src/server/domain/callingSettings.js';
 import { buildApp } from '../../src/server/http/app.js';
 import type { Config } from '../../src/server/config.js';
 import type { DB } from '../../src/server/db/connection.js';
@@ -77,6 +78,26 @@ describe('call list', () => {
     expect(getCallList(db)).toHaveLength(before - 1);
     removeFromCallList(db, second);
     expect(getCallList(db).some((i) => i.lead_id === second)).toBe(false);
+  });
+
+  it('a lead an appointment put back goes to the top when added, unless Settings says otherwise', () => {
+    const [jane, robert, ann] = [id('Jane'), id('Robert'), id('Ann')];
+    addToCallList(db, [jane]);
+    // Robert had an appointment and didn't show; Ann sat with no sale.
+    for (const lead of [robert, ann]) {
+      logManualCall(db, { lead_id: lead, idempotency_key: key(), outcome_code: 'appointment' });
+      logManualCall(db, { lead_id: lead, idempotency_key: key(), outcome_code: lead === robert ? 'appt_no_show' : 'appt_sat_no_sale' });
+    }
+    expect(addToCallList(db, [robert, ann]).added).toBe(2);
+    expect(names()).toEqual(['Robert', 'Ann', 'Jane']);
+    // After that it's a plain list: skip moves one down.
+    moveToBottom(db, robert);
+    expect(names()).toEqual(['Ann', 'Jane', 'Robert']);
+    // Turned off, they go to the bottom like any other lead.
+    removeFromCallList(db, ann);
+    saveCallingSettings(db, { ...loadCallingSettings(db), missed_appts_first: false });
+    addToCallList(db, [ann]);
+    expect(names()).toEqual(['Jane', 'Robert', 'Ann']);
   });
 
   it('adds every lead matching the Leads filters, leaving out ones already on the list', () => {

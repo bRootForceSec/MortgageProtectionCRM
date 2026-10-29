@@ -2,7 +2,8 @@ import type { Statement } from 'better-sqlite3';
 import type { DB } from '../db/connection.js';
 import { LEAD_NAME, CURRENT_OUTCOME } from '../db/sql.js';
 import { nowIso } from '../ids.js';
-import { retryGapMs } from './callingSettings.js';
+import { followUpPlans, retryGapMs } from './callingSettings.js';
+import { afterStep, type FollowUpPlans, type FollowUpResult } from '../../shared/followUps.js';
 import { MISSED_RESULTS, isApptResult, type ApptResult } from '../../shared/appointments.js';
 import { LEAD_STATUSES, type LeadStatus } from '../../shared/leadStatus.js';
 import { BOOKED_CODES, outcomeDef } from '../../shared/outcomes.js';
@@ -80,7 +81,7 @@ export interface DerivedLeadState {
 }
 
 /** Pure function: facts in, state out. */
-export function deriveLeadState(f: LeadFacts, now: string, retryGap = RETRY_GAP_MS): DerivedLeadState {
+export function deriveLeadState(f: LeadFacts, now: string, retryGap = RETRY_GAP_MS, followUps: FollowUpPlans = {}): DerivedLeadState {
   const placed = f.calls.filter((c) => c.initiation_result === 'accepted').sort(byKey('requested_at'));
   const lastCall = placed.at(-1) ?? null;
   const callTime = new Map(placed.map((c) => [c.id, c.requested_at]));
@@ -132,6 +133,10 @@ export function deriveLeadState(f: LeadFacts, now: string, retryGap = RETRY_GAP_
   // Otherwise the last call decides, and it may be an appointment call.
   const lastAppt = !unitrust && lastOutcome && lastOutcome.entered_at > lastRestore ? outcomeDef(lastOutcome.outcome_code)?.apptResult ?? null : null;
   const missed = unitrust ? MISSED_RESULTS.includes(unitrust.result) : !!lastAppt && MISSED_RESULTS.includes(lastAppt);
+  // The latest missed result still standing (the one a follow-up plan runs from), from Unitrust or a call logged here.
+  const fromUnitrust = f.appt && !overridden && f.appt.at > lastRestore && MISSED_RESULTS.includes(f.appt.result) ? { result: f.appt.result, at: f.appt.at } : null;
+  const fromApp = inApp && !rebooked && inAppResult && MISSED_RESULTS.includes(inAppResult) && inApp.entered_at > lastRestore ? { result: inAppResult, at: inApp.entered_at } : null;
+  const missedResult = fromUnitrust && (!fromApp || fromUnitrust.at > fromApp.at) ? fromUnitrust : fromApp;
 
   // Which numbers are ruled out. A bad number counts for the number that was dialed, so a lead with an alternate
   // stays in rotation on the alternate. Other leads with the same number pass on "bad" and "dead pile".
@@ -176,7 +181,20 @@ export function deriveLeadState(f: LeadFacts, now: string, retryGap = RETRY_GAP_
     const dead = phones.some((p) => blocked.get(p)?.kind === 'dead');
     return { ...withPhones, status: dead ? 'dead' : 'invalid', next_due_at: null };
   }
-  // A no-show, sat-no-sale or prezi (here or in Unitrust): due now, to set it up again.
+  // A no-show, sat-no-sale or prezi (here or in Unitrust) with a follow-up plan: each step is a callback, timed from
+  // the result or the last unanswered try. Any other outcome since then (an answer, a callback, a bad number) ends it.
+  const missedAt = missedResult ? missedResult.at : null;
+  if (missedResult && missedAt) {
+    const since = outcomes.filter((o) => o.entered_at > missedAt);
+    const quiet = since.every((o) => !o.counts_as_human_contact && o.grp !== 'invalid' && !outcomeDef(o.outcome_code)?.callback
+      && !outcomeDef(o.outcome_code)?.apptResult && !BOOKED_CODES.has(o.outcome_code));
+    const step = quiet ? followUps[missedResult.result as FollowUpResult]?.[since.length] : undefined;
+    if (step) {
+      const from = since.length ? (callTime.get(since.at(-1)!.call_id) ?? since.at(-1)!.entered_at) : missedAt;
+      return { ...withPhones, status: 'callback', next_due_at: afterStep(from, step), appt_missed: missed ? 1 : 0 };
+    }
+  }
+  // Without a plan (or once it has run out): due now, to set it up again.
   if (missed) return { ...withPhones, status: 'retry', next_due_at: null, appt_missed: 1 };
   // The last call found a bad number but there's another one to try: due now, on the other number.
   if (lastOutcome?.grp === 'invalid' && lastOutcome.entered_at > lastRestore) {
@@ -341,8 +359,9 @@ export function rebuildLeadState(db: DB, leadIds?: string[], now = nowIso()): nu
     : (db.prepare('SELECT id FROM lead').all() as { id: string }[]).map((r) => r.id);
   const up = db.prepare(UPSERT);
   const gap = retryGapMs(db);
+  const plans = followUpPlans(db);
   db.transaction(() => {
-    for (const id of ids) up.run({ lead_id: id, ...deriveLeadState(loadLeadFacts(db, id), now, gap), derived_at: now });
+    for (const id of ids) up.run({ lead_id: id, ...deriveLeadState(loadLeadFacts(db, id), now, gap, plans), derived_at: now });
   })();
   return ids.length;
 }
@@ -356,8 +375,9 @@ export function verifyLeadState(db: DB, now = nowIso()): string[] {
   ];
   const bad: string[] = [];
   const gap = retryGapMs(db);
+  const plans = followUpPlans(db);
   for (const r of rows) {
-    const d = deriveLeadState(loadLeadFacts(db, r.lead_id), now, gap);
+    const d = deriveLeadState(loadLeadFacts(db, r.lead_id), now, gap, plans);
     // Status/next_due depend on "now" for retries, so compare the time-independent fields
     // plus status for leads whose status cannot change with time.
     const timeless = LEAD_STATUSES[d.status].timeless;

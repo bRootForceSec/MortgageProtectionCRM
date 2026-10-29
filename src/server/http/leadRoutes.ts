@@ -15,6 +15,7 @@ import {
   recentOutcomes, removeFromCallList, type LeadFilter, callListName, listSavedLists, clearCallList, loadSavedList, deleteSavedList, setCalledBack,
 } from '../domain/callList.js';
 import { LEAD_FILTERS } from '../../shared/leadStatus.js';
+import { bestTimes } from '../domain/reports.js';
 
 // Leads, the call list, logging calls, and call history.
 
@@ -58,9 +59,13 @@ export function registerLeadRoutes(app: FastifyInstance, deps: { db: DB; config:
 
   // ---------- the call list ----------
   const savedName = z.string().trim().max(120);
-  app.get('/api/call-list', async () => ({
-    items: getCallList(db), recent: recentOutcomes(db), name: callListName(db), saved_lists: listSavedLists(db),
-  }));
+  app.get('/api/call-list', async (req) => {
+    const { tz } = z.object({ tz: z.string().max(64).optional() }).parse(req.query);
+    return {
+      items: getCallList(db), recent: recentOutcomes(db), name: callListName(db), saved_lists: listSavedLists(db),
+      best_times: bestTimes(db, tz || Intl.DateTimeFormat().resolvedOptions().timeZone),
+    };
+  });
   // `replace` empties the list first (kept as a saved list named `save_current_as`, if given).
   const replaceOpts = z.object({ replace: z.boolean().optional(), save_current_as: savedName.nullish() });
   app.post('/api/call-list', async (req) => {
@@ -145,11 +150,13 @@ export function registerLeadRoutes(app: FastifyInstance, deps: { db: DB; config:
       talk_seconds: z.number().min(0).max(36000).nullish(),
       dial_count: z.number().int().min(1).max(1000).nullish(),
       lead_seconds: z.number().min(0).max(7 * 86400).nullish(),
+      dialed_at: z.string().max(40).nullish(),
       outcome_code: z.string().max(40),
       callback_due_at: z.string().max(40).nullish(),
       callback_any_time: z.boolean().nullish(),
       do_not_call: z.boolean().nullish(),
       note: z.string().max(10000).nullish(),
+      appointment_for: z.string().max(20).nullish(),
       objections: z.array(z.object({ code: z.string().max(40), note: z.string().max(2000).nullish() })).max(20).nullish(),
     }).parse(req.body);
     return logManualCall(db, { ...b, lead_id: id });

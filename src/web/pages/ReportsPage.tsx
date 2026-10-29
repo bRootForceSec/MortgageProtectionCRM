@@ -339,12 +339,13 @@ function BestTime({ rows, onPick }: { rows: any[]; onPick: (key: string, label: 
   );
 }
 
-type BatchCol = 'imported_at' | 'leads' | 'cost' | 'never_called' | 'left' | 'dials' | 'reached' | 'booked' | 'cost_per_reached' | 'cost_per_booked';
+type BatchCol = 'imported_at' | 'leads' | 'cost' | 'never_called' | 'left' | 'dials' | 'reached' | 'booked' | 'sold' | 'close_rate' | 'cost_per_reached' | 'cost_per_booked' | 'cost_per_sale';
 const BATCH_COLS: [BatchCol, string, string?][] = [
   ['leads', 'Leads'], ['cost', 'Cost'], ['never_called', 'Never called'], ['left', 'Left to call', 'Never called, no answer yet, or a callback'],
-  ['dials', 'Dials'], ['reached', 'Reached'], ['booked', 'Booked'], ['cost_per_reached', '$/reached'], ['cost_per_booked', '$/booked'],
+  ['dials', 'Dials'], ['reached', 'Reached'], ['booked', 'Booked'], ['sold', 'Sales'], ['close_rate', 'Close rate', 'Of the leads that sat for an appointment, the share that bought'],
+  ['cost_per_reached', '$/reached'], ['cost_per_booked', '$/booked'], ['cost_per_sale', '$/sale'],
 ];
-const SUMMED = ['leads', 'cost', 'never_called', 'left', 'dials', 'reached', 'booked', 'unpriced'] as const;
+const SUMMED = ['leads', 'cost', 'never_called', 'left', 'dials', 'reached', 'booked', 'sat', 'sold', 'unpriced'] as const;
 
 /** By batch: each bulk import is one line (open it for its files), with search, filters, sorting and "show more". */
 function ByBatch({ rows, N }: { rows: any[]; N: any }) {
@@ -372,6 +373,8 @@ function ByBatch({ rows, N }: { rows: any[]; N: any }) {
         ...sum,
         cost_per_reached: sum.reached ? sum.cost / sum.reached : null,
         cost_per_booked: sum.booked ? sum.cost / sum.booked : null,
+        cost_per_sale: sum.sold ? sum.cost / sum.sold : null,
+        close_rate: sum.sat ? sum.sold / sum.sat : null,
         rows: g.rows,
       };
     });
@@ -408,8 +411,9 @@ function ByBatch({ rows, N }: { rows: any[]; N: any }) {
         <td>{b.lead_types}</td>
         {cell('leads', 'Leads')}
         <td>{fmtMoney(b.cost)}{b.unpriced > 0 && <div className="warn small">{b.unpriced} with no price</div>}</td>
-        {cell('never_called', 'Never called')}<td>{b.left}</td>{cell('dials', 'Dials')}{cell('reached', 'Reached')}{cell('booked', 'Booked')}
-        <td>{money(b.cost_per_reached)}</td><td>{money(b.cost_per_booked)}</td>
+        {cell('never_called', 'Never called')}<td>{b.left}</td>{cell('dials', 'Dials')}{cell('reached', 'Reached')}{cell('booked', 'Booked')}{cell('sold', 'Sales')}
+        <td>{pct(b.close_rate)}</td>
+        <td>{money(b.cost_per_reached)}</td><td>{money(b.cost_per_booked)}</td><td>{money(b.cost_per_sale)}</td>
       </tr>
     );
   };
@@ -438,7 +442,7 @@ function ByBatch({ rows, N }: { rows: any[]; N: any }) {
       )}
       <p className="help">
         Each bulk import is one line; open it to see its files. Click a column to sort. Reached and booked count leads, not calls.
-        How appointments went is in Unitrust. Cost comes from each lead's own price.
+        Sales and close rate come from how appointments went (Unitrust or the Appointment side). Cost comes from each lead's own price.
       </p>
     </div>
   );
@@ -487,7 +491,8 @@ function Benchmarks({ r, N, onSaved }: { r: Report; N: any; onSaved: () => void 
               <th>Lead type</th><th>Leads</th><th>Cost</th><th>Never called</th><th>Dials</th><th title="Dials per lead called">Dials/lead</th>
               <th>Contacts</th><th>Appts</th><th>Bad numbers</th><th>Called you back</th>
               <th title="Leads reached, and the share of leads called">Reached</th><th title="Leads booked, and the share of leads called">Booked</th>
-              <th>Booked per reached</th><th>$/reached</th><th>$/booked</th>
+              <th>Booked per reached</th><th>Sales</th><th title="Of the leads that sat for an appointment, the share that bought">Close rate</th>
+              <th>$/reached</th><th>$/booked</th><th>$/sale</th>
             </tr>
           </thead>
           <tbody>
@@ -513,8 +518,11 @@ function Benchmarks({ r, N, onSaved }: { r: Report; N: any; onSaved: () => void 
                       <span className="muted">target {pct(b.booked_target)}</span>
                     )}
                   </td>
+                  {cell('sold', 'Sales')}
+                  <td>{pct(b.close_rate)}</td>
                   <td>{b.cost_per_reached == null ? '–' : fmtMoney(b.cost_per_reached)}</td>
                   <td>{b.cost_per_booked == null ? '–' : fmtMoney(b.cost_per_booked)}</td>
+                  <td>{b.cost_per_sale == null ? '–' : fmtMoney(b.cost_per_sale)}</td>
                 </tr>
               );
             })}
@@ -523,7 +531,7 @@ function Benchmarks({ r, N, onSaved }: { r: Report; N: any; onSaved: () => void 
       </div>
       <p className="help">
         Each lead counts under its type now, so fixing a batch's type on Leads moves its history here too.
-        Reached and booked count leads; the small % is out of leads called. Targets start from the flier: A 4 of 5, A1 and AA 1 of 4, B 1 of 5, C 1 of 8, D 1 of 10. Sits and apps are tracked in Unitrust.
+        Reached and booked count leads; the small % is out of leads called. Targets start from the flier: A 4 of 5, A1 and AA 1 of 4, B 1 of 5, C 1 of 8, D 1 of 10. Sales and close rate come from how appointments went (Unitrust or the Appointment side).
       </p>
     </div>
   );

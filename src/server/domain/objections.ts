@@ -2,8 +2,8 @@ import type { DB } from '../db/connection.js';
 import { uuidv7, nowIso } from '../ids.js';
 import { DomainError } from '../core/errors.js';
 
-// Why a lead said no, per call: price, spouse, already covered and so on. Nothing on screen asks for these yet. They
-// are stored here so that a picker, and later a call transcript, have one place to put what they hear.
+// Why a lead said no, per call: price, spouse, already covered and so on. The Calling screen offers them as chips after
+// an outcome that asks for them (`objections` in src/shared/outcomes.ts). A call transcript can add its own later.
 
 export interface ObjectionInput {
   code: string;
@@ -33,4 +33,15 @@ export function objectionCounts(db: DB, from: string, to: string) {
        GROUP BY oc.code ORDER BY n DESC, oc.sort_order`,
     )
     .all(from, to) as { code: string; label: string; n: number }[];
+}
+
+/** The objections offered on the Calling screen, in order. */
+export function activeObjectionCodes(db: DB) {
+  return db.prepare('SELECT code, label FROM objection_code WHERE active = 1 ORDER BY sort_order').all() as { code: string; label: string }[];
+}
+
+/** The objections you noted on a call, in the order you picked them. */
+export function callObjections(db: DB, callId: string): string[] {
+  return (db.prepare("SELECT objection_code FROM call_objection WHERE call_id = ? AND source = 'manual' ORDER BY created_at, rowid").all(callId) as { objection_code: string }[])
+    .map((r) => r.objection_code);
 }
