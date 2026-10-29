@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { api, fmtDateTime, fmtDob, fmtDuration, fmtMoney, fmtPhone, fullName, localTime, personAge, type LeadDetail, type Call } from '../api';
 import { useApp } from '../App';
 import { APPT_RESULT_LABEL, type ApptResult } from '../../shared/appointments';
+import { outcomeDef } from '../../shared/outcomes';
 
 const STATUS_LABEL: Record<string, string> = {
   new: 'New', retry: 'Tried', callback: 'Callback', appointment_set: 'Appointment set', invalid: 'Bad number', dead: 'Dead lead',
@@ -258,7 +259,7 @@ export function CallHistory({ calls, onChange }: { calls: Call[]; onChange: () =
                 {!!o.do_not_call && <span className="warn"> · do not call</span>}
                 {c.outcomes.length > 1 && <span className="muted"> · set {fmtDateTime(o.entered_at)}</span>}
                 {o.callback_due_at && <> · call back {o.callback_any_time ? `${fmtDay(o.callback_due_at)}, any time` : fmtDateTime(o.callback_due_at)}</>}
-                {!o.callback_due_at && o.outcome_code === 'callback' && !o.superseded && <span className="warn"> · needs a time</span>}
+                {!o.callback_due_at && outcomeDef(o.outcome_code)?.callback && !o.superseded && <span className="warn"> · needs a time</span>}
               </div>
             ))}
           </div>

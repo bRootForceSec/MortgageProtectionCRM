@@ -1,5 +1,6 @@
 import type { DB } from '../db/connection.js';
 import { uuidv7, nowIso } from '../ids.js';
+import type { OutcomeCode } from '../../shared/outcomes.js';
 
 // A spreadsheet's Status column has no times. Each status becomes one call marked "from spreadsheet,
 // exact time unknown" (time_known = 0), dated on or before the day the file was last saved.
@@ -7,7 +8,7 @@ import { uuidv7, nowIso } from '../ids.js';
 // and don't hold the lead back under the retry gap.
 
 export interface SheetStatusMapping {
-  outcome: string;
+  outcome: OutcomeCode;
   /** They asked not to be called: the call gets the "Do not call" tick. */
   do_not_call?: boolean;
 }

@@ -5,6 +5,7 @@ import { useApp } from '../App';
 import { isTyping, keyLabel, normKey, type KeyMap } from '../shortcuts';
 import { getStored, setStored } from '../storage';
 import type { CallMode } from '../../shared/appointments';
+import { savesInstantly } from '../../shared/outcomes';
 
 // The "log the call" form on the Calling screen: number used, outcome, callback time, minutes and note.
 // It has two sides with the same layout: First call (no answer, appt set, ...) and Appointment (no show, prezi, sale, ...).
@@ -119,7 +120,7 @@ export function LogCall({
       return;
     }
     // No answer and Bad number need nothing more, so they save straight away (Undo still catches a wrong key).
-    if (calling?.settings.instant_save !== false && o && instantOutcome(o)) void saveRef.current(c);
+    if (calling?.settings.instant_save !== false && o && savesInstantly(o)) void saveRef.current(c);
   }, [meta, calling]);
 
   // Talk time from the timer, only when someone picked up and you didn't type minutes yourself.
@@ -332,11 +333,6 @@ function RestoreBox({ d, onSaved, label }: { d: LeadDetail; onSaved: () => Promi
       {label} <button className="btn small" onClick={restore}>Restore to queue</button>
     </div>
   );
-}
-
-/** Outcomes that need nothing more than the key: no callback time, and nobody was reached (so no talk time or note). */
-function instantOutcome(o: { requires_callback_time: number | boolean; counts_as_human_contact: number | boolean }) {
-  return !o.requires_callback_time && !o.counts_as_human_contact;
 }
 
 /** The lead's latest call has the "Do not call" tick. */

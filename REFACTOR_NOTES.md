@@ -2,6 +2,14 @@
 
 A running log of the stabilization work. Newest first.
 
+## 2026-10-29: Consolidation P2, one outcome registry
+
+- `src/shared/outcomes.ts` (`OUTCOMES`) now defines every call outcome: label, side, key, pickup, callback, dead pile, booked, appointment set and appointment result. Adding an outcome means adding one entry.
+- `db/outcomeCodes.ts` `syncOutcomeCodes` copies it into `outcome_code` each time the database opens, so SQL keeps joining on the table. The rows it writes are exactly what migrations 002–021 left (tested), so existing databases don't change. A test stops new migrations touching `outcome_code`.
+- Moved onto it: `BOOKED_CODES` (was in `leadState.ts`), `APPT_OUTCOME_RESULT` (was in `shared/appointments.ts`), "appointment set" and "callback" in Reports, the top bar and the Numbers page (were `= 'appointment'` / `= 'callback'`), the callback check in `deriveLeadState` and `LeadDetails`, and the instant-save rule (`savesInstantly`, was in `LogCall.tsx`). Spreadsheet status words now map to typed outcome codes.
+- Removed the unused `lead_effect` from `LeadFacts` (the column stays; nothing read it).
+- No behavior change; the P1 tests pass unchanged.
+
 ## 2026-10-29: Consolidation P1, feature map and outcome tests
 
 - New `docs/feature-map.md`: how the recent features (several numbers per lead, appointment outcomes, the First call | Appointment switch, Leads tabs, the funnel, objections, Unitrust) flow through data, server and UI, and every place the same idea (outcome, status, appointment result, call type) is defined more than once.
