@@ -26,8 +26,8 @@ export function registerCallingRoutes(app: FastifyInstance, deps: { db: DB; kde?
   app.put('/api/settings/calling', async (req) => {
     const before = loadCallingSettings(db);
     const saved = saveCallingSettings(db, req.body);
-    // A new retry gap changes when every unanswered lead comes back.
-    if (saved.retry_gap_minutes !== before.retry_gap_minutes) rebuildLeadState(db);
+    // A new retry gap or follow-up plan changes when leads come back.
+    if (saved.retry_gap_minutes !== before.retry_gap_minutes || JSON.stringify(saved.follow_ups) !== JSON.stringify(before.follow_ups)) rebuildLeadState(db);
     return { settings: saved, actions: SHORTCUT_ACTIONS };
   });
 
