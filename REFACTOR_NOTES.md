@@ -2,6 +2,14 @@
 
 A running log of the stabilization work. Newest first.
 
+## 2026-10-29: Consolidation P1, feature map and outcome tests
+
+- New `docs/feature-map.md`: how the recent features (several numbers per lead, appointment outcomes, the First call | Appointment switch, Leads tabs, the funnel, objections, Unitrust) flow through data, server and UI, and every place the same idea (outcome, status, appointment result, call type) is defined more than once.
+- New `test/integration/outcomeEffects.test.ts`: for every outcome code, retired ones included, what one call does to a new lead: its status, appointment result, Leads tabs, whether it can go on the call list, and what it adds to the top bar, the funnel, Reports and the Numbers page.
+- New `test/integration/outcomeCodes.test.ts`: the `outcome_code` rows the migrations leave.
+- Two inconsistencies found and pinned, not changed: retired `sat_no_sale`/`sold` calls make a lead "Appointment set" but don't count as appointments set; the Numbers page counts appointment calls as calls and pickups.
+- No application code changed.
+
 ## 2026-10-21: X3 dropped, X4 docs
 
 - **X3 dropped** (Linux service, kept as decided in D1). Every place reads `MPCRM_PORT`; the default 5170 repeats only in scripts that can't share code with the app. The token in `xdg-open`'s arguments ends up in the browser's arguments too, so moving it would need a different way of opening the app. No change.
