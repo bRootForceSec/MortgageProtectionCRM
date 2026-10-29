@@ -72,9 +72,9 @@ export const OUTCOMES = {
   hung_up: { ...retired, label: 'Answered, hung up', group: 'contact', pickup: true, sortOrder: 95 },
   other: { ...retired, label: 'Other (add a note)', group: 'contact', pickup: true, sortOrder: 100 },
   picked_up: { ...retired, label: 'Picked up', group: 'contact', pickup: true, sortOrder: 120 },
-  // These two booked the lead, but were never counted as appointments set.
-  sat_no_sale: { ...retired, label: 'Appointment sat, no sale', group: 'contact', pickup: true, books: true, sortOrder: 130 },
-  sold: { ...retired, label: 'Sold', group: 'contact', pickup: true, books: true, leadEffect: 'sold', sortOrder: 140 },
+  // From before the Appointment side: each one booked the lead, so it counts as an appointment set.
+  sat_no_sale: { ...retired, label: 'Appointment sat, no sale', group: 'contact', pickup: true, books: true, apptSet: true, sortOrder: 130 },
+  sold: { ...retired, label: 'Sold', group: 'contact', pickup: true, books: true, apptSet: true, leadEffect: 'sold', sortOrder: 140 },
 } as const satisfies Record<string, OutcomeDef>;
 
 export type OutcomeCode = keyof typeof OUTCOMES;
