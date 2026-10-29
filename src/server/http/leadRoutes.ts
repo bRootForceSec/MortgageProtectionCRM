@@ -14,6 +14,7 @@ import {
   addMatchingToCallList, addToCallList, clearWorked, getCallList, moveToBottom,
   recentOutcomes, removeFromCallList, type LeadFilter, callListName, listSavedLists, clearCallList, loadSavedList, deleteSavedList, setCalledBack,
 } from '../domain/callList.js';
+import { LEAD_FILTERS } from '../../shared/leadStatus.js';
 
 // Leads, the call list, logging calls, and call history.
 
@@ -22,7 +23,7 @@ export function registerLeadRoutes(app: FastifyInstance, deps: { db: DB; config:
 
   // ---------- leads ----------
   const leadFilter = z.object({
-    status: z.enum(['dead', 'invalid', 'appointment_set', 'appt_missed', 'appt_no_show', 'appt_sat_no_sale', 'appt_prezi', 'appt_sold', 'callback', 'retry', 'no_answer', 'talked', 'new', 'all']).default('all'),
+    status: z.enum(LEAD_FILTERS).default('all'),
     search: z.string().max(100).optional(),
     batch_id: z.string().max(64).optional(),
     bulk_id: z.string().max(64).optional(),

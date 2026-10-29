@@ -3,6 +3,7 @@ import type { DB } from '../db/connection.js';
 import { getSetting, setSetting } from '../core/settings.js';
 import { groupWhere } from './groupFilter.js';
 import { BOOKED_CODES, outcomeDef } from '../../shared/outcomes.js';
+import { isCallable } from '../../shared/leadStatus.js';
 import { sqlCodes } from '../db/outcomeCodes.js';
 import { DomainError } from '../core/errors.js';
 import { loadCallingSettings } from './callingSettings.js';
@@ -359,7 +360,7 @@ export function buildReport(db: DB, f: ReportFilter) {
           lead_types: typesIn.join(', '),
           type_codes: [...new Set(b.leads.map((l) => l.lead_type ?? ''))],
           bulk_id: bulkOf.get(b.key) ?? null,
-          left: b.leads.filter((l) => l.status === 'new' || l.status === 'retry' || l.status === 'callback').length,
+          left: b.leads.filter((l) => isCallable(l.status)).length,
           ...m,
           dials: CALL_METRICS.dials.val(b.calls),
           unpriced: b.leads.filter((l) => l.price_cents == null).length,

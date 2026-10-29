@@ -10,22 +10,10 @@ import { addDays, startOfDay } from '../when';
 import { useLeadTypes } from './ImportPage';
 import { BatchPicker } from '../components/BatchBrowse';
 import type { LeadType } from '../importTypes';
+import { LEAD_TABS, isCallable } from '../../shared/leadStatus';
 
 // Where you pick who to call: filter the leads, tick the ones you want (or take every match),
 // and add them to the bottom of the call list on the Calling page, or put them in place of it.
-
-// One tab per way a lead can stand, matching the outcome keys on the Calling screen.
-const STATUSES = [
-  { key: 'all', label: 'All' }, { key: 'new', label: 'Never called' },
-  { key: 'no_answer', label: 'No answer', title: 'Called, but the last call didn\'t reach them' },
-  { key: 'talked', label: 'Talked, no appt' }, { key: 'callback', label: 'Callbacks' },
-  { key: 'appointment_set', label: 'Appointment set', title: 'Booked, rescheduled or sold' },
-  { key: 'appt_no_show', label: 'No-shows', title: 'Their latest appointment was a no-show (logged here, or red in Unitrust)' },
-  { key: 'appt_sat_no_sale', label: 'Sat, no sale', title: 'Picked up for their latest appointment, no presentation (logged here, or yellow in Unitrust)' },
-  { key: 'appt_prezi', label: 'Prezis', title: 'You presented at their latest appointment and lost them' },
-  { key: 'appt_sold', label: 'Sold', title: 'Their latest appointment was a sale (logged here, or green in Unitrust)' },
-  { key: 'invalid', label: 'Bad numbers' }, { key: 'dead', label: 'Dead pile' },
-];
 
 /** Midnight at the start of today, your time, `days` days back. */
 function dayStart(days = 0): string {
@@ -44,9 +32,6 @@ const LAST_CALL: { key: string; label: string; range: () => { after?: string; be
   { key: '7d', label: 'Last call 1+ week ago', range: () => ({ before: ago(7 * 86_400_000) }) },
 ];
 const ago = (ms: number) => new Date(Date.now() - ms).toISOString();
-
-const CALLABLE = new Set(['new', 'retry', 'callback']);
-
 
 const SHOW_KEY = 'mpcrm.leads.show';
 
@@ -119,7 +104,7 @@ export function LeadsPage() {
   // A new filter starts a new choice.
   useEffect(() => setPicked(new Set()), [filters]);
 
-  const pickable = rows.filter((r) => CALLABLE.has(r.status) && (!r.on_list || replaceNow));
+  const pickable = rows.filter((r) => isCallable(r.status) && (!r.on_list || replaceNow));
   const allPicked = pickable.length > 0 && pickable.every((r) => picked.has(r.id));
   const toggle = (id: string) => setPicked((p) => {
     const n = new Set(p);
@@ -180,7 +165,7 @@ export function LeadsPage() {
     <>
       <div className="leads-tools">
         <div className="tabs">
-          {STATUSES.map((s) => (
+          {LEAD_TABS.map((s) => (
             <button key={s.key} className={status === s.key ? 'active' : ''} title={s.title} onClick={() => setStatus(s.key)}>{s.label}</button>
           ))}
         </div>
@@ -244,7 +229,7 @@ export function LeadsPage() {
         </thead>
         <tbody>
           {rows.map((r) => {
-            const can = CALLABLE.has(r.status) && (!r.on_list || replaceNow);
+            const can = isCallable(r.status) && (!r.on_list || replaceNow);
             return (
               <tr key={r.id} className="click" onClick={() => setOpen(r.id)}>
                 <td className="pick" onClick={(e) => e.stopPropagation()}>

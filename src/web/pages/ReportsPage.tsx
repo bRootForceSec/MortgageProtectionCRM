@@ -7,6 +7,7 @@ import { getStored, setStored } from '../storage';
 import { addDays, startOfDay, ymd } from '../when';
 import { BatchFilterBar } from '../components/BatchBrowse';
 import { batchMatches, groupByImport, type BatchFilter } from '../../shared/batches';
+import { APPT_RESULT_LABEL, isApptResult } from '../../shared/appointments';
 
 // Your numbers: activity, by hour, best time to call, by county, local vs out-of-area caller ID, by batch, and against the flier's benchmarks.
 // Every number opens the calls or leads behind it.
@@ -212,10 +213,8 @@ export function ReportsPage() {
   );
 }
 
-const OUTCOME_LABEL: Record<string, string> = {
-  pending: 'Not updated yet', rescheduled: 'Rescheduled', sold: 'Sold', sat_no_sale: 'Sat, no sale', no_show: 'No-show',
-};
-const OUTCOME_BADGE: Record<string, string> = { pending: 'not_set', rescheduled: 'rescheduled', sold: 'sold', sat_no_sale: 'sat_no_sale', no_show: 'no_show' };
+/** How an appointment went, as Reports shows it: one with no result yet is "not updated yet". */
+const apptLabel = (o: string) => (o === 'pending' ? 'Not updated yet' : isApptResult(o) ? APPT_RESULT_LABEL[o] : o);
 
 /** Appointments on these days as the Unitrust calendar shows them: totals, rates by lead type, and each appointment. */
 function Appointments({ a, onOpen }: { a: any; onOpen: (id: string, list: ViewerItem[]) => void }) {
@@ -230,6 +229,7 @@ function Appointments({ a, onOpen }: { a: any; onOpen: (id: string, list: Viewer
         <div><b>{a.appointments}</b>Appointments</div>
         <div><b>{a.sat}</b>Sat</div>
         <div><b>{a.sold}</b>Sales</div>
+        <div><b>{a.prezi}</b>Prezi, no sale</div>
         <div><b>{a.sat_no_sale}</b>Sat, no sale</div>
         <div><b>{a.no_show}</b>No-shows</div>
         <div><b>{a.rescheduled}</b>Rescheduled</div>
@@ -259,7 +259,7 @@ function Appointments({ a, onOpen }: { a: any; onOpen: (id: string, list: Viewer
               {shown.map((x) => (
                 <tr key={x.id} className="click" onClick={() => onOpen(x.lead_id, list)}>
                   <td>{x.day}</td><td>{x.time ?? ''}</td><td>{x.lead_name}</td><td>{x.lead_type ?? ''}</td>
-                  <td><span className={`badge appt-${OUTCOME_BADGE[x.outcome]}`}>{OUTCOME_LABEL[x.outcome] ?? x.outcome}</span></td>
+                  <td><span className={`badge appt-${x.outcome === 'pending' ? 'not_set' : x.outcome}`}>{apptLabel(x.outcome)}</span></td>
                   <td className="muted">{x.title}</td>
                 </tr>
               ))}

@@ -3,10 +3,8 @@ import { api, fmtDateTime, fmtDob, fmtDuration, fmtMoney, fmtPhone, fullName, lo
 import { useApp } from '../App';
 import { APPT_RESULT_LABEL, type ApptResult } from '../../shared/appointments';
 import { outcomeDef } from '../../shared/outcomes';
+import { statusLabel } from '../../shared/leadStatus';
 
-const STATUS_LABEL: Record<string, string> = {
-  new: 'New', retry: 'Tried', callback: 'Callback', appointment_set: 'Appointment set', invalid: 'Bad number', dead: 'Dead lead',
-};
 
 function leadAge(iso: string | null | undefined) {
   if (!iso) return '';
@@ -20,7 +18,7 @@ function leadAge(iso: string | null | undefined) {
 const COUNTY_SOURCE: Record<string, string> = { page: 'from the lead page', zip: 'from the ZIP code', city: 'from the city', manual: 'set by you' };
 
 export function StatusBadge({ status }: { status: string }) {
-  return <span className={`badge ${status}`}>{STATUS_LABEL[status] ?? status}</span>;
+  return <span className={`badge ${status}`}>{statusLabel(status)}</span>;
 }
 
 /** How the lead's latest appointment went in Unitrust (color on its calendar), when the extension has seen one. */

@@ -4,7 +4,7 @@ import { getSetting, setSetting } from '../core/settings.js';
 import { rebuildLeadState } from './leadState.js';
 import { normalizeUsPhone } from './normalize.js';
 import { outcomeDef } from '../../shared/outcomes.js';
-import { parseUnitrustTitle, type ApptResult, type UnitrustColor } from '../../shared/appointments.js';
+import { APPT_RESULTS, parseUnitrustTitle, resultOfColor, type ApptResult, type UnitrustColor } from '../../shared/appointments.js';
 
 // Appointments read off the Unitrust calendar by the Firefox extension. Each event is matched to a lead by its phone
 // (then by name), stored once per day and phone, and each change of color adds a result row. Leads whose appointment
@@ -118,7 +118,7 @@ export function recordUnitrustEvents(db: DB, events: UnitrustEvent[], view: Cale
             // A rescheduled appointment still yellow after its day was sat with no sale (Unitrust keeps it yellow).
             : was === 'rescheduled' ? (e.date < today ? 'sat_no_sale' : was)
             : yellow(apptId, leadId, e.date)
-          : e.color === 'green' ? 'sold' : e.color === 'red' ? 'no_show' : 'not_set';
+          : resultOfColor(e.color) ?? 'not_set';
       const add = storedResult(result, was);
       if (add) {
         insertResult.run(uuidv7(), apptId, add, now);
@@ -165,7 +165,7 @@ function findLead(db: DB, phoneDigits: string, name: string): string | null {
 // ---------- for Reports, the funnel and the top bar ----------
 
 /** How one appointment went, for counting: rescheduled means it was moved to another day. */
-export type ApptOutcome = 'pending' | 'rescheduled' | 'sold' | 'sat_no_sale' | 'prezi' | 'no_show';
+export type ApptOutcome = Exclude<ApptResult, 'not_set'> | 'pending';
 
 export interface ApptRow {
   /** The Unitrust appointment's id, or the call's id for an appointment logged only here. */
@@ -241,9 +241,10 @@ export function appointmentsOnDays(db: DB, fromDay: string, toDay: string, leadW
 
 export function appointmentCounts(rows: ApptRow[]) {
   const n = (o: ApptOutcome) => rows.filter((r) => r.outcome === o).length;
-  const sold = n('sold');
-  const prezis = sold + n('prezi');
-  const sat = prezis + n('sat_no_sale');
+  const reached = (step: 'sat' | 'prezis' | 'sales') => rows.filter((r) => r.outcome !== 'pending' && APPT_RESULTS[r.outcome].funnel.includes(step)).length;
+  const sold = reached('sales');
+  const prezis = reached('prezis');
+  const sat = reached('sat');
   const noShow = n('no_show');
   return {
     appointments: rows.length,

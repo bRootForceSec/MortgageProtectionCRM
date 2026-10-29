@@ -2,6 +2,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { DB } from '../db/connection.js';
+import { sqlList } from '../db/sql.js';
+import { CALLABLE_STATUSES } from '../../shared/leadStatus.js';
 import { nowIso } from '../ids.js';
 import { countyKey, countyDisplayName } from './county.js';
 import { getSetting, setSetting } from '../core/settings.js';
@@ -75,7 +77,7 @@ export function listCounties(db: DB) {
   const rows = db
     .prepare(
       `SELECT l.county_key, max(l.county) county, max(l.state) state, COUNT(*) leads,
-              SUM(CASE WHEN s.status IN ('new','retry','callback') THEN 1 ELSE 0 END) workable
+              SUM(CASE WHEN s.status IN ${sqlList(CALLABLE_STATUSES)} THEN 1 ELSE 0 END) workable
        FROM lead l JOIN lead_state s ON s.lead_id = l.id WHERE l.county_key IS NOT NULL GROUP BY l.county_key ORDER BY state, county`,
     )
     .all() as { county_key: string; county: string; state: string; leads: number; workable: number }[];

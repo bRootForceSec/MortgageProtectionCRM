@@ -1,5 +1,6 @@
 import type { DB } from '../db/connection.js';
-import type { ApptResult } from '../../shared/appointments.js';
+import { APPT_RESULTS, type ApptResult } from '../../shared/appointments.js';
+import { isCallable } from '../../shared/leadStatus.js';
 import { nowIso, uuidv7 } from '../ids.js';
 import { groupWhere, searchWhere } from './groupFilter.js';
 import { DomainError } from '../core/errors.js';
@@ -8,9 +9,6 @@ import { DomainError } from '../core/errors.js';
 // (from Leads, or with an import); nothing is added, removed or moved on its own.
 // A lead counts as worked once a call (not undone) was saved for it after it was added, so undoing
 // a call puts it back to "to call" without any extra bookkeeping.
-
-/** Statuses that can go on the list. Booked, bad-number and dead leads have to be restored first. */
-export const CALLABLE = ['new', 'retry', 'callback'] as const;
 
 export interface LeadFilter {
   status?: string;
@@ -31,9 +29,9 @@ export interface LeadFilter {
 }
 
 /** Leads page tabs for how the latest appointment went (lead_state.appt_result). */
-export const APPT_TABS: Record<string, ApptResult> = {
-  appt_no_show: 'no_show', appt_sat_no_sale: 'sat_no_sale', appt_prezi: 'prezi', appt_sold: 'sold',
-};
+const APPT_TABS: Record<string, ApptResult> = Object.fromEntries(
+  (Object.entries(APPT_RESULTS) as [ApptResult, (typeof APPT_RESULTS)[ApptResult]][]).flatMap(([r, d]) => (d.tab ? [[d.tab.key, r]] : [])),
+);
 
 /** SQL condition over `lead l JOIN lead_state s` for the Leads page filters. */
 export function leadFilterWhere(f: LeadFilter): { sql: string; params: Record<string, unknown> } {
@@ -44,7 +42,7 @@ export function leadFilterWhere(f: LeadFilter): { sql: string; params: Record<st
   const tried = f.status === 'no_answer' || f.status === 'talked' ? f.status : null;
   const missed = f.status === 'appt_missed';
   // How the lead's latest appointment went, whatever its status now: each result is its own tab.
-  const appt = f.status ? APPT_TABS[f.status] ?? null : null;
+  const appt = f.status && Object.hasOwn(APPT_TABS, f.status) ? APPT_TABS[f.status]! : null;
   const status = tried || missed ? 'retry' : appt ? null : f.status && f.status !== 'all' ? f.status : null;
   const talked = "coalesce((SELECT grp FROM outcome_code WHERE code = s.last_outcome_code), '') = 'contact'";
   const parts = [
@@ -146,7 +144,7 @@ export function addToCallList(db: DB, leadIds: string[], now = nowIso()): AddRes
       if (!s) continue;
       const on = has.get(id) as { worked: number } | undefined;
       if (on && !on.worked) res.already++;
-      else if (!(CALLABLE as readonly string[]).includes(s.status)) res.not_callable++;
+      else if (!isCallable(s.status)) res.not_callable++;
       else {
         // Already called from this list: it goes back to the bottom as "to call".
         if (on) again.run(++pos, now, id);

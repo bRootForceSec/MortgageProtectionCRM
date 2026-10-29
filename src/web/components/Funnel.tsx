@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { api } from '../api';
 import { useApp } from '../App';
 import { addDays, startOfDay, ymd } from '../when';
+import { FUNNEL_STEPS, type FunnelStep } from '../../shared/funnel';
 
 // Your conversion funnel as an animated 3D graphic sized for an Instagram story (9:16): dials, leads called,
 // pickups and appointments set (first calls), then sat, prezis and sales (appointments), with sales at the bottom.
@@ -32,16 +33,18 @@ function rangeOf(k: RangeKey): { from: string; to: string; from_day: string; to_
   return { from: from.toISOString(), to: addDays(today, 1).toISOString(), from_day: ymd(from), to_day: ymd(today) };
 }
 
-/** The funnel's steps, top to bottom, each with its own glow. */
-const STEPS: { label: string; value: (s: Stats) => number; colors: readonly [string, string] }[] = [
-  { label: 'Dials', value: (s) => s.dials, colors: ['#22d3ee', '#0891b2'] },
-  { label: 'Leads called', value: (s) => s.unique_leads, colors: ['#818cf8', '#4f46e5'] },
-  { label: 'Pickups', value: (s) => s.human_contacts, colors: ['#e879f9', '#a21caf'] },
-  { label: 'Appts set', value: (s) => s.appointments, colors: ['#fbbf24', '#d97706'] },
-  { label: 'Sat', value: (s) => s.funnel?.sat ?? 0, colors: ['#fb923c', '#c2410c'] },
-  { label: 'Prezis', value: (s) => s.funnel?.prezis ?? 0, colors: ['#f472b6', '#be185d'] },
-  { label: 'Sales', value: (s) => s.funnel?.sales ?? 0, colors: ['#4ade80', '#15803d'] },
-];
+/** Each step's number and its glow. The steps and their names come from src/shared/funnel.ts. */
+const LOOK: Record<FunnelStep, { value: (s: Stats) => number; colors: readonly [string, string] }> = {
+  dials: { value: (s) => s.dials, colors: ['#22d3ee', '#0891b2'] },
+  leads_called: { value: (s) => s.unique_leads, colors: ['#818cf8', '#4f46e5'] },
+  pickups: { value: (s) => s.human_contacts, colors: ['#e879f9', '#a21caf'] },
+  appts_set: { value: (s) => s.appointments, colors: ['#fbbf24', '#d97706'] },
+  sat: { value: (s) => s.funnel?.sat ?? 0, colors: ['#fb923c', '#c2410c'] },
+  prezis: { value: (s) => s.funnel?.prezis ?? 0, colors: ['#f472b6', '#be185d'] },
+  sales: { value: (s) => s.funnel?.sales ?? 0, colors: ['#4ade80', '#15803d'] },
+};
+/** The funnel's steps, top to bottom. */
+const STEPS = FUNNEL_STEPS.map((s) => ({ label: s.label, ...LOOK[s.key] }));
 const N = STEPS.length;
 const LAST = N - 1;
 

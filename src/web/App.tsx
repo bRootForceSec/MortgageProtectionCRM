@@ -14,6 +14,7 @@ import { CallbackAlerts } from './components/CallbackAlerts';
 import { buildKeyMap, type CallingSettingsResponse, type KeyMap } from './shortcuts';
 import { getStored, getStoredJson, setStored, setStoredJson } from './storage';
 import { todayRange, ymd } from './when';
+import { FUNNEL_LABEL } from '../shared/funnel';
 
 export type Page = 'calling' | 'today' | 'reports' | 'import' | 'leads' | 'calls' | 'numbers' | 'data' | 'settings';
 const PAGES: { key: Page; label: string }[] = [
@@ -170,18 +171,18 @@ function TodayStats() {
   return (
     <div className="stats" title="Today: dials, leads called, pickups and appointments set, from your logged calls. Set daily goals in Settings.">
       {/* The same four steps as the funnel on the Calling screen. */}
-      <Goal label="Dials" n={s.dials} goal={g.dials} />
-      <span title="People called (one lead can get several dials)">Leads called <b>{s.unique_leads}</b></span>
-      <Goal label="Pickups" n={s.human_contacts} goal={g.contacts} />
-      <Goal label="Appts set" n={s.appointments} goal={g.appointments} />
+      <Goal label={FUNNEL_LABEL.dials} n={s.dials} goal={g.dials} />
+      <span title="People called (one lead can get several dials)">{FUNNEL_LABEL.leads_called} <b>{s.unique_leads}</b></span>
+      <Goal label={FUNNEL_LABEL.pickups} n={s.human_contacts} goal={g.contacts} />
+      <Goal label={FUNNEL_LABEL.appts_set} n={s.appointments} goal={g.appointments} />
       {/* Only on days with appointments, so it takes no room on a short screen otherwise. */}
       {s.appts && s.appts.appointments > 0 && (
         <span
           className="appt-stats"
           title={`Today's appointments (${s.appts.appointments}): from what you log on the Appointment side, or the Unitrust calendar when the extension sees a change.${s.appts.pending ? ` ${s.appts.pending} not updated yet.` : ''}${s.appts.rescheduled ? ` ${s.appts.rescheduled} rescheduled.` : ''}`}
         >
-          <span>Sat <b>{s.appts.sat}</b></span>
-          <span>Sales <b>{s.appts.sold}</b></span>
+          <span>{FUNNEL_LABEL.sat} <b>{s.appts.sat}</b></span>
+          <span>{FUNNEL_LABEL.sales} <b>{s.appts.sold}</b></span>
           <span>No-shows <b>{s.appts.no_show}</b></span>
         </span>
       )}
