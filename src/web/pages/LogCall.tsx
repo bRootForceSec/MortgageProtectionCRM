@@ -16,6 +16,8 @@ const LAST_NUMBER_KEY = 'mpcrm.lastNumber';
 export interface Attempt {
   dials: number;
   timerStart: number | null;
+  /** When you first pressed Dial for this attempt (with or without the timer). */
+  dialedAt: number | null;
   to: string | null;
   /** When this lead came on screen, for the time spent on it. */
   shownAt: number;
@@ -151,6 +153,7 @@ export function LogCall({
         talk_seconds: minutes ? Number(minutes) * 60 : timerSeconds(o),
         dial_count: attempt.dials,
         lead_seconds: Math.round((Date.now() - attempt.shownAt) / 1000),
+        dialed_at: attempt.dialedAt ? new Date(attempt.dialedAt).toISOString() : null,
         note: note || null,
       });
       if (numberId) setStored(LAST_NUMBER_KEY, numberId);

@@ -37,6 +37,8 @@ interface CallRow {
   time_known: number;
   dial_count: number;
   talk_seconds: number | null;
+  started_at: string | null;
+  ended_at: string | null;
   outcome_code: string | null;
   outcome_label: string | null;
   contact: number;
@@ -133,7 +135,7 @@ function loadCalls(db: DB, f: ReportFilter, range: boolean): CallRow[] {
   const g = groupWhere('l.county_key', f);
   return db
     .prepare(
-      `SELECT c.id, c.lead_id, c.requested_at, c.time_known, c.dial_count, c.talk_seconds, c.to_e164, c.from_e164, c.channel,
+      `SELECT c.id, c.lead_id, c.requested_at, c.started_at, c.ended_at, c.time_known, c.dial_count, c.talk_seconds, c.to_e164, c.from_e164, c.channel,
               o.outcome_code, oc.label outcome_label, coalesce(oc.counts_as_human_contact, 0) contact, coalesce(o.do_not_call, 0) do_not_call, oc.grp outcome_group, n.label from_label,
               l.county_key, l.county, l.state, l.lead_type, l.batch_id, l.time_zone, b.name batch_name,
               ${LEAD_NAME} lead_name
@@ -514,6 +516,9 @@ export function reportCalls(db: DB, f: ReportFilter) {
       do_not_call: c.do_not_call ? 'yes' : 'no',
       dials: c.dial_count,
       talk_seconds: c.talk_seconds ?? '',
+      // Logged live on the Calling page: when you pressed Dial (if you did) and when you saved.
+      dialed_at_utc: c.ended_at && c.started_at !== c.requested_at ? c.started_at : '',
+      saved_at_utc: c.ended_at ?? '',
       channel: c.channel,
     };
   });
