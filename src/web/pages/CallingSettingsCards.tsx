@@ -137,7 +137,7 @@ export function CallingCard() {
           <span className="help">Shown in the top bar. Leave blank for none.</span>
         </span>
 
-        <label>Callback alerts</label>
+        <label>Callback and appointment alerts</label>
         <span>
           <label className="choice-inline"><input type="checkbox" checked={s.alerts.desktop} onChange={(e) => set({ alerts: { ...s.alerts, desktop: e.target.checked } })} /> desktop notification</label>{' '}
           {s.alerts.desktop && perm !== 'granted' && perm !== 'unsupported' && (
@@ -148,7 +148,11 @@ export function CallingCard() {
           <label className="choice-inline"><input type="checkbox" checked={s.alerts.sound} onChange={(e) => set({ alerts: { ...s.alerts, sound: e.target.checked } })} /> sound</label>{' '}
           <button className="btn small" onClick={chime}>Play it</button>
           <br />
-          Alert <NumberField value={s.alerts.minutes_before} onSave={(n) => set({ alerts: { ...s.alerts, minutes_before: n ?? 0 } })} width={70} /> minutes before it's due
+          Alert <NumberField value={s.alerts.minutes_before} onSave={(n) => set({ alerts: { ...s.alerts, minutes_before: n ?? 0 } })} width={70} /> minutes before a callback is due
+          <br />
+          Alert <NumberField value={s.alerts.appt_minutes_before} allowBlank onSave={(n) => set({ alerts: { ...s.alerts, appt_minutes_before: n } })} width={70} /> minutes before an appointment
+          <span className="help"> (leave it empty for no appointment alerts)</span>
+          <br />
           <span className="help"> (only while the app is open)</span>
         </span>
       </div>
