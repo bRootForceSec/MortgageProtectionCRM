@@ -84,6 +84,7 @@ a { color: var(--accent); }
 .badge.appt-sold { color: var(--good); border-color: var(--good); }
 .badge.appt-no_show { color: var(--bad); border-color: var(--bad); }
 .badge.appt-sat_no_sale { color: var(--warn); border-color: var(--warn); }
+.badge.appt-prezi { color: var(--warn); border-color: var(--warn); border-style: dashed; }
 .badge.appt-rescheduled { color: var(--accent); border-color: var(--accent); }
 .badge.appt-not_set { color: var(--accent); border-color: var(--accent); }
 
@@ -97,6 +98,15 @@ a { color: var(--accent); }
 .facts .sensitive { color: var(--warn); }
 
 .log-box { border-top: 1px solid var(--border); margin-top: 8px; padding-top: 10px; }
+.log-box.appointment { border-top: 2px solid var(--good); }
+.log-box .mode-label { font-size: 11px; color: var(--good); text-transform: uppercase; letter-spacing: .04em; font-weight: 600; }
+/* First call | Appointment, at the top of the lead section on the Calling screen. */
+.mode-switch { display: inline-flex; align-items: center; gap: 0; margin-bottom: 8px; }
+.mode-switch button { border: 1px solid var(--border); background: var(--panel); padding: 4px 14px; cursor: pointer; font-size: 13px; }
+.mode-switch button:first-child { border-radius: 6px 0 0 6px; }
+.mode-switch button:nth-child(2) { border-radius: 0 6px 6px 0; border-left: 0; }
+.mode-switch button.active { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+.mode-switch kbd { margin-left: 8px; }
 .outcomes { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 6px; margin: 8px 0; }
 .outcomes button { text-align: left; padding: 7px 9px; border: 1px solid var(--border); border-radius: 6px; background: var(--panel); cursor: pointer; }
 .outcomes button kbd { margin-right: 6px; }

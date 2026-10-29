@@ -4,6 +4,7 @@ import { rebuildLeadState } from './leadState.js';
 import { DomainError } from '../core/errors.js';
 import { audit } from '../core/audit.js';
 import { groupWhere, searchWhere } from './groupFilter.js';
+import { recordObjections, type ObjectionInput } from './objections.js';
 
 export interface ManualCallInput {
   lead_id: string;
@@ -24,6 +25,8 @@ export interface ManualCallInput {
   /** They asked not to be called again: the lead goes to the dead pile. */
   do_not_call?: boolean | null;
   note?: string | null;
+  /** Objections heard on the call. Not asked for on screen yet. */
+  objections?: ObjectionInput[] | null;
 }
 
 interface OutcomeRow {
@@ -107,6 +110,7 @@ export function logManualCall(db: DB, input: ManualCallInput) {
         uuidv7(), lead.id, callId, input.note.trim(), now,
       );
     }
+    recordObjections(db, callId, input.objections ?? [], 'manual', now);
     rebuildLeadState(db, [lead.id]);
     return { call_id: callId, duplicate: false };
   })();

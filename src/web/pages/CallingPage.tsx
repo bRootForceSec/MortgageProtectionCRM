@@ -2,7 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, typ
 import { callbackFields } from '../when';
 import { api, personAge, fmtMoney, fmtPhone, fmtRelative, fmtDateTime, type LeadDetail, type CallListItem, type CallListResponse, type RecentOutcome } from '../api';
 import { useApp } from '../App';
-import { LeadSummary, CallHistory, Notes, StatusBadge, toggleCalledBack } from '../components/LeadDetails';
+import { ApptBadge, LeadSummary, CallHistory, Notes, StatusBadge, toggleCalledBack } from '../components/LeadDetails';
 import { EditLead } from '../components/EditLead';
 import { SourcePage } from '../components/SourcePage';
 import { DialQr } from '../components/DialQr';
@@ -11,6 +11,7 @@ import { ClearListDialog, SavedListsDialog, suggestListName } from '../component
 import { fillScript, isAction, isTyping, keyLabel, type KeyMap } from '../shortcuts';
 import { getStored, getStoredJson, setStored, setStoredJson } from '../storage';
 import { LogCall, type Attempt, type FormValues, type Saved } from './LogCall';
+import type { CallMode } from '../../shared/appointments';
 
 const SELECTED_KEY = 'mpcrm.selectedLead';
 /** A lead opened outside the list (looked up for an incoming call, or from Today), and where to go back to. */
@@ -22,6 +23,14 @@ const freshAttempt = (): Attempt => ({ dials: 1, timerStart: null, to: null, sho
 
 /** A lead on your call list. The list is kept by the app; it only changes when you add, skip, remove or clear. */
 type WorkItem = CallListItem;
+
+/**
+ * Which side of the lead section to show first: Appointment when the lead has an appointment booked (or rescheduled)
+ * with no result yet, from Appt set or from Unitrust; otherwise First call.
+ */
+export function defaultMode(d: LeadDetail): CallMode {
+  return d.state?.status === 'appointment_set' && d.state.appt_result !== 'sold' ? 'appointment' : 'first_call';
+}
 
 interface Opened {
   leadId: string;
@@ -54,6 +63,10 @@ export function CallingPage() {
   const [editing, setEditing] = useState(false);
   const [qr, setQr] = useState<string | null>(null);
   const [listDialog, setListDialog] = useState<'clear' | 'saved' | null>(null);
+  /** The side you picked for a lead, when it isn't the one it opened on. */
+  const [modePick, setModePick] = useState<{ leadId: string; mode: CallMode } | null>(null);
+  const mode: CallMode = detail ? (modePick?.leadId === detail.lead.id ? modePick.mode : defaultMode(detail)) : 'first_call';
+  const switchMode = (m: CallMode) => detail && setModePick({ leadId: detail.lead.id, mode: m });
   const listRef = useRef<HTMLUListElement>(null);
   /** After a save or skip with KDE Connect: the next lead's number goes to your phone once that lead is shown. */
   const autoSend = useRef<string | null>(null);
@@ -319,6 +332,8 @@ export function CallingPage() {
         dial_count: number; talk_seconds: number | null; lead_seconds: number | null; from_number_id: string | null; note: string | null;
       }>(`/calls/${s.callId}/void`, { reason: 'undo' });
       const cb = callbackFields(r.callback_due_at, r.callback_any_time, s.tz);
+      // Back on the side the call was saved from.
+      if (r.outcome_code) setModePick({ leadId: s.leadId, mode: keys.kinds[r.outcome_code] ?? 'first_call' });
       setRestore({
         leadId: s.leadId,
         n: Date.now(),
@@ -345,7 +360,7 @@ export function CallingPage() {
     } catch (e: any) {
       toast(e.message, 'error');
     }
-  }, [saved, toast, bumpStats, loadDetail, items, selected]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [saved, toast, bumpStats, loadDetail, items, selected, keys]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const modalOpen = editing || !!qr || !!listDialog;
   /** The lead on screen is the one selected. Just after you move on, keys that act on a lead wait for it to load. */
@@ -383,11 +398,12 @@ export function CallingPage() {
       else if (act('undo')) { e.preventDefault(); void undo(); }
       else if (act('edit')) { if (detail) { e.preventDefault(); setEditing(true); } }
       else if (act('called_back')) { if (ready && detail) { e.preventDefault(); void toggleCalledBack(detail, toast).then((at) => calledBack(detail.lead.id, at)); } }
+      else if (act('switch_mode')) { if (ready && detail) { e.preventDefault(); switchMode(mode === 'appointment' ? 'first_call' : 'appointment'); } }
       else if (act('script')) { e.preventDefault(); setShowScript((v) => { setStored(SCRIPT_KEY, v ? '0' : '1'); return !v; }); }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [keys, move, goNext, skip, dial, undo, detail, modalOpen, ready, phoneNow, otherPhone, toast, calledBack]);
+  }, [keys, move, goNext, skip, dial, undo, detail, modalOpen, ready, phoneNow, otherPhone, toast, calledBack, mode]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const refreshDetail = async () => {
     await Promise.all([loadDetail(selected), loadList()]);
@@ -396,6 +412,8 @@ export function CallingPage() {
   // Enter saves and moves straight on; the undo bar (or Z) brings you back.
   const onSaved = async (s: Saved) => {
     setSaved(s);
+    // The next time this lead is on screen, its side is picked again from how it stands now.
+    setModePick(null);
     setRestore(null);
     setAttempt(freshAttempt());
     bumpStats();
@@ -492,6 +510,7 @@ export function CallingPage() {
                 >
                   <span className="name">{i.name}</span>
                   <span className="row" style={{ gap: 4 }}>
+                    {!i.done && i.appt_result && i.appt_result !== 'not_set' && <ApptBadge result={i.appt_result} />}
                     {i.called_back_at && <span className="badge called-back" title={`Called you back ${fmtDateTime(i.called_back_at)}`}>✓ called back</span>}
                     {i.done ? (
                       <span className="badge done">{i.done.label}{i.done.dials > 1 ? ` · ${i.done.dials} dials` : ''}</span>
@@ -520,7 +539,7 @@ export function CallingPage() {
           <span className="help">
             <kbd>{k('list_up')}</kbd><kbd>{k('list_down')}</kbd> move <kbd>{k('skip')}</kbd> skip to the bottom <kbd>{k('dial')}</kbd> {dialLabel.toLowerCase()} <kbd>{k('dial_alt')}</kbd> other number{' '}
             <kbd>{k('dials_down')}</kbd><kbd>{k('dials_up')}</kbd> dials <kbd>Enter</kbd> save and next <kbd>{k('undo')}</kbd> undo <kbd>{k('note')}</kbd> note{' '}
-            <kbd>{k('edit')}</kbd> edit <kbd>{k('script')}</kbd> script <kbd>{k('lookup')}</kbd> look up a caller <kbd>{k('called_back')}</kbd> called me back
+            <kbd>{k('edit')}</kbd> edit <kbd>{k('switch_mode')}</kbd> first call / appointment <kbd>{k('script')}</kbd> script <kbd>{k('lookup')}</kbd> look up a caller <kbd>{k('called_back')}</kbd> called me back
           </span>
         </header>
       </section>
@@ -541,12 +560,14 @@ export function CallingPage() {
             <div className="empty">Select a lead from the list, or import leads first.</div>
           ) : (
             <>
+              <ModeSwitch mode={mode} onChange={switchMode} hotkey={k('switch_mode')} />
               <LeadSummary d={detail} onDial={dial} dialLabel={dialLabel} dialKey={k('dial')} altKey={k('dial_alt')} onEdit={() => setEditing(true)} editKey={k('edit')}
                 calledBackKey={k('called_back')} onCalledBack={(at) => calledBack(detail.lead.id, at)} />
               {showScript && <ScriptPanel d={detail} />}
               <LogCall
-                key={`${detail.lead.id}-${restore?.leadId === detail.lead.id ? restore.n : 0}`}
+                key={`${detail.lead.id}-${mode}-${restore?.leadId === detail.lead.id ? restore.n : 0}`}
                 d={detail}
+                mode={mode}
                 attempt={attempt}
                 setDials={(n) => setAttempt((a) => ({ ...a, dials: Math.max(1, n) }))}
                 resetTimer={() => setAttempt((a) => ({ ...a, timerStart: null }))}
@@ -664,6 +685,18 @@ function CallerLookup({ inputRef, hotkey, onOpen }: { inputRef: RefObject<HTMLIn
           ))}
         </ul>
       )}
+    </div>
+  );
+}
+
+/** First call | Appointment: which outcomes the lead section offers. */
+function ModeSwitch({ mode, onChange, hotkey }: { mode: CallMode; onChange: (m: CallMode) => void; hotkey: string }) {
+  return (
+    <div className="mode-switch" role="tablist" aria-label="Kind of call" title={hotkey ? `Press ${hotkey} to switch` : undefined}>
+      {([['first_call', 'First call'], ['appointment', 'Appointment']] as const).map(([m, label]) => (
+        <button key={m} role="tab" aria-selected={mode === m} className={mode === m ? 'active' : ''} onClick={() => onChange(m)}>{label}</button>
+      ))}
+      {hotkey && <kbd>{hotkey}</kbd>}
     </div>
   );
 }

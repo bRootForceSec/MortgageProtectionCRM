@@ -1,5 +1,6 @@
 import { ageOn } from '../shared/age';
 import type { OtherPhone } from '../shared/phones';
+import type { CallMode } from '../shared/appointments';
 
 // Thin client for the local API. All requests are same-origin; the access cookie is sent automatically.
 
@@ -72,6 +73,8 @@ export interface OutcomeCode {
   requires_callback_time: number;
   marks_dead: number;
   counts_as_human_contact: number;
+  /** Which side of the Calling screen it belongs to. */
+  kind: CallMode;
 }
 
 export interface CallerNumber {
@@ -110,6 +113,8 @@ export interface CallListItem {
   done: { label: string; dials: number; call_id?: string; at?: string } | null;
   callback_due_at: string | null;
   called_back_at: string | null;
+  /** How the lead's latest appointment went (no show, sat, prezi, sold...). */
+  appt_result: string | null;
 }
 
 export interface RecentOutcome {
@@ -192,9 +197,9 @@ export interface LeadDetail {
     /** The lead's numbers that are ruled out (JSON list). */
     blocked_phones_json: string | null;
     block_reason: string | null;
-    /** How the latest appointment in Unitrust went, read by the extension. */
+    /** How the latest appointment went: logged on the Appointment side, or read from Unitrust by the extension. */
     appt_result: string | null;
-    /** 1 when a no-show or yellow in Unitrust put the lead back to be called. */
+    /** 1 when a no-show, sat-no-sale or prezi put the lead back to be called. */
     appt_missed: number;
   } | null;
   batch: { id: string; name: string; imported_at: string; cost_per_lead_cents: number | null; lead_type: string | null; lead_age_label: string | null; file_name: string | null };

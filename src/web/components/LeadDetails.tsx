@@ -25,7 +25,7 @@ export function StatusBadge({ status }: { status: string }) {
 /** How the lead's latest appointment went in Unitrust (color on its calendar), when the extension has seen one. */
 export function ApptBadge({ result }: { result: string | null | undefined }) {
   if (!result || !(result in APPT_RESULT_LABEL)) return null;
-  return <span className={`badge appt appt-${result}`} title="From the Unitrust calendar">{APPT_RESULT_LABEL[result as ApptResult]}</span>;
+  return <span className={`badge appt appt-${result}`} title="How the latest appointment went (logged here, or from the Unitrust calendar)">{APPT_RESULT_LABEL[result as ApptResult]}</span>;
 }
 
 /** "They called me back": flips the mark on a lead and says so. Returns the new value. */

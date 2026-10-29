@@ -476,6 +476,39 @@ test('Do not call is a tick beside the outcome, toggled with D', async ({ page }
   await expect(page.getByLabel('History').getByText('do not call')).toBeVisible();
 });
 
+test('First call | Appointment: an appointment set opens on the Appointment side; a prezi goes back to be called', async ({ page }) => {
+  await page.goto(launchUrl);
+  await page.getByRole('button', { name: 'Calling', exact: true }).click();
+  await expect(page.locator('.lead-panel')).toBeVisible();
+  const tabs = page.getByRole('tablist', { name: 'Kind of call' });
+  const lookUp = async (who: string) => {
+    await page.keyboard.press('l');
+    await page.keyboard.type(who);
+    await expect(page.getByRole('option').first()).toBeVisible();
+    await page.keyboard.press('Enter');
+    await expect(page.locator('.lead-name')).toHaveText(who);
+  };
+  // Ann Lee had an appointment set earlier: she opens on the Appointment side.
+  await lookUp('Ann Lee');
+  await expect(tabs.getByRole('tab', { name: 'Appointment' })).toHaveAttribute('aria-selected', 'true');
+  const outcomes = page.getByRole('group', { name: 'Appointment outcome' });
+  await expect(outcomes.getByRole('button')).toHaveText([/No show/, /Sat, no sale/, /Prezi/, /Sale/, /Rescheduled/]);
+  // M flips the side, and back.
+  await page.keyboard.press('m');
+  await expect(tabs.getByRole('tab', { name: 'First call' })).toHaveAttribute('aria-selected', 'true');
+  await expect(page.getByRole('group', { name: 'Outcome', exact: true })).toContainText('No answer');
+  await page.keyboard.press('m');
+  await expect(outcomes).toBeVisible();
+  await page.screenshot({ path: 'test-results/appointment-side.png', fullPage: true });
+  // 3, Enter: Prezi. She comes back to be called, tagged as a prezi, on the First call side.
+  await page.keyboard.press('3');
+  await page.keyboard.press('Enter');
+  await expect(page.locator('.undo-bar')).toContainText('Prezi');
+  await lookUp('Ann Lee');
+  await expect(page.getByLabel('Current lead').locator('.badge.appt-prezi')).toHaveText('Prezi, no sale');
+  await expect(tabs.getByRole('tab', { name: 'First call' })).toHaveAttribute('aria-selected', 'true');
+});
+
 test('call history: change the caller ID on ticked calls', async ({ page }) => {
   page.on('dialog', (d) => void d.accept());
   await page.goto(launchUrl);

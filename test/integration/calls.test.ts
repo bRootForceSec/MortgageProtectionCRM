@@ -8,6 +8,7 @@ import { suggestMapping } from '../../src/server/domain/mapping.js';
 import { commitImport } from '../../src/server/domain/importer.js';
 import { logManualCall, changeOutcome, currentOutcome, addLeadAction, voidCall, changeCallerId, callHistory } from '../../src/server/domain/calls.js';
 import { DomainError } from '../../src/server/core/errors.js';
+import { objectionCounts } from '../../src/server/domain/objections.js';
 import { addToCallList } from '../../src/server/domain/callList.js';
 import { mapSheetStatus } from '../../src/server/domain/sheetHistory.js';
 import { buildReport } from '../../src/server/domain/reports.js';
@@ -140,7 +141,7 @@ describe('manual call logging', () => {
   });
 
   it('offers five outcomes on keys 1 to 5', () => {
-    expect(db.prepare('SELECT hotkey, code, label FROM outcome_code WHERE active = 1 ORDER BY sort_order').all()).toEqual([
+    expect(db.prepare("SELECT hotkey, code, label FROM outcome_code WHERE active = 1 AND kind = 'first_call' ORDER BY sort_order").all()).toEqual([
       { hotkey: '1', code: 'no_answer', label: 'No answer' },
       { hotkey: '2', code: 'no_appt', label: 'Talked, no appt' },
       { hotkey: '3', code: 'appointment', label: 'Appt set' },
@@ -153,7 +154,41 @@ describe('manual call logging', () => {
     expect(db.prepare('SELECT status FROM lead_state WHERE lead_id = ?').get(jane)).toEqual({ status: 'invalid' });
   });
 
-  it('a callback can be for a day, any time: due from the start of that day', () => {
+  it('offers five appointment outcomes on the same keys 1 to 5', () => {
+    expect(db.prepare("SELECT hotkey, code, label FROM outcome_code WHERE active = 1 AND kind = 'appointment' ORDER BY sort_order").all()).toEqual([
+      { hotkey: '1', code: 'appt_no_show', label: 'No show' },
+      { hotkey: '2', code: 'appt_sat_no_sale', label: 'Sat, no sale' },
+      { hotkey: '3', code: 'appt_prezi', label: 'Prezi' },
+      { hotkey: '4', code: 'appt_sale', label: 'Sale' },
+      { hotkey: '5', code: 'appt_rescheduled', label: 'Rescheduled' },
+    ]);
+  });
+
+  it('an appointment call sets how the appointment went: a prezi comes back to be called, a sale stays out', () => {
+    const state = () => db.prepare('SELECT status, appt_result, appt_missed FROM lead_state WHERE lead_id = ?').get(jane);
+    logManualCall(db, { lead_id: jane, idempotency_key: key(), outcome_code: 'appointment' });
+    expect(state()).toEqual({ status: 'appointment_set', appt_result: null, appt_missed: 0 });
+    logManualCall(db, { lead_id: jane, idempotency_key: key(), outcome_code: 'appt_prezi' });
+    expect(state()).toEqual({ status: 'retry', appt_result: 'prezi', appt_missed: 1 });
+    expect(dueLeads(db).some((l: any) => l.id === jane)).toBe(true);
+    logManualCall(db, { lead_id: jane, idempotency_key: key(), outcome_code: 'appt_sale' });
+    expect(state()).toEqual({ status: 'appointment_set', appt_result: 'sold', appt_missed: 0 });
+  });
+
+  it('keeps objections heard on a call, and refuses unknown ones', () => {
+    const { call_id } = logManualCall(db, {
+      lead_id: jane, idempotency_key: key(), outcome_code: 'appt_prezi', objections: [{ code: 'price' }, { code: 'spouse', note: ' wife decides ' }],
+    });
+    expect(db.prepare('SELECT objection_code, note, source FROM call_objection WHERE call_id = ? ORDER BY objection_code').all(call_id)).toEqual([
+      { objection_code: 'price', note: null, source: 'manual' },
+      { objection_code: 'spouse', note: 'wife decides', source: 'manual' },
+    ]);
+    expect(objectionCounts(db, '2000-01-01', '2100-01-01').map((o) => [o.code, o.n])).toEqual([['price', 1], ['spouse', 1]]);
+    expect(() => logManualCall(db, { lead_id: jane, idempotency_key: key(), outcome_code: 'appt_prezi', objections: [{ code: 'nope' }] })).toThrow(DomainError);
+    expect(db.prepare("SELECT COUNT(*) n FROM call WHERE lead_id = ? AND voided_at IS NULL").get(jane)).toEqual({ n: 1 });
+  });
+
+    it('a callback can be for a day, any time: due from the start of that day', () => {
     const start = new Date();
     start.setHours(0, 0, 0, 0);
     const tomorrow = new Date(start.getTime() + 86_400_000).toISOString();
