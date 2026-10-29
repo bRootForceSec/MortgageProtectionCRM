@@ -6,6 +6,8 @@ import {
   buildKeyMap, conflicts, keyLabel, normKey, RESERVED, type CallingSettingsResponse,
 } from '../shortcuts';
 import type { CallingSettings, ShortcutAction } from '../../shared/callingSettings';
+import { ALL_PARTY_CONSENT_STATES } from '../../shared/recordingConsent';
+import { savesInstantly } from '../../shared/outcomes';
 
 // Settings for the Calling screen: retry gap, dialing, timer, goals, alerts, shortcuts and scripts.
 
@@ -37,7 +39,7 @@ function NumberField({ value, onSave, min = 0, allowBlank, width = 90 }: { value
 }
 
 export function CallingCard() {
-  const { calling, toast } = useApp();
+  const { calling, meta, toast } = useApp();
   const save = useSave();
   const [devices, setDevices] = useState<{ ok: boolean; error?: string; devices: { id: string; name: string; reachable: boolean }[] } | null>(null);
   const [perm, setPerm] = useState(typeof Notification === 'undefined' ? 'unsupported' : Notification.permission);
@@ -102,7 +104,24 @@ export function CallingCard() {
 
         <label>Saving</label>
         <span>
-          <label className="choice-inline"><input type="checkbox" checked={s.instant_save} onChange={(e) => set({ instant_save: e.target.checked })} /> No answer and Bad number save as soon as I press the key (no Enter). Undo still works.</label>
+          <label className="choice-inline"><input type="checkbox" checked={s.instant_save} onChange={(e) => set({ instant_save: e.target.checked })} /> some outcomes save as soon as I press the key (no Enter). Undo still works.</label>
+          {s.instant_save && (['first_call', 'appointment'] as const).map((side) => (
+            <span key={side} className="row" style={{ marginTop: 4 }}>
+              <span className="help">{side === 'appointment' ? 'Appointment:' : 'First call:'}</span>
+              {(meta?.outcome_codes ?? []).filter((o) => o.kind === side && !o.requires_callback_time).map((o) => (
+                <label key={o.code} className="choice-inline">
+                  <input type="checkbox" checked={savesInstantly(o, s.instant_outcomes)}
+                    onChange={(e) => set({ instant_outcomes: { ...s.instant_outcomes, [o.code]: e.target.checked } })} /> {o.label}
+                </label>
+              ))}
+            </span>
+          ))}
+          {s.instant_save && <span className="help">Ticked outcomes save without Enter. Talk minutes come from the timer. Callbacks always wait for their day.</span>}
+        </span>
+
+        <label>Missed appointments</label>
+        <span>
+          <label className="choice-inline"><input type="checkbox" checked={s.missed_appts_first} onChange={(e) => set({ missed_appts_first: e.target.checked })} /> put a lead a no-show, sat no sale or prezi sent back at the top of the call list when I add it</label>
         </span>
 
         <label>Call timer</label>
@@ -259,6 +278,37 @@ export function ScriptsCard() {
       <label className="field"><span>Opener</span><textarea rows={5} value={v.opener} onChange={(e) => setV({ ...v, opener: e.target.value })} placeholder="Hi {first_name}, this is {agent_name}. I'm calling about the mortgage protection form for your home on {address}…" /></label>
       <label className="field"><span>Voicemail</span><textarea rows={4} value={v.voicemail} onChange={(e) => setV({ ...v, voicemail: e.target.value })} /></label>
       <button className="btn primary" disabled={!dirty} onClick={() => save({ ...s, scripts: v })}>Save scripts</button>
+      <RecordingConsent />
     </div>
+  );
+}
+
+/** "I record my calls": a reminder on leads in all-party consent states, and the disclosure line above the opener. */
+function RecordingConsent() {
+  const { calling } = useApp();
+  const save = useSave();
+  const s = calling?.settings;
+  const [text, setText] = useState(s?.recording.disclosure ?? '');
+  useEffect(() => setText(s?.recording.disclosure ?? ''), [s?.recording.disclosure]);
+  if (!s) return null;
+  const set = (patch: Partial<CallingSettings['recording']>) => save({ ...s, recording: { ...s.recording, ...patch } });
+  const states = Object.values(ALL_PARTY_CONSENT_STATES).join(', ');
+  return (
+    <>
+      <h3>Recording</h3>
+      <label className="choice-inline">
+        <input type="checkbox" checked={s.recording.on} onChange={(e) => set({ on: e.target.checked })} /> I record my calls
+      </label>
+      <p className="help">
+        Some states need everyone on the call to agree to a recording: {states}. With this ticked, leads there show a reminder,
+        and the opener starts with the line below. This list isn't legal advice; check it before you record.
+      </p>
+      {s.recording.on && (
+        <label className="field">
+          <span>Say this first in those states</span>
+          <input value={text} onChange={(e) => setText(e.target.value)} onBlur={() => text.trim() && text !== s.recording.disclosure && set({ disclosure: text.trim() })} />
+        </label>
+      )}
+    </>
   );
 }
