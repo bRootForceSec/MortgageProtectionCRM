@@ -2,6 +2,7 @@ import { ageOn } from '../shared/age';
 import { leadAgeDays } from '../shared/leadAge';
 import type { OtherPhone } from '../shared/phones';
 import type { CallMode } from '../shared/appointments';
+import type { BestTimes } from '../shared/bestTime';
 
 // Thin client for the local API. All requests are same-origin; the access cookie is sent automatically.
 
@@ -93,6 +94,8 @@ export interface CallerNumber {
 
 export interface Meta {
   outcome_codes: OutcomeCode[];
+  /** Why a lead said no: offered as chips after an outcome that asks for them. */
+  objection_codes: { code: string; label: string }[];
   lead_fields: { key: string; label: string }[];
   numbers: CallerNumber[];
   data_dir: string;
@@ -117,6 +120,7 @@ export interface CallListItem {
   /** How the lead's latest appointment went (no show, sat, prezi, sold...). */
   appt_result: string | null;
   callin_at: string | null;
+  time_zone: string | null;
 }
 
 export interface RecentOutcome {
@@ -142,6 +146,8 @@ export interface CallListResponse {
   /** The list's name, when it was loaded from a saved list. */
   name: string | null;
   saved_lists: SavedList[];
+  /** Pickups by the lead's local weekday and hour, for "Best time first". */
+  best_times: BestTimes;
 }
 
 export interface AddResult {
@@ -208,6 +214,8 @@ export interface LeadDetail {
   import_row: { row_number: number; warnings_json: string | null; raw_json: string | null } | null;
   /** The PDF this lead came from is on this computer: its page can be shown (source_page on the lead). */
   source_pdf: boolean;
+  /** The lead's appointment as it stands: typed on Appt set, or from Unitrust, which wins once it sends one. */
+  appointment: { scheduled_for: string; source: 'app' | 'unitrust' } | null;
   /** When you marked that this lead called you back (null if not). */
   called_back_at: string | null;
   calls: Call[];

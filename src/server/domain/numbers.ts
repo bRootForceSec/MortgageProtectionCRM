@@ -82,7 +82,9 @@ export function numberStats(db: DB, todayFrom: string, now = new Date()) {
          FROM call c
          LEFT JOIN call_outcome o ON o.call_id = c.id AND ${CURRENT_OUTCOME}
          LEFT JOIN outcome_code oc ON oc.code = o.outcome_code
-         WHERE c.from_number_id IS NOT NULL AND c.initiation_result = 'accepted' AND c.voided_at IS NULL AND c.time_known = 1)
+         WHERE c.from_number_id IS NOT NULL AND c.initiation_result = 'accepted' AND c.voided_at IS NULL AND c.time_known = 1
+           -- First calls only, like the top bar and Reports: an appointment call says nothing about the caller ID.
+           AND coalesce(oc.kind, 'first_call') = 'first_call')
        SELECT n.id,
          (SELECT count(*) FROM c WHERE c.id = n.id AND requested_at >= @today) calls_today,
          (SELECT coalesce(sum(dial_count), 0) FROM c WHERE c.id = n.id AND requested_at >= @today) dials_today,

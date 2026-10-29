@@ -5,6 +5,7 @@ import { audit } from '../core/audit.js';
 import { leadFilterWhere, onCallList, type LeadFilter } from './callList.js';
 import { batchPdf } from './pageTurn.js';
 import { otherPhones } from './leadPhones.js';
+import { currentAppointment } from './appointments.js';
 
 // Reading leads for the Leads page and the lead view, and resolving "same person?" links.
 
@@ -69,6 +70,7 @@ export function getLeadDetail(db: DB, importsDir: string, id: string) {
     // The PDF this lead was imported from, when it is still on disk, so the calling screen can show its page.
     source_pdf: lead.source_page != null && !!batchPdf(importsDir, lead.batch_id),
     called_back_at: (db.prepare('SELECT at FROM lead_called_back WHERE lead_id = ?').get(id) as { at: string } | undefined)?.at ?? null,
+    appointment: currentAppointment(db, id),
     calls,
     // Notes saved with a call you undid are left out (the undo puts the note back in the form).
     notes: db

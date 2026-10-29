@@ -207,6 +207,7 @@ export function ReportsPage() {
 
       {r && <Benchmarks r={r} N={N} onSaved={load} />}
       {r?.by_age?.length > 0 && <ByAge rows={r.by_age} />}
+      {r?.weekly && <Weekly w={r.weekly} targets={r.targets} />}
 
       {drill && <DrillModal params={params} drill={drill} onClose={() => setDrill(null)} onOpen={(id, list) => setOpen({ id, list })} />}
       {open && <LeadViewer id={open.id} list={open.list} onClose={() => setOpen(null)} />}
@@ -339,12 +340,13 @@ function BestTime({ rows, onPick }: { rows: any[]; onPick: (key: string, label: 
   );
 }
 
-type BatchCol = 'imported_at' | 'leads' | 'cost' | 'never_called' | 'left' | 'dials' | 'reached' | 'booked' | 'cost_per_reached' | 'cost_per_booked';
+type BatchCol = 'imported_at' | 'leads' | 'cost' | 'never_called' | 'left' | 'dials' | 'reached' | 'booked' | 'sold' | 'close_rate' | 'cost_per_reached' | 'cost_per_booked' | 'cost_per_sale';
 const BATCH_COLS: [BatchCol, string, string?][] = [
   ['leads', 'Leads'], ['cost', 'Cost'], ['never_called', 'Never called'], ['left', 'Left to call', 'Never called, no answer yet, or a callback'],
-  ['dials', 'Dials'], ['reached', 'Reached'], ['booked', 'Booked'], ['cost_per_reached', '$/reached'], ['cost_per_booked', '$/booked'],
+  ['dials', 'Dials'], ['reached', 'Reached'], ['booked', 'Booked'], ['sold', 'Sales'], ['close_rate', 'Close rate', 'Of the leads that sat for an appointment, the share that bought'],
+  ['cost_per_reached', '$/reached'], ['cost_per_booked', '$/booked'], ['cost_per_sale', '$/sale'],
 ];
-const SUMMED = ['leads', 'cost', 'never_called', 'left', 'dials', 'reached', 'booked', 'unpriced'] as const;
+const SUMMED = ['leads', 'cost', 'never_called', 'left', 'dials', 'reached', 'booked', 'sat', 'sold', 'unpriced'] as const;
 
 /** By batch: each bulk import is one line (open it for its files), with search, filters, sorting and "show more". */
 function ByBatch({ rows, N }: { rows: any[]; N: any }) {
@@ -372,6 +374,8 @@ function ByBatch({ rows, N }: { rows: any[]; N: any }) {
         ...sum,
         cost_per_reached: sum.reached ? sum.cost / sum.reached : null,
         cost_per_booked: sum.booked ? sum.cost / sum.booked : null,
+        cost_per_sale: sum.sold ? sum.cost / sum.sold : null,
+        close_rate: sum.sat ? sum.sold / sum.sat : null,
         rows: g.rows,
       };
     });
@@ -408,8 +412,9 @@ function ByBatch({ rows, N }: { rows: any[]; N: any }) {
         <td>{b.lead_types}</td>
         {cell('leads', 'Leads')}
         <td>{fmtMoney(b.cost)}{b.unpriced > 0 && <div className="warn small">{b.unpriced} with no price</div>}</td>
-        {cell('never_called', 'Never called')}<td>{b.left}</td>{cell('dials', 'Dials')}{cell('reached', 'Reached')}{cell('booked', 'Booked')}
-        <td>{money(b.cost_per_reached)}</td><td>{money(b.cost_per_booked)}</td>
+        {cell('never_called', 'Never called')}<td>{b.left}</td>{cell('dials', 'Dials')}{cell('reached', 'Reached')}{cell('booked', 'Booked')}{cell('sold', 'Sales')}
+        <td>{pct(b.close_rate)}</td>
+        <td>{money(b.cost_per_reached)}</td><td>{money(b.cost_per_booked)}</td><td>{money(b.cost_per_sale)}</td>
       </tr>
     );
   };
@@ -438,7 +443,7 @@ function ByBatch({ rows, N }: { rows: any[]; N: any }) {
       )}
       <p className="help">
         Each bulk import is one line; open it to see its files. Click a column to sort. Reached and booked count leads, not calls.
-        How appointments went is in Unitrust. Cost comes from each lead's own price.
+        Sales and close rate come from how appointments went (Unitrust or the Appointment side). Cost comes from each lead's own price.
       </p>
     </div>
   );
@@ -474,6 +479,12 @@ function Benchmarks({ r, N, onSaved }: { r: Report; N: any; onSaved: () => void 
           <button className="btn small" onClick={() => setEdit(true)}>Edit targets</button>
         )}
       </div>
+      {edit && (
+        <div className="row">
+          <span>Show rate target <P v={t.show_rate} on={(n) => setT({ ...t, show_rate: n ?? 0 })} />%</span>
+          <span>Close rate target <P v={t.close_rate} on={(n) => setT({ ...t, close_rate: n ?? 0 })} />%</span>
+        </div>
+      )}
       <div className="scroll-x">
         <table className="grid">
           <thead>
@@ -481,7 +492,8 @@ function Benchmarks({ r, N, onSaved }: { r: Report; N: any; onSaved: () => void 
               <th>Lead type</th><th>Leads</th><th>Cost</th><th>Never called</th><th>Dials</th><th title="Dials per lead called">Dials/lead</th>
               <th>Contacts</th><th>Appts</th><th>Bad numbers</th><th>Called you back</th>
               <th title="Leads reached, and the share of leads called">Reached</th><th title="Leads booked, and the share of leads called">Booked</th>
-              <th>Booked per reached</th><th>$/reached</th><th>$/booked</th>
+              <th>Booked per reached</th><th>Sales</th><th title="Of the leads that sat for an appointment, the share that bought">Close rate</th>
+              <th>$/reached</th><th>$/booked</th><th>$/sale</th>
             </tr>
           </thead>
           <tbody>
@@ -507,8 +519,11 @@ function Benchmarks({ r, N, onSaved }: { r: Report; N: any; onSaved: () => void 
                       <span className="muted">target {pct(b.booked_target)}</span>
                     )}
                   </td>
+                  {cell('sold', 'Sales')}
+                  <td>{pct(b.close_rate)}</td>
                   <td>{b.cost_per_reached == null ? '–' : fmtMoney(b.cost_per_reached)}</td>
                   <td>{b.cost_per_booked == null ? '–' : fmtMoney(b.cost_per_booked)}</td>
+                  <td>{b.cost_per_sale == null ? '–' : fmtMoney(b.cost_per_sale)}</td>
                 </tr>
               );
             })}
@@ -517,7 +532,7 @@ function Benchmarks({ r, N, onSaved }: { r: Report; N: any; onSaved: () => void 
       </div>
       <p className="help">
         Each lead counts under its type now, so fixing a batch's type on Leads moves its history here too.
-        Reached and booked count leads; the small % is out of leads called. Targets start from the flier: A 4 of 5, A1 and AA 1 of 4, B 1 of 5, C 1 of 8, D 1 of 10. Sits and apps are tracked in Unitrust.
+        Reached and booked count leads; the small % is out of leads called. Targets start from the flier: A 4 of 5, A1 and AA 1 of 4, B 1 of 5, C 1 of 8, D 1 of 10. Sales and close rate come from how appointments went (Unitrust or the Appointment side).
       </p>
     </div>
   );
@@ -590,6 +605,48 @@ function ByAge({ rows }: { rows: any[] }) {
         </tbody>
       </table>
       <p className="help">Age is the days from the call-in date on the lead page to the call. First calls only.</p>
+    </div>
+  );
+}
+
+/** This week next to the 4 before it, against the targets: appointments per pickup (overall and by lead type), show and close rate. */
+function Weekly({ w, targets }: { w: any; targets: any }) {
+  const weekLabel = (start: string, i: number) =>
+    i === 0 ? 'This week' : i === 1 ? 'Last week' : `Week of ${new Date(`${start}T12:00:00`).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`;
+  const vs = (actual: number | null, target: number | null | undefined) =>
+    actual == null || target == null ? '' : actual >= target ? 'good' : 'bad';
+  const Row = ({ label, get, target, count }: { label: string; get: (wk: any) => number | null; target?: number | null; count?: (wk: any) => string }) => (
+    <tr>
+      <td>{label}</td>
+      {w.weeks.map((wk: any) => (
+        <td key={wk.start} className={vs(get(wk), target)}>{pct(get(wk))}{count && <span className="muted small"> {count(wk)}</span>}</td>
+      ))}
+      <td className="muted">{target == null ? '–' : pct(target)}</td>
+    </tr>
+  );
+  return (
+    <div className="card">
+      <h3>Week by week <span className="muted">(Monday to Sunday, whatever dates are picked above)</span></h3>
+      <div className="scroll-x">
+        <table className="grid weekly">
+          <thead>
+            <tr><th></th>{w.weeks.map((wk: any, i: number) => <th key={wk.start} title={`${wk.start} to ${wk.end}`}>{weekLabel(wk.start, i)}</th>)}<th>Target</th></tr>
+          </thead>
+          <tbody>
+            <Row label="Appts set per pickup" get={(wk) => wk.booked_per_pickup} count={(wk) => `${wk.appointments}/${wk.pickups}`} />
+            {w.types.map((t: any) => (
+              <Row key={t.key} label={`· ${t.label}`} get={(wk) => wk.by_type[t.key]?.booked_per_pickup ?? null}
+                target={targets.booked_per_contact[t.key] ?? null} count={(wk) => `${wk.by_type[t.key]?.appointments ?? 0}/${wk.by_type[t.key]?.pickups ?? 0}`} />
+            ))}
+            <Row label="Show rate" get={(wk) => wk.show_rate} target={targets.show_rate} count={(wk) => `${wk.sat}/${wk.sat + wk.no_show}`} />
+            <Row label="Close rate" get={(wk) => wk.close_rate} target={targets.close_rate} count={(wk) => `${wk.sold}/${wk.sat}`} />
+          </tbody>
+        </table>
+      </div>
+      <p className="help">
+        Appts per pickup counts first calls in that week. Show and close rate count the appointments on that week's days,
+        from Unitrust or logged here. Targets start from the flier (80% sit, 50% close); change them with Edit targets above.
+      </p>
     </div>
   );
 }

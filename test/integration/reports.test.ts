@@ -7,7 +7,7 @@ import { suggestMapping } from '../../src/server/domain/mapping.js';
 import { commitImport } from '../../src/server/domain/importer.js';
 import { logManualCall, voidCall } from '../../src/server/domain/calls.js';
 import { seedCountyAreaCodes } from '../../src/server/domain/areaCodes.js';
-import { buildReport, drill, reportCalls, type ReportFilter } from '../../src/server/domain/reports.js';
+import { bestTimes, buildReport, drill, reportCalls, type ReportFilter } from '../../src/server/domain/reports.js';
 import { setCalledBack } from '../../src/server/domain/callList.js';
 import { buildApp } from '../../src/server/http/app.js';
 import { createBackup, checkLatestBackup, listBackups } from '../../src/server/backup.js';
@@ -92,13 +92,25 @@ describe('reports', () => {
   it('tracks booked against the targets, with cost per result', () => {
     let b = buildReport(db, range()).benchmarks.find((x) => x.key === 'B')!;
     expect(b).toMatchObject({ leads: 3, reached: 2, booked: 1, booked_per_reached: 0.5, booked_target: 0.2, cost: 2100, cost_per_booked: 2100 });
-    expect(b).not.toHaveProperty('sat');
-    expect(b).not.toHaveProperty('sold');
+    expect(b).toMatchObject({ sat: 0, sold: 0, close_rate: null, cost_per_sale: null });
     // An older "sold" outcome still counts as booked.
     const ben = log('Ben', 'no_answer');
     db.prepare("UPDATE call_outcome SET outcome_code = 'sold' WHERE call_id = ?").run(ben.call_id); // retired, so it can't be entered any more
     b = buildReport(db, range()).benchmarks.find((x) => x.key === 'B')!;
     expect(b).toMatchObject({ booked: 2 });
+  });
+
+  it('counts sales, close rate and cost per sale by lead type and batch, from how appointments went', () => {
+    log('Amy', 'appt_sale');
+    log('Dee', 'appt_sat_no_sale');
+    log('Ben', 'appt_no_show');
+    const r = buildReport(db, range());
+    expect(r.benchmarks.find((x) => x.key === 'B')).toMatchObject({ sat: 1, sold: 1, close_rate: 1, cost_per_sale: 2100 });
+    expect(r.benchmarks.find((x) => x.key === 'CI-A')).toMatchObject({ sat: 1, sold: 0, close_rate: 0, cost_per_sale: null });
+    expect(r.by_batch[0]).toMatchObject({ sat: 2, sold: 1, close_rate: 0.5, cost_per_sale: 2100 + 6800 });
+    // Drill-down shows the leads behind it.
+    const leads = drill(db, range(), { section: 'benchmarks', key: 'B', metric: 'sold' });
+    expect(leads.rows.map((l: any) => l.lead_name)).toEqual(['Amy One']);
   });
 
   it('breaks the numbers down by lead type', () => {
@@ -309,5 +321,36 @@ describe('lead age', () => {
     // Amy: 2 calls (a pickup and an appointment) at 3 days; Ben: 1 pickup at 45 days.
     expect(r.by_age.find((a) => a.key === '0_7')).toMatchObject({ attempts: 2, contacts: 1, appointments: 1 });
     expect(r.by_age.find((a) => a.key === '31_90')).toMatchObject({ attempts: 1, contacts: 1, appointments: 0 });
+  });
+});
+
+describe('week by week', () => {
+  it('puts this week next to the 4 before it, Monday to Sunday, with appts per pickup by lead type', () => {
+    log('Ben', 'appointment', { occurred_at: new Date(Date.now() - 9 * 86_400_000).toISOString() });
+    const w = buildReport(db, range()).weekly;
+    expect(w.weeks).toHaveLength(5);
+    expect(new Date(`${w.weeks[0]!.start}T12:00:00Z`).getUTCDay()).toBe(1);
+    const starts = w.weeks.map((x) => x.start);
+    expect(starts).toEqual(starts.slice().sort().reverse());
+    // The setup's calls (pickups Amy, Ben, Dee, Eve; appointments Amy and Dee) and Ben's booking 9 days ago.
+    const sum = (k: 'pickups' | 'appointments') => w.weeks.reduce((n, x) => n + x[k], 0);
+    expect([sum('pickups'), sum('appointments')]).toEqual([5, 3]);
+    expect(w.types.map((t) => t.key)).toEqual(['B', 'CI-A']);
+    expect(w.weeks.reduce((n, x) => n + x.by_type['CI-A']!.appointments, 0)).toBe(1);
+    expect(buildReport(db, range()).targets).toMatchObject({ show_rate: 0.8, close_rate: 0.5 });
+  });
+});
+
+describe('best time first on the call list', () => {
+  it('counts attempts and pickups by the lead\'s weekday and hour, and comes with the call list', async () => {
+    const tz = 'America/Indiana/Indianapolis';
+    const before = bestTimes(db, tz)['4:18'] ?? { attempts: 0, pickups: 0 };
+    // 6 PM on a Thursday in Indiana (Eastern).
+    log('Amy', 'no_answer', { occurred_at: '2026-10-22T22:10:00.000Z' });
+    log('Ben', 'no_appt', { occurred_at: '2026-10-22T22:40:00.000Z' });
+    expect(bestTimes(db, tz)['4:18']).toEqual({ attempts: before.attempts + 2, pickups: before.pickups + 1 });
+    const r = (await app.inject({ url: `/api/call-list?tz=${tz}`, headers: auth })).json();
+    expect(r.best_times['4:18']).toEqual({ attempts: before.attempts + 2, pickups: before.pickups + 1 });
+    expect(r.items.every((i: any) => 'time_zone' in i)).toBe(true);
   });
 });
