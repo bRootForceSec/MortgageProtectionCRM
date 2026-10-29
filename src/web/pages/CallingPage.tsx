@@ -547,6 +547,8 @@ export function CallingPage() {
       <section className="panel lead-panel" aria-label="Current lead">
         <header>
           <CallerLookup inputRef={lookupRef} hotkey={k('lookup')} onOpen={openOutside} />
+          {/* In the header, so it takes no room above the outcome buttons on a short screen. */}
+          {detail && <ModeSwitch mode={mode} onChange={switchMode} hotkey={k('switch_mode')} />}
         </header>
         <div className="body">
           {saved && <UndoBar saved={saved} undoKey={k('undo')} onUndo={undo} onExpire={() => setSaved(null)} />}
@@ -560,7 +562,6 @@ export function CallingPage() {
             <div className="empty">Select a lead from the list, or import leads first.</div>
           ) : (
             <>
-              <ModeSwitch mode={mode} onChange={switchMode} hotkey={k('switch_mode')} />
               <LeadSummary d={detail} onDial={dial} dialLabel={dialLabel} dialKey={k('dial')} altKey={k('dial_alt')} onEdit={() => setEditing(true)} editKey={k('edit')}
                 calledBackKey={k('called_back')} onCalledBack={(at) => calledBack(detail.lead.id, at)} />
               {showScript && <ScriptPanel d={detail} />}

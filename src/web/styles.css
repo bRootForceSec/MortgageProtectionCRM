@@ -101,7 +101,7 @@ a { color: var(--accent); }
 .log-box.appointment { border-top: 2px solid var(--good); }
 .log-box .mode-label { font-size: 11px; color: var(--good); text-transform: uppercase; letter-spacing: .04em; font-weight: 600; }
 /* First call | Appointment, at the top of the lead section on the Calling screen. */
-.mode-switch { display: inline-flex; align-items: center; gap: 0; margin-bottom: 8px; }
+.mode-switch { display: inline-flex; align-items: center; gap: 0; }
 .mode-switch button { border: 1px solid var(--border); background: var(--panel); padding: 4px 14px; cursor: pointer; font-size: 13px; }
 .mode-switch button:first-child { border-radius: 6px 0 0 6px; }
 .mode-switch button:nth-child(2) { border-radius: 0 6px 6px 0; border-left: 0; }
@@ -290,7 +290,7 @@ table.grid tr.selected { background: var(--selected); }
 @media (max-width: 1400px) { .calling { grid-template-columns: minmax(200px, 18%) minmax(0, 1fr) minmax(320px, 38%); } }
 
 /* Incoming call lookup, above the current lead */
-.lookup { position: relative; flex: 1; }
+.lookup { position: relative; flex: 1; min-width: 160px; }
 .lookup input { width: 100%; }
 .lookup-results { position: absolute; z-index: 20; left: 0; right: 0; top: calc(100% + 4px); list-style: none; margin: 0; padding: 4px; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 6px 18px rgba(0, 0, 0, .18); max-height: 60vh; overflow: auto; }
 .lookup-results li { padding: 6px 8px; border-radius: 6px; cursor: pointer; display: flex; flex-wrap: wrap; gap: 2px 8px; align-items: center; }
