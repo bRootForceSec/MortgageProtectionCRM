@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { callbackFields } from '../when';
+import { callbackFields, fromWall } from '../when';
 import { api, fmtPhone, fmtRelative, fmtDateTime, type LeadDetail, type CallListItem, type CallListResponse } from '../api';
 import { useApp } from '../App';
 import { ApptBadge, LeadSummary, CallHistory, Notes, toggleCalledBack } from '../components/LeadDetails';
@@ -323,10 +323,12 @@ export function CallingPage() {
       const r = await api.post<{
         lead_id: string; outcome_code: string | null; callback_due_at: string | null; callback_any_time: boolean; do_not_call: boolean;
         dial_count: number; talk_seconds: number | null; lead_seconds: number | null; from_number_id: string | null; note: string | null;
+        appointment_for: string | null;
         dialed_at: string | null;
         objections: string[];
       }>(`/calls/${s.callId}/void`, { reason: 'undo' });
-      const cb = callbackFields(r.callback_due_at, r.callback_any_time, s.tz);
+      const appt = r.appointment_for ? fromWall(r.appointment_for) : null;
+      const cb = appt ? callbackFields(appt.at.toISOString(), appt.anyTime, s.tz) : callbackFields(r.callback_due_at, r.callback_any_time, s.tz);
       // Back on the side the call was saved from.
       if (r.outcome_code) setModePick({ leadId: s.leadId, mode: keys.kinds[r.outcome_code] ?? 'first_call' });
       setRestore({

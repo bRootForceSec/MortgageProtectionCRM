@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseDay, parseTime, readCallback, callbackFields, addDays, dayRange, startOfDay, todayRange, ymd as dateInput } from '../../src/web/when.js';
+import { parseDay, parseTime, readCallback, callbackFields, addDays, dayRange, startOfDay, todayRange, ymd as dateInput, toWall, fromWall } from '../../src/web/when.js';
 
 // Saturday Oct 17 2026, 3:10 PM local.
 const now = new Date(2026, 9, 17, 15, 10);
@@ -104,5 +104,14 @@ describe('day helpers', () => {
     expect(d).toEqual(new Date(2026, 9, 21));
     expect(addDays(d, -21)).toEqual(new Date(2026, 8, 30));
     expect(todayRange().from).toBe(startOfDay(new Date()).toISOString());
+  });
+});
+
+describe('appointment times (your own time, like Unitrust)', () => {
+  it('turn a picked day and time into "YYYY-MM-DD" or "YYYY-MM-DDTHH:MM", and back', () => {
+    expect(toWall({ at: new Date(2026, 9, 30, 14, 5), anyTime: false })).toBe('2026-10-30T14:05');
+    expect(toWall({ at: new Date(2026, 9, 30), anyTime: true })).toBe('2026-10-30');
+    expect(fromWall('2026-10-30T14:05')).toEqual({ at: new Date(2026, 9, 30, 14, 5), anyTime: false });
+    expect(fromWall('2026-10-30')).toEqual({ at: new Date(2026, 9, 30), anyTime: true });
   });
 });
