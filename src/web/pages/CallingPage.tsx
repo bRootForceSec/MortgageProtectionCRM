@@ -14,11 +14,14 @@ import { LogCall, type Attempt, type FormValues, type Saved } from './LogCall';
 import { CallerLookup, ModeSwitch, Recent, ScriptPanel, UNDO_MS, UndoBar, otherNumber } from './CallingPanels';
 import { openingSide, type CallMode } from '../../shared/appointments';
 import { isCallable } from '../../shared/leadStatus';
+import { bestTimeFirst } from '../../shared/bestTime';
 
 const SELECTED_KEY = 'mpcrm.selectedLead';
 /** A lead opened outside the list (looked up for an incoming call, or from Today), and where to go back to. */
 export const OPENED_KEY = 'mpcrm.openedLead';
 const SCRIPT_KEY = 'mpcrm.script.open';
+/** The order the list is shown and worked in: as set (by hand, or as added), or best time first. */
+const ORDER_KEY = 'mpcrm.list.order';
 
 const freshAttempt = (): Attempt => ({ dials: 1, timerStart: null, dialedAt: null, to: null, shownAt: Date.now() });
 
@@ -56,6 +59,11 @@ export function CallingPage() {
   const [editing, setEditing] = useState(false);
   const [qr, setQr] = useState<string | null>(null);
   const [listDialog, setListDialog] = useState<'clear' | 'saved' | null>(null);
+  const [order, setOrderState] = useState<'set' | 'best_time'>(getStored(ORDER_KEY) === 'best_time' ? 'best_time' : 'set');
+  const setOrder = (o: 'set' | 'best_time') => {
+    setOrderState(o);
+    setStored(ORDER_KEY, o);
+  };
   /** The side you picked for a lead, when it isn't the one it opened on. */
   const [modePick, setModePick] = useState<{ leadId: string; mode: CallMode } | null>(null);
   const mode: CallMode = detail ? (modePick?.leadId === detail.lead.id ? modePick.mode : openingSide(detail.state)) : 'first_call';
@@ -76,7 +84,7 @@ export function CallingPage() {
 
   const loadList = useCallback(async () => {
     try {
-      setListState(await api.get<CallListResponse>('/call-list'));
+      setListState(await api.get<CallListResponse>('/call-list', { tz: Intl.DateTimeFormat().resolvedOptions().timeZone }));
     } catch (e: any) {
       toast(e.message, 'error');
     }
@@ -97,9 +105,10 @@ export function CallingPage() {
   const afterSwap = async () => {
     setListDialog(null);
     setOpened(null);
-    const l = await api.get<CallListResponse>('/call-list');
+    const l = await api.get<CallListResponse>('/call-list', { tz: Intl.DateTimeFormat().resolvedOptions().timeZone });
     setListState(l);
-    select(l.items.find((i) => !i.done)?.lead_id ?? l.items[0]?.lead_id ?? null);
+    const ordered = order === 'best_time' ? bestTimeFirst(l.items, l.best_times) : l.items;
+    select(ordered.find((i) => !i.done)?.lead_id ?? ordered[0]?.lead_id ?? null);
   };
 
   const clearList = async (saveAs: string | null) => {
@@ -209,14 +218,15 @@ export function CallingPage() {
     return () => window.removeEventListener('mpcrm:open-lead', f);
   }, [openOutside]);
 
-  const items = useMemo(() => list?.items ?? [], [list]);
+  // Best time first is worked in that order too: "next" and the start of the list follow it.
+  const items = useMemo(() => (list && order === 'best_time' ? bestTimeFirst(list.items, list.best_times) : list?.items ?? []), [list, order]);
   const idx = items.findIndex((i) => i.lead_id === selected);
   /** The lead on screen was opened on purpose outside the list (or is a looked-up lead that is also in it). */
   const outside = !!selected && opened?.leadId === selected;
   // Nothing selected yet (first visit, or the lead left the list): start at the top.
   useEffect(() => {
     if (list && (!selected || (!list.items.some((i) => i.lead_id === selected) && !outside)) && !detail) {
-      const first = list.items.find((i) => !i.done) ?? list.items[0];
+      const first = items.find((i) => !i.done) ?? items[0];
       if (first) select(first.lead_id);
     }
   }, [list]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -449,6 +459,13 @@ export function CallingPage() {
           </div>
           <div className="row list-head">
             <span className="list-name">{list?.name ? <>List: <b>{list.name}</b></> : null}</span>
+            <span className="row" style={{ gap: 4 }} role="group" aria-label="Order">
+              <button className={`btn small ${order === 'set' ? 'primary' : ''}`} aria-pressed={order === 'set'} onClick={() => setOrder('set')} title="The order you set, or the order leads were added">As set</button>
+              <button className={`btn small ${order === 'best_time' ? 'primary' : ''}`} aria-pressed={order === 'best_time'} onClick={() => setOrder('best_time')}
+                title="Leads it's the best time to call right now first, by your pickup rate at that hour in their time (evenings, until you have your own numbers). Before 8 AM or from 9 PM their time goes last.">
+                Best time first
+              </button>
+            </span>
             <span className="row" style={{ gap: 4 }}>
               {items.length > 0 && (
                 <button className="btn small" onClick={() => setListDialog('clear')} title="Empty the call list, keeping it as a saved list if you want">

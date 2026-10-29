@@ -86,13 +86,15 @@ export interface CallListItem {
   called_back_at: string | null;
   /** How the lead's latest appointment went (lead_state.appt_result). */
   appt_result: string | null;
+  /** The lead's time zone, for "Best time first". */
+  time_zone: string | null;
 }
 
 export function getCallList(db: DB): CallListItem[] {
   const rows = db
     .prepare(
       `SELECT i.lead_id, i.added_at, ${LEAD_NAME} name,
-              coalesce(s.active_phone_e164, l.phone_e164) phone_e164, l.state, l.county, s.status, s.attempts_total, s.last_call_at, s.appt_result,
+              coalesce(s.active_phone_e164, l.phone_e164) phone_e164, l.state, l.county, l.time_zone, s.status, s.attempts_total, s.last_call_at, s.appt_result,
               CASE WHEN s.status = 'callback' THEN s.next_due_at END callback_due_at, cb.at called_back_at,
               w.id call_id, w.requested_at worked_at, w.dial_count,
               (SELECT oc.label FROM call_outcome o JOIN outcome_code oc ON oc.code = o.outcome_code
@@ -121,6 +123,7 @@ export function getCallList(db: DB): CallListItem[] {
     callback_due_at: r.callback_due_at,
     called_back_at: r.called_back_at ?? null,
     appt_result: r.appt_result ?? null,
+    time_zone: r.time_zone ?? null,
     done: r.call_id ? { label: r.label ?? 'Called', dials: r.dial_count ?? 1, call_id: r.call_id, at: r.worked_at } : null,
   }));
 }

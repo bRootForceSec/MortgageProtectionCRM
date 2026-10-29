@@ -1,6 +1,7 @@
 import { ageOn } from '../shared/age';
 import type { OtherPhone } from '../shared/phones';
 import type { CallMode } from '../shared/appointments';
+import type { BestTimes } from '../shared/bestTime';
 
 // Thin client for the local API. All requests are same-origin; the access cookie is sent automatically.
 
@@ -117,6 +118,7 @@ export interface CallListItem {
   called_back_at: string | null;
   /** How the lead's latest appointment went (no show, sat, prezi, sold...). */
   appt_result: string | null;
+  time_zone: string | null;
 }
 
 export interface RecentOutcome {
@@ -142,6 +144,8 @@ export interface CallListResponse {
   /** The list's name, when it was loaded from a saved list. */
   name: string | null;
   saved_lists: SavedList[];
+  /** Pickups by the lead's local weekday and hour, for "Best time first". */
+  best_times: BestTimes;
 }
 
 export interface AddResult {
