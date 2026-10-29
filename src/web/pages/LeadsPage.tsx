@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { api, fmtDateTime, fmtMoney, fmtPhone, fullName, type AddResult, type CallListResponse } from '../api';
+import { api, fmtDateTime, fmtLeadAge, fmtMoney, fmtPhone, fullName, type AddResult, type CallListResponse } from '../api';
 import { ClearListDialog, suggestListName } from '../components/CallListDialogs';
 import { useApp } from '../App';
 import { ApptBadge, StatusBadge } from '../components/LeadDetails';
@@ -8,6 +8,7 @@ import { GroupPicker, useGroups } from '../components/GroupPicker';
 import { getStored, setStored } from '../storage';
 import { addDays, startOfDay } from '../when';
 import { useLeadTypes } from '../leadTypes';
+import { AGE_BANDS } from '../../shared/leadAge';
 import { BatchPicker } from '../components/BatchBrowse';
 import type { LeadType } from '../importTypes';
 import { LEAD_TABS, isCallable } from '../../shared/leadStatus';
@@ -60,6 +61,8 @@ export function LeadsPage() {
   const [notOnList, setNotOnList] = useState(false);
   /** A lead type code, "none" for leads with no type, or '' for any. */
   const [leadType, setLeadType] = useState('');
+  /** A lead age band, "unknown" for leads with no call-in date, or '' for any. */
+  const [age, setAge] = useState('');
   const { types } = useLeadTypes();
   const [changingType, setChangingType] = useState(false);
   const [rows, setRows] = useState<any[]>([]);
@@ -89,9 +92,10 @@ export function LeadsPage() {
       tried_after: r.after,
       not_on_list: notOnList ? '1' : undefined,
       lead_type: leadType || undefined,
+      age: age || undefined,
       ...groupParams,
     };
-  }, [status, search, batch, tried, notOnList, leadType, groupParams.counties, groupParams.area_codes]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [status, search, batch, tried, notOnList, leadType, age, groupParams.counties, groupParams.area_codes]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const load = useCallback(
     () => api.get<{ rows: any[]; total: number }>('/leads', filters).then((r) => { setRows(r.rows); setTotal(r.total); }),
@@ -113,7 +117,7 @@ export function LeadsPage() {
     return n;
   });
 
-  const filtered = status !== 'all' || !!search || !!batch || !!tried || notOnList || !!leadType;
+  const filtered = status !== 'all' || !!search || !!batch || !!tried || notOnList || !!leadType || !!age;
   const clearFilters = () => {
     setStatus('all');
     setSearch('');
@@ -121,6 +125,7 @@ export function LeadsPage() {
     setTried('');
     setNotOnList(false);
     setLeadType('');
+    setAge('');
   };
   const typeLabel = (code: string | null) => (code ? types.find((t) => t.code === code)?.label ?? code : '');
 
@@ -179,6 +184,11 @@ export function LeadsPage() {
           {types.map((t) => <option key={t.code} value={t.code}>{t.label}</option>)}
           <option value="none">No lead type</option>
         </select>
+        <select value={age} onChange={(e) => setAge(e.target.value)} aria-label="Lead age" title="Days since the lead called in (the call-in date on the lead page)">
+          <option value="">Any lead age</option>
+          {AGE_BANDS.map((b) => <option key={b.key} value={b.key}>{b.label}</option>)}
+          <option value="unknown">No call-in date</option>
+        </select>
         <select value={tried} onChange={(e) => setTried(e.target.value)} aria-label="Last call">
           {LAST_CALL.map((t) => <option key={t.key} value={t.key}>{t.label}</option>)}
         </select>
@@ -224,7 +234,7 @@ export function LeadsPage() {
                 onChange={() => setPicked(allPicked ? new Set() : new Set(pickable.map((r) => r.id)))}
               />
             </th>
-            <th>Name</th><th>Phone</th><th>County</th><th>Location</th><th>Type</th><th>Batch</th><th>Status</th><th>Attempts</th><th>Last call</th><th>Last outcome</th>
+            <th>Name</th><th>Phone</th><th>County</th><th>Location</th><th>Type</th><th title="Days since the lead called in">Age</th><th>Batch</th><th>Status</th><th>Attempts</th><th>Last call</th><th>Last outcome</th>
           </tr>
         </thead>
         <tbody>
@@ -248,7 +258,7 @@ export function LeadsPage() {
                 </td>
                 <td>{fullName(r)}</td>
                 <td>{fmtPhone(r.phone_e164)}</td><td>{r.county ?? ''}</td><td>{[r.city, r.state].filter(Boolean).join(', ')}</td>
-                <td title={typeLabel(r.lead_type)}>{r.lead_type ?? ''}</td><td>{r.batch_name}</td><td><StatusBadge status={r.status} /><ApptBadge result={r.appt_result} />{r.on_list && <span className="badge" style={{ marginLeft: 4 }}>on call list</span>}</td>
+                <td title={typeLabel(r.lead_type)}>{r.lead_type ?? ''}</td><td className="nowrap">{fmtLeadAge(r.callin_at)}</td><td>{r.batch_name}</td><td><StatusBadge status={r.status} /><ApptBadge result={r.appt_result} />{r.on_list && <span className="badge" style={{ marginLeft: 4 }}>on call list</span>}</td>
                 <td>{r.attempts_total}</td><td>{fmtDateTime(r.last_call_at)}</td><td>{outcomeLabel(r.last_outcome_code)}</td>
               </tr>
             );

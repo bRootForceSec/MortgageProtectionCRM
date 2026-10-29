@@ -2,6 +2,7 @@ import type { DB } from '../db/connection.js';
 import { LEAD_NAME, CURRENT_OUTCOME } from '../db/sql.js';
 import { APPT_RESULTS, type ApptResult } from '../../shared/appointments.js';
 import { isCallable } from '../../shared/leadStatus.js';
+import { AGE_BANDS, type AgeBand } from '../../shared/leadAge.js';
 import { nowIso, uuidv7 } from '../ids.js';
 import { groupWhere, searchWhere } from './groupFilter.js';
 import { DomainError } from '../core/errors.js';
@@ -27,12 +28,23 @@ export interface LeadFilter {
   not_on_list?: boolean;
   /** Only leads of this lead type code, or '' for leads with none. */
   lead_type?: string;
+  /** Only leads whose call-in date is this many days back (see shared/leadAge.ts), or 'unknown' for none. */
+  age?: AgeBand | 'unknown';
 }
 
 /** Leads page tabs for how the latest appointment went (lead_state.appt_result). */
 const APPT_TABS: Record<string, ApptResult> = Object.fromEntries(
   (Object.entries(APPT_RESULTS) as [ApptResult, (typeof APPT_RESULTS)[ApptResult]][]).flatMap(([r, d]) => (d.tab ? [[d.tab.key, r]] : [])),
 );
+
+/** Leads in one lead age band, by whole days since their call-in date. */
+function ageWhere(age: LeadFilter['age']): string {
+  if (!age) return '1';
+  if (age === 'unknown') return 'l.callin_at IS NULL';
+  const b = AGE_BANDS.find((x) => x.key === age)!;
+  const days = "CAST(julianday('now') - julianday(l.callin_at) AS INTEGER)";
+  return `(l.callin_at IS NOT NULL AND ${days} >= ${b.min}${b.max == null ? '' : ` AND ${days} <= ${b.max}`})`;
+}
 
 /** SQL condition over `lead l JOIN lead_state s` for the Leads page filters. */
 export function leadFilterWhere(f: LeadFilter): { sql: string; params: Record<string, unknown> } {
@@ -57,6 +69,7 @@ export function leadFilterWhere(f: LeadFilter): { sql: string; params: Record<st
       : '1',
     '(@lf_before IS NULL OR (s.last_call_at IS NOT NULL AND s.last_call_at < @lf_before))',
     '(@lf_after IS NULL OR (s.last_call_at IS NOT NULL AND s.last_call_at >= @lf_after))',
+    ageWhere(f.age),
     f.not_on_list ? `l.id NOT IN (SELECT i.lead_id FROM call_list_item i WHERE NOT ${WORKED})` : '1',
     group.sql,
     search.sql,
@@ -85,13 +98,15 @@ export interface CallListItem {
   called_back_at: string | null;
   /** How the lead's latest appointment went (lead_state.appt_result). */
   appt_result: string | null;
+  /** When the lead called in (UTC), for its age. */
+  callin_at: string | null;
 }
 
 export function getCallList(db: DB): CallListItem[] {
   const rows = db
     .prepare(
       `SELECT i.lead_id, i.added_at, ${LEAD_NAME} name,
-              coalesce(s.active_phone_e164, l.phone_e164) phone_e164, l.state, l.county, s.status, s.attempts_total, s.last_call_at, s.appt_result,
+              coalesce(s.active_phone_e164, l.phone_e164) phone_e164, l.state, l.county, l.callin_at, s.status, s.attempts_total, s.last_call_at, s.appt_result,
               CASE WHEN s.status = 'callback' THEN s.next_due_at END callback_due_at, cb.at called_back_at,
               w.id call_id, w.requested_at worked_at, w.dial_count,
               (SELECT oc.label FROM call_outcome o JOIN outcome_code oc ON oc.code = o.outcome_code
@@ -120,6 +135,7 @@ export function getCallList(db: DB): CallListItem[] {
     callback_due_at: r.callback_due_at,
     called_back_at: r.called_back_at ?? null,
     appt_result: r.appt_result ?? null,
+    callin_at: r.callin_at ?? null,
     done: r.call_id ? { label: r.label ?? 'Called', dials: r.dial_count ?? 1, call_id: r.call_id, at: r.worked_at } : null,
   }));
 }

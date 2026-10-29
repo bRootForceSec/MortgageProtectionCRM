@@ -355,6 +355,18 @@ test('leads open full screen like the Calling page, and step through the list', 
   await page.getByRole('button', { name: 'Leads', exact: true }).click();
   const rows = page.locator('table.grid tbody tr');
   await expect(rows.first()).toBeVisible();
+  // Every lead is in one lead-age band, or has no call-in date; the filter narrows the list.
+  const all = await rows.count();
+  const totals = await page.evaluate(async () => {
+    const n = async (q: string) => (await (await fetch(`/api/leads${q}`)).json()).total as number;
+    return { all: await n(''), bands: await Promise.all(['0_7', '8_30', '31_90', 'older', 'unknown'].map((b) => n(`?age=${b}`))) };
+  });
+  expect(totals.bands.reduce((a, b) => a + b, 0)).toBe(totals.all);
+  const shown = page.waitForResponse((r) => r.url().includes('/api/leads?') && r.url().includes('age=unknown'));
+  await page.getByLabel('Lead age').selectOption('unknown');
+  await shown;
+  await page.getByLabel('Lead age').selectOption('');
+  await expect(rows).toHaveCount(all);
   const first = (await rows.nth(0).locator('td').nth(1).innerText()).trim();
   const second = (await rows.nth(1).locator('td').nth(1).innerText()).trim();
   await rows.first().click();

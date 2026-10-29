@@ -13,7 +13,7 @@ export function listLeads(db: DB, f: LeadFilter) {
   const w = leadFilterWhere(f);
   const rows = db
     .prepare(
-      `SELECT l.id, l.first_name, l.last_name, l.phone_e164, l.state, l.city, l.county, l.lead_type, b.name batch_name, s.status, s.attempts_total,
+      `SELECT l.id, l.first_name, l.last_name, l.phone_e164, l.state, l.city, l.county, l.lead_type, l.callin_at, b.name batch_name, s.status, s.attempts_total,
               s.last_call_at, s.last_outcome_code, s.next_due_at, s.appt_result
        FROM lead l JOIN lead_state s ON s.lead_id = l.id JOIN import_batch b ON b.id = l.batch_id
        WHERE ${w.sql}

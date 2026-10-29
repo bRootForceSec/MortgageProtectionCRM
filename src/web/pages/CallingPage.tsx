@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { callbackFields } from '../when';
-import { api, fmtPhone, fmtRelative, fmtDateTime, type LeadDetail, type CallListItem, type CallListResponse } from '../api';
+import { api, fmtLeadAge, fmtPhone, fmtRelative, fmtDateTime, type LeadDetail, type CallListItem, type CallListResponse } from '../api';
 import { useApp } from '../App';
 import { ApptBadge, LeadSummary, CallHistory, Notes, toggleCalledBack } from '../components/LeadDetails';
 import { EditLead } from '../components/EditLead';
@@ -520,7 +520,7 @@ export function CallingPage() {
                     >×</button>
                   </span>
                   <span className="sub">
-                    {fmtPhone(i.phone_e164)} · {i.county ? `${i.county} Co.` : i.state ?? '?'} · {i.attempts_total ? `${i.attempts_total} attempt${i.attempts_total > 1 ? 's' : ''}, last ${fmtRelative(i.last_call_at)}` : 'never called'}
+                    {fmtPhone(i.phone_e164)} · {i.county ? `${i.county} Co.` : i.state ?? '?'}{i.callin_at ? ` · ${fmtLeadAge(i.callin_at)}` : ''} · {i.attempts_total ? `${i.attempts_total} attempt${i.attempts_total > 1 ? 's' : ''}, last ${fmtRelative(i.last_call_at)}` : 'never called'}
                   </span>
                 </li>
               ))}
