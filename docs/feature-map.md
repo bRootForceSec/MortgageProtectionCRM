@@ -15,7 +15,7 @@ How the recent features flow through data, server and UI, and where the same ide
 | Appointment outcomes | rows `appt_*` in `outcome_code` (021) | `shared/appointments.ts` `APPT_OUTCOME_RESULT`; `leadState.ts` `deriveLeadState`; `unitrustAppointments.ts` `appointmentsOnDays` | `LogCall.tsx`, `ApptBadge` |
 | Lead status tags and Leads tabs | `lead_state.status`, `appt_result`, `appt_missed` | `callList.ts` `leadFilterWhere`, `APPT_TABS`; `leadRoutes.ts` status enum | `LeadsPage.tsx` `STATUSES`, `LeadDetails.tsx` `STATUS_LABEL`, `StatusBadge`, `ApptBadge` |
 | Extended funnel | calls + outcomes + appointments | `reports.ts` `todayStats` (first calls only) + `appointmentCounts` | `Funnel.tsx` `STEPS`, top bar `TodayStats` in `App.tsx` |
-| Hidden objection storage | `objection_code`, `call_objection` (021) | `domain/objections.ts`, accepted on `POST /api/calls` | nothing shown yet |
+| Objections per call | `objection_code`, `call_objection` (021) | `domain/objections.ts`, accepted on `POST /api/calls`, listed in `/api/meta` | chips in `LogCall.tsx` after outcomes with `objections` in the registry |
 | Unitrust calendar sync | `appointment`, `appointment_result` (019, 020) | `unitrustRoutes.ts`, `unitrustAppointments.ts` (color → result, reschedules) | `extension/unitrust/`, Settings card, Reports appointments, top bar |
 
 ## The same idea defined more than once

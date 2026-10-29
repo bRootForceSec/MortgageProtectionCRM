@@ -27,6 +27,8 @@ export interface OutcomeDef {
   books: boolean;
   /** Counts as "Appts set" in the funnel, the top bar, Reports and the Numbers page. */
   apptSet: boolean;
+  /** They talked but said no: the Calling screen offers objection chips (price, spouse...) before you save. */
+  objections: boolean;
   /** Appointment side: how the appointment went. */
   apptResult: Exclude<ApptResult, 'not_set'> | null;
   /** Shown as a button. Retired outcomes stay for the calls that carry them. */
@@ -41,7 +43,7 @@ const OCT17 = '2026-10-17T00:00:00.000Z';
 const OCT29 = '2026-10-29T00:00:00.000Z';
 
 const base = {
-  kind: 'first_call', hotkey: null, pickup: false, callback: false, marksDead: false, books: false, apptSet: false,
+  kind: 'first_call', hotkey: null, pickup: false, callback: false, marksDead: false, books: false, apptSet: false, objections: false,
   apptResult: null, active: true, introducedAt: OCT17, leadEffect: null,
 } as const;
 const retired = { ...base, active: false } as const;
@@ -50,15 +52,15 @@ const appt = { ...base, kind: 'appointment', introducedAt: OCT29 } as const;
 export const OUTCOMES = {
   // First call side
   no_answer: { ...base, label: 'No answer', group: 'no_contact', hotkey: '1', sortOrder: 10 },
-  no_appt: { ...base, label: 'Talked, no appt', group: 'contact', hotkey: '2', pickup: true, sortOrder: 20 },
+  no_appt: { ...base, label: 'Talked, no appt', group: 'contact', hotkey: '2', pickup: true, objections: true, sortOrder: 20 },
   appointment: { ...base, label: 'Appt set', group: 'contact', hotkey: '3', pickup: true, books: true, apptSet: true, sortOrder: 30 },
   bad_number: { ...base, label: 'Bad number', group: 'invalid', hotkey: '4', sortOrder: 40 },
   callback: { ...base, label: 'Callback', group: 'contact', hotkey: '5', pickup: true, callback: true, sortOrder: 50 },
 
   // Appointment side
   appt_no_show: { ...appt, label: 'No show', group: 'no_contact', hotkey: '1', apptResult: 'no_show', sortOrder: 110 },
-  appt_sat_no_sale: { ...appt, label: 'Sat, no sale', group: 'contact', hotkey: '2', pickup: true, apptResult: 'sat_no_sale', sortOrder: 120 },
-  appt_prezi: { ...appt, label: 'Prezi', group: 'contact', hotkey: '3', pickup: true, apptResult: 'prezi', sortOrder: 130 },
+  appt_sat_no_sale: { ...appt, label: 'Sat, no sale', group: 'contact', hotkey: '2', pickup: true, objections: true, apptResult: 'sat_no_sale', sortOrder: 120 },
+  appt_prezi: { ...appt, label: 'Prezi', group: 'contact', hotkey: '3', pickup: true, objections: true, apptResult: 'prezi', sortOrder: 130 },
   appt_sale: { ...appt, label: 'Sale', group: 'contact', hotkey: '4', pickup: true, apptResult: 'sold', leadEffect: 'sold', sortOrder: 140 },
   appt_rescheduled: { ...appt, label: 'Rescheduled', group: 'contact', hotkey: '5', pickup: true, apptResult: 'rescheduled', sortOrder: 150 },
 
