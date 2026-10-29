@@ -294,3 +294,19 @@ describe('backup restore check', () => {
     expect((await app.inject({ url: '/api/backups/check', headers: auth })).json().ok).toBe(false);
   });
 });
+
+describe('week by week', () => {
+  it('puts this week next to the 4 before it, Monday to Sunday, with appts per pickup by lead type', () => {
+    log('Ben', 'appointment', { occurred_at: new Date(Date.now() - 9 * 86_400_000).toISOString() });
+    const w = buildReport(db, range()).weekly;
+    expect(w.weeks).toHaveLength(5);
+    expect(new Date(`${w.weeks[0]!.start}T12:00:00Z`).getUTCDay()).toBe(1);
+    expect(w.weeks.map((x) => x.start)).toEqual([...w.weeks.map((x) => x.start)].sort().reverse());
+    // The setup's calls (pickups Amy, Ben, Dee, Eve; appointments Amy and Dee) and Ben's booking 9 days ago.
+    const sum = (k: 'pickups' | 'appointments') => w.weeks.reduce((n, x) => n + x[k], 0);
+    expect([sum('pickups'), sum('appointments')]).toEqual([5, 3]);
+    expect(w.types.map((t) => t.key)).toEqual(['B', 'CI-A']);
+    expect(w.weeks.reduce((n, x) => n + x.by_type['CI-A']!.appointments, 0)).toBe(1);
+    expect(buildReport(db, range()).targets).toMatchObject({ show_rate: 0.8, close_rate: 0.5 });
+  });
+});

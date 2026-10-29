@@ -293,6 +293,10 @@ test('reports: numbers open the calls behind them', async ({ page }) => {
   await page.goto(launchUrl);
   await page.getByRole('button', { name: 'Reports' }).click();
   await expect(page.getByRole('heading', { name: 'Reports' })).toBeVisible();
+  const weekly = page.locator('.card', { has: page.getByRole('heading', { name: /Week by week/ }) });
+  await expect(weekly.getByRole('columnheader', { name: 'This week' })).toBeVisible();
+  await expect(weekly.getByRole('row', { name: /Show rate/ })).toContainText('80%');
+  await weekly.screenshot({ path: 'test-results/weekly.png' });
   const dials = page.locator('.summary-tiles div', { hasText: 'Dials' }).first().locator('button.num');
   await expect(dials).not.toHaveText('0');
   const attempts = await page.locator('.summary-tiles div', { hasText: 'Attempts' }).first().locator('button.num').innerText();
