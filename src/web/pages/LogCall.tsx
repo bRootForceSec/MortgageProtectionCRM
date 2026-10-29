@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { describeCallback, differentZone, readCallback } from '../when';
+import { describeCallback, differentZone, readCallback, toWall } from '../when';
 import { api, fmtPhone, newKey, type LeadDetail } from '../api';
 import { useApp } from '../App';
 import { isTyping, keyLabel, normKey, type KeyMap } from '../shortcuts';
@@ -16,6 +16,8 @@ const LAST_NUMBER_KEY = 'mpcrm.lastNumber';
 export interface Attempt {
   dials: number;
   timerStart: number | null;
+  /** When you first pressed Dial for this attempt (with or without the timer). */
+  dialedAt: number | null;
   to: string | null;
   /** When this lead came on screen, for the time spent on it. */
   shownAt: number;
@@ -112,6 +114,8 @@ export function LogCall({
   const outcomes = useMemo(() => (meta?.outcome_codes ?? []).filter((o) => o.kind === mode), [meta, mode]);
   const outcome = outcomes.find((o) => o.code === code) ?? null;
   const needsWhen = !!outcome?.requires_callback_time;
+  // Appt set: the appointment's day and time, optional, typed like a callback.
+  const apptWhen = !!outcomeDef(code)?.apptSet;
   const objectionCodes = useMemo(() => meta?.objection_codes ?? [], [meta]);
   const asksObjections = !!outcomeDef(code)?.objections && objectionCodes.length > 0;
   const toggleObjection = useCallback((c: string) => setObjections((v) => (v.includes(c) ? v.filter((x) => x !== c) : [...v, c])), []);
@@ -125,8 +129,12 @@ export function LogCall({
       setTimeout(() => { dayRef.current?.focus(); dayRef.current?.select(); }, 0);
       return;
     }
-    // No answer and Bad number need nothing more, so they save straight away (Undo still catches a wrong key).
-    if (calling?.settings.instant_save !== false && o && savesInstantly(o)) void saveRef.current(c);
+    if (outcomeDef(c)?.apptSet) {
+      setTimeout(() => dayRef.current?.focus(), 0);
+      return;
+    }
+    // Outcomes set to save without Enter (by default No answer, Bad number and No show) save straight away; Undo still catches a wrong key.
+    if (calling?.settings.instant_save !== false && o && savesInstantly(o, calling?.settings.instant_outcomes)) void saveRef.current(c);
   }, [meta, calling]);
 
   // Talk time from the timer, only when someone picked up and you didn't type minutes yourself.
@@ -139,8 +147,10 @@ export function LogCall({
     if (!codeNow || saving) return;
     const o = meta?.outcome_codes.find((x) => x.code === codeNow) ?? null;
     const cb = o?.requires_callback_time ? readCallback(day, time, new Date(), d.lead.time_zone) : null;
-    if (cb && 'error' in cb) {
-      toast(cb.error, 'error');
+    const appt = outcomeDef(codeNow)?.apptSet && day.trim() ? readCallback(day, time, new Date(), d.lead.time_zone) : null;
+    const bad = cb && 'error' in cb ? cb : appt && 'error' in appt ? appt : null;
+    if (bad) {
+      toast(bad.error, 'error');
       dayRef.current?.focus();
       return;
     }
@@ -151,12 +161,14 @@ export function LogCall({
         from_number_id: numberId || null,
         to_e164: attempt.to,
         outcome_code: codeNow,
-        callback_due_at: cb ? cb.at.toISOString() : null,
-        callback_any_time: cb ? cb.anyTime : null,
+        callback_due_at: cb && !('error' in cb) ? cb.at.toISOString() : null,
+        callback_any_time: cb && !('error' in cb) ? cb.anyTime : null,
+        appointment_for: appt && !('error' in appt) ? toWall(appt) : null,
         do_not_call: doNotCall,
         talk_seconds: minutes ? Number(minutes) * 60 : timerSeconds(o),
         dial_count: attempt.dials,
         lead_seconds: Math.round((Date.now() - attempt.shownAt) / 1000),
+        dialed_at: attempt.dialedAt ? new Date(attempt.dialedAt).toISOString() : null,
         note: note || null,
         objections: outcomeDef(codeNow)?.objections ? objections.map((c) => ({ code: c })) : [],
       });
@@ -300,13 +312,13 @@ export function LogCall({
       )}
       {code && (
         <div className="row" style={{ alignItems: 'flex-end' }}>
-          {needsWhen && (() => {
+          {(needsWhen || apptWhen) && (() => {
             const cb = readCallback(day, time, new Date(), d.lead.time_zone);
             const theirs = differentZone(d.lead.time_zone);
             return (
               <div className="callback-picker">
                 <label className="field">
-                  <span>Call back on</span>
+                  <span>{apptWhen ? 'Appointment on (optional)' : 'Call back on'}</span>
                   <input id="callback-day" ref={dayRef} value={day} onChange={(e) => setDay(e.target.value)} onFocus={(e) => e.target.select()}
                     placeholder="t, m, fri, 10/24" style={{ width: 120 }} autoComplete="off" />
                 </label>
@@ -314,7 +326,7 @@ export function LogCall({
                   <span>At (optional{theirs ? ', their time' : ''})</span>
                   <input id="callback-time" value={time} onChange={(e) => setTime(e.target.value)} placeholder="any time" style={{ width: 90 }} autoComplete="off" />
                 </label>
-                <span className={'error' in cb ? 'help warn' : 'help'} aria-live="polite">{'error' in cb ? (day ? cb.error : '') : describeCallback(cb, new Date(), d.lead.time_zone)}</span>
+                <span className={'error' in cb ? 'help warn' : 'help'} aria-live="polite">{'error' in cb ? (day ? cb.error : apptWhen ? 'Leave blank if you don\'t know yet; Unitrust fills it in.' : '') : describeCallback(cb, new Date(), d.lead.time_zone)}</span>
               </div>
             );
           })()}
@@ -332,17 +344,23 @@ export function LogCall({
       )}
       {!code && (
         <p className="help">
-          {calling?.settings.instant_save !== false
-            ? mode === 'appointment'
-              ? 'After the appointment, press the outcome key. No show saves right away; the others save with Enter.'
-              : 'After the call, press the outcome key. No answer and Bad number save right away; the others save with Enter.'
-            : 'After the call, press the outcome key, then Enter.'}{' '}
+          {saveHelp(mode, calling?.settings.instant_save !== false ? outcomes.filter((o) => savesInstantly(o, calling?.settings.instant_outcomes)) : [], outcomes.length)}{' '}
           Dialed more than once? Press <kbd>{k('dials_up')}</kbd> for each extra dial first.
         </p>
       )}
       {d.state?.status === 'invalid' && <RestoreBox d={d} onSaved={onRefresh} label={d.state.block_reason ? `${d.state.block_reason}.` : 'Marked as a bad number.'} />}
     </div>
   );
+}
+
+/** How saving works on this side, e.g. "No answer and Bad number save right away; the others save with Enter." */
+function saveHelp(mode: CallMode, instant: { label: string }[], total: number): string {
+  const after = mode === 'appointment' ? 'After the appointment' : 'After the call';
+  if (!instant.length) return `${after}, press the outcome key, then Enter.`;
+  const names = instant.map((o) => o.label);
+  const list = names.length > 1 ? `${names.slice(0, -1).join(', ')} and ${names.at(-1)}` : names[0];
+  const verb = names.length > 1 ? 'save' : 'saves';
+  return `${after}, press the outcome key. ${list} ${verb} right away${instant.length < total ? '; the others save with Enter' : ''}.`;
 }
 
 function RestoreBox({ d, onSaved, label }: { d: LeadDetail; onSaved: () => Promise<void>; label: string }) {

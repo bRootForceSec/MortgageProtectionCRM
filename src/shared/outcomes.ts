@@ -74,9 +74,9 @@ export const OUTCOMES = {
   hung_up: { ...retired, label: 'Answered, hung up', group: 'contact', pickup: true, sortOrder: 95 },
   other: { ...retired, label: 'Other (add a note)', group: 'contact', pickup: true, sortOrder: 100 },
   picked_up: { ...retired, label: 'Picked up', group: 'contact', pickup: true, sortOrder: 120 },
-  // These two booked the lead, but were never counted as appointments set.
-  sat_no_sale: { ...retired, label: 'Appointment sat, no sale', group: 'contact', pickup: true, books: true, sortOrder: 130 },
-  sold: { ...retired, label: 'Sold', group: 'contact', pickup: true, books: true, leadEffect: 'sold', sortOrder: 140 },
+  // From before the Appointment side: each one booked the lead, so it counts as an appointment set.
+  sat_no_sale: { ...retired, label: 'Appointment sat, no sale', group: 'contact', pickup: true, books: true, apptSet: true, sortOrder: 130 },
+  sold: { ...retired, label: 'Sold', group: 'contact', pickup: true, books: true, apptSet: true, leadEffect: 'sold', sortOrder: 140 },
 } as const satisfies Record<string, OutcomeDef>;
 
 export type OutcomeCode = keyof typeof OUTCOMES;
@@ -101,8 +101,16 @@ export const APPT_OUTCOME_RESULT: Readonly<Record<string, Exclude<ApptResult, 'n
   entries.flatMap(([c, o]) => (o.apptResult ? [[c, o.apptResult]] : [])),
 );
 
-/** Saves as soon as you press its key, without Enter: nothing more to fill in (no callback time, no talk time). */
-export function savesInstantly(o: { requires_callback_time: number | boolean; counts_as_human_contact: number | boolean }): boolean {
-  return !o.requires_callback_time && !o.counts_as_human_contact;
+/**
+ * Saves as soon as you press its key, without Enter. By default that's the outcomes with nothing more to fill in (no
+ * callback time, no talk time); `chosen` (Settings, outcome code -> on/off) changes any of them except a callback,
+ * which always needs its day.
+ */
+export function savesInstantly(
+  o: { code: string; requires_callback_time: number | boolean; counts_as_human_contact: number | boolean },
+  chosen: Readonly<Record<string, boolean>> = {},
+): boolean {
+  if (o.requires_callback_time) return false;
+  return Object.hasOwn(chosen, o.code) ? chosen[o.code]! : !o.counts_as_human_contact;
 }
 

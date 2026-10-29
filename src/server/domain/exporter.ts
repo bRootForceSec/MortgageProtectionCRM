@@ -17,8 +17,9 @@ export function exportRows(db: DB, table: ExportTable, opts: { includeHealth?: b
             b.name batch_name, s.status, s.attempts_total, s.last_call_at, s.last_outcome_code, s.next_due_at
             FROM lead l JOIN import_batch b ON b.id = l.batch_id LEFT JOIN lead_state s ON s.lead_id = l.id ORDER BY l.created_at`,
     calls: `SELECT c.*, (SELECT o.outcome_code FROM call_outcome o WHERE o.call_id = c.id
-              AND ${CURRENT_OUTCOME} ORDER BY o.entered_at DESC LIMIT 1) current_outcome
-            FROM call c ORDER BY c.requested_at`,
+              AND ${CURRENT_OUTCOME} ORDER BY o.entered_at DESC LIMIT 1) current_outcome,
+              sv.body opener
+            FROM call c LEFT JOIN script_version sv ON sv.id = c.script_version_id ORDER BY c.requested_at`,
     outcomes: 'SELECT * FROM call_outcome ORDER BY entered_at',
     events: 'SELECT * FROM call_event ORDER BY received_at',
     notes: 'SELECT * FROM note ORDER BY created_at',

@@ -3,9 +3,12 @@ import { LEAD_NAME, CURRENT_OUTCOME } from '../db/sql.js';
 import { uuidv7, nowIso } from '../ids.js';
 import { rebuildLeadState } from './leadState.js';
 import { DomainError } from '../core/errors.js';
+import { outcomeDef } from '../../shared/outcomes.js';
 import { audit } from '../core/audit.js';
 import { groupWhere, searchWhere } from './groupFilter.js';
 import { callObjections, recordObjections, type ObjectionInput } from './objections.js';
+import { appointmentTimeOfCall, cancelAppointmentsOfCall, recordAppointmentTime } from './appointments.js';
+import { currentOpenerVersion } from './scripts.js';
 
 export interface ManualCallInput {
   lead_id: string;
@@ -19,6 +22,8 @@ export interface ManualCallInput {
   dial_count?: number | null;
   /** Seconds the lead was on screen before you saved (Calling page). */
   lead_seconds?: number | null;
+  /** When you pressed Dial on the Calling page, if you did. Kept with the save time, to match a recording to its call later. */
+  dialed_at?: string | null;
   outcome_code: string;
   callback_due_at?: string | null;
   /** The callback is for a day, any time that day; callback_due_at is the start of that day. */
@@ -26,7 +31,9 @@ export interface ManualCallInput {
   /** They asked not to be called again: the lead goes to the dead pile. */
   do_not_call?: boolean | null;
   note?: string | null;
-  /** Objections heard on the call. Not asked for on screen yet. */
+  /** Appt set: when the appointment is, in your time ("2026-10-30" or "2026-10-30T14:00"). Optional; Unitrust confirms it. */
+  appointment_for?: string | null;
+  /** Objections heard on the call (chips on the Calling screen). */
   objections?: ObjectionInput[] | null;
 }
 
@@ -92,16 +99,22 @@ export function logManualCall(db: DB, input: ManualCallInput) {
     const dials = input.dial_count == null ? 1 : Math.round(input.dial_count);
     if (!(dials >= 1)) throw new DomainError('dial count must be at least 1');
     const onLead = input.lead_seconds == null ? null : Math.max(0, Math.round(input.lead_seconds));
+    // Logged as it happens (no occurred_at): started is when you pressed Dial, ended is when you saved.
+    const live = !input.occurred_at;
+    const dialed = live ? checkIso(input.dialed_at, 'dial time') : null;
+    if (dialed && (dialed > now || Date.parse(now) - Date.parse(dialed) > 86_400_000)) throw new DomainError('dial time must be within the last day');
     const callId = uuidv7();
+    // Logged live: note which opener was in Settings.
+    const script = live ? currentOpenerVersion(db, now) : null;
     db.prepare(
       `INSERT INTO call (id, lead_id, direction, channel, from_number_id, from_e164, to_e164, requested_at, idempotency_key,
-        initiation_result, state, state_confirmed_by, started_at, talk_seconds, dial_count, lead_seconds, derived_at)
-       VALUES (?, ?, 'outbound', 'manual_log', ?, ?, ?, ?, ?, 'accepted', 'ended', 'manual', ?, ?, ?, ?, ?)`,
-    ).run(callId, lead.id, input.from_number_id ?? null, fromE164, to, at, input.idempotency_key, at, talk, dials, onLead, now);
+        initiation_result, state, state_confirmed_by, started_at, ended_at, talk_seconds, dial_count, lead_seconds, script_version_id, derived_at)
+       VALUES (?, ?, 'outbound', 'manual_log', ?, ?, ?, ?, ?, 'accepted', 'ended', 'manual', ?, ?, ?, ?, ?, ?, ?)`,
+    ).run(callId, lead.id, input.from_number_id ?? null, fromE164, to, at, input.idempotency_key, dialed ?? at, live ? now : null, talk, dials, onLead, script, now);
     db.prepare(
       `INSERT INTO call_event (id, call_id, source, dedup_key, event_type_raw, event_type, occurred_at, received_at, payload_json)
        VALUES (?, ?, 'manual', ?, 'manual.logged', 'call.logged_manually', ?, ?, ?)`,
-    ).run(uuidv7(), callId, `manual:${callId}`, at, now, JSON.stringify({ talk_seconds: talk, dial_count: dials, from_e164: fromE164, to_e164: to }));
+    ).run(uuidv7(), callId, `manual:${callId}`, at, now, JSON.stringify({ talk_seconds: talk, dial_count: dials, from_e164: fromE164, to_e164: to, dialed_at: dialed }));
     db.prepare(
       `INSERT INTO call_outcome (id, call_id, outcome_code, entered_at, callback_due_at, callback_any_time, note, do_not_call)
        VALUES (?,?,?,?,?,?,?,?)`,
@@ -112,6 +125,10 @@ export function logManualCall(db: DB, input: ManualCallInput) {
       );
     }
     recordObjections(db, callId, input.objections ?? [], 'manual', now);
+    if (input.appointment_for) {
+      if (!outcomeDef(outcome.code)?.apptSet) throw new DomainError('only an appointment set takes an appointment time');
+      recordAppointmentTime(db, lead.id, callId, input.from_number_id ?? null, input.appointment_for, now);
+    }
     rebuildLeadState(db, [lead.id]);
     return { call_id: callId, duplicate: false };
   })();
@@ -135,6 +152,8 @@ export function voidCall(db: DB, callId: string, reason?: string | null) {
        VALUES (?, ?, 'manual', ?, 'manual.voided', 'call.voided', ?, ?, ?)`,
     ).run(uuidv7(), callId, `void:${callId}`, now, now, JSON.stringify({ reason: reason ?? null }));
     const out = currentOutcome(db, callId);
+    const appointmentFor = appointmentTimeOfCall(db, callId);
+    cancelAppointmentsOfCall(db, callId);
     const note = db.prepare('SELECT body FROM note WHERE call_id = ? ORDER BY created_at LIMIT 1').get(callId) as { body: string } | undefined;
     if (call.lead_id) rebuildLeadState(db, [call.lead_id]);
     return {
@@ -146,8 +165,10 @@ export function voidCall(db: DB, callId: string, reason?: string | null) {
       dial_count: call.dial_count as number,
       talk_seconds: call.talk_seconds as number | null,
       lead_seconds: call.lead_seconds as number | null,
+      dialed_at: call.ended_at && call.started_at !== call.requested_at ? (call.started_at as string) : null,
       from_number_id: call.from_number_id as string | null,
       note: note?.body ?? null,
+      appointment_for: appointmentFor,
       objections: callObjections(db, callId),
     };
   })();
@@ -199,6 +220,8 @@ export function changeOutcome(
       id, callId, o.code, nowIso(), cur?.id ?? null, due, due && input.callback_any_time ? 1 : 0, input.note?.trim() || null,
       (input.do_not_call ?? !!cur?.do_not_call) ? 1 : 0,
     );
+    // No longer an appointment set: the time typed for it goes too.
+    if (!outcomeDef(o.code)?.apptSet) cancelAppointmentsOfCall(db, callId);
     if (call.lead_id) rebuildLeadState(db, [call.lead_id]);
     return { outcome_id: id };
   })();
