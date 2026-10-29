@@ -124,6 +124,25 @@ describe('calling settings', () => {
     expect(dueLeads(db).find((l) => l.id === jane)?.status).toBe('retry');
   });
 
+  it('a follow-up plan turns a no-show into a timed callback, and refuses steps it cannot read', async () => {
+    logManualCall(db, { lead_id: jane, idempotency_key: key(), outcome_code: 'appointment' });
+    logManualCall(db, { lead_id: jane, idempotency_key: key(), outcome_code: 'appt_no_show' });
+    const state = () => db.prepare('SELECT status, next_due_at, appt_missed FROM lead_state WHERE lead_id = ?').get(jane) as { status: string; next_due_at: string | null; appt_missed: number };
+    expect(state()).toMatchObject({ status: 'retry', next_due_at: null, appt_missed: 1 });
+    const cur = (await app.inject({ url: '/api/settings/calling', headers: auth })).json();
+    expect(cur.settings.follow_ups).toEqual({ no_show: [], sat_no_sale: [], prezi: [] });
+    const ok = await app.inject({
+      method: 'PUT', url: '/api/settings/calling', headers: write, payload: { ...cur.settings, follow_ups: { ...cur.settings.follow_ups, no_show: ['15m'] } },
+    });
+    expect(ok.statusCode).toBe(200);
+    expect(state()).toMatchObject({ status: 'callback', appt_missed: 1 });
+    expect(Date.parse(state().next_due_at!) - Date.now()).toBeGreaterThan(14 * 60_000);
+    const bad = await app.inject({
+      method: 'PUT', url: '/api/settings/calling', headers: write, payload: { ...cur.settings, follow_ups: { ...cur.settings.follow_ups, no_show: ['soon'] } },
+    });
+    expect(bad.statusCode).toBe(400);
+  });
+
   it('keeps remapped shortcuts and refuses unknown actions', async () => {
     const cur = (await app.inject({ url: '/api/settings/calling', headers: auth })).json();
     const ok = await app.inject({

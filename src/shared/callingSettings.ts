@@ -1,4 +1,5 @@
 import * as z from 'zod/v4';
+import { isStep } from './followUps.js';
 
 // Calling screen settings, shared by the server (which validates and stores them) and the UI (which edits them).
 // You set every limit yourself; nothing here caps how much you call.
@@ -26,10 +27,19 @@ export const SHORTCUT_ACTIONS = {
 export type ShortcutAction = keyof typeof SHORTCUT_ACTIONS;
 
 const key = z.string().min(1).max(20);
+const plan = z.array(z.string().refine(isStep, 'not a follow-up step')).max(10).default([]);
 
 export const CallingSettings = z.object({
   /** Minutes before an unanswered lead comes back. 0 means right away. */
   retry_gap_minutes: z.number().int().min(0).max(60 * 24 * 60).default(240),
+  /** When to try again after a no-show, sat-no-sale or prezi (see followUps.ts). An empty plan means due right away. */
+  follow_ups: z
+    .object({
+      no_show: plan,
+      sat_no_sale: plan,
+      prezi: plan,
+    })
+    .default({ no_show: [], sat_no_sale: [], prezi: [] }),
   /** From this hour on, a new appointment or callback defaults to tomorrow morning instead of today. */
   late_cutoff_hour: z.number().int().min(0).max(24).default(21),
   /** How "dial" works: copy the number, show a QR code for your phone, or send it to your phone with KDE Connect. */

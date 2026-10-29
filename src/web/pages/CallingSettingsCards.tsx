@@ -6,6 +6,8 @@ import {
   buildKeyMap, conflicts, keyLabel, normKey, RESERVED, type CallingSettingsResponse,
 } from '../shortcuts';
 import type { CallingSettings, ShortcutAction } from '../../shared/callingSettings';
+import { parsePlan, SUGGESTED_FOLLOW_UPS } from '../../shared/followUps';
+import { APPT_RESULT_LABEL } from '../../shared/appointments';
 
 // Settings for the Calling screen: retry gap, dialing, timer, goals, alerts, shortcuts and scripts.
 
@@ -34,6 +36,22 @@ function NumberField({ value, onSave, min = 0, allowBlank, width = 90 }: { value
     if (n !== value) onSave(n);
   };
   return <input type="number" min={min} value={v} onChange={(e) => setV(e.target.value)} onBlur={commit} onKeyDown={(e) => e.key === 'Enter' && commit()} style={{ width }} />;
+}
+
+/** A follow-up plan typed as "15m, 1d@09:00, 3d". A plan that isn't understood is not saved. */
+function PlanField({ value, onSave }: { value: string[]; onSave: (steps: string[]) => void }) {
+  const { toast } = useApp();
+  const [v, setV] = useState(value.join(', '));
+  useEffect(() => setV(value.join(', ')), [value]);
+  const commit = () => {
+    const steps = parsePlan(v);
+    if (!steps) {
+      toast('Write each step like 15m, 2h, 3d or 1d@09:00, separated by commas', 'error');
+      return setV(value.join(', '));
+    }
+    if (steps.join() !== value.join()) onSave(steps);
+  };
+  return <input value={v} placeholder="none: due right away" onChange={(e) => setV(e.target.value)} onBlur={commit} onKeyDown={(e) => e.key === 'Enter' && commit()} style={{ width: 200 }} />;
 }
 
 export function CallingCard() {
@@ -103,6 +121,24 @@ export function CallingCard() {
         <label>Saving</label>
         <span>
           <label className="choice-inline"><input type="checkbox" checked={s.instant_save} onChange={(e) => set({ instant_save: e.target.checked })} /> No answer and Bad number save as soon as I press the key (no Enter). Undo still works.</label>
+        </span>
+
+        <label>Follow-ups</label>
+        <span>
+          {(['no_show', 'sat_no_sale', 'prezi'] as const).map((r) => (
+            <span key={r} className="row">
+              <span style={{ width: 110 }}>{APPT_RESULT_LABEL[r]}</span>
+              <PlanField value={s.follow_ups[r]} onSave={(steps) => set({ follow_ups: { ...s.follow_ups, [r]: steps } })} />
+              {!s.follow_ups[r].length && (
+                <button className="btn small" onClick={() => set({ follow_ups: { ...s.follow_ups, [r]: SUGGESTED_FOLLOW_UPS[r] } })}>Use {SUGGESTED_FOLLOW_UPS[r].join(', ')}</button>
+              )}
+            </span>
+          ))}
+          <span className="help">
+            When to try again after that result: each step is a callback, timed from the result and then from each try nobody answered.
+            15m, 2h and 3d are minutes, hours and days later; 1d@09:00 is the next day at 9 AM. When someone answers, or the steps run out,
+            the usual retry takes over. With no steps, the lead is due right away.
+          </span>
         </span>
 
         <label>Call timer</label>
