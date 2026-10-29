@@ -301,7 +301,8 @@ describe('week by week', () => {
     const w = buildReport(db, range()).weekly;
     expect(w.weeks).toHaveLength(5);
     expect(new Date(`${w.weeks[0]!.start}T12:00:00Z`).getUTCDay()).toBe(1);
-    expect(w.weeks.map((x) => x.start)).toEqual([...w.weeks.map((x) => x.start)].sort().reverse());
+    const starts = w.weeks.map((x) => x.start);
+    expect(starts).toEqual(starts.slice().sort().reverse());
     // The setup's calls (pickups Amy, Ben, Dee, Eve; appointments Amy and Dee) and Ben's booking 9 days ago.
     const sum = (k: 'pickups' | 'appointments') => w.weeks.reduce((n, x) => n + x[k], 0);
     expect([sum('pickups'), sum('appointments')]).toEqual([5, 3]);
