@@ -145,6 +145,7 @@ export function registerLeadRoutes(app: FastifyInstance, deps: { db: DB; config:
       talk_seconds: z.number().min(0).max(36000).nullish(),
       dial_count: z.number().int().min(1).max(1000).nullish(),
       lead_seconds: z.number().min(0).max(7 * 86400).nullish(),
+      dialed_at: z.string().max(40).nullish(),
       outcome_code: z.string().max(40),
       callback_due_at: z.string().max(40).nullish(),
       callback_any_time: z.boolean().nullish(),

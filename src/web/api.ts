@@ -92,6 +92,8 @@ export interface CallerNumber {
 
 export interface Meta {
   outcome_codes: OutcomeCode[];
+  /** Why a lead said no: offered as chips after an outcome that asks for them. */
+  objection_codes: { code: string; label: string }[];
   lead_fields: { key: string; label: string }[];
   numbers: CallerNumber[];
   data_dir: string;

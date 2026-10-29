@@ -5,6 +5,7 @@ import { describeCallback, fromWall, ymd } from '../when';
 import { APPT_RESULT_LABEL, type ApptResult } from '../../shared/appointments';
 import { outcomeDef } from '../../shared/outcomes';
 import { statusLabel } from '../../shared/leadStatus';
+import { ALL_PARTY_CONSENT_STATES, needsAllPartyConsent } from '../../shared/recordingConsent';
 
 
 function leadAge(iso: string | null | undefined) {
@@ -58,7 +59,8 @@ export function LeadSummary({
   calledBackKey?: string;
 }) {
   const l = d.lead;
-  const { toast } = useApp();
+  const { toast, calling } = useApp();
+  const consent = !!calling?.settings.recording.on && needsAllPartyConsent(l.state);
   // Shown ticked at once; the app's answer follows.
   const [backAt, setBackAt] = useState(d.called_back_at);
   useEffect(() => setBackAt(d.called_back_at), [d.lead.id, d.called_back_at]);
@@ -115,6 +117,11 @@ export function LeadSummary({
             <div className="appt-when" title={d.appointment.source === 'app' ? 'Typed when you set it. Unitrust confirms or moves it.' : 'From the Unitrust calendar'}>
               Appointment <b>{describeCallback(fromWall(d.appointment.scheduled_for))}</b>
               {d.appointment.source === 'app' && <span className="muted"> (not in Unitrust yet)</span>}
+            </div>
+          )}
+          {consent && (
+            <div className="warn" role="note">
+              {ALL_PARTY_CONSENT_STATES[l.state!.toUpperCase()]} needs everyone's consent to record: tell them the call is recorded.
             </div>
           )}
         </div>

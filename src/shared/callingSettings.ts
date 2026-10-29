@@ -37,8 +37,12 @@ export const CallingSettings = z.object({
   kdeconnect_device: z.string().max(100).nullable().default(null),
   /** Fill talk minutes from the timer when you save. */
   use_timer: z.boolean().default(true),
-  /** No answer and Bad number save as soon as you press the key, without Enter. */
+  /** Outcomes can save as soon as you press the key, without Enter. Off means every outcome waits for Enter. */
   instant_save: z.boolean().default(true),
+  /** A lead an appointment put back (no-show, sat no sale, prezi) goes to the top of the call list when you add it, not the bottom. */
+  missed_appts_first: z.boolean().default(true),
+  /** Which outcomes save without Enter (outcome code -> on/off). Outcomes not listed keep their default: those with nothing more to fill in. */
+  instant_outcomes: z.record(z.string(), z.boolean()).default({}),
   /** With KDE Connect, send the next lead's number to your phone as soon as you save or skip. */
   auto_send_next: z.boolean().default(true),
   shortcuts: z
@@ -55,6 +59,13 @@ export const CallingSettings = z.object({
       voicemail: z.string().max(5000).default(''),
     })
     .default({ agent_name: '', opener: '', voicemail: '' }),
+  /** You record your calls: leads in all-party consent states get a reminder, and the script starts with the disclosure. */
+  recording: z
+    .object({
+      on: z.boolean().default(false),
+      disclosure: z.string().max(1000).default('Just so you know, this call is recorded.'),
+    })
+    .default({ on: false, disclosure: 'Just so you know, this call is recorded.' }),
   goals: z
     .object({
       dials: z.number().int().min(0).max(100000).nullable().default(null),
