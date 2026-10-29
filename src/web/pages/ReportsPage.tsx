@@ -206,6 +206,7 @@ export function ReportsPage() {
       {r && <ByBatch rows={r.by_batch} N={N} />}
 
       {r && <Benchmarks r={r} N={N} onSaved={load} />}
+      {r?.by_age?.length > 0 && <ByAge rows={r.by_age} />}
       {r?.weekly && <Weekly w={r.weekly} targets={r.targets} />}
 
       {drill && <DrillModal params={params} drill={drill} onClose={() => setDrill(null)} onOpen={(id, list) => setOpen({ id, list })} />}
@@ -586,6 +587,24 @@ function DrillModal({ params, drill, onClose, onOpen }: { params: Record<string,
           {d && !d.rows.length && <div className="empty">Nothing here.</div>}
         </div>
       </div>
+    </div>
+  );
+}
+
+/** All time, by how old the lead was when you called it: are older leads still worth the calls? */
+function ByAge({ rows }: { rows: any[] }) {
+  return (
+    <div className="card">
+      <h3>By lead age <span className="muted">(all time, the lead's age when you called)</span></h3>
+      <table className="grid">
+        <thead><tr><th>Lead age</th><th>Attempts</th><th>Pickups</th><th>Pickup rate</th><th>Appts set</th><th>Appts per pickup</th></tr></thead>
+        <tbody>
+          {rows.map((a) => (
+            <tr key={a.key}><td>{a.label}</td><td>{a.attempts}</td><td>{a.contacts}</td><td>{pct(a.contact_rate)}</td><td>{a.appointments}</td><td>{pct(a.booked_per_pickup)}</td></tr>
+          ))}
+        </tbody>
+      </table>
+      <p className="help">Age is the days from the call-in date on the lead page to the call. First calls only.</p>
     </div>
   );
 }

@@ -307,6 +307,23 @@ describe('backup restore check', () => {
   });
 });
 
+describe('lead age', () => {
+  it('filters Leads by age band, shows on the call list, and reports calls by the lead\'s age when called', async () => {
+    const daysAgo = (n: number) => new Date(Date.now() - n * 86_400_000).toISOString();
+    db.prepare('UPDATE lead SET callin_at = ? WHERE id = ?').run(daysAgo(3), id.Amy);
+    db.prepare('UPDATE lead SET callin_at = ? WHERE id = ?').run(daysAgo(45), id.Ben);
+    const names = async (age: string) => (await app.inject({ url: `/api/leads?age=${age}`, headers: auth })).json().rows.map((r: any) => r.first_name).sort();
+    expect(await names('0_7')).toEqual(['Amy']);
+    expect(await names('31_90')).toEqual(['Ben']);
+    expect(await names('unknown')).toEqual(['Cal', 'Dee', 'Eve']);
+    expect((await app.inject({ url: '/api/leads?age=ancient', headers: auth })).statusCode).toBe(400);
+    const r = buildReport(db, range());
+    // Amy: 2 calls (a pickup and an appointment) at 3 days; Ben: 1 pickup at 45 days.
+    expect(r.by_age.find((a) => a.key === '0_7')).toMatchObject({ attempts: 2, contacts: 1, appointments: 1 });
+    expect(r.by_age.find((a) => a.key === '31_90')).toMatchObject({ attempts: 1, contacts: 1, appointments: 0 });
+  });
+});
+
 describe('week by week', () => {
   it('puts this week next to the 4 before it, Monday to Sunday, with appts per pickup by lead type', () => {
     log('Ben', 'appointment', { occurred_at: new Date(Date.now() - 9 * 86_400_000).toISOString() });

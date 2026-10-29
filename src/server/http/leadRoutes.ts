@@ -15,6 +15,7 @@ import {
   recentOutcomes, removeFromCallList, type LeadFilter, callListName, listSavedLists, clearCallList, loadSavedList, deleteSavedList, setCalledBack,
 } from '../domain/callList.js';
 import { LEAD_FILTERS } from '../../shared/leadStatus.js';
+import { isAgeBand } from '../../shared/leadAge.js';
 import { bestTimes } from '../domain/reports.js';
 
 // Leads, the call list, logging calls, and call history.
@@ -35,6 +36,8 @@ export function registerLeadRoutes(app: FastifyInstance, deps: { db: DB; config:
     not_on_list: z.union([z.boolean(), z.enum(['1', '0', 'true', 'false'])]).optional(),
     /** A lead type code, or "none" for leads with no type. */
     lead_type: z.string().max(20).optional(),
+    /** A lead age band (shared/leadAge.ts), or "unknown" for leads with no call-in date. */
+    age: z.string().refine((v) => v === 'unknown' || isAgeBand(v), 'unknown lead age').optional(),
   });
   const toFilter = (q: z.infer<typeof leadFilter>): LeadFilter => ({
     status: q.status,
@@ -47,6 +50,7 @@ export function registerLeadRoutes(app: FastifyInstance, deps: { db: DB; config:
     tried_after: q.tried_after || undefined,
     not_on_list: q.not_on_list === true || q.not_on_list === '1' || q.not_on_list === 'true',
     lead_type: !q.lead_type ? undefined : q.lead_type === 'none' ? '' : q.lead_type,
+    age: (q.age || undefined) as LeadFilter['age'],
   });
 
   app.get('/api/leads', async (req) => listLeads(db, toFilter(leadFilter.parse(req.query))));

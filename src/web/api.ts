@@ -1,4 +1,5 @@
 import { ageOn } from '../shared/age';
+import { leadAgeDays } from '../shared/leadAge';
 import type { OtherPhone } from '../shared/phones';
 import type { CallMode } from '../shared/appointments';
 import type { BestTimes } from '../shared/bestTime';
@@ -118,6 +119,7 @@ export interface CallListItem {
   called_back_at: string | null;
   /** How the lead's latest appointment went (no show, sat, prezi, sold...). */
   appt_result: string | null;
+  callin_at: string | null;
   time_zone: string | null;
 }
 
@@ -277,6 +279,12 @@ export function localTime(tz: string | null | undefined): string {
   } catch {
     return '';
   }
+}
+
+/** "12d old" from the call-in date; '' without one. */
+export function fmtLeadAge(callinAt: string | null | undefined): string {
+  const d = leadAgeDays(callinAt);
+  return d == null ? '' : `${d}d old`;
 }
 
 export function fmtMoney(cents: number | null | undefined): string {

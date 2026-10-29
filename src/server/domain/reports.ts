@@ -1,5 +1,6 @@
 import * as z from 'zod/v4';
 import type { DB } from '../db/connection.js';
+import { AGE_BANDS, ageBand, leadAgeDays } from '../../shared/leadAge.js';
 import type { BestTimes } from '../../shared/bestTime.js';
 import { LEAD_NAME, CURRENT_OUTCOME } from '../db/sql.js';
 import { getSetting, setSetting } from '../core/settings.js';
@@ -34,6 +35,8 @@ export interface ReportFilter {
 
 interface CallRow {
   id: string;
+  /** When the lead called in (UTC), for its age at the time of the call. */
+  callin_at: string | null;
   lead_id: string;
   requested_at: string;
   time_known: number;
@@ -148,7 +151,7 @@ function loadCalls(db: DB, f: ReportFilter, range: boolean): CallRow[] {
     .prepare(
       `SELECT c.id, c.lead_id, c.requested_at, c.started_at, c.ended_at, c.time_known, c.dial_count, c.talk_seconds, c.to_e164, c.from_e164, c.channel,
               o.outcome_code, oc.label outcome_label, coalesce(oc.counts_as_human_contact, 0) contact, coalesce(o.do_not_call, 0) do_not_call, oc.grp outcome_group, n.label from_label,
-              l.county_key, l.county, l.state, l.lead_type, l.batch_id, l.time_zone, b.name batch_name,
+              l.county_key, l.county, l.state, l.lead_type, l.batch_id, l.time_zone, l.callin_at, b.name batch_name,
               ${LEAD_NAME} lead_name
        FROM call c JOIN lead l ON l.id = c.lead_id JOIN import_batch b ON b.id = l.batch_id
        LEFT JOIN call_outcome o ON o.call_id = c.id AND ${CURRENT_OUTCOME}
@@ -288,6 +291,10 @@ function buildGroups(db: DB, f: ReportFilter) {
   });
   const bestGroups: Group[] = [...best].map(([k, cs]) => ({ key: k, calls: cs, leads: [] }));
 
+  // All-time, by how old the lead was when you called it.
+  const byAge = groupBy(all.filter((c) => c.time_known !== 0), (c) => ageBand(leadAgeDays(c.callin_at, c.requested_at)) ?? 'unknown');
+  const ageGroups: Group[] = [...AGE_BANDS.map((b) => b.key), 'unknown'].filter((k) => byAge.has(k)).map((k) => ({ key: k, calls: byAge.get(k)!, leads: [] }));
+
   const countyCalls = groupBy(inRange, (c) => c.county_key ?? '');
   const countyLeads = groupBy(leads, (l) => l.county_key ?? '');
   const countyKeys = [...new Set([...countyCalls.keys(), ...countyLeads.keys()])];
@@ -315,7 +322,7 @@ function buildGroups(db: DB, f: ReportFilter) {
   const callerGroups: Group[] = CALLER_MATCH_ORDER.filter((k) => byMatch.has(k) || backByMatch.has(k))
     .map((k) => ({ key: k, calls: byMatch.get(k) ?? [], leads: backByMatch.get(k) ?? [] }));
 
-  return { activity, hourGroups, bestGroups, countyGroups, batchGroups, typeGroups, callerGroups, allCalls: all, timedCount: timed.length, untimedInRange: inRange.length - timed.length };
+  return { activity, hourGroups, bestGroups, ageGroups, countyGroups, batchGroups, typeGroups, callerGroups, allCalls: all, timedCount: timed.length, untimedInRange: inRange.length - timed.length };
 }
 
 export function buildReport(db: DB, f: ReportFilter) {
@@ -355,6 +362,16 @@ export function buildReport(db: DB, f: ReportFilter) {
       const [weekday, hour] = b.key.split(':').map(Number);
       const m = callMetrics(b.calls, ['attempts', 'contacts']);
       return { key: b.key, weekday: weekday!, hour: hour!, ...m, contact_rate: ratio(m.contacts, m.attempts) };
+    }),
+    by_age: g.ageGroups.map((a) => {
+      const m = callMetrics(a.calls, ['attempts', 'contacts', 'appointments']);
+      return {
+        key: a.key,
+        label: AGE_BANDS.find((b) => b.key === a.key)?.label ?? 'No call-in date',
+        ...m,
+        contact_rate: ratio(m.contacts, m.attempts),
+        booked_per_pickup: ratio(m.appointments, m.contacts),
+      };
     }),
     by_county: g.countyGroups
       .map((c) => {
@@ -646,6 +663,10 @@ export function reportSheets(r: ReturnType<typeof buildReport>, calls: ReturnTyp
       rows: [...r.best_time]
         .sort((x, y) => x.weekday - y.weekday || x.hour - y.hour)
         .map((b) => ({ day: WEEKDAYS[b.weekday], their_hour: hourLabel(b.hour), attempts: b.attempts, contacts: b.contacts, contact_rate_pct: pct(b.contact_rate) })),
+    },
+    {
+      name: 'By lead age',
+      rows: r.by_age.map((a) => ({ lead_age_when_called: a.label, attempts: a.attempts, contacts: a.contacts, contact_rate_pct: pct(a.contact_rate), appointments: a.appointments, appts_per_contact_pct: pct(a.booked_per_pickup) })),
     },
     {
       name: 'By county',
