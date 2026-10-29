@@ -6,6 +6,7 @@ import { DomainError } from '../core/errors.js';
 import { audit } from '../core/audit.js';
 import { groupWhere, searchWhere } from './groupFilter.js';
 import { recordObjections, type ObjectionInput } from './objections.js';
+import { currentOpenerVersion } from './scripts.js';
 
 export interface ManualCallInput {
   lead_id: string;
@@ -93,11 +94,13 @@ export function logManualCall(db: DB, input: ManualCallInput) {
     if (!(dials >= 1)) throw new DomainError('dial count must be at least 1');
     const onLead = input.lead_seconds == null ? null : Math.max(0, Math.round(input.lead_seconds));
     const callId = uuidv7();
+    // Logged as it happens (no occurred_at): note which opener was in Settings.
+    const script = input.occurred_at ? null : currentOpenerVersion(db, now);
     db.prepare(
       `INSERT INTO call (id, lead_id, direction, channel, from_number_id, from_e164, to_e164, requested_at, idempotency_key,
-        initiation_result, state, state_confirmed_by, started_at, talk_seconds, dial_count, lead_seconds, derived_at)
-       VALUES (?, ?, 'outbound', 'manual_log', ?, ?, ?, ?, ?, 'accepted', 'ended', 'manual', ?, ?, ?, ?, ?)`,
-    ).run(callId, lead.id, input.from_number_id ?? null, fromE164, to, at, input.idempotency_key, at, talk, dials, onLead, now);
+        initiation_result, state, state_confirmed_by, started_at, talk_seconds, dial_count, lead_seconds, script_version_id, derived_at)
+       VALUES (?, ?, 'outbound', 'manual_log', ?, ?, ?, ?, ?, 'accepted', 'ended', 'manual', ?, ?, ?, ?, ?, ?)`,
+    ).run(callId, lead.id, input.from_number_id ?? null, fromE164, to, at, input.idempotency_key, at, talk, dials, onLead, script, now);
     db.prepare(
       `INSERT INTO call_event (id, call_id, source, dedup_key, event_type_raw, event_type, occurred_at, received_at, payload_json)
        VALUES (?, ?, 'manual', ?, 'manual.logged', 'call.logged_manually', ?, ?, ?)`,
