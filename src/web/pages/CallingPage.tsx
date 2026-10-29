@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { callbackFields } from '../when';
-import { api, fmtPhone, fmtRelative, fmtDateTime, type LeadDetail, type CallListItem, type CallListResponse } from '../api';
+import { callbackFields, fromWall } from '../when';
+import { api, fmtLeadAge, fmtPhone, fmtRelative, fmtDateTime, type LeadDetail, type CallListItem, type CallListResponse } from '../api';
 import { useApp } from '../App';
 import { ApptBadge, LeadSummary, CallHistory, Notes, toggleCalledBack } from '../components/LeadDetails';
 import { EditLead } from '../components/EditLead';
@@ -14,13 +14,16 @@ import { LogCall, type Attempt, type FormValues, type Saved } from './LogCall';
 import { CallerLookup, ModeSwitch, Recent, ScriptPanel, UNDO_MS, UndoBar, otherNumber } from './CallingPanels';
 import { openingSide, type CallMode } from '../../shared/appointments';
 import { isCallable } from '../../shared/leadStatus';
+import { bestTimeFirst } from '../../shared/bestTime';
 
 const SELECTED_KEY = 'mpcrm.selectedLead';
 /** A lead opened outside the list (looked up for an incoming call, or from Today), and where to go back to. */
 export const OPENED_KEY = 'mpcrm.openedLead';
 const SCRIPT_KEY = 'mpcrm.script.open';
+/** The order the list is shown and worked in: as set (by hand, or as added), or best time first. */
+const ORDER_KEY = 'mpcrm.list.order';
 
-const freshAttempt = (): Attempt => ({ dials: 1, timerStart: null, to: null, shownAt: Date.now() });
+const freshAttempt = (): Attempt => ({ dials: 1, timerStart: null, dialedAt: null, to: null, shownAt: Date.now() });
 
 /** A lead on your call list. The list is kept by the app; it only changes when you add, skip, remove or clear. */
 type WorkItem = CallListItem;
@@ -56,6 +59,11 @@ export function CallingPage() {
   const [editing, setEditing] = useState(false);
   const [qr, setQr] = useState<string | null>(null);
   const [listDialog, setListDialog] = useState<'clear' | 'saved' | null>(null);
+  const [order, setOrderState] = useState<'set' | 'best_time'>(getStored(ORDER_KEY) === 'best_time' ? 'best_time' : 'set');
+  const setOrder = (o: 'set' | 'best_time') => {
+    setOrderState(o);
+    setStored(ORDER_KEY, o);
+  };
   /** The side you picked for a lead, when it isn't the one it opened on. */
   const [modePick, setModePick] = useState<{ leadId: string; mode: CallMode } | null>(null);
   const mode: CallMode = detail ? (modePick?.leadId === detail.lead.id ? modePick.mode : openingSide(detail.state)) : 'first_call';
@@ -76,7 +84,7 @@ export function CallingPage() {
 
   const loadList = useCallback(async () => {
     try {
-      setListState(await api.get<CallListResponse>('/call-list'));
+      setListState(await api.get<CallListResponse>('/call-list', { tz: Intl.DateTimeFormat().resolvedOptions().timeZone }));
     } catch (e: any) {
       toast(e.message, 'error');
     }
@@ -97,9 +105,10 @@ export function CallingPage() {
   const afterSwap = async () => {
     setListDialog(null);
     setOpened(null);
-    const l = await api.get<CallListResponse>('/call-list');
+    const l = await api.get<CallListResponse>('/call-list', { tz: Intl.DateTimeFormat().resolvedOptions().timeZone });
     setListState(l);
-    select(l.items.find((i) => !i.done)?.lead_id ?? l.items[0]?.lead_id ?? null);
+    const ordered = order === 'best_time' ? bestTimeFirst(l.items, l.best_times) : l.items;
+    select(ordered.find((i) => !i.done)?.lead_id ?? ordered[0]?.lead_id ?? null);
   };
 
   const clearList = async (saveAs: string | null) => {
@@ -209,14 +218,15 @@ export function CallingPage() {
     return () => window.removeEventListener('mpcrm:open-lead', f);
   }, [openOutside]);
 
-  const items = useMemo(() => list?.items ?? [], [list]);
+  // Best time first is worked in that order too: "next" and the start of the list follow it.
+  const items = useMemo(() => (list && order === 'best_time' ? bestTimeFirst(list.items, list.best_times) : list?.items ?? []), [list, order]);
   const idx = items.findIndex((i) => i.lead_id === selected);
   /** The lead on screen was opened on purpose outside the list (or is a looked-up lead that is also in it). */
   const outside = !!selected && opened?.leadId === selected;
   // Nothing selected yet (first visit, or the lead left the list): start at the top.
   useEffect(() => {
     if (list && (!selected || (!list.items.some((i) => i.lead_id === selected) && !outside)) && !detail) {
-      const first = list.items.find((i) => !i.done) ?? list.items[0];
+      const first = items.find((i) => !i.done) ?? items[0];
       if (first) select(first.lead_id);
     }
   }, [list]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -289,7 +299,7 @@ export function CallingPage() {
     async (e164: string | null | undefined) => {
       if (!e164) return;
       const method = settings?.dial_method ?? 'copy';
-      setAttempt((a) => ({ ...a, to: e164, timerStart: a.timerStart ?? (settings?.use_timer === false ? null : Date.now()) }));
+      setAttempt((a) => ({ ...a, to: e164, dialedAt: a.dialedAt ?? Date.now(), timerStart: a.timerStart ?? (settings?.use_timer === false ? null : Date.now()) }));
       const copy = async () => {
         try {
           await navigator.clipboard.writeText(e164.replace(/^\+1/, ''));
@@ -323,8 +333,12 @@ export function CallingPage() {
       const r = await api.post<{
         lead_id: string; outcome_code: string | null; callback_due_at: string | null; callback_any_time: boolean; do_not_call: boolean;
         dial_count: number; talk_seconds: number | null; lead_seconds: number | null; from_number_id: string | null; note: string | null;
+        appointment_for: string | null;
+        dialed_at: string | null;
+        objections: string[];
       }>(`/calls/${s.callId}/void`, { reason: 'undo' });
-      const cb = callbackFields(r.callback_due_at, r.callback_any_time, s.tz);
+      const appt = r.appointment_for ? fromWall(r.appointment_for) : null;
+      const cb = appt ? callbackFields(appt.at.toISOString(), appt.anyTime, s.tz) : callbackFields(r.callback_due_at, r.callback_any_time, s.tz);
       // Back on the side the call was saved from.
       if (r.outcome_code) setModePick({ leadId: s.leadId, mode: keys.kinds[r.outcome_code] ?? 'first_call' });
       setRestore({
@@ -338,10 +352,11 @@ export function CallingPage() {
           note: r.note ?? '',
           numberId: r.from_number_id,
           doNotCall: r.do_not_call,
+          objections: r.objections,
         },
       });
       // The clock on this lead carries on from where it was when you saved.
-      setAttempt({ dials: r.dial_count, timerStart: null, to: null, shownAt: Date.now() - (r.lead_seconds ?? 0) * 1000 });
+      setAttempt({ dials: r.dial_count, timerStart: null, dialedAt: r.dialed_at ? Date.parse(r.dialed_at) : null, to: null, shownAt: Date.now() - (r.lead_seconds ?? 0) * 1000 });
       markDone(s.leadId, null);
       void loadList();
       // A looked-up lead outside the list comes back as one, so the list stays as it is.
@@ -444,6 +459,13 @@ export function CallingPage() {
           </div>
           <div className="row list-head">
             <span className="list-name">{list?.name ? <>List: <b>{list.name}</b></> : null}</span>
+            <span className="row" style={{ gap: 4 }} role="group" aria-label="Order">
+              <button className={`btn small ${order === 'set' ? 'primary' : ''}`} aria-pressed={order === 'set'} onClick={() => setOrder('set')} title="The order you set, or the order leads were added">As set</button>
+              <button className={`btn small ${order === 'best_time' ? 'primary' : ''}`} aria-pressed={order === 'best_time'} onClick={() => setOrder('best_time')}
+                title="Leads it's the best time to call right now first, by your pickup rate at that hour in their time (evenings, until you have your own numbers). Before 8 AM or from 9 PM their time goes last.">
+                Best time first
+              </button>
+            </span>
             <span className="row" style={{ gap: 4 }}>
               {items.length > 0 && (
                 <button className="btn small" onClick={() => setListDialog('clear')} title="Empty the call list, keeping it as a saved list if you want">
@@ -520,7 +542,7 @@ export function CallingPage() {
                     >×</button>
                   </span>
                   <span className="sub">
-                    {fmtPhone(i.phone_e164)} · {i.county ? `${i.county} Co.` : i.state ?? '?'} · {i.attempts_total ? `${i.attempts_total} attempt${i.attempts_total > 1 ? 's' : ''}, last ${fmtRelative(i.last_call_at)}` : 'never called'}
+                    {fmtPhone(i.phone_e164)} · {i.county ? `${i.county} Co.` : i.state ?? '?'}{i.callin_at ? ` · ${fmtLeadAge(i.callin_at)}` : ''} · {i.attempts_total ? `${i.attempts_total} attempt${i.attempts_total > 1 ? 's' : ''}, last ${fmtRelative(i.last_call_at)}` : 'never called'}
                   </span>
                 </li>
               ))}

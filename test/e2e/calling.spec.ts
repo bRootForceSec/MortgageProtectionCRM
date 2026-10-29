@@ -79,8 +79,12 @@ test('import a sheet, log calls by keyboard, and set a callback', async ({ page 
   await expect(page.getByLabel('Queue').locator('.queue-list li')).toHaveCount(4);
   await page.screenshot({ path: 'test-results/calling.png', fullPage: true });
 
-  // Talked, no appt: press 2 then Enter. Enter saves and moves straight on to the next lead.
+  // Talked, no appt: press 2, then Shift+1 for the Price objection (optional), then Enter. Enter saves and moves straight on to the next lead.
   await page.keyboard.press('2');
+  const objections = page.getByRole('group', { name: 'Objections' });
+  await expect(objections.getByRole('button')).toHaveText([/Price/, /Spouse/, /Already covered/, /Think about it/, /Health/, /Trust/, /Other/]);
+  await page.keyboard.press('Shift+Digit1');
+  await expect(objections.getByRole('button', { name: /Price/ })).toHaveAttribute('aria-pressed', 'true');
   await page.keyboard.press('Enter');
   await expect(page.locator('.undo-bar')).toContainText(`Saved for ${first}`);
   await expect(page.locator('.undo-bar')).toContainText('Talked, no appt');
@@ -163,7 +167,11 @@ test('dial counter, undo, remapped keys, QR dialing, scripts and lead edits', as
   await expect(page.getByRole('button', { name: /No answer/ })).toHaveClass(/active/);
   await expect(page.locator('.topbar .stats')).toContainText('Dials 2');
   await page.keyboard.press('Escape');
+  // Appt set offers the appointment's day and time (optional). Type tomorrow at 2, then Enter.
   await page.keyboard.press('3');
+  await expect(page.getByLabel('Appointment on (optional)')).toBeFocused();
+  await page.keyboard.type('m');
+  await page.getByLabel(/^At \(optional/).fill('2');
   await page.keyboard.press('Enter');
   await expect(page.locator('.undo-bar')).toContainText('Appt set · 2 dials');
   await expect(page.locator('.lead-name')).not.toHaveText(lead);
@@ -224,9 +232,10 @@ test('dial counter, undo, remapped keys, QR dialing, scripts and lead edits', as
   await page.keyboard.press('j');
   await expect(page.getByText(/worked the whole list/)).toBeVisible();
 
-  await page.getByRole('button', { name: 'Callbacks', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Callbacks' })).toBeVisible();
+  await page.getByRole('button', { name: 'Today', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Today', exact: true })).toBeVisible();
   await expect(page.getByText('Coming up (next two weeks)')).toBeVisible();
+  await expect(page.getByRole('heading', { name: /Appointments today/ })).toBeVisible();
 });
 
 test('clear worked leads, add more from Leads, and look up an incoming call without losing the list', async ({ page }) => {
@@ -281,7 +290,7 @@ test('clear worked leads, add more from Leads, and look up an incoming call with
   const doneBefore = await queue.locator('.queue-list li.done').count();
   await page.keyboard.press('1');
   await expect(queue.locator('.queue-list li.done')).toHaveCount(doneBefore + 1);
-  await page.getByRole('button', { name: 'Callbacks', exact: true }).click();
+  await page.getByRole('button', { name: 'Today', exact: true }).click();
   await page.getByRole('button', { name: 'Calling', exact: true }).click();
   await expect(queue.locator('.queue-list li.done')).toHaveCount(doneBefore + 1);
   await expect(queue.locator('.queue-list li.done', { hasText: current })).toHaveCount(1);
@@ -293,6 +302,10 @@ test('reports: numbers open the calls behind them', async ({ page }) => {
   await page.goto(launchUrl);
   await page.getByRole('button', { name: 'Reports' }).click();
   await expect(page.getByRole('heading', { name: 'Reports' })).toBeVisible();
+  const weekly = page.locator('.card', { has: page.getByRole('heading', { name: /Week by week/ }) });
+  await expect(weekly.getByRole('columnheader', { name: 'This week' })).toBeVisible();
+  await expect(weekly.getByRole('row', { name: /Show rate/ })).toContainText('80%');
+  await weekly.screenshot({ path: 'test-results/weekly.png' });
   const dials = page.locator('.summary-tiles div', { hasText: 'Dials' }).first().locator('button.num');
   await expect(dials).not.toHaveText('0');
   const attempts = await page.locator('.summary-tiles div', { hasText: 'Attempts' }).first().locator('button.num').innerText();
@@ -355,6 +368,18 @@ test('leads open full screen like the Calling page, and step through the list', 
   await page.getByRole('button', { name: 'Leads', exact: true }).click();
   const rows = page.locator('table.grid tbody tr');
   await expect(rows.first()).toBeVisible();
+  // Every lead is in one lead-age band, or has no call-in date; the filter narrows the list.
+  const all = await rows.count();
+  const totals = await page.evaluate(async () => {
+    const n = async (q: string) => (await (await fetch(`/api/leads${q}`)).json()).total as number;
+    return { all: await n(''), bands: await Promise.all(['0_7', '8_30', '31_90', 'older', 'unknown'].map((b) => n(`?age=${b}`))) };
+  });
+  expect(totals.bands.reduce((a, b) => a + b, 0)).toBe(totals.all);
+  const shown = page.waitForResponse((r) => r.url().includes('/api/leads?') && r.url().includes('age=unknown'));
+  await page.getByLabel('Lead age').selectOption('unknown');
+  await shown;
+  await page.getByLabel('Lead age').selectOption('');
+  await expect(rows).toHaveCount(all);
   const first = (await rows.nth(0).locator('td').nth(1).innerText()).trim();
   const second = (await rows.nth(1).locator('td').nth(1).innerText()).trim();
   await rows.first().click();
@@ -491,6 +516,9 @@ test('First call | Appointment: an appointment set opens on the Appointment side
   // Ann Lee had an appointment set earlier: she opens on the Appointment side.
   await lookUp('Ann Lee');
   await expect(tabs.getByRole('tab', { name: 'Appointment' })).toHaveAttribute('aria-selected', 'true');
+  // The time typed on Appt set shows until Unitrust sends its own.
+  await expect(page.getByLabel('Current lead').locator('.appt-when')).toContainText('Tomorrow');
+  await expect(page.getByLabel('Current lead').locator('.appt-when')).toContainText('not in Unitrust yet');
   const outcomes = page.getByRole('group', { name: 'Appointment outcome' });
   await expect(outcomes.getByRole('button')).toHaveText([/No show/, /Sat, no sale/, /Prezi/, /Sale/, /Rescheduled/]);
   // M flips the side, and back.
@@ -552,4 +580,47 @@ test('narrow windows: the lead and its outcome buttons come first, nothing runs 
   expect((await box('.queue-panel')).x).toBeLessThan((await box('.lead-panel')).x);
   await page.setViewportSize({ width: 480, height: 700 });
   expect((await box('.lead-panel')).y).toBeLessThan((await box('.queue-panel')).y);
+});
+
+test('best time first: the list can be shown and worked in that order, and it stays chosen', async ({ page }) => {
+  await page.goto(launchUrl);
+  await page.getByRole('button', { name: 'Calling', exact: true }).click();
+  const order = page.getByRole('group', { name: 'Order' });
+  const queue = page.getByLabel('Queue');
+  await expect(queue.locator('.queue-list li').first()).toBeVisible();
+  const n = await queue.locator('.queue-list li').count();
+  await order.getByRole('button', { name: 'Best time first' }).click();
+  await expect(order.getByRole('button', { name: 'Best time first' })).toHaveAttribute('aria-pressed', 'true');
+  await expect(queue.locator('.queue-list li')).toHaveCount(n);
+  await page.screenshot({ path: 'test-results/best-time-first.png' });
+  await page.reload();
+  await expect(page.getByRole('group', { name: 'Order' }).getByRole('button', { name: 'Best time first' })).toHaveAttribute('aria-pressed', 'true');
+  await page.getByRole('group', { name: 'Order' }).getByRole('button', { name: 'As set' }).click();
+});
+
+test('an appointment about to start: an alert, and its prep card on Today', async ({ page }) => {
+  await page.goto(launchUrl);
+  await page.getByRole('button', { name: 'Today', exact: true }).click();
+  // Book Zed for ten minutes from now (in the browser's time), as Appt set with a time does; a minute ago near midnight.
+  await page.evaluate(async () => {
+    const leads = await (await fetch('/api/leads?search=Zed')).json();
+    const now = new Date();
+    let at = new Date(now.getTime() + 10 * 60_000);
+    if (at.getDate() !== now.getDate()) at = new Date(now.getTime() - 60_000);
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const wall = `${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())}T${pad(at.getHours())}:${pad(at.getMinutes())}`;
+    const r = await fetch(`/api/leads/${leads.rows[0].id}/calls`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ idempotency_key: `e2e-${Date.now()}`, outcome_code: 'appointment', appointment_for: wall }),
+    });
+    if (!r.ok) throw new Error(await r.text());
+  });
+  await page.reload();
+  await expect(page.locator('.alert-bar')).toContainText('Appointment:');
+  await expect(page.locator('.alert-bar')).toContainText('Zed');
+  const card = page.locator('.prep-card', { hasText: 'Zed' });
+  await expect(card).toBeVisible();
+  await expect(card).toContainText('not in Unitrust yet');
+  await page.screenshot({ path: 'test-results/today-appointments.png', fullPage: true });
 });

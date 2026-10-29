@@ -6,6 +6,10 @@ import {
   buildKeyMap, conflicts, keyLabel, normKey, RESERVED, type CallingSettingsResponse,
 } from '../shortcuts';
 import type { CallingSettings, ShortcutAction } from '../../shared/callingSettings';
+import { parsePlan, SUGGESTED_FOLLOW_UPS } from '../../shared/followUps';
+import { APPT_RESULT_LABEL } from '../../shared/appointments';
+import { ALL_PARTY_CONSENT_STATES } from '../../shared/recordingConsent';
+import { savesInstantly } from '../../shared/outcomes';
 
 // Settings for the Calling screen: retry gap, dialing, timer, goals, alerts, shortcuts and scripts.
 
@@ -36,8 +40,24 @@ function NumberField({ value, onSave, min = 0, allowBlank, width = 90 }: { value
   return <input type="number" min={min} value={v} onChange={(e) => setV(e.target.value)} onBlur={commit} onKeyDown={(e) => e.key === 'Enter' && commit()} style={{ width }} />;
 }
 
+/** A follow-up plan typed as "15m, 1d@09:00, 3d". A plan that isn't understood is not saved. */
+function PlanField({ value, onSave }: { value: string[]; onSave: (steps: string[]) => void }) {
+  const { toast } = useApp();
+  const [v, setV] = useState(value.join(', '));
+  useEffect(() => setV(value.join(', ')), [value]);
+  const commit = () => {
+    const steps = parsePlan(v);
+    if (!steps) {
+      toast('Write each step like 15m, 2h, 3d or 1d@09:00, separated by commas', 'error');
+      return setV(value.join(', '));
+    }
+    if (steps.join() !== value.join()) onSave(steps);
+  };
+  return <input value={v} placeholder="none: due right away" onChange={(e) => setV(e.target.value)} onBlur={commit} onKeyDown={(e) => e.key === 'Enter' && commit()} style={{ width: 200 }} />;
+}
+
 export function CallingCard() {
-  const { calling, toast } = useApp();
+  const { calling, meta, toast } = useApp();
   const save = useSave();
   const [devices, setDevices] = useState<{ ok: boolean; error?: string; devices: { id: string; name: string; reachable: boolean }[] } | null>(null);
   const [perm, setPerm] = useState(typeof Notification === 'undefined' ? 'unsupported' : Notification.permission);
@@ -102,7 +122,42 @@ export function CallingCard() {
 
         <label>Saving</label>
         <span>
-          <label className="choice-inline"><input type="checkbox" checked={s.instant_save} onChange={(e) => set({ instant_save: e.target.checked })} /> No answer and Bad number save as soon as I press the key (no Enter). Undo still works.</label>
+          <label className="choice-inline"><input type="checkbox" checked={s.instant_save} onChange={(e) => set({ instant_save: e.target.checked })} /> some outcomes save as soon as I press the key (no Enter). Undo still works.</label>
+          {s.instant_save && (['first_call', 'appointment'] as const).map((side) => (
+            <span key={side} className="row" style={{ marginTop: 4 }}>
+              <span className="help">{side === 'appointment' ? 'Appointment:' : 'First call:'}</span>
+              {(meta?.outcome_codes ?? []).filter((o) => o.kind === side && !o.requires_callback_time).map((o) => (
+                <label key={o.code} className="choice-inline">
+                  <input type="checkbox" checked={savesInstantly(o, s.instant_outcomes)}
+                    onChange={(e) => set({ instant_outcomes: { ...s.instant_outcomes, [o.code]: e.target.checked } })} /> {o.label}
+                </label>
+              ))}
+            </span>
+          ))}
+          {s.instant_save && <span className="help">Ticked outcomes save without Enter. Talk minutes come from the timer. Callbacks always wait for their day.</span>}
+        </span>
+
+        <label>Missed appointments</label>
+        <span>
+          <label className="choice-inline"><input type="checkbox" checked={s.missed_appts_first} onChange={(e) => set({ missed_appts_first: e.target.checked })} /> put a lead a no-show, sat no sale or prezi sent back at the top of the call list when I add it</label>
+        </span>
+
+        <label>Follow-ups</label>
+        <span>
+          {(['no_show', 'sat_no_sale', 'prezi'] as const).map((r) => (
+            <span key={r} className="row">
+              <span style={{ width: 110 }}>{APPT_RESULT_LABEL[r]}</span>
+              <PlanField value={s.follow_ups[r]} onSave={(steps) => set({ follow_ups: { ...s.follow_ups, [r]: steps } })} />
+              {!s.follow_ups[r].length && (
+                <button className="btn small" onClick={() => set({ follow_ups: { ...s.follow_ups, [r]: SUGGESTED_FOLLOW_UPS[r] } })}>Use {SUGGESTED_FOLLOW_UPS[r].join(', ')}</button>
+              )}
+            </span>
+          ))}
+          <span className="help">
+            When to try again after that result: each step is a callback, timed from the result and then from each try nobody answered.
+            15m, 2h and 3d are minutes, hours and days later; 1d@09:00 is the next day at 9 AM. When someone answers, or the steps run out,
+            the usual retry takes over. With no steps, the lead is due right away.
+          </span>
         </span>
 
         <label>Call timer</label>
@@ -118,7 +173,7 @@ export function CallingCard() {
           <span className="help">Shown in the top bar. Leave blank for none.</span>
         </span>
 
-        <label>Callback alerts</label>
+        <label>Callback and appointment alerts</label>
         <span>
           <label className="choice-inline"><input type="checkbox" checked={s.alerts.desktop} onChange={(e) => set({ alerts: { ...s.alerts, desktop: e.target.checked } })} /> desktop notification</label>{' '}
           {s.alerts.desktop && perm !== 'granted' && perm !== 'unsupported' && (
@@ -129,7 +184,11 @@ export function CallingCard() {
           <label className="choice-inline"><input type="checkbox" checked={s.alerts.sound} onChange={(e) => set({ alerts: { ...s.alerts, sound: e.target.checked } })} /> sound</label>{' '}
           <button className="btn small" onClick={chime}>Play it</button>
           <br />
-          Alert <NumberField value={s.alerts.minutes_before} onSave={(n) => set({ alerts: { ...s.alerts, minutes_before: n ?? 0 } })} width={70} /> minutes before it's due
+          Alert <NumberField value={s.alerts.minutes_before} onSave={(n) => set({ alerts: { ...s.alerts, minutes_before: n ?? 0 } })} width={70} /> minutes before a callback is due
+          <br />
+          Alert <NumberField value={s.alerts.appt_minutes_before} allowBlank onSave={(n) => set({ alerts: { ...s.alerts, appt_minutes_before: n } })} width={70} /> minutes before an appointment
+          <span className="help"> (leave it empty for no appointment alerts)</span>
+          <br />
           <span className="help"> (only while the app is open)</span>
         </span>
       </div>
@@ -255,6 +314,37 @@ export function ScriptsCard() {
       <label className="field"><span>Opener</span><textarea rows={5} value={v.opener} onChange={(e) => setV({ ...v, opener: e.target.value })} placeholder="Hi {first_name}, this is {agent_name}. I'm calling about the mortgage protection form for your home on {address}…" /></label>
       <label className="field"><span>Voicemail</span><textarea rows={4} value={v.voicemail} onChange={(e) => setV({ ...v, voicemail: e.target.value })} /></label>
       <button className="btn primary" disabled={!dirty} onClick={() => save({ ...s, scripts: v })}>Save scripts</button>
+      <RecordingConsent />
     </div>
+  );
+}
+
+/** "I record my calls": a reminder on leads in all-party consent states, and the disclosure line above the opener. */
+function RecordingConsent() {
+  const { calling } = useApp();
+  const save = useSave();
+  const s = calling?.settings;
+  const [text, setText] = useState(s?.recording.disclosure ?? '');
+  useEffect(() => setText(s?.recording.disclosure ?? ''), [s?.recording.disclosure]);
+  if (!s) return null;
+  const set = (patch: Partial<CallingSettings['recording']>) => save({ ...s, recording: { ...s.recording, ...patch } });
+  const states = Object.values(ALL_PARTY_CONSENT_STATES).join(', ');
+  return (
+    <>
+      <h3>Recording</h3>
+      <label className="choice-inline">
+        <input type="checkbox" checked={s.recording.on} onChange={(e) => set({ on: e.target.checked })} /> I record my calls
+      </label>
+      <p className="help">
+        Some states need everyone on the call to agree to a recording: {states}. With this ticked, leads there show a reminder,
+        and the opener starts with the line below. This list isn't legal advice; check it before you record.
+      </p>
+      {s.recording.on && (
+        <label className="field">
+          <span>Say this first in those states</span>
+          <input value={text} onChange={(e) => setText(e.target.value)} onBlur={() => text.trim() && text !== s.recording.disclosure && set({ disclosure: text.trim() })} />
+        </label>
+      )}
+    </>
   );
 }

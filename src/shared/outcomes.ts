@@ -27,6 +27,8 @@ export interface OutcomeDef {
   books: boolean;
   /** Counts as "Appts set" in the funnel, the top bar, Reports and the Numbers page. */
   apptSet: boolean;
+  /** They talked but said no: the Calling screen offers objection chips (price, spouse...) before you save. */
+  objections: boolean;
   /** Appointment side: how the appointment went. */
   apptResult: Exclude<ApptResult, 'not_set'> | null;
   /** Shown as a button. Retired outcomes stay for the calls that carry them. */
@@ -41,7 +43,7 @@ const OCT17 = '2026-10-17T00:00:00.000Z';
 const OCT29 = '2026-10-29T00:00:00.000Z';
 
 const base = {
-  kind: 'first_call', hotkey: null, pickup: false, callback: false, marksDead: false, books: false, apptSet: false,
+  kind: 'first_call', hotkey: null, pickup: false, callback: false, marksDead: false, books: false, apptSet: false, objections: false,
   apptResult: null, active: true, introducedAt: OCT17, leadEffect: null,
 } as const;
 const retired = { ...base, active: false } as const;
@@ -50,15 +52,15 @@ const appt = { ...base, kind: 'appointment', introducedAt: OCT29 } as const;
 export const OUTCOMES = {
   // First call side
   no_answer: { ...base, label: 'No answer', group: 'no_contact', hotkey: '1', sortOrder: 10 },
-  no_appt: { ...base, label: 'Talked, no appt', group: 'contact', hotkey: '2', pickup: true, sortOrder: 20 },
+  no_appt: { ...base, label: 'Talked, no appt', group: 'contact', hotkey: '2', pickup: true, objections: true, sortOrder: 20 },
   appointment: { ...base, label: 'Appt set', group: 'contact', hotkey: '3', pickup: true, books: true, apptSet: true, sortOrder: 30 },
   bad_number: { ...base, label: 'Bad number', group: 'invalid', hotkey: '4', sortOrder: 40 },
   callback: { ...base, label: 'Callback', group: 'contact', hotkey: '5', pickup: true, callback: true, sortOrder: 50 },
 
   // Appointment side
   appt_no_show: { ...appt, label: 'No show', group: 'no_contact', hotkey: '1', apptResult: 'no_show', sortOrder: 110 },
-  appt_sat_no_sale: { ...appt, label: 'Sat, no sale', group: 'contact', hotkey: '2', pickup: true, apptResult: 'sat_no_sale', sortOrder: 120 },
-  appt_prezi: { ...appt, label: 'Prezi', group: 'contact', hotkey: '3', pickup: true, apptResult: 'prezi', sortOrder: 130 },
+  appt_sat_no_sale: { ...appt, label: 'Sat, no sale', group: 'contact', hotkey: '2', pickup: true, objections: true, apptResult: 'sat_no_sale', sortOrder: 120 },
+  appt_prezi: { ...appt, label: 'Prezi', group: 'contact', hotkey: '3', pickup: true, objections: true, apptResult: 'prezi', sortOrder: 130 },
   appt_sale: { ...appt, label: 'Sale', group: 'contact', hotkey: '4', pickup: true, apptResult: 'sold', leadEffect: 'sold', sortOrder: 140 },
   appt_rescheduled: { ...appt, label: 'Rescheduled', group: 'contact', hotkey: '5', pickup: true, apptResult: 'rescheduled', sortOrder: 150 },
 
@@ -72,9 +74,9 @@ export const OUTCOMES = {
   hung_up: { ...retired, label: 'Answered, hung up', group: 'contact', pickup: true, sortOrder: 95 },
   other: { ...retired, label: 'Other (add a note)', group: 'contact', pickup: true, sortOrder: 100 },
   picked_up: { ...retired, label: 'Picked up', group: 'contact', pickup: true, sortOrder: 120 },
-  // These two booked the lead, but were never counted as appointments set.
-  sat_no_sale: { ...retired, label: 'Appointment sat, no sale', group: 'contact', pickup: true, books: true, sortOrder: 130 },
-  sold: { ...retired, label: 'Sold', group: 'contact', pickup: true, books: true, leadEffect: 'sold', sortOrder: 140 },
+  // From before the Appointment side: each one booked the lead, so it counts as an appointment set.
+  sat_no_sale: { ...retired, label: 'Appointment sat, no sale', group: 'contact', pickup: true, books: true, apptSet: true, sortOrder: 130 },
+  sold: { ...retired, label: 'Sold', group: 'contact', pickup: true, books: true, apptSet: true, leadEffect: 'sold', sortOrder: 140 },
 } as const satisfies Record<string, OutcomeDef>;
 
 export type OutcomeCode = keyof typeof OUTCOMES;
@@ -99,8 +101,16 @@ export const APPT_OUTCOME_RESULT: Readonly<Record<string, Exclude<ApptResult, 'n
   entries.flatMap(([c, o]) => (o.apptResult ? [[c, o.apptResult]] : [])),
 );
 
-/** Saves as soon as you press its key, without Enter: nothing more to fill in (no callback time, no talk time). */
-export function savesInstantly(o: { requires_callback_time: number | boolean; counts_as_human_contact: number | boolean }): boolean {
-  return !o.requires_callback_time && !o.counts_as_human_contact;
+/**
+ * Saves as soon as you press its key, without Enter. By default that's the outcomes with nothing more to fill in (no
+ * callback time, no talk time); `chosen` (Settings, outcome code -> on/off) changes any of them except a callback,
+ * which always needs its day.
+ */
+export function savesInstantly(
+  o: { code: string; requires_callback_time: number | boolean; counts_as_human_contact: number | boolean },
+  chosen: Readonly<Record<string, boolean>> = {},
+): boolean {
+  if (o.requires_callback_time) return false;
+  return Object.hasOwn(chosen, o.code) ? chosen[o.code]! : !o.counts_as_human_contact;
 }
 

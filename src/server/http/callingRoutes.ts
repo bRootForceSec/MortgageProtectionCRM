@@ -9,6 +9,7 @@ import { rebuildLeadState } from '../domain/leadState.js';
 import { KdeConnect } from '../dialer.js';
 import { parseList } from '../domain/groupFilter.js';
 import { callbacksDue } from '../domain/callList.js';
+import { appointmentsOnDay } from '../domain/appointments.js';
 
 const idParam = z.object({ id: z.string().max(64) });
 
@@ -25,8 +26,8 @@ export function registerCallingRoutes(app: FastifyInstance, deps: { db: DB; kde?
   app.put('/api/settings/calling', async (req) => {
     const before = loadCallingSettings(db);
     const saved = saveCallingSettings(db, req.body);
-    // A new retry gap changes when every unanswered lead comes back.
-    if (saved.retry_gap_minutes !== before.retry_gap_minutes) rebuildLeadState(db);
+    // A new retry gap or follow-up plan changes when leads come back.
+    if (saved.retry_gap_minutes !== before.retry_gap_minutes || JSON.stringify(saved.follow_ups) !== JSON.stringify(before.follow_ups)) rebuildLeadState(db);
     return { settings: saved, actions: SHORTCUT_ACTIONS };
   });
 
@@ -58,14 +59,19 @@ export function registerCallingRoutes(app: FastifyInstance, deps: { db: DB; kde?
     return { ok: true };
   });
 
-  // ---------- agenda: callbacks (appointments live in Unitrust) ----------
+  // ---------- agenda: callbacks, and the appointments of one day ----------
   app.get('/api/agenda', async (req) => {
     const q = z.object({
       from: z.string().max(40),
       to: z.string().max(40),
       counties: z.string().max(4000).optional(),
       area_codes: z.string().max(400).optional(),
+      /** YYYY-MM-DD in your time: also send that day's appointments. */
+      day: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
     }).parse(req.query);
-    return { callbacks: callbacksDue(db, q.to, { counties: parseList(q.counties), areaCodes: parseList(q.area_codes) }) };
+    return {
+      callbacks: callbacksDue(db, q.to, { counties: parseList(q.counties), areaCodes: parseList(q.area_codes) }),
+      appointments: q.day ? appointmentsOnDay(db, q.day) : [],
+    };
   });
 }

@@ -177,3 +177,18 @@ export function callbackFields(iso: string | null, anyTime: boolean, tz?: string
   const time = `${w.h % 12 || 12}:${String(w.mi).padStart(2, '0')}${w.h < 12 ? 'am' : 'pm'}`;
   return { day, time };
 }
+
+// Appointment times are kept like Unitrust's: your own wall-clock time, "YYYY-MM-DD" or "YYYY-MM-DDTHH:MM".
+
+/** A picked day and time as an appointment time. */
+export function toWall(w: CallbackWhen): string {
+  if (w.anyTime) return ymd(w.at);
+  return `${ymd(w.at)}T${String(w.at.getHours()).padStart(2, '0')}:${String(w.at.getMinutes()).padStart(2, '0')}`;
+}
+
+/** An appointment time back as a day and time (any time when it has no time). */
+export function fromWall(s: string): CallbackWhen {
+  const [y, mo, d, h, mi] = s.split(/[-T:]/).map(Number);
+  const anyTime = h === undefined || Number.isNaN(h);
+  return { at: new Date(y!, mo! - 1, d!, anyTime ? 0 : h, anyTime ? 0 : mi), anyTime };
+}

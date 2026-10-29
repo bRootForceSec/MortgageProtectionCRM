@@ -19,7 +19,7 @@ import { FUNNEL_LABEL } from '../shared/funnel';
 export type Page = 'calling' | 'today' | 'reports' | 'import' | 'leads' | 'calls' | 'numbers' | 'data' | 'settings';
 const PAGES: { key: Page; label: string }[] = [
   { key: 'calling', label: 'Calling' },
-  { key: 'today', label: 'Callbacks' },
+  { key: 'today', label: 'Today' },
   { key: 'reports', label: 'Reports' },
   { key: 'leads', label: 'Leads' },
   { key: 'calls', label: 'Call history' },
@@ -148,7 +148,7 @@ interface Stats {
   callbacks: number;
   goals: { dials: number | null; contacts: number | null; appointments: number | null };
   /** How today's Unitrust appointments went (null until the extension has sent any). */
-  appts: { appointments: number; sat: number; sold: number; no_show: number; rescheduled: number; pending: number } | null;
+  appts: { appointments: number; sat: number; prezis: number; sold: number; no_show: number; rescheduled: number; pending: number } | null;
 }
 
 function TodayStats() {
@@ -182,6 +182,7 @@ function TodayStats() {
           title={`Today's appointments (${s.appts.appointments}): from what you log on the Appointment side, or the Unitrust calendar when the extension sees a change.${s.appts.pending ? ` ${s.appts.pending} not updated yet.` : ''}${s.appts.rescheduled ? ` ${s.appts.rescheduled} rescheduled.` : ''}`}
         >
           <span>{FUNNEL_LABEL.sat} <b>{s.appts.sat}</b></span>
+          <span>{FUNNEL_LABEL.prezis} <b>{s.appts.prezis}</b></span>
           <span>{FUNNEL_LABEL.sales} <b>{s.appts.sold}</b></span>
           <span>No-shows <b>{s.appts.no_show}</b></span>
         </span>

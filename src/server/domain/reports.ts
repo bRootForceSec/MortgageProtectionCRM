@@ -1,5 +1,7 @@
 import * as z from 'zod/v4';
 import type { DB } from '../db/connection.js';
+import { AGE_BANDS, ageBand, leadAgeDays } from '../../shared/leadAge.js';
+import type { BestTimes } from '../../shared/bestTime.js';
 import { LEAD_NAME, CURRENT_OUTCOME } from '../db/sql.js';
 import { getSetting, setSetting } from '../core/settings.js';
 import { groupWhere } from './groupFilter.js';
@@ -9,7 +11,9 @@ import { sqlCodes } from '../db/outcomeCodes.js';
 import { DomainError } from '../core/errors.js';
 import { loadCallingSettings } from './callingSettings.js';
 import { bulkOfBatch } from './importHistory.js';
-import { appointmentCounts, appointmentsOnDays, hasAppointments } from './unitrustAppointments.js';
+import { callsAskingObjections, objectionCounts } from './objections.js';
+import { appointmentCounts, appointmentsOnDays, hasAppointments, type ApptRow } from './unitrustAppointments.js';
+import { APPT_RESULTS } from '../../shared/appointments.js';
 
 // Reports. Every number is computed from a group of rows (calls or leads), and the same group answers
 // "show me the calls behind this number", so a total and its drill-down can never disagree.
@@ -32,11 +36,15 @@ export interface ReportFilter {
 
 interface CallRow {
   id: string;
+  /** When the lead called in (UTC), for its age at the time of the call. */
+  callin_at: string | null;
   lead_id: string;
   requested_at: string;
   time_known: number;
   dial_count: number;
   talk_seconds: number | null;
+  started_at: string | null;
+  ended_at: string | null;
   outcome_code: string | null;
   outcome_label: string | null;
   contact: number;
@@ -72,11 +80,14 @@ interface LeadRow {
   attempts_total: number;
   reached: boolean;
   booked: boolean;
+  /** Sat for an appointment (sat no sale, prezi or sale), from Unitrust or the Appointment side. */
+  sat: boolean;
+  sold: boolean;
   called_back_at: string | null;
 }
 
 type CallMetric = 'attempts' | 'dials' | 'leads_called' | 'contacts' | 'conversations' | 'talk_minutes' | 'appointments' | 'callbacks' | 'bad_numbers';
-type LeadMetric = 'leads' | 'cost' | 'never_called' | 'reached' | 'booked' | 'called_back';
+type LeadMetric = 'leads' | 'cost' | 'never_called' | 'reached' | 'booked' | 'sat' | 'sold' | 'called_back';
 
 const CALL_METRICS: Record<CallMetric, { pred: (c: CallRow) => boolean; val: (cs: CallRow[]) => number }> = {
   attempts: { pred: () => true, val: (cs) => cs.length },
@@ -95,6 +106,8 @@ const LEAD_METRICS: Record<LeadMetric, { pred: (l: LeadRow) => boolean; val: (ls
   never_called: { pred: (l) => l.attempts_total === 0, val: (ls) => ls.length },
   reached: { pred: (l) => l.reached, val: (ls) => ls.length },
   booked: { pred: (l) => l.booked, val: (ls) => ls.length },
+  sat: { pred: (l) => l.sat, val: (ls) => ls.length },
+  sold: { pred: (l) => l.sold, val: (ls) => ls.length },
   called_back: { pred: (l) => l.called_back_at != null, val: (ls) => ls.length },
 };
 
@@ -113,6 +126,10 @@ export const ReportTargets = z.object({
   booked_per_contact: z.record(z.string(), z.number().min(0).max(1)).default({
     'FE-A': 0.8, 'CI-A': 0.8, 'DM-A': 0.8, 'CI-A1': 0.25, 'CI-AA': 0.25, 'DM-AA': 0.25, B: 0.2, C: 0.125, D: 0.1,
   }),
+  /** Of the appointments that happened or didn't, how many sat (the flier: 4 of 5). */
+  show_rate: z.number().min(0).max(1).default(0.8),
+  /** Of the ones that sat, how many bought (the flier: 1 of 2). */
+  close_rate: z.number().min(0).max(1).default(0.5),
 });
 export type ReportTargets = z.infer<typeof ReportTargets>;
 const TARGETS = 'report_targets';
@@ -133,9 +150,9 @@ function loadCalls(db: DB, f: ReportFilter, range: boolean): CallRow[] {
   const g = groupWhere('l.county_key', f);
   return db
     .prepare(
-      `SELECT c.id, c.lead_id, c.requested_at, c.time_known, c.dial_count, c.talk_seconds, c.to_e164, c.from_e164, c.channel,
+      `SELECT c.id, c.lead_id, c.requested_at, c.started_at, c.ended_at, c.time_known, c.dial_count, c.talk_seconds, c.to_e164, c.from_e164, c.channel,
               o.outcome_code, oc.label outcome_label, coalesce(oc.counts_as_human_contact, 0) contact, coalesce(o.do_not_call, 0) do_not_call, oc.grp outcome_group, n.label from_label,
-              l.county_key, l.county, l.state, l.lead_type, l.batch_id, l.time_zone, b.name batch_name,
+              l.county_key, l.county, l.state, l.lead_type, l.batch_id, l.time_zone, l.callin_at, b.name batch_name,
               ${LEAD_NAME} lead_name
        FROM call c JOIN lead l ON l.id = c.lead_id JOIN import_batch b ON b.id = l.batch_id
        LEFT JOIN call_outcome o ON o.call_id = c.id AND ${CURRENT_OUTCOME}
@@ -159,13 +176,17 @@ function loadLeads(db: DB, f: ReportFilter, calls: CallRow[]): LeadRow[] {
        LEFT JOIN lead_called_back cb ON cb.lead_id = l.id
        WHERE ${g.sql} ORDER BY b.imported_at, l.created_at`,
     )
-    .all(g.params) as Omit<LeadRow, 'reached' | 'booked'>[];
+    .all(g.params) as Omit<LeadRow, 'reached' | 'booked' | 'sat' | 'sold'>[];
   const callsBy = groupBy(calls, (c) => c.lead_id);
+  // How each lead's appointments went, all time.
+  const appts = hasAppointments(db) ? groupBy(appointmentsOnDays(db, '0000-01-01', '9999-12-31', g), (a) => a.lead_id) : new Map<string, ApptRow[]>();
+  const reachedStep = (l: { lead_id: string }, step: 'sat' | 'sales') =>
+    (appts.get(l.lead_id) ?? []).some((a) => a.outcome !== 'pending' && APPT_RESULTS[a.outcome].funnel.includes(step));
   return rows.map((l) => {
     const cs = callsBy.get(l.lead_id) ?? [];
     // Booked: a call ended with "appointment set" (older history may say sat or sold, which also means it was booked).
     const booked = cs.some((c) => c.outcome_code != null && BOOKED_CODES.has(c.outcome_code));
-    return { ...l, reached: cs.some((c) => c.contact === 1), booked };
+    return { ...l, reached: cs.some((c) => c.contact === 1), booked, sat: reachedStep(l, 'sat'), sold: reachedStep(l, 'sales') };
   });
 }
 
@@ -188,6 +209,19 @@ function localParts(iso: string, tz: string | null | undefined, fallback: string
   const hour = Number(p.hour ?? 0) % 24;
   const weekday = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].indexOf(p.weekday ?? 'Sun');
   return { hour, weekday, date: `${p.year}-${p.month}-${p.day}`, time: `${String(hour).padStart(2, '0')}:${p.minute}` };
+}
+
+/** Attempts and pickups by the lead's local weekday and hour, all time, for "Best time first" on the call list. */
+export function bestTimes(db: DB, tz: string): BestTimes {
+  const out: BestTimes = {};
+  for (const c of loadCalls(db, { from: '', to: '', tz }, false)) {
+    if (c.time_known === 0) continue;
+    const p = localParts(c.requested_at, c.time_zone, tz);
+    const t = (out[`${p.weekday}:${p.hour}`] ??= { attempts: 0, pickups: 0 });
+    t.attempts++;
+    if (c.contact) t.pickups++;
+  }
+  return out;
 }
 
 // ---------- building ----------
@@ -226,7 +260,7 @@ function loadCountyCodes(db: DB) {
   }
   return countyCodes;
 }
-const BATCH_LEADS: LeadMetric[] = ['leads', 'cost', 'never_called', 'reached', 'booked'];
+const BATCH_LEADS: LeadMetric[] = ['leads', 'cost', 'never_called', 'reached', 'booked', 'sat', 'sold'];
 const TYPE_LEADS: LeadMetric[] = [...BATCH_LEADS, 'called_back'];
 const TYPE_CALLS: CallMetric[] = ['dials', 'attempts', 'contacts', 'appointments', 'bad_numbers'];
 
@@ -258,6 +292,10 @@ function buildGroups(db: DB, f: ReportFilter) {
   });
   const bestGroups: Group[] = [...best].map(([k, cs]) => ({ key: k, calls: cs, leads: [] }));
 
+  // All-time, by how old the lead was when you called it.
+  const byAge = groupBy(all.filter((c) => c.time_known !== 0), (c) => ageBand(leadAgeDays(c.callin_at, c.requested_at)) ?? 'unknown');
+  const ageGroups: Group[] = [...AGE_BANDS.map((b) => b.key), 'unknown'].filter((k) => byAge.has(k)).map((k) => ({ key: k, calls: byAge.get(k)!, leads: [] }));
+
   const countyCalls = groupBy(inRange, (c) => c.county_key ?? '');
   const countyLeads = groupBy(leads, (l) => l.county_key ?? '');
   const countyKeys = [...new Set([...countyCalls.keys(), ...countyLeads.keys()])];
@@ -285,7 +323,7 @@ function buildGroups(db: DB, f: ReportFilter) {
   const callerGroups: Group[] = CALLER_MATCH_ORDER.filter((k) => byMatch.has(k) || backByMatch.has(k))
     .map((k) => ({ key: k, calls: byMatch.get(k) ?? [], leads: backByMatch.get(k) ?? [] }));
 
-  return { activity, hourGroups, bestGroups, countyGroups, batchGroups, typeGroups, callerGroups, timedCount: timed.length, untimedInRange: inRange.length - timed.length };
+  return { activity, hourGroups, bestGroups, ageGroups, countyGroups, batchGroups, typeGroups, callerGroups, allCalls: all, timedCount: timed.length, untimedInRange: inRange.length - timed.length };
 }
 
 export function buildReport(db: DB, f: ReportFilter) {
@@ -307,6 +345,9 @@ export function buildReport(db: DB, f: ReportFilter) {
   const leadRatios = (m: Record<LeadMetric, number>) => ({
     cost_per_reached: ratio(m.cost, m.reached),
     cost_per_booked: ratio(m.cost, m.booked),
+    cost_per_sale: ratio(m.cost, m.sold),
+    /** Of the leads that sat for an appointment: how many bought. */
+    close_rate: ratio(m.sold, m.sat),
   });
 
   return {
@@ -322,6 +363,16 @@ export function buildReport(db: DB, f: ReportFilter) {
       const [weekday, hour] = b.key.split(':').map(Number);
       const m = callMetrics(b.calls, ['attempts', 'contacts']);
       return { key: b.key, weekday: weekday!, hour: hour!, ...m, contact_rate: ratio(m.contacts, m.attempts) };
+    }),
+    by_age: g.ageGroups.map((a) => {
+      const m = callMetrics(a.calls, ['attempts', 'contacts', 'appointments']);
+      return {
+        key: a.key,
+        label: AGE_BANDS.find((b) => b.key === a.key)?.label ?? 'No call-in date',
+        ...m,
+        contact_rate: ratio(m.contacts, m.attempts),
+        booked_per_pickup: ratio(m.appointments, m.contacts),
+      };
     }),
     by_county: g.countyGroups
       .map((c) => {
@@ -389,6 +440,61 @@ export function buildReport(db: DB, f: ReportFilter) {
       .sort((x, y) => x.key.localeCompare(y.key)),
     targets,
     appointments: unitrustSection(db, f, types),
+    objections: objectionSection(db, f, types),
+    weekly: weeklyRatios(db, f, g.allCalls, types),
+  };
+}
+
+/** Adds days to a YYYY-MM-DD date. */
+function addDay(day: string, n: number): string {
+  const [y, m, d] = day.split('-').map(Number) as [number, number, number];
+  return new Date(Date.UTC(y, m - 1, d + n)).toISOString().slice(0, 10);
+}
+
+/**
+ * This week and the 4 before it (Monday to Sunday, your time), whatever dates are on screen: appointments set per
+ * pickup on first calls, overall and by lead type, and how the appointments on those days went (show and close rate).
+ */
+export function weeklyRatios(db: DB, f: ReportFilter, all: CallRow[], types: Map<string, string>, now = new Date()) {
+  const today = localParts(now.toISOString(), f.tz, f.tz);
+  const monday = addDay(today.date, -((today.weekday + 6) % 7));
+  const starts = [0, 1, 2, 3, 4].map((w) => addDay(monday, -7 * w));
+  const oldest = starts.at(-1)!;
+  const calls = all.filter((c) => c.time_known !== 0).map((c) => ({ c, day: localParts(c.requested_at, f.tz, f.tz).date })).filter((x) => x.day >= oldest);
+  const appts = appointmentsOnDays(db, oldest, addDay(monday, 6), groupWhere('l.county_key', f));
+  const picks = (cs: CallRow[]) => {
+    const pickups = cs.filter(CALL_METRICS.contacts.pred).length;
+    const set = cs.filter(CALL_METRICS.appointments.pred).length;
+    return { pickups, appointments: set, booked_per_pickup: ratio(set, pickups) };
+  };
+  const typeKeys = [...new Set(calls.map((x) => x.c.lead_type ?? ''))].sort();
+  return {
+    types: typeKeys.map((k) => ({ key: k, label: k ? types.get(k) ?? k : 'No lead type' })),
+    weeks: starts.map((start) => {
+      const end = addDay(start, 6);
+      const inWeek = calls.filter((x) => x.day >= start && x.day <= end).map((x) => x.c);
+      const a = appointmentCounts(appts.filter((r) => r.day >= start && r.day <= end));
+      return {
+        start,
+        end,
+        ...picks(inWeek),
+        by_type: Object.fromEntries(typeKeys.map((k) => [k, picks(inWeek.filter((c) => (c.lead_type ?? '') === k))])),
+        sat: a.sat, sold: a.sold, no_show: a.no_show, show_rate: a.show_rate, close_rate: a.close_rate,
+      };
+    }),
+  };
+}
+
+/** Objections noted on calls in the range, in total and by lead type, with how many calls offered the chips. */
+function objectionSection(db: DB, f: ReportFilter, types: Map<string, string>) {
+  const rows = objectionCounts(db, f.from, f.to, f);
+  if (!rows.length) return null;
+  const asked = callsAskingObjections(db, f.from, f.to, f);
+  const keys = [...new Set(rows.flatMap((r) => Object.keys(r.by_type)))].sort();
+  return {
+    calls: asked.n,
+    types: keys.map((k) => ({ key: k, label: k ? types.get(k) ?? k : 'No lead type', calls: asked.by_type[k] ?? 0 })),
+    rows,
   };
 }
 
@@ -514,6 +620,9 @@ export function reportCalls(db: DB, f: ReportFilter) {
       do_not_call: c.do_not_call ? 'yes' : 'no',
       dials: c.dial_count,
       talk_seconds: c.talk_seconds ?? '',
+      // Logged live on the Calling page: when you pressed Dial (if you did) and when you saved.
+      dialed_at_utc: c.ended_at && c.started_at !== c.requested_at ? c.started_at : '',
+      saved_at_utc: c.ended_at ?? '',
       channel: c.channel,
     };
   });
@@ -530,6 +639,7 @@ export function reportJson(db: DB, f: ReportFilter) {
       dials_vs_attempts: 'An attempt is one logged call to a lead; one attempt can be several dials (redials of the same number).',
       contact: 'A contact is a call whose outcome counts as talking to a person. Conversations are calls with 2 minutes or more of talk time.',
       do_not_call: 'do_not_call: the person asked not to be called again. It sits beside the outcome, and the lead goes to the dead pile.',
+      sat_sold: 'In by_batch and benchmarks, sat and sold count leads whose appointment sat (sat no sale, prezi or sale) or sold, from Unitrust or the Appointment side, all time. close_rate is sold / sat; cost_per_sale is cost / sold.',
       rates: 'Rates are fractions from 0 to 1 (null when there is nothing to divide by). Money is in cents.',
       caller_id_match: 'local: the caller ID area code is one set for the lead\'s county (or the lead\'s own area code); out_of_area: it is not; unknown: no caller ID recorded.',
     },
@@ -570,6 +680,10 @@ export function reportSheets(r: ReturnType<typeof buildReport>, calls: ReturnTyp
         .map((b) => ({ day: WEEKDAYS[b.weekday], their_hour: hourLabel(b.hour), attempts: b.attempts, contacts: b.contacts, contact_rate_pct: pct(b.contact_rate) })),
     },
     {
+      name: 'By lead age',
+      rows: r.by_age.map((a) => ({ lead_age_when_called: a.label, attempts: a.attempts, contacts: a.contacts, contact_rate_pct: pct(a.contact_rate), appointments: a.appointments, appts_per_contact_pct: pct(a.booked_per_pickup) })),
+    },
+    {
       name: 'By county',
       rows: r.by_county.map((c) => ({ county: c.name, state: c.state, area_codes: c.area_codes, leads: c.leads, dials: c.dials, attempts: c.attempts, contacts: c.contacts, appointments: c.appointments })),
     },
@@ -586,8 +700,8 @@ export function reportSheets(r: ReturnType<typeof buildReport>, calls: ReturnTyp
       name: 'By batch',
       rows: r.by_batch.map((b) => ({
         batch: b.name, imported: b.imported_at, lead_types: b.lead_types, leads: b.leads, cost: money(b.cost), never_called: b.never_called,
-        dials: b.dials, reached: b.reached, booked: b.booked,
-        cost_per_reached: money(b.cost_per_reached), cost_per_booked: money(b.cost_per_booked),
+        dials: b.dials, reached: b.reached, booked: b.booked, sat: b.sat, sold: b.sold, close_rate_pct: pct(b.close_rate),
+        cost_per_reached: money(b.cost_per_reached), cost_per_booked: money(b.cost_per_booked), cost_per_sale: money(b.cost_per_sale),
       })),
     },
     {
@@ -598,9 +712,19 @@ export function reportSheets(r: ReturnType<typeof buildReport>, calls: ReturnTyp
         contacts: b.contacts, appointments: b.appointments, bad_numbers: b.bad_numbers, called_you_back: b.called_back,
         reached: b.reached, booked: b.booked, reached_pct: pct(b.reached_rate), booked_pct: pct(b.booked_rate),
         booked_per_reached_pct: pct(b.booked_per_reached), target_pct: pct(b.booked_target),
-        cost_per_reached: money(b.cost_per_reached), cost_per_booked: money(b.cost_per_booked),
+        sat: b.sat, sold: b.sold, close_rate_pct: pct(b.close_rate),
+        cost_per_reached: money(b.cost_per_reached), cost_per_booked: money(b.cost_per_booked), cost_per_sale: money(b.cost_per_sale),
       })),
     },
+    ...(r.objections
+      ? [{
+        name: 'Objections',
+        rows: r.objections.rows.map((o) => ({
+          objection: o.label, all: o.n,
+          ...Object.fromEntries(r.objections!.types.map((t) => [t.label, o.by_type[t.key] ?? 0])),
+        })),
+      }]
+      : []),
     { name: 'Calls', rows: calls },
   ];
 }
