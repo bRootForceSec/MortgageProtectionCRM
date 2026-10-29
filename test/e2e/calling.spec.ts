@@ -163,7 +163,11 @@ test('dial counter, undo, remapped keys, QR dialing, scripts and lead edits', as
   await expect(page.getByRole('button', { name: /No answer/ })).toHaveClass(/active/);
   await expect(page.locator('.topbar .stats')).toContainText('Dials 2');
   await page.keyboard.press('Escape');
+  // Appt set offers the appointment's day and time (optional). Type tomorrow at 2, then Enter.
   await page.keyboard.press('3');
+  await expect(page.getByLabel('Appointment on (optional)')).toBeFocused();
+  await page.keyboard.type('m');
+  await page.getByLabel(/^At \(optional/).fill('2');
   await page.keyboard.press('Enter');
   await expect(page.locator('.undo-bar')).toContainText('Appt set · 2 dials');
   await expect(page.locator('.lead-name')).not.toHaveText(lead);
@@ -491,6 +495,9 @@ test('First call | Appointment: an appointment set opens on the Appointment side
   // Ann Lee had an appointment set earlier: she opens on the Appointment side.
   await lookUp('Ann Lee');
   await expect(tabs.getByRole('tab', { name: 'Appointment' })).toHaveAttribute('aria-selected', 'true');
+  // The time typed on Appt set shows until Unitrust sends its own.
+  await expect(page.getByLabel('Current lead').locator('.appt-when')).toContainText('Tomorrow');
+  await expect(page.getByLabel('Current lead').locator('.appt-when')).toContainText('not in Unitrust yet');
   const outcomes = page.getByRole('group', { name: 'Appointment outcome' });
   await expect(outcomes.getByRole('button')).toHaveText([/No show/, /Sat, no sale/, /Prezi/, /Sale/, /Rescheduled/]);
   // M flips the side, and back.

@@ -16,7 +16,7 @@ A small calling CRM that runs on your own computer. It imports your lead spreads
 - **Imports** go straight onto the call list, in file order (untick the box on the import screen to skip that).
 - **Callbacks** (`6`) are for real "call me later" requests. Type the day (`t` today, `m` tomorrow, a weekday like `fri`, or a date like `10/24`) and, if you want, a time (`2`, `2:30`, `10am`; 1 to 7 means PM). The time is the lead's own time, so "call me at 2" from a Central-time lead means 2 PM where they are; the picker shows it in your time too. Leave the time blank for any time that day.
 - **Callbacks page**: callbacks you missed, today's, and the next two weeks, in your time and the lead's. They stay off the call list; Open shows the lead on the Calling page beside your list. A desktop alert and a sound when one with a time comes due.
-- **Appointment set** is a call outcome with no date or time. Appointment times and results (sat, sold, no-show) are tracked in Unitrust, not here.
+- **Appointment set** can take the appointment's day and time (optional), typed like a callback. The lead shows it until the Unitrust extension sends the appointment, which then wins. Results (sat, sold, no-show) come from the Appointment side or Unitrust.
 - **Reports**: today or any dates, for the counties or area codes you pick. Activity (dials, attempts, contacts, talks of 2+ minutes, appointments), by hour, best time to call by the lead's local time, by county, by batch (cost per lead reached and booked, from each lead's own price) and against the flier's benchmarks by lead type (booked per contact; edit the targets on the page). Click any number to see the calls or leads behind it. Export saves the report as Excel (every section plus one row per call), as a CSV of the calls in those dates for another system, or as JSON (the whole report and every call, with notes on what each number means) for analysis. Exports never include health fields.
 - **Numbers page**: calls, dials and pick-up rate for each caller ID (today, 7 and 30 days), appointments set from it, a warning before retiring a number you set appointments from, and a reputation checklist with the dates you did each check. The app never switches numbers by itself.
 - **Scripts** (`P`) with the lead's name, lender and address filled in, **daily goals** in the top bar, **edit a lead** (`E`) with the old values kept, and **keyboard shortcuts you can change** in Settings.
@@ -123,7 +123,7 @@ These are the starting keys. Change any of them in **Settings → Keyboard short
 
 **KDE Connect** (optional): `sudo dnf install kdeconnectd`, install KDE Connect on your phone, pair them, then pick your phone in Settings → Calling. The phone opens its dialer with the number filled in. If the phone asks which app to use, pick Sideline.
 
-Callbacks ask for a day; the time is optional. Appointment set has no date or time.
+Callbacks ask for a day; the time is optional. Appointment set offers the appointment's day and time the same way, and you can leave it blank.
 
 ## Backups and restore
 

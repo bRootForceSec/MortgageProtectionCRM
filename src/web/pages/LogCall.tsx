@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { describeCallback, differentZone, readCallback } from '../when';
+import { describeCallback, differentZone, readCallback, toWall } from '../when';
 import { api, fmtPhone, newKey, type LeadDetail } from '../api';
 import { useApp } from '../App';
 import { isTyping, keyLabel, normKey, type KeyMap } from '../shortcuts';
 import { getStored, setStored } from '../storage';
 import type { CallMode } from '../../shared/appointments';
-import { savesInstantly } from '../../shared/outcomes';
+import { outcomeDef, savesInstantly } from '../../shared/outcomes';
 
 // The "log the call" form on the Calling screen: number used, outcome, callback time, minutes and note.
 // It has two sides with the same layout: First call (no answer, appt set, ...) and Appointment (no show, prezi, sale, ...).
@@ -109,6 +109,8 @@ export function LogCall({
   const outcomes = useMemo(() => (meta?.outcome_codes ?? []).filter((o) => o.kind === mode), [meta, mode]);
   const outcome = outcomes.find((o) => o.code === code) ?? null;
   const needsWhen = !!outcome?.requires_callback_time;
+  // Appt set: the appointment's day and time, optional, typed like a callback.
+  const apptWhen = !!outcomeDef(code)?.apptSet;
   const changed = numberId !== defaultNumber.id;
 
   const choose = useCallback((c: string) => {
@@ -117,6 +119,10 @@ export function LogCall({
     if (o?.requires_callback_time) {
       setDay((v) => v || 'tomorrow');
       setTimeout(() => { dayRef.current?.focus(); dayRef.current?.select(); }, 0);
+      return;
+    }
+    if (outcomeDef(c)?.apptSet) {
+      setTimeout(() => dayRef.current?.focus(), 0);
       return;
     }
     // No answer and Bad number need nothing more, so they save straight away (Undo still catches a wrong key).
@@ -133,8 +139,10 @@ export function LogCall({
     if (!codeNow || saving) return;
     const o = meta?.outcome_codes.find((x) => x.code === codeNow) ?? null;
     const cb = o?.requires_callback_time ? readCallback(day, time, new Date(), d.lead.time_zone) : null;
-    if (cb && 'error' in cb) {
-      toast(cb.error, 'error');
+    const appt = outcomeDef(codeNow)?.apptSet && day.trim() ? readCallback(day, time, new Date(), d.lead.time_zone) : null;
+    const bad = cb && 'error' in cb ? cb : appt && 'error' in appt ? appt : null;
+    if (bad) {
+      toast(bad.error, 'error');
       dayRef.current?.focus();
       return;
     }
@@ -145,8 +153,9 @@ export function LogCall({
         from_number_id: numberId || null,
         to_e164: attempt.to,
         outcome_code: codeNow,
-        callback_due_at: cb ? cb.at.toISOString() : null,
-        callback_any_time: cb ? cb.anyTime : null,
+        callback_due_at: cb && !('error' in cb) ? cb.at.toISOString() : null,
+        callback_any_time: cb && !('error' in cb) ? cb.anyTime : null,
+        appointment_for: appt && !('error' in appt) ? toWall(appt) : null,
         do_not_call: doNotCall,
         talk_seconds: minutes ? Number(minutes) * 60 : timerSeconds(o),
         dial_count: attempt.dials,
@@ -272,13 +281,13 @@ export function LogCall({
       </div>
       {code && (
         <div className="row" style={{ alignItems: 'flex-end' }}>
-          {needsWhen && (() => {
+          {(needsWhen || apptWhen) && (() => {
             const cb = readCallback(day, time, new Date(), d.lead.time_zone);
             const theirs = differentZone(d.lead.time_zone);
             return (
               <div className="callback-picker">
                 <label className="field">
-                  <span>Call back on</span>
+                  <span>{apptWhen ? 'Appointment on (optional)' : 'Call back on'}</span>
                   <input id="callback-day" ref={dayRef} value={day} onChange={(e) => setDay(e.target.value)} onFocus={(e) => e.target.select()}
                     placeholder="t, m, fri, 10/24" style={{ width: 120 }} autoComplete="off" />
                 </label>
@@ -286,7 +295,7 @@ export function LogCall({
                   <span>At (optional{theirs ? ', their time' : ''})</span>
                   <input id="callback-time" value={time} onChange={(e) => setTime(e.target.value)} placeholder="any time" style={{ width: 90 }} autoComplete="off" />
                 </label>
-                <span className={'error' in cb ? 'help warn' : 'help'} aria-live="polite">{'error' in cb ? (day ? cb.error : '') : describeCallback(cb, new Date(), d.lead.time_zone)}</span>
+                <span className={'error' in cb ? 'help warn' : 'help'} aria-live="polite">{'error' in cb ? (day ? cb.error : apptWhen ? 'Leave blank if you don\'t know yet; Unitrust fills it in.' : '') : describeCallback(cb, new Date(), d.lead.time_zone)}</span>
               </div>
             );
           })()}

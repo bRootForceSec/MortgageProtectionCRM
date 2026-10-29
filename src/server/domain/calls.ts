@@ -3,9 +3,11 @@ import { LEAD_NAME, CURRENT_OUTCOME } from '../db/sql.js';
 import { uuidv7, nowIso } from '../ids.js';
 import { rebuildLeadState } from './leadState.js';
 import { DomainError } from '../core/errors.js';
+import { outcomeDef } from '../../shared/outcomes.js';
 import { audit } from '../core/audit.js';
 import { groupWhere, searchWhere } from './groupFilter.js';
 import { recordObjections, type ObjectionInput } from './objections.js';
+import { appointmentTimeOfCall, cancelAppointmentsOfCall, recordAppointmentTime } from './appointments.js';
 
 export interface ManualCallInput {
   lead_id: string;
@@ -26,6 +28,8 @@ export interface ManualCallInput {
   /** They asked not to be called again: the lead goes to the dead pile. */
   do_not_call?: boolean | null;
   note?: string | null;
+  /** Appt set: when the appointment is, in your time ("2026-10-30" or "2026-10-30T14:00"). Optional; Unitrust confirms it. */
+  appointment_for?: string | null;
   /** Objections heard on the call. Not asked for on screen yet. */
   objections?: ObjectionInput[] | null;
 }
@@ -112,6 +116,10 @@ export function logManualCall(db: DB, input: ManualCallInput) {
       );
     }
     recordObjections(db, callId, input.objections ?? [], 'manual', now);
+    if (input.appointment_for) {
+      if (!outcomeDef(outcome.code)?.apptSet) throw new DomainError('only an appointment set takes an appointment time');
+      recordAppointmentTime(db, lead.id, callId, input.from_number_id ?? null, input.appointment_for, now);
+    }
     rebuildLeadState(db, [lead.id]);
     return { call_id: callId, duplicate: false };
   })();
@@ -135,6 +143,8 @@ export function voidCall(db: DB, callId: string, reason?: string | null) {
        VALUES (?, ?, 'manual', ?, 'manual.voided', 'call.voided', ?, ?, ?)`,
     ).run(uuidv7(), callId, `void:${callId}`, now, now, JSON.stringify({ reason: reason ?? null }));
     const out = currentOutcome(db, callId);
+    const appointmentFor = appointmentTimeOfCall(db, callId);
+    cancelAppointmentsOfCall(db, callId);
     const note = db.prepare('SELECT body FROM note WHERE call_id = ? ORDER BY created_at LIMIT 1').get(callId) as { body: string } | undefined;
     if (call.lead_id) rebuildLeadState(db, [call.lead_id]);
     return {
@@ -148,6 +158,7 @@ export function voidCall(db: DB, callId: string, reason?: string | null) {
       lead_seconds: call.lead_seconds as number | null,
       from_number_id: call.from_number_id as string | null,
       note: note?.body ?? null,
+      appointment_for: appointmentFor,
     };
   })();
 }
@@ -198,6 +209,8 @@ export function changeOutcome(
       id, callId, o.code, nowIso(), cur?.id ?? null, due, due && input.callback_any_time ? 1 : 0, input.note?.trim() || null,
       (input.do_not_call ?? !!cur?.do_not_call) ? 1 : 0,
     );
+    // No longer an appointment set: the time typed for it goes too.
+    if (!outcomeDef(o.code)?.apptSet) cancelAppointmentsOfCall(db, callId);
     if (call.lead_id) rebuildLeadState(db, [call.lead_id]);
     return { outcome_id: id };
   })();

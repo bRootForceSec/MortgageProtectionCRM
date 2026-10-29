@@ -206,6 +206,8 @@ export interface LeadDetail {
   import_row: { row_number: number; warnings_json: string | null; raw_json: string | null } | null;
   /** The PDF this lead came from is on this computer: its page can be shown (source_page on the lead). */
   source_pdf: boolean;
+  /** The lead's appointment as it stands: typed on Appt set, or from Unitrust, which wins once it sends one. */
+  appointment: { scheduled_for: string; source: 'app' | 'unitrust' } | null;
   /** When you marked that this lead called you back (null if not). */
   called_back_at: string | null;
   calls: Call[];

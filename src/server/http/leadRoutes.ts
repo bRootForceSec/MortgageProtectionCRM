@@ -150,6 +150,7 @@ export function registerLeadRoutes(app: FastifyInstance, deps: { db: DB; config:
       callback_any_time: z.boolean().nullish(),
       do_not_call: z.boolean().nullish(),
       note: z.string().max(10000).nullish(),
+      appointment_for: z.string().max(20).nullish(),
       objections: z.array(z.object({ code: z.string().max(40), note: z.string().max(2000).nullish() })).max(20).nullish(),
     }).parse(req.body);
     return logManualCall(db, { ...b, lead_id: id });
