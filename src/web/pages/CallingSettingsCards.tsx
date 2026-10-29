@@ -6,6 +6,7 @@ import {
   buildKeyMap, conflicts, keyLabel, normKey, RESERVED, type CallingSettingsResponse,
 } from '../shortcuts';
 import type { CallingSettings, ShortcutAction } from '../../shared/callingSettings';
+import { ALL_PARTY_CONSENT_STATES } from '../../shared/recordingConsent';
 import { savesInstantly } from '../../shared/outcomes';
 
 // Settings for the Calling screen: retry gap, dialing, timer, goals, alerts, shortcuts and scripts.
@@ -273,6 +274,37 @@ export function ScriptsCard() {
       <label className="field"><span>Opener</span><textarea rows={5} value={v.opener} onChange={(e) => setV({ ...v, opener: e.target.value })} placeholder="Hi {first_name}, this is {agent_name}. I'm calling about the mortgage protection form for your home on {address}…" /></label>
       <label className="field"><span>Voicemail</span><textarea rows={4} value={v.voicemail} onChange={(e) => setV({ ...v, voicemail: e.target.value })} /></label>
       <button className="btn primary" disabled={!dirty} onClick={() => save({ ...s, scripts: v })}>Save scripts</button>
+      <RecordingConsent />
     </div>
+  );
+}
+
+/** "I record my calls": a reminder on leads in all-party consent states, and the disclosure line above the opener. */
+function RecordingConsent() {
+  const { calling } = useApp();
+  const save = useSave();
+  const s = calling?.settings;
+  const [text, setText] = useState(s?.recording.disclosure ?? '');
+  useEffect(() => setText(s?.recording.disclosure ?? ''), [s?.recording.disclosure]);
+  if (!s) return null;
+  const set = (patch: Partial<CallingSettings['recording']>) => save({ ...s, recording: { ...s.recording, ...patch } });
+  const states = Object.values(ALL_PARTY_CONSENT_STATES).join(', ');
+  return (
+    <>
+      <h3>Recording</h3>
+      <label className="choice-inline">
+        <input type="checkbox" checked={s.recording.on} onChange={(e) => set({ on: e.target.checked })} /> I record my calls
+      </label>
+      <p className="help">
+        Some states need everyone on the call to agree to a recording: {states}. With this ticked, leads there show a reminder,
+        and the opener starts with the line below. This list isn't legal advice; check it before you record.
+      </p>
+      {s.recording.on && (
+        <label className="field">
+          <span>Say this first in those states</span>
+          <input value={text} onChange={(e) => setText(e.target.value)} onBlur={() => text.trim() && text !== s.recording.disclosure && set({ disclosure: text.trim() })} />
+        </label>
+      )}
+    </>
   );
 }
