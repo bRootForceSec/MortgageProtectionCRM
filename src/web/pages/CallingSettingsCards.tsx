@@ -6,6 +6,7 @@ import {
   buildKeyMap, conflicts, keyLabel, normKey, RESERVED, type CallingSettingsResponse,
 } from '../shortcuts';
 import type { CallingSettings, ShortcutAction } from '../../shared/callingSettings';
+import { savesInstantly } from '../../shared/outcomes';
 
 // Settings for the Calling screen: retry gap, dialing, timer, goals, alerts, shortcuts and scripts.
 
@@ -37,7 +38,7 @@ function NumberField({ value, onSave, min = 0, allowBlank, width = 90 }: { value
 }
 
 export function CallingCard() {
-  const { calling, toast } = useApp();
+  const { calling, meta, toast } = useApp();
   const save = useSave();
   const [devices, setDevices] = useState<{ ok: boolean; error?: string; devices: { id: string; name: string; reachable: boolean }[] } | null>(null);
   const [perm, setPerm] = useState(typeof Notification === 'undefined' ? 'unsupported' : Notification.permission);
@@ -102,7 +103,19 @@ export function CallingCard() {
 
         <label>Saving</label>
         <span>
-          <label className="choice-inline"><input type="checkbox" checked={s.instant_save} onChange={(e) => set({ instant_save: e.target.checked })} /> No answer and Bad number save as soon as I press the key (no Enter). Undo still works.</label>
+          <label className="choice-inline"><input type="checkbox" checked={s.instant_save} onChange={(e) => set({ instant_save: e.target.checked })} /> some outcomes save as soon as I press the key (no Enter). Undo still works.</label>
+          {s.instant_save && (['first_call', 'appointment'] as const).map((side) => (
+            <span key={side} className="row" style={{ marginTop: 4 }}>
+              <span className="help">{side === 'appointment' ? 'Appointment:' : 'First call:'}</span>
+              {(meta?.outcome_codes ?? []).filter((o) => o.kind === side && !o.requires_callback_time).map((o) => (
+                <label key={o.code} className="choice-inline">
+                  <input type="checkbox" checked={savesInstantly(o, s.instant_outcomes)}
+                    onChange={(e) => set({ instant_outcomes: { ...s.instant_outcomes, [o.code]: e.target.checked } })} /> {o.label}
+                </label>
+              ))}
+            </span>
+          ))}
+          {s.instant_save && <span className="help">Ticked outcomes save without Enter. Talk minutes come from the timer. Callbacks always wait for their day.</span>}
         </span>
 
         <label>Call timer</label>
