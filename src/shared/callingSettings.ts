@@ -37,8 +37,10 @@ export const CallingSettings = z.object({
   kdeconnect_device: z.string().max(100).nullable().default(null),
   /** Fill talk minutes from the timer when you save. */
   use_timer: z.boolean().default(true),
-  /** No answer and Bad number save as soon as you press the key, without Enter. */
+  /** Outcomes can save as soon as you press the key, without Enter. Off means every outcome waits for Enter. */
   instant_save: z.boolean().default(true),
+  /** Which outcomes save without Enter (outcome code -> on/off). Outcomes not listed keep their default: those with nothing more to fill in. */
+  instant_outcomes: z.record(z.string(), z.boolean()).default({}),
   /** With KDE Connect, send the next lead's number to your phone as soon as you save or skip. */
   auto_send_next: z.boolean().default(true),
   shortcuts: z

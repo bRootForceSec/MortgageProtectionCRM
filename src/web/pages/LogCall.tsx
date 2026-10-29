@@ -119,8 +119,8 @@ export function LogCall({
       setTimeout(() => { dayRef.current?.focus(); dayRef.current?.select(); }, 0);
       return;
     }
-    // No answer and Bad number need nothing more, so they save straight away (Undo still catches a wrong key).
-    if (calling?.settings.instant_save !== false && o && savesInstantly(o)) void saveRef.current(c);
+    // Outcomes set to save without Enter (by default No answer, Bad number and No show) save straight away; Undo still catches a wrong key.
+    if (calling?.settings.instant_save !== false && o && savesInstantly(o, calling?.settings.instant_outcomes)) void saveRef.current(c);
   }, [meta, calling]);
 
   // Talk time from the timer, only when someone picked up and you didn't type minutes yourself.
@@ -304,17 +304,23 @@ export function LogCall({
       )}
       {!code && (
         <p className="help">
-          {calling?.settings.instant_save !== false
-            ? mode === 'appointment'
-              ? 'After the appointment, press the outcome key. No show saves right away; the others save with Enter.'
-              : 'After the call, press the outcome key. No answer and Bad number save right away; the others save with Enter.'
-            : 'After the call, press the outcome key, then Enter.'}{' '}
+          {saveHelp(mode, calling?.settings.instant_save !== false ? outcomes.filter((o) => savesInstantly(o, calling?.settings.instant_outcomes)) : [], outcomes.length)}{' '}
           Dialed more than once? Press <kbd>{k('dials_up')}</kbd> for each extra dial first.
         </p>
       )}
       {d.state?.status === 'invalid' && <RestoreBox d={d} onSaved={onRefresh} label={d.state.block_reason ? `${d.state.block_reason}.` : 'Marked as a bad number.'} />}
     </div>
   );
+}
+
+/** How saving works on this side, e.g. "No answer and Bad number save right away; the others save with Enter." */
+function saveHelp(mode: CallMode, instant: { label: string }[], total: number): string {
+  const after = mode === 'appointment' ? 'After the appointment' : 'After the call';
+  if (!instant.length) return `${after}, press the outcome key, then Enter.`;
+  const names = instant.map((o) => o.label);
+  const list = names.length > 1 ? `${names.slice(0, -1).join(', ')} and ${names.at(-1)}` : names[0];
+  const verb = names.length > 1 ? 'save' : 'saves';
+  return `${after}, press the outcome key. ${list} ${verb} right away${instant.length < total ? '; the others save with Enter' : ''}.`;
 }
 
 function RestoreBox({ d, onSaved, label }: { d: LeadDetail; onSaved: () => Promise<void>; label: string }) {

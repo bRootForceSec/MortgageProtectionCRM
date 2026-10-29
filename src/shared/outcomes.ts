@@ -99,8 +99,16 @@ export const APPT_OUTCOME_RESULT: Readonly<Record<string, Exclude<ApptResult, 'n
   entries.flatMap(([c, o]) => (o.apptResult ? [[c, o.apptResult]] : [])),
 );
 
-/** Saves as soon as you press its key, without Enter: nothing more to fill in (no callback time, no talk time). */
-export function savesInstantly(o: { requires_callback_time: number | boolean; counts_as_human_contact: number | boolean }): boolean {
-  return !o.requires_callback_time && !o.counts_as_human_contact;
+/**
+ * Saves as soon as you press its key, without Enter. By default that's the outcomes with nothing more to fill in (no
+ * callback time, no talk time); `chosen` (Settings, outcome code -> on/off) changes any of them except a callback,
+ * which always needs its day.
+ */
+export function savesInstantly(
+  o: { code: string; requires_callback_time: number | boolean; counts_as_human_contact: number | boolean },
+  chosen: Readonly<Record<string, boolean>> = {},
+): boolean {
+  if (o.requires_callback_time) return false;
+  return Object.hasOwn(chosen, o.code) ? chosen[o.code]! : !o.counts_as_human_contact;
 }
 

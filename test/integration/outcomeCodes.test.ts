@@ -80,4 +80,14 @@ describe('outcome codes', () => {
     const instant = Object.entries(OUTCOMES).filter(([, o]) => o.active && savesInstantly(outcomeRow('', o))).map(([c]) => c);
     expect(instant).toEqual(['no_answer', 'bad_number', 'appt_no_show']);
   });
+
+  it('Settings can change which outcomes save without Enter, except a callback', () => {
+    const row = (code: string) => outcomeRow(code, OUTCOMES[code as keyof typeof OUTCOMES]);
+    const chosen = { no_appt: true, no_answer: false, callback: true };
+    expect(savesInstantly(row('no_appt'), chosen)).toBe(true);
+    expect(savesInstantly(row('no_answer'), chosen)).toBe(false);
+    expect(savesInstantly(row('callback'), chosen)).toBe(false);
+    expect(savesInstantly(row('bad_number'), chosen)).toBe(true);
+    expect(savesInstantly(row('appt_sat_no_sale'), chosen)).toBe(false);
+  });
 });
