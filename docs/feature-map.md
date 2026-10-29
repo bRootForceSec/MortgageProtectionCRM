@@ -15,7 +15,7 @@ How the recent features flow through data, server and UI, and where the same ide
 | Appointment outcomes | rows `appt_*` in `outcome_code` (021) | `shared/appointments.ts` `APPT_OUTCOME_RESULT`; `leadState.ts` `deriveLeadState`; `unitrustAppointments.ts` `appointmentsOnDays` | `LogCall.tsx`, `ApptBadge` |
 | Lead status tags and Leads tabs | `lead_state.status`, `appt_result`, `appt_missed` | `callList.ts` `leadFilterWhere`, `APPT_TABS`; `leadRoutes.ts` status enum | `LeadsPage.tsx` `STATUSES`, `LeadDetails.tsx` `STATUS_LABEL`, `StatusBadge`, `ApptBadge` |
 | Extended funnel | calls + outcomes + appointments | `reports.ts` `todayStats` (first calls only) + `appointmentCounts` | `Funnel.tsx` `STEPS`, top bar `TodayStats` in `App.tsx` |
-| Hidden objection storage | `objection_code`, `call_objection` (021) | `domain/objections.ts`, accepted on `POST /api/calls` | nothing shown yet |
+| Objections per call | `objection_code`, `call_objection` (021) | `domain/objections.ts`, accepted on `POST /api/calls`, listed in `/api/meta` | chips in `LogCall.tsx` after outcomes with `objections` in the registry |
 | Unitrust calendar sync | `appointment`, `appointment_result` (019, 020) | `unitrustRoutes.ts`, `unitrustAppointments.ts` (color → result, reschedules) | `extension/unitrust/`, Settings card, Reports appointments, top bar |
 
 ## The same idea defined more than once
@@ -61,7 +61,7 @@ Adding an outcome today means a migration plus edits in up to five files.
 ### Funnel and top bar
 
 - Step names and order: `Funnel.tsx` `STEPS`, the top bar in `App.tsx`, Reports headings. Each writes its own labels.
-- "First calls only": `reports.ts` `loadCalls` and `todayStats` filter on `kind`; `numbers.ts` `numberStats` does not, so the Numbers page counts appointment calls as calls and pickups (pinned in `test/integration/outcomeEffects.test.ts`).
+- "First calls only": `reports.ts` `loadCalls` and `todayStats` filter on `kind`; `numbers.ts` `numberStats` did not (it does now, see below).
 
 ### Call type (mode)
 
@@ -73,9 +73,9 @@ Adding an outcome today means a migration plus edits in up to five files.
 - The current-outcome condition (`NOT EXISTS (… supersedes_id = o.id)`) is written 12 times in 8 domain files.
 - The lead-name expression is written 11 times.
 
-## Inconsistencies found (kept as they are, for a decision)
+## Inconsistencies found (decided 2026-10-29)
 
-1. **Legacy "booked" codes.** `sat_no_sale` and `sold` (retired first-call outcomes, still on older calls) make a lead "Appointment set", but Reports, the top bar and the Numbers page don't count them as appointments set.
-2. **The Numbers page counts appointment calls** as calls and pickups, while the top bar and Reports count first calls only.
+1. **Legacy "booked" codes.** `sat_no_sale` and `sold` (retired first-call outcomes, still on older calls) make a lead "Appointment set". They now also count as appointments set in Reports, the top bar and the Numbers page.
+2. **The Numbers page** now counts first calls only, like the top bar and Reports.
 
-`test/integration/outcomeEffects.test.ts` pins both, so any change to them will be a deliberate one.
+`test/integration/outcomeEffects.test.ts` pins both.
