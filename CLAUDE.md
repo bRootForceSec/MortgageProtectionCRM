@@ -25,7 +25,7 @@ Read this before changing code. New features must fit the existing structure. Do
 |---|---|
 | Add an endpoint | Put it in the route file for its feature (`src/server/http/*Routes.ts`). Keep the handler thin: validate input with zod, call a domain function, return the result. **No SQL in route files** (the structure check enforces it). |
 | Find the route file | `importRoutes` (uploads, drafts, bulk import, import history), `leadRoutes` (leads, call list, lead page, calls and outcomes), `callingRoutes`, `numberRoutes` (caller IDs and their checks), `reportRoutes`, `dataRoutes` (export and backups), `unitrustRoutes` (what the Unitrust Firefox extension sends, and its key). `app.ts` only wires these together. |
-| Add business logic or queries | `src/server/domain/<feature>.ts`. Domain functions take `db` and know nothing about HTTP. |
+| Add business logic or queries | `src/server/domain/<feature>.ts`. Domain functions take `db` and know nothing about HTTP. Shared SQL pieces are in `db/sql.ts`: `CURRENT_OUTCOME` (a call's outcome that nothing supersedes, over `call_outcome o`), `LEAD_NAME` (over `lead l`) and `sqlList`. Use them instead of writing those out again. |
 | Signal a user-facing error | `throw new DomainError(message, status?)` from `src/server/core/errors.ts`. The error handler turns it into a 4xx with `{ error }`. Don't throw a plain `Error` for user mistakes, and don't catch and rewrap errors in routes. |
 | Store a setting | Use `getSetting` / `setSetting` from `src/server/core/settings.ts` (`app_setting` table). Don't create a new settings table or file. Secrets go in `Secrets` (0600 `secrets.json`), never in the DB. |
 | Record who changed what | `audit(db, table, rowId, action, old, new)` from `src/server/core/audit.ts`, inside the same transaction as the change. Don't write `INSERT INTO audit_log` by hand. |
@@ -35,6 +35,7 @@ Read this before changing code. New features must fit the existing structure. Do
 | Run a background job | Look at `DraftWorker`, `BulkImporter` and `PageChecker` first. A new job must stop cleanly when the server stops (`server.ts` `stop()`). |
 | Call the API from the UI | `src/web/api.ts` (`api.get`, `api.post`, `api.upload`, which takes extra headers). Don't write a new fetch wrapper. |
 | Show a failure in the UI | Show the user a message. Don't write `.catch(() => {})` unless failing really is harmless, and if so, add a comment saying why. |
+| Load lead types in the UI | `useLeadTypes` from `src/web/leadTypes.ts`. |
 | Remember a UI preference | `getStored` / `setStored` (or the `Json` versions) from `src/web/storage.ts`. Don't touch `localStorage` directly (the structure check enforces it). |
 | Work with dates and time zones | Web: `src/web/when.ts` (`startOfDay`, `addDays`, `dayRange`, `todayRange`, `ymd`, and the callback parsing). Server: `domain/normalize.ts` (`timeZoneFor`). Age from a date of birth: `src/shared/age.ts` (`ageOn`). Don't write another day-range or time-zone offset helper. |
 | List or pick batches | `src/web/components/BatchBrowse.tsx` (`BatchPicker`, `BatchFilterBar`, `ImportHistory`), backed by `browseImports` (`/api/imports/browse`). Filtering and grouping by bulk import live in `src/shared/batches.ts`. Don't add another plain list or dropdown of every batch. |

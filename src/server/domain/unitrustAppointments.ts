@@ -1,4 +1,5 @@
 import type { DB } from '../db/connection.js';
+import { LEAD_NAME, CURRENT_OUTCOME } from '../db/sql.js';
 import { uuidv7, nowIso } from '../ids.js';
 import { getSetting, setSetting } from '../core/settings.js';
 import { rebuildLeadState } from './leadState.js';
@@ -142,7 +143,7 @@ function storedResult(result: ApptResult, was: string | null): string | null {
 /** The lead an event is for: by phone (narrowed by name when several share it), else by exact full name. */
 function findLead(db: DB, phoneDigits: string, name: string): string | null {
   const upper = name.toUpperCase().replace(/\s+/g, ' ').trim();
-  const fullName = "upper(trim(coalesce(l.first_name,'') || ' ' || coalesce(l.last_name,'')))";
+  const fullName = `upper(${LEAD_NAME})`;
   const e164 = normalizeUsPhone(phoneDigits).value;
   if (e164) {
     const byPhone = db
@@ -181,11 +182,10 @@ export interface ApptRow {
   source: 'app' | 'unitrust';
 }
 
-const LEAD_NAME = "trim(coalesce(l.first_name,'') || ' ' || coalesce(l.last_name,''))";
 /** Appointment calls logged here (not undone), with their current outcome. */
 const APP_CALLS = `
   SELECT c.id, c.lead_id, c.requested_at, date(c.requested_at, 'localtime') day, o.outcome_code
-  FROM call c JOIN call_outcome o ON o.call_id = c.id AND NOT EXISTS (SELECT 1 FROM call_outcome x WHERE x.supersedes_id = o.id)
+  FROM call c JOIN call_outcome o ON o.call_id = c.id AND ${CURRENT_OUTCOME}
   JOIN outcome_code oc ON oc.code = o.outcome_code
   WHERE c.voided_at IS NULL AND c.initiation_result = 'accepted' AND oc.kind = 'appointment'`;
 

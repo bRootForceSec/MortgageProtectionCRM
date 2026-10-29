@@ -1,5 +1,6 @@
 import * as z from 'zod/v4';
 import type { DB } from '../db/connection.js';
+import { LEAD_NAME, CURRENT_OUTCOME } from '../db/sql.js';
 import { getSetting, setSetting } from '../core/settings.js';
 import { groupWhere } from './groupFilter.js';
 import { BOOKED_CODES, outcomeDef } from '../../shared/outcomes.js';
@@ -135,9 +136,9 @@ function loadCalls(db: DB, f: ReportFilter, range: boolean): CallRow[] {
       `SELECT c.id, c.lead_id, c.requested_at, c.time_known, c.dial_count, c.talk_seconds, c.to_e164, c.from_e164, c.channel,
               o.outcome_code, oc.label outcome_label, coalesce(oc.counts_as_human_contact, 0) contact, coalesce(o.do_not_call, 0) do_not_call, oc.grp outcome_group, n.label from_label,
               l.county_key, l.county, l.state, l.lead_type, l.batch_id, l.time_zone, b.name batch_name,
-              trim(coalesce(l.first_name,'') || ' ' || coalesce(l.last_name,'')) lead_name
+              ${LEAD_NAME} lead_name
        FROM call c JOIN lead l ON l.id = c.lead_id JOIN import_batch b ON b.id = l.batch_id
-       LEFT JOIN call_outcome o ON o.call_id = c.id AND NOT EXISTS (SELECT 1 FROM call_outcome x WHERE x.supersedes_id = o.id)
+       LEFT JOIN call_outcome o ON o.call_id = c.id AND ${CURRENT_OUTCOME}
        LEFT JOIN outcome_code oc ON oc.code = o.outcome_code
        LEFT JOIN caller_number n ON n.id = c.from_number_id
        WHERE c.initiation_result = 'accepted' AND c.voided_at IS NULL AND coalesce(oc.kind, 'first_call') = 'first_call' AND ${g.sql}
@@ -151,7 +152,7 @@ function loadLeads(db: DB, f: ReportFilter, calls: CallRow[]): LeadRow[] {
   const g = groupWhere('l.county_key', f);
   const rows = db
     .prepare(
-      `SELECT l.id lead_id, trim(coalesce(l.first_name,'') || ' ' || coalesce(l.last_name,'')) lead_name, l.phone_e164,
+      `SELECT l.id lead_id, ${LEAD_NAME} lead_name, l.phone_e164,
               l.county_key, l.county, l.state, l.lead_type, l.price_cents, l.batch_id, b.name batch_name,
               s.status, coalesce(s.attempts_total, 0) attempts_total, cb.at called_back_at
        FROM lead l JOIN import_batch b ON b.id = l.batch_id LEFT JOIN lead_state s ON s.lead_id = l.id
@@ -471,7 +472,7 @@ function leadRowsById(db: DB, ids: string[]) {
   return (
     db
       .prepare(
-        `SELECT l.id lead_id, trim(coalesce(l.first_name,'') || ' ' || coalesce(l.last_name,'')) lead_name, l.phone_e164,
+        `SELECT l.id lead_id, ${LEAD_NAME} lead_name, l.phone_e164,
                 l.county, l.state, b.name batch_name, l.lead_type, l.price_cents, s.status, coalesce(s.attempts_total, 0) attempts_total
          FROM lead l JOIN import_batch b ON b.id = l.batch_id LEFT JOIN lead_state s ON s.lead_id = l.id
          WHERE l.id IN (SELECT value FROM json_each(?))`,
@@ -619,7 +620,7 @@ export function todayStats(db: DB, from: string, to: string, day?: string, days?
       `WITH cur AS (
          SELECT c.id, c.lead_id, oc.counts_as_human_contact h, o.outcome_code
          FROM call c LEFT JOIN call_outcome o ON o.call_id = c.id
-           AND NOT EXISTS (SELECT 1 FROM call_outcome x WHERE x.supersedes_id = o.id)
+           AND ${CURRENT_OUTCOME}
          LEFT JOIN outcome_code oc ON oc.code = o.outcome_code
          WHERE c.requested_at >= @from AND c.requested_at < @to AND c.initiation_result = 'accepted' AND c.voided_at IS NULL
            -- First calls only: appointment calls are counted below as sat, prezis and sales.

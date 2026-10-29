@@ -1,7 +1,7 @@
 import { Fragment, useState } from 'react';
 import { api, fmtDateTime, fmtPhone, personAge, type LeadDetail } from '../api';
 import { useApp } from '../App';
-import { useLeadTypes } from '../pages/ImportPage';
+import { useLeadTypes } from '../leadTypes';
 
 // Fix a lead's details by hand. Every change is kept with its old value (shown under "Earlier values").
 

@@ -1,4 +1,5 @@
 import type { DB } from '../db/connection.js';
+import { LEAD_NAME, CURRENT_OUTCOME } from '../db/sql.js';
 import { APPT_RESULTS, type ApptResult } from '../../shared/appointments.js';
 import { isCallable } from '../../shared/leadStatus.js';
 import { nowIso, uuidv7 } from '../ids.js';
@@ -89,12 +90,12 @@ export interface CallListItem {
 export function getCallList(db: DB): CallListItem[] {
   const rows = db
     .prepare(
-      `SELECT i.lead_id, i.added_at, trim(coalesce(l.first_name,'') || ' ' || coalesce(l.last_name,'')) name,
+      `SELECT i.lead_id, i.added_at, ${LEAD_NAME} name,
               coalesce(s.active_phone_e164, l.phone_e164) phone_e164, l.state, l.county, s.status, s.attempts_total, s.last_call_at, s.appt_result,
               CASE WHEN s.status = 'callback' THEN s.next_due_at END callback_due_at, cb.at called_back_at,
               w.id call_id, w.requested_at worked_at, w.dial_count,
               (SELECT oc.label FROM call_outcome o JOIN outcome_code oc ON oc.code = o.outcome_code
-                WHERE o.call_id = w.id AND NOT EXISTS (SELECT 1 FROM call_outcome x WHERE x.supersedes_id = o.id)
+                WHERE o.call_id = w.id AND ${CURRENT_OUTCOME}
                 ORDER BY o.entered_at DESC LIMIT 1) label
        FROM call_list_item i
        JOIN lead l ON l.id = i.lead_id
@@ -214,9 +215,9 @@ export function recentOutcomes(db: DB, limit = 10) {
   return db
     .prepare(
       `SELECT c.id call_id, c.lead_id, c.requested_at, o.entered_at, oc.label,
-              trim(coalesce(l.first_name,'') || ' ' || coalesce(l.last_name,'')) name
+              ${LEAD_NAME} name
        FROM call c JOIN lead l ON l.id = c.lead_id
-       JOIN call_outcome o ON o.call_id = c.id AND NOT EXISTS (SELECT 1 FROM call_outcome x WHERE x.supersedes_id = o.id)
+       JOIN call_outcome o ON o.call_id = c.id AND ${CURRENT_OUTCOME}
        JOIN outcome_code oc ON oc.code = o.outcome_code
        WHERE c.voided_at IS NULL AND c.channel = 'manual_log' AND coalesce(c.history_source, '') <> 'sheet'
        ORDER BY o.entered_at DESC LIMIT ?`,
@@ -317,7 +318,7 @@ export function setCalledBack(db: DB, leadId: string, on: boolean, now = nowIso(
 /** Callbacks due before `to`, including ones missed earlier and ones with no time yet. For the agenda. */
 export function callbacksDue(db: DB, to: string, groups: { counties?: string[]; areaCodes?: string[] }) {
   const group = groupWhere('l.county_key', groups);
-  const name = `trim(coalesce(l.first_name,'') || ' ' || coalesce(l.last_name,''))`;
+  const name = LEAD_NAME;
   return db
     .prepare(
       `SELECT l.id lead_id, ${name} name, l.phone_e164, l.time_zone, l.county, l.state, s.next_due_at due_at, s.due_any_time = 1 any_time

@@ -1,5 +1,6 @@
 import ExcelJS from 'exceljs';
 import { tableNames, type DB } from '../db/connection.js';
+import { CURRENT_OUTCOME } from '../db/sql.js';
 
 // Exports read straight from the tables so nothing is lost or reinterpreted.
 // Health columns are excluded unless explicitly requested.
@@ -16,7 +17,7 @@ export function exportRows(db: DB, table: ExportTable, opts: { includeHealth?: b
             b.name batch_name, s.status, s.attempts_total, s.last_call_at, s.last_outcome_code, s.next_due_at
             FROM lead l JOIN import_batch b ON b.id = l.batch_id LEFT JOIN lead_state s ON s.lead_id = l.id ORDER BY l.created_at`,
     calls: `SELECT c.*, (SELECT o.outcome_code FROM call_outcome o WHERE o.call_id = c.id
-              AND NOT EXISTS (SELECT 1 FROM call_outcome x WHERE x.supersedes_id = o.id) ORDER BY o.entered_at DESC LIMIT 1) current_outcome
+              AND ${CURRENT_OUTCOME} ORDER BY o.entered_at DESC LIMIT 1) current_outcome
             FROM call c ORDER BY c.requested_at`,
     outcomes: 'SELECT * FROM call_outcome ORDER BY entered_at',
     events: 'SELECT * FROM call_event ORDER BY received_at',

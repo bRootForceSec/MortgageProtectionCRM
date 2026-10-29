@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api, fmtDateTime } from '../api';
 import { useApp } from '../App';
-import { useLeadTypes } from './ImportPage';
+import { useLeadTypes } from '../leadTypes';
 import { CallingCard, ShortcutsCard, ScriptsCard } from './CallingSettingsCards';
 import { UpdatePanel } from '../components/UpdateBar';
 

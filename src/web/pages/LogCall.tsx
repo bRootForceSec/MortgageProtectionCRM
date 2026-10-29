@@ -106,7 +106,7 @@ export function LogCall({
     if (!numberId && defaultNumber.id) setNumberId(defaultNumber.id);
   }, [defaultNumber.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const outcomes = useMemo(() => (meta?.outcome_codes ?? []).filter((o) => (o.kind ?? 'first_call') === mode), [meta, mode]);
+  const outcomes = useMemo(() => (meta?.outcome_codes ?? []).filter((o) => o.kind === mode), [meta, mode]);
   const outcome = outcomes.find((o) => o.code === code) ?? null;
   const needsWhen = !!outcome?.requires_callback_time;
   const changed = numberId !== defaultNumber.id;

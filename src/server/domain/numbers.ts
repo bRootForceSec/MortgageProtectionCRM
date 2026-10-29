@@ -1,4 +1,5 @@
 import type { DB } from '../db/connection.js';
+import { CURRENT_OUTCOME } from '../db/sql.js';
 import { nowIso, uuidv7 } from '../ids.js';
 import { DomainError } from '../core/errors.js';
 import { audit } from '../core/audit.js';
@@ -79,7 +80,7 @@ export function numberStats(db: DB, todayFrom: string, now = new Date()) {
       `WITH c AS (
          SELECT c.from_number_id id, c.requested_at, c.dial_count, coalesce(oc.counts_as_human_contact, 0) h, o.outcome_code
          FROM call c
-         LEFT JOIN call_outcome o ON o.call_id = c.id AND NOT EXISTS (SELECT 1 FROM call_outcome x WHERE x.supersedes_id = o.id)
+         LEFT JOIN call_outcome o ON o.call_id = c.id AND ${CURRENT_OUTCOME}
          LEFT JOIN outcome_code oc ON oc.code = o.outcome_code
          WHERE c.from_number_id IS NOT NULL AND c.initiation_result = 'accepted' AND c.voided_at IS NULL AND c.time_known = 1)
        SELECT n.id,

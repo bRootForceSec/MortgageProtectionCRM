@@ -36,9 +36,9 @@ export function buildKeyMap(r: CallingSettingsResponse | null, outcomes: Outcome
     const over = r?.settings.shortcuts.outcomes[o.code];
     const k = over !== undefined ? over : o.hotkey;
     outcomeKey[o.code] = k ? normKey(k) : null;
-    if (k) map[o.kind ?? 'first_call'].set(normKey(k), o.code);
+    if (k) map[o.kind].set(normKey(k), o.code);
   }
-  return { actions, outcomes: map, outcomeKey, kinds: Object.fromEntries(outcomes.map((o) => [o.code, o.kind ?? 'first_call'])) };
+  return { actions, outcomes: map, outcomeKey, kinds: Object.fromEntries(outcomes.map((o) => [o.code, o.kind])) };
 }
 
 export function isAction(km: KeyMap, a: ShortcutAction, e: KeyboardEvent): boolean {

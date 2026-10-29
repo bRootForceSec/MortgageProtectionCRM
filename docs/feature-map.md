@@ -1,6 +1,6 @@
 # Feature map (2026-10-29)
 
-How the recent features flow through data, server and UI, and where the same idea is defined more than once. Written before the outcome-registry refactor; the "Duplicates" section is the to-do list for it. Line references are to `main` at `86d1100`.
+How the recent features flow through data, server and UI, and where the same idea is defined more than once. Written before the consolidation PRs (#45–#48); the duplicates listed here are what they removed. Where each idea lives now: outcomes `src/shared/outcomes.ts`, statuses and Leads tabs `src/shared/leadStatus.ts`, appointment results `APPT_RESULTS` in `src/shared/appointments.ts`, funnel steps `src/shared/funnel.ts`, SQL pieces `src/server/db/sql.ts`. Line references are to `main` at `86d1100`.
 
 ## How each feature flows
 

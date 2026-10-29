@@ -7,7 +7,7 @@ import { LeadViewer } from '../components/LeadViewer';
 import { GroupPicker, useGroups } from '../components/GroupPicker';
 import { getStored, setStored } from '../storage';
 import { addDays, startOfDay } from '../when';
-import { useLeadTypes } from './ImportPage';
+import { useLeadTypes } from '../leadTypes';
 import { BatchPicker } from '../components/BatchBrowse';
 import type { LeadType } from '../importTypes';
 import { LEAD_TABS, isCallable } from '../../shared/leadStatus';
