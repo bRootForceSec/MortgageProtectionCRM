@@ -9,7 +9,8 @@ import { sqlCodes } from '../db/outcomeCodes.js';
 import { DomainError } from '../core/errors.js';
 import { loadCallingSettings } from './callingSettings.js';
 import { bulkOfBatch } from './importHistory.js';
-import { appointmentCounts, appointmentsOnDays, hasAppointments } from './unitrustAppointments.js';
+import { appointmentCounts, appointmentsOnDays, hasAppointments, type ApptRow } from './unitrustAppointments.js';
+import { APPT_RESULTS } from '../../shared/appointments.js';
 
 // Reports. Every number is computed from a group of rows (calls or leads), and the same group answers
 // "show me the calls behind this number", so a total and its drill-down can never disagree.
@@ -74,11 +75,14 @@ interface LeadRow {
   attempts_total: number;
   reached: boolean;
   booked: boolean;
+  /** Sat for an appointment (sat no sale, prezi or sale), from Unitrust or the Appointment side. */
+  sat: boolean;
+  sold: boolean;
   called_back_at: string | null;
 }
 
 type CallMetric = 'attempts' | 'dials' | 'leads_called' | 'contacts' | 'conversations' | 'talk_minutes' | 'appointments' | 'callbacks' | 'bad_numbers';
-type LeadMetric = 'leads' | 'cost' | 'never_called' | 'reached' | 'booked' | 'called_back';
+type LeadMetric = 'leads' | 'cost' | 'never_called' | 'reached' | 'booked' | 'sat' | 'sold' | 'called_back';
 
 const CALL_METRICS: Record<CallMetric, { pred: (c: CallRow) => boolean; val: (cs: CallRow[]) => number }> = {
   attempts: { pred: () => true, val: (cs) => cs.length },
@@ -97,6 +101,8 @@ const LEAD_METRICS: Record<LeadMetric, { pred: (l: LeadRow) => boolean; val: (ls
   never_called: { pred: (l) => l.attempts_total === 0, val: (ls) => ls.length },
   reached: { pred: (l) => l.reached, val: (ls) => ls.length },
   booked: { pred: (l) => l.booked, val: (ls) => ls.length },
+  sat: { pred: (l) => l.sat, val: (ls) => ls.length },
+  sold: { pred: (l) => l.sold, val: (ls) => ls.length },
   called_back: { pred: (l) => l.called_back_at != null, val: (ls) => ls.length },
 };
 
@@ -161,13 +167,17 @@ function loadLeads(db: DB, f: ReportFilter, calls: CallRow[]): LeadRow[] {
        LEFT JOIN lead_called_back cb ON cb.lead_id = l.id
        WHERE ${g.sql} ORDER BY b.imported_at, l.created_at`,
     )
-    .all(g.params) as Omit<LeadRow, 'reached' | 'booked'>[];
+    .all(g.params) as Omit<LeadRow, 'reached' | 'booked' | 'sat' | 'sold'>[];
   const callsBy = groupBy(calls, (c) => c.lead_id);
+  // How each lead's appointments went, all time.
+  const appts = hasAppointments(db) ? groupBy(appointmentsOnDays(db, '0000-01-01', '9999-12-31', g), (a) => a.lead_id) : new Map<string, ApptRow[]>();
+  const reachedStep = (l: { lead_id: string }, step: 'sat' | 'sales') =>
+    (appts.get(l.lead_id) ?? []).some((a) => a.outcome !== 'pending' && APPT_RESULTS[a.outcome].funnel.includes(step));
   return rows.map((l) => {
     const cs = callsBy.get(l.lead_id) ?? [];
     // Booked: a call ended with "appointment set" (older history may say sat or sold, which also means it was booked).
     const booked = cs.some((c) => c.outcome_code != null && BOOKED_CODES.has(c.outcome_code));
-    return { ...l, reached: cs.some((c) => c.contact === 1), booked };
+    return { ...l, reached: cs.some((c) => c.contact === 1), booked, sat: reachedStep(l, 'sat'), sold: reachedStep(l, 'sales') };
   });
 }
 
@@ -228,7 +238,7 @@ function loadCountyCodes(db: DB) {
   }
   return countyCodes;
 }
-const BATCH_LEADS: LeadMetric[] = ['leads', 'cost', 'never_called', 'reached', 'booked'];
+const BATCH_LEADS: LeadMetric[] = ['leads', 'cost', 'never_called', 'reached', 'booked', 'sat', 'sold'];
 const TYPE_LEADS: LeadMetric[] = [...BATCH_LEADS, 'called_back'];
 const TYPE_CALLS: CallMetric[] = ['dials', 'attempts', 'contacts', 'appointments', 'bad_numbers'];
 
@@ -309,6 +319,9 @@ export function buildReport(db: DB, f: ReportFilter) {
   const leadRatios = (m: Record<LeadMetric, number>) => ({
     cost_per_reached: ratio(m.cost, m.reached),
     cost_per_booked: ratio(m.cost, m.booked),
+    cost_per_sale: ratio(m.cost, m.sold),
+    /** Of the leads that sat for an appointment: how many bought. */
+    close_rate: ratio(m.sold, m.sat),
   });
 
   return {
@@ -535,6 +548,7 @@ export function reportJson(db: DB, f: ReportFilter) {
       dials_vs_attempts: 'An attempt is one logged call to a lead; one attempt can be several dials (redials of the same number).',
       contact: 'A contact is a call whose outcome counts as talking to a person. Conversations are calls with 2 minutes or more of talk time.',
       do_not_call: 'do_not_call: the person asked not to be called again. It sits beside the outcome, and the lead goes to the dead pile.',
+      sat_sold: 'In by_batch and benchmarks, sat and sold count leads whose appointment sat (sat no sale, prezi or sale) or sold, from Unitrust or the Appointment side, all time. close_rate is sold / sat; cost_per_sale is cost / sold.',
       rates: 'Rates are fractions from 0 to 1 (null when there is nothing to divide by). Money is in cents.',
       caller_id_match: 'local: the caller ID area code is one set for the lead\'s county (or the lead\'s own area code); out_of_area: it is not; unknown: no caller ID recorded.',
     },
@@ -591,8 +605,8 @@ export function reportSheets(r: ReturnType<typeof buildReport>, calls: ReturnTyp
       name: 'By batch',
       rows: r.by_batch.map((b) => ({
         batch: b.name, imported: b.imported_at, lead_types: b.lead_types, leads: b.leads, cost: money(b.cost), never_called: b.never_called,
-        dials: b.dials, reached: b.reached, booked: b.booked,
-        cost_per_reached: money(b.cost_per_reached), cost_per_booked: money(b.cost_per_booked),
+        dials: b.dials, reached: b.reached, booked: b.booked, sat: b.sat, sold: b.sold, close_rate_pct: pct(b.close_rate),
+        cost_per_reached: money(b.cost_per_reached), cost_per_booked: money(b.cost_per_booked), cost_per_sale: money(b.cost_per_sale),
       })),
     },
     {
@@ -603,7 +617,8 @@ export function reportSheets(r: ReturnType<typeof buildReport>, calls: ReturnTyp
         contacts: b.contacts, appointments: b.appointments, bad_numbers: b.bad_numbers, called_you_back: b.called_back,
         reached: b.reached, booked: b.booked, reached_pct: pct(b.reached_rate), booked_pct: pct(b.booked_rate),
         booked_per_reached_pct: pct(b.booked_per_reached), target_pct: pct(b.booked_target),
-        cost_per_reached: money(b.cost_per_reached), cost_per_booked: money(b.cost_per_booked),
+        sat: b.sat, sold: b.sold, close_rate_pct: pct(b.close_rate),
+        cost_per_reached: money(b.cost_per_reached), cost_per_booked: money(b.cost_per_booked), cost_per_sale: money(b.cost_per_sale),
       })),
     },
     { name: 'Calls', rows: calls },

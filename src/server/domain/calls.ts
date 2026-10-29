@@ -5,7 +5,7 @@ import { rebuildLeadState } from './leadState.js';
 import { DomainError } from '../core/errors.js';
 import { audit } from '../core/audit.js';
 import { groupWhere, searchWhere } from './groupFilter.js';
-import { recordObjections, type ObjectionInput } from './objections.js';
+import { callObjections, recordObjections, type ObjectionInput } from './objections.js';
 
 export interface ManualCallInput {
   lead_id: string;
@@ -155,6 +155,7 @@ export function voidCall(db: DB, callId: string, reason?: string | null) {
       dialed_at: call.ended_at && call.started_at !== call.requested_at ? (call.started_at as string) : null,
       from_number_id: call.from_number_id as string | null,
       note: note?.body ?? null,
+      objections: callObjections(db, callId),
     };
   })();
 }

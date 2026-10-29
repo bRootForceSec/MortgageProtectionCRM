@@ -324,6 +324,7 @@ export function CallingPage() {
         lead_id: string; outcome_code: string | null; callback_due_at: string | null; callback_any_time: boolean; do_not_call: boolean;
         dial_count: number; talk_seconds: number | null; lead_seconds: number | null; from_number_id: string | null; note: string | null;
         dialed_at: string | null;
+        objections: string[];
       }>(`/calls/${s.callId}/void`, { reason: 'undo' });
       const cb = callbackFields(r.callback_due_at, r.callback_any_time, s.tz);
       // Back on the side the call was saved from.
@@ -339,6 +340,7 @@ export function CallingPage() {
           note: r.note ?? '',
           numberId: r.from_number_id,
           doNotCall: r.do_not_call,
+          objections: r.objections,
         },
       });
       // The clock on this lead carries on from where it was when you saved.

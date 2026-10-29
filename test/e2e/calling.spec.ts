@@ -79,8 +79,12 @@ test('import a sheet, log calls by keyboard, and set a callback', async ({ page 
   await expect(page.getByLabel('Queue').locator('.queue-list li')).toHaveCount(4);
   await page.screenshot({ path: 'test-results/calling.png', fullPage: true });
 
-  // Talked, no appt: press 2 then Enter. Enter saves and moves straight on to the next lead.
+  // Talked, no appt: press 2, then Shift+1 for the Price objection (optional), then Enter. Enter saves and moves straight on to the next lead.
   await page.keyboard.press('2');
+  const objections = page.getByRole('group', { name: 'Objections' });
+  await expect(objections.getByRole('button')).toHaveText([/Price/, /Spouse/, /Already covered/, /Think about it/, /Health/, /Trust/, /Other/]);
+  await page.keyboard.press('Shift+Digit1');
+  await expect(objections.getByRole('button', { name: /Price/ })).toHaveAttribute('aria-pressed', 'true');
   await page.keyboard.press('Enter');
   await expect(page.locator('.undo-bar')).toContainText(`Saved for ${first}`);
   await expect(page.locator('.undo-bar')).toContainText('Talked, no appt');

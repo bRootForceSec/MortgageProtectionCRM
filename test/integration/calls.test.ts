@@ -8,7 +8,7 @@ import { suggestMapping } from '../../src/server/domain/mapping.js';
 import { commitImport } from '../../src/server/domain/importer.js';
 import { logManualCall, changeOutcome, currentOutcome, addLeadAction, voidCall, changeCallerId, callHistory } from '../../src/server/domain/calls.js';
 import { DomainError } from '../../src/server/core/errors.js';
-import { objectionCounts } from '../../src/server/domain/objections.js';
+import { activeObjectionCodes, objectionCounts } from '../../src/server/domain/objections.js';
 import { addToCallList } from '../../src/server/domain/callList.js';
 import { mapSheetStatus } from '../../src/server/domain/sheetHistory.js';
 import { buildReport } from '../../src/server/domain/reports.js';
@@ -205,6 +205,14 @@ describe('manual call logging', () => {
     expect(row().get(late.call_id)).toEqual({ requested_at: earlier, started_at: earlier, ended_at: null });
     const future = new Date(Date.now() + 60_000).toISOString();
     expect(() => logManualCall(db, { lead_id: jane, idempotency_key: key(), outcome_code: 'no_answer', dialed_at: future })).toThrow(DomainError);
+  });
+
+  it('offers the objections in order, and an undo gives back the ones you picked', () => {
+    expect(activeObjectionCodes(db).map((o) => o.label)).toEqual(['Price', 'Spouse', 'Already covered', 'Think about it', 'Health', 'Trust', 'Other']);
+    const { call_id } = logManualCall(db, { lead_id: jane, idempotency_key: key(), outcome_code: 'no_appt', objections: [{ code: 'think_about_it' }, { code: 'price' }] });
+    expect(voidCall(db, call_id).objections).toEqual(['think_about_it', 'price']);
+    // An undone call's objections don't count.
+    expect(objectionCounts(db, '2000-01-01', '2100-01-01')).toEqual([]);
   });
 
     it('a callback can be for a day, any time: due from the start of that day', () => {

@@ -92,13 +92,25 @@ describe('reports', () => {
   it('tracks booked against the targets, with cost per result', () => {
     let b = buildReport(db, range()).benchmarks.find((x) => x.key === 'B')!;
     expect(b).toMatchObject({ leads: 3, reached: 2, booked: 1, booked_per_reached: 0.5, booked_target: 0.2, cost: 2100, cost_per_booked: 2100 });
-    expect(b).not.toHaveProperty('sat');
-    expect(b).not.toHaveProperty('sold');
+    expect(b).toMatchObject({ sat: 0, sold: 0, close_rate: null, cost_per_sale: null });
     // An older "sold" outcome still counts as booked.
     const ben = log('Ben', 'no_answer');
     db.prepare("UPDATE call_outcome SET outcome_code = 'sold' WHERE call_id = ?").run(ben.call_id); // retired, so it can't be entered any more
     b = buildReport(db, range()).benchmarks.find((x) => x.key === 'B')!;
     expect(b).toMatchObject({ booked: 2 });
+  });
+
+  it('counts sales, close rate and cost per sale by lead type and batch, from how appointments went', () => {
+    log('Amy', 'appt_sale');
+    log('Dee', 'appt_sat_no_sale');
+    log('Ben', 'appt_no_show');
+    const r = buildReport(db, range());
+    expect(r.benchmarks.find((x) => x.key === 'B')).toMatchObject({ sat: 1, sold: 1, close_rate: 1, cost_per_sale: 2100 });
+    expect(r.benchmarks.find((x) => x.key === 'CI-A')).toMatchObject({ sat: 1, sold: 0, close_rate: 0, cost_per_sale: null });
+    expect(r.by_batch[0]).toMatchObject({ sat: 2, sold: 1, close_rate: 0.5, cost_per_sale: 2100 + 6800 });
+    // Drill-down shows the leads behind it.
+    const leads = drill(db, range(), { section: 'benchmarks', key: 'B', metric: 'sold' });
+    expect(leads.rows.map((l: any) => l.lead_name)).toEqual(['Amy One']);
   });
 
   it('breaks the numbers down by lead type', () => {
