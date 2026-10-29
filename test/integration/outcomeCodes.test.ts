@@ -71,7 +71,7 @@ describe('outcome codes', () => {
     expect(APPT_OUTCOME_RESULT).toEqual({
       appt_no_show: 'no_show', appt_sat_no_sale: 'sat_no_sale', appt_prezi: 'prezi', appt_sale: 'sold', appt_rescheduled: 'rescheduled',
     });
-    expect(sqlCodes((o) => o.apptSet)).toBe("('appointment')");
+    expect(sqlCodes((o) => o.apptSet)).toBe("('appointment', 'sat_no_sale', 'sold')");
     expect(sqlCodes((o) => o.callback)).toBe("('callback')");
     expect(sqlCodes(() => false)).toBe('(NULL)');
     expect(outcomeDef('toString')).toBeUndefined();
@@ -79,5 +79,15 @@ describe('outcome codes', () => {
     // No answer, Bad number and No show save as soon as you press the key.
     const instant = Object.entries(OUTCOMES).filter(([, o]) => o.active && savesInstantly(outcomeRow('', o))).map(([c]) => c);
     expect(instant).toEqual(['no_answer', 'bad_number', 'appt_no_show']);
+  });
+
+  it('Settings can change which outcomes save without Enter, except a callback', () => {
+    const row = (code: string) => outcomeRow(code, OUTCOMES[code as keyof typeof OUTCOMES]);
+    const chosen = { no_appt: true, no_answer: false, callback: true };
+    expect(savesInstantly(row('no_appt'), chosen)).toBe(true);
+    expect(savesInstantly(row('no_answer'), chosen)).toBe(false);
+    expect(savesInstantly(row('callback'), chosen)).toBe(false);
+    expect(savesInstantly(row('bad_number'), chosen)).toBe(true);
+    expect(savesInstantly(row('appt_sat_no_sale'), chosen)).toBe(false);
   });
 });

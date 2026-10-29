@@ -14,10 +14,10 @@ A small calling CRM that runs on your own computer. It imports your lead spreads
 - **Call list**: the Calling page is a plain list you build. You go top to bottom, and at the end you're done; nothing is added, removed or reordered on its own. Worked leads stay on it, crossed out with their outcome, until you press "Clear worked" (offered when the list is done). `S` moves a lead to the bottom; `×` takes one off. A lead that a no-show, sat no sale or prezi put back goes to the top when you add it, so the rebook call comes first (turn it off in Settings → Calling). "Recent outcomes" under the list shows the last 10 outcomes you set, so you can open one and fix it even after clearing the list.
 - **Leads page**: where you choose who to call. Filter by status (never called, tried, callbacks…), batch, county or area code, "last tried 4+ hours ago" and so on; tick leads (or take every match) and add them to the bottom of the call list. Booked, bad-number and dead leads can't be added. Opening a lead shows it full screen like the Calling page, with its PDF page.
 - **Imports** go straight onto the call list, in file order (untick the box on the import screen to skip that).
-- **Callbacks** (`6`) are for real "call me later" requests. Type the day (`t` today, `m` tomorrow, a weekday like `fri`, or a date like `10/24`) and, if you want, a time (`2`, `2:30`, `10am`; 1 to 7 means PM). The time is the lead's own time, so "call me at 2" from a Central-time lead means 2 PM where they are; the picker shows it in your time too. Leave the time blank for any time that day.
+- **Callbacks** (`5`) are for real "call me later" requests. Type the day (`t` today, `m` tomorrow, a weekday like `fri`, or a date like `10/24`) and, if you want, a time (`2`, `2:30`, `10am`; 1 to 7 means PM). The time is the lead's own time, so "call me at 2" from a Central-time lead means 2 PM where they are; the picker shows it in your time too. Leave the time blank for any time that day.
 - **Callbacks page**: callbacks you missed, today's, and the next two weeks, in your time and the lead's. They stay off the call list; Open shows the lead on the Calling page beside your list. A desktop alert and a sound when one with a time comes due.
 - **Appointment set** is a call outcome with no date or time. Appointment times and results (sat, sold, no-show) are tracked in Unitrust, not here.
-- **Reports**: today or any dates, for the counties or area codes you pick. Activity (dials, attempts, contacts, talks of 2+ minutes, appointments), by hour, best time to call by the lead's local time, by county, by batch (cost per lead reached and booked, from each lead's own price) and against the flier's benchmarks by lead type (booked per contact; edit the targets on the page). Click any number to see the calls or leads behind it. Export saves the report as Excel (every section plus one row per call), as a CSV of the calls in those dates for another system, or as JSON (the whole report and every call, with notes on what each number means) for analysis. Exports never include health fields.
+- **Reports**: today or any dates, for the counties or area codes you pick. Activity (dials, attempts, contacts, talks of 2+ minutes, appointments), by hour, best time to call by the lead's local time, by county, by batch (cost per lead reached, booked and sold, from each lead's own price, and close rate) and against the flier's benchmarks by lead type (booked per contact, sales, close rate and cost per sale; edit the targets on the page). Click any number to see the calls or leads behind it. Export saves the report as Excel (every section plus one row per call), as a CSV of the calls in those dates for another system, or as JSON (the whole report and every call, with notes on what each number means) for analysis. Exports never include health fields.
 - **Numbers page**: calls, dials and pick-up rate for each caller ID (today, 7 and 30 days), appointments set from it, a warning before retiring a number you set appointments from, and a reputation checklist with the dates you did each check. The app never switches numbers by itself.
 - **Scripts** (`P`) with the lead's name, lender and address filled in, **daily goals** in the top bar, **edit a lead** (`E`) with the old values kept, and **keyboard shortcuts you can change** in Settings.
 - **Dead pile**: when someone asks not to be called, use "Move to dead pile" on the lead page. "Bad number" goes to the bad-numbers pile, unless the lead has another number: then it switches to that number and stays in rotation. Everything else goes back into rotation. Both piles can be restored.
@@ -98,28 +98,35 @@ Choose it in **Settings**. The default is **Claude with your Claude account**: i
 
 1. **Import** a batch: Import → pick the lead type → choose the PDF or spreadsheet → (spreadsheet: check the column matches → Continue) → check any leads that need a look → set types for mixed orders → Import.
 2. **Numbers**: add your Sideline number once, so each call records which caller ID you used.
-3. **Calling**: the current lead's details are in the middle. Press `C` to dial (copy, QR code or KDE Connect, chosen in Settings), call on your phone, press `→` for each extra dial, then press the outcome key. `1` (No answer) and `5` (Bad number) save and move on by themselves; the others save with `Enter`. A callback suggests tomorrow; type `t` for today or any other day.
+3. **Calling**: the current lead's details are in the middle. Press `C` to dial (copy, QR code or KDE Connect, chosen in Settings), call on your phone, press `→` for each extra dial, then press the outcome key. `1` (No answer) and `4` (Bad number) save and move on by themselves; the others save with `Enter`. `M` switches to the Appointment side, for the outcome of an appointment you went to. A callback suggests tomorrow; type `t` for today or any other day.
 
 These are the starting keys. Change any of them in **Settings → Keyboard shortcuts**.
 
+<!-- keys:start (written by test/unit/readmeKeys.test.ts) -->
 | Key | Action |
 |---|---|
-| `↑` / `↓` | Move up or down the list |
-| `N` | Next lead you haven't worked yet |
-| `S` | Skip: move this lead to the bottom of the list |
-| `/` | Search by name, county, phone or area code |
-| `C` | Dial: copy the number, show a QR code, or send it to your phone |
+| `C` | Dial / copy the number and start the timer |
 | `X` | Dial the lead's other number |
-| `→` `>` / `←` `<` | One more / one less dial |
-| `Z` | Undo the call you just saved (10 seconds) |
+| `→` `>` `.` | One more dial |
+| `←` `<` `,` | One less dial |
+| `↓` | Move down the list |
+| `↑` | Move up the list |
+| `N` | Next lead you haven't worked yet |
+| `S` | Skip this lead |
+| `Z` | Undo the last saved call (10 seconds) |
 | `A` | Write a note |
+| `/` | Search |
 | `E` | Edit the lead |
-| `P` | Show or hide your script |
+| `P` | Show or hide the script |
 | `L` | Look up an incoming caller by number |
 | `B` | Mark (or unmark) that this lead called you back |
-| `1`–`6` | Pick an outcome: No answer, Talked no appt, Appt set, Do not call, Bad number, Callback (`1` and `5` save straight away) |
+| `D` | Tick (or untick) "Do not call" for this call |
+| `M` | Switch between First call and Appointment |
+| `1`–`5` | First call outcome: `1` No answer, `2` Talked, no appt, `3` Appt set, `4` Bad number, `5` Callback (No answer and Bad number save straight away, unless you change it in Settings) |
+| `1`–`5` | Appointment outcome: `1` No show, `2` Sat, no sale, `3` Prezi, `4` Sale, `5` Rescheduled (No show saves straight away, unless you change it in Settings) |
 | `Enter` | Save the outcome and go to the next lead |
 | `Esc` | Cancel |
+<!-- keys:end -->
 
 **KDE Connect** (optional): `sudo dnf install kdeconnectd`, install KDE Connect on your phone, pair them, then pick your phone in Settings → Calling. The phone opens its dialer with the number filled in. If the phone asks which app to use, pick Sideline.
 

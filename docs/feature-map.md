@@ -61,7 +61,7 @@ Adding an outcome today means a migration plus edits in up to five files.
 ### Funnel and top bar
 
 - Step names and order: `Funnel.tsx` `STEPS`, the top bar in `App.tsx`, Reports headings. Each writes its own labels.
-- "First calls only": `reports.ts` `loadCalls` and `todayStats` filter on `kind`; `numbers.ts` `numberStats` does not, so the Numbers page counts appointment calls as calls and pickups (pinned in `test/integration/outcomeEffects.test.ts`).
+- "First calls only": `reports.ts` `loadCalls` and `todayStats` filter on `kind`; `numbers.ts` `numberStats` did not (it does now, see below).
 
 ### Call type (mode)
 
@@ -73,9 +73,9 @@ Adding an outcome today means a migration plus edits in up to five files.
 - The current-outcome condition (`NOT EXISTS (… supersedes_id = o.id)`) is written 12 times in 8 domain files.
 - The lead-name expression is written 11 times.
 
-## Inconsistencies found (kept as they are, for a decision)
+## Inconsistencies found (decided 2026-10-29)
 
-1. **Legacy "booked" codes.** `sat_no_sale` and `sold` (retired first-call outcomes, still on older calls) make a lead "Appointment set", but Reports, the top bar and the Numbers page don't count them as appointments set.
-2. **The Numbers page counts appointment calls** as calls and pickups, while the top bar and Reports count first calls only.
+1. **Legacy "booked" codes.** `sat_no_sale` and `sold` (retired first-call outcomes, still on older calls) make a lead "Appointment set". They now also count as appointments set in Reports, the top bar and the Numbers page.
+2. **The Numbers page** now counts first calls only, like the top bar and Reports.
 
-`test/integration/outcomeEffects.test.ts` pins both, so any change to them will be a deliberate one.
+`test/integration/outcomeEffects.test.ts` pins both.
