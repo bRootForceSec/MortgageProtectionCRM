@@ -130,3 +130,5 @@ src/
 | D7 | Add a coverage tool? | Not now. |
 | D8 | Turn on branch protection for `main`? | Yes (your GitHub setting). |
 | D9 | Unencrypted local data, which includes health data: document it, or do more? | Document it in the README. |
+| D10 | Where call recordings come from: a Sideline export, Telnyx calling through the app, or recording a headset on the computer? | **Decided 2026-10-29: Telnyx, later (Phase 2).** Recording and transcript storage (review item 21) waits for it. |
+| D11 | Transcription: Whisper on this computer, or a paid API that sends call audio out? | **Decided 2026-10-29: a local model (Whisper).** Private and free; slower is fine. |
