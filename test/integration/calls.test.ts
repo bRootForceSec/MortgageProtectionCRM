@@ -9,7 +9,7 @@ import { commitImport } from '../../src/server/domain/importer.js';
 import { logManualCall, changeOutcome, currentOutcome, addLeadAction, voidCall, changeCallerId, callHistory } from '../../src/server/domain/calls.js';
 import { loadCallingSettings, saveCallingSettings } from '../../src/server/domain/callingSettings.js';
 import { DomainError } from '../../src/server/core/errors.js';
-import { objectionCounts } from '../../src/server/domain/objections.js';
+import { activeObjectionCodes, objectionCounts } from '../../src/server/domain/objections.js';
 import { addToCallList } from '../../src/server/domain/callList.js';
 import { mapSheetStatus } from '../../src/server/domain/sheetHistory.js';
 import { buildReport } from '../../src/server/domain/reports.js';
@@ -207,6 +207,33 @@ describe('manual call logging', () => {
     // A call entered for an earlier time doesn't say.
     const earlier = logManualCall(db, { lead_id: jane, idempotency_key: key(), outcome_code: 'no_answer', occurred_at: new Date(Date.now() - 3600_000).toISOString() });
     expect(version(earlier.call_id)).toBeNull();
+  });
+
+  it('keeps when you pressed Dial and when you saved, for calls logged as they happen', () => {
+    const dialed = new Date(Date.now() - 5 * 60_000).toISOString();
+    const live = logManualCall(db, { lead_id: jane, idempotency_key: key(), outcome_code: 'no_appt', dialed_at: dialed });
+    const row = () => db.prepare('SELECT requested_at, started_at, ended_at FROM call WHERE id = ?');
+    const r = row().get(live.call_id) as Record<string, string>;
+    expect(r.started_at).toBe(dialed);
+    expect(r.ended_at).toBe(r.requested_at);
+    expect(voidCall(db, live.call_id).dialed_at).toBe(dialed);
+    // Without a Dial press, started is the call time and there is no dial time to give back.
+    const plain = logManualCall(db, { lead_id: jane, idempotency_key: key(), outcome_code: 'no_answer' });
+    expect(voidCall(db, plain.call_id).dialed_at).toBeNull();
+    // A call entered for an earlier time wasn't saved as it happened.
+    const earlier = new Date(Date.now() - 3600_000).toISOString();
+    const late = logManualCall(db, { lead_id: jane, idempotency_key: key(), outcome_code: 'no_answer', occurred_at: earlier, dialed_at: dialed });
+    expect(row().get(late.call_id)).toEqual({ requested_at: earlier, started_at: earlier, ended_at: null });
+    const future = new Date(Date.now() + 60_000).toISOString();
+    expect(() => logManualCall(db, { lead_id: jane, idempotency_key: key(), outcome_code: 'no_answer', dialed_at: future })).toThrow(DomainError);
+  });
+
+  it('offers the objections in order, and an undo gives back the ones you picked', () => {
+    expect(activeObjectionCodes(db).map((o) => o.label)).toEqual(['Price', 'Spouse', 'Already covered', 'Think about it', 'Health', 'Trust', 'Other']);
+    const { call_id } = logManualCall(db, { lead_id: jane, idempotency_key: key(), outcome_code: 'no_appt', objections: [{ code: 'think_about_it' }, { code: 'price' }] });
+    expect(voidCall(db, call_id).objections).toEqual(['think_about_it', 'price']);
+    // An undone call's objections don't count.
+    expect(objectionCounts(db, '2000-01-01', '2100-01-01')).toEqual([]);
   });
 
     it('a callback can be for a day, any time: due from the start of that day', () => {

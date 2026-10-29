@@ -105,9 +105,9 @@ describe('what one call with each outcome does', () => {
     ['other', { status: 'retry', tabs: ['talked'], callable: true, top_bar: first(1), report: report(1) }],
     ['wrong_person', { status: 'invalid', tabs: ['invalid'], callable: false, top_bar: first(0), report: report(0, 0, 0, 1) }],
     ['dnc_request', { status: 'dead', tabs: ['dead'], callable: false, top_bar: first(1), report: report(1) }],
-    // "Booked" for the lead, but not counted as an appointment set (only `appointment` is).
-    ['sat_no_sale', { status: 'appointment_set', tabs: ['appointment_set'], callable: false, top_bar: first(1), report: report(1) }],
-    ['sold', { status: 'appointment_set', tabs: ['appointment_set'], callable: false, top_bar: first(1), report: report(1) }],
+    // From before the Appointment side: they booked the lead and count as appointments set.
+    ['sat_no_sale', { status: 'appointment_set', tabs: ['appointment_set'], callable: false, top_bar: first(1, 1), report: report(1, 1) }],
+    ['sold', { status: 'appointment_set', tabs: ['appointment_set'], callable: false, top_bar: first(1, 1), report: report(1, 1) }],
   ];
 
   it('covers every outcome there is', () => {
@@ -127,13 +127,14 @@ describe('what one call with each outcome does', () => {
   });
 
 
-  // The Numbers page counts every call from a caller ID, appointment calls included (unlike the top bar and Reports),
-  // and only `appointment` as an appointment set.
-  const pickedUp = ['no_appt', 'appointment', 'callback', 'appt_sat_no_sale', 'appt_prezi', 'appt_sale', 'appt_rescheduled',
-    'not_interested', 'hung_up', 'picked_up', 'other', 'dnc_request', 'sat_no_sale', 'sold'];
+  // The Numbers page counts first calls only, like the top bar and Reports, with the same appointments set.
+  const pickedUp = ['no_appt', 'appointment', 'callback', 'not_interested', 'hung_up', 'picked_up', 'other', 'dnc_request', 'sat_no_sale', 'sold'];
+  const apptSet = ['appointment', 'sat_no_sale', 'sold'];
   for (const [code] of cases) {
     it(`the Numbers page: ${code}`, () => {
-      expect(effects(code).numbers).toEqual({ calls: 1, contacts: pickedUp.includes(code) ? 1 : 0, appointments: code === 'appointment' ? 1 : 0 });
+      expect(effects(code).numbers).toEqual({
+        calls: code.startsWith('appt_') ? 0 : 1, contacts: pickedUp.includes(code) ? 1 : 0, appointments: apptSet.includes(code) ? 1 : 0,
+      });
     });
   }
 });

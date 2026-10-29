@@ -5,7 +5,7 @@ import { useApp } from '../App';
 import { isTyping, keyLabel, normKey, type KeyMap } from '../shortcuts';
 import { getStored, setStored } from '../storage';
 import type { CallMode } from '../../shared/appointments';
-import { savesInstantly } from '../../shared/outcomes';
+import { outcomeDef, savesInstantly } from '../../shared/outcomes';
 
 // The "log the call" form on the Calling screen: number used, outcome, callback time, minutes and note.
 // It has two sides with the same layout: First call (no answer, appt set, ...) and Appointment (no show, prezi, sale, ...).
@@ -16,6 +16,8 @@ const LAST_NUMBER_KEY = 'mpcrm.lastNumber';
 export interface Attempt {
   dials: number;
   timerStart: number | null;
+  /** When you first pressed Dial for this attempt (with or without the timer). */
+  dialedAt: number | null;
   to: string | null;
   /** When this lead came on screen, for the time spent on it. */
   shownAt: number;
@@ -32,6 +34,8 @@ export interface FormValues {
   numberId: string | null;
   /** The "Do not call" tick. */
   doNotCall?: boolean;
+  /** Objection codes you picked. */
+  objections?: string[];
 }
 
 export interface Saved {
@@ -98,6 +102,7 @@ export function LogCall({
   const [minutes, setMinutes] = useState(restore?.minutes ?? '');
   const [note, setNote] = useState(restore?.note ?? '');
   const [doNotCall, setDoNotCall] = useState(!!restore?.doNotCall);
+  const [objections, setObjections] = useState<string[]>(restore?.objections ?? []);
   const [saving, setSaving] = useState(false);
   const [key, setKey] = useState(newKey());
   const dayRef = useRef<HTMLInputElement>(null);
@@ -109,6 +114,9 @@ export function LogCall({
   const outcomes = useMemo(() => (meta?.outcome_codes ?? []).filter((o) => o.kind === mode), [meta, mode]);
   const outcome = outcomes.find((o) => o.code === code) ?? null;
   const needsWhen = !!outcome?.requires_callback_time;
+  const objectionCodes = useMemo(() => meta?.objection_codes ?? [], [meta]);
+  const asksObjections = !!outcomeDef(code)?.objections && objectionCodes.length > 0;
+  const toggleObjection = useCallback((c: string) => setObjections((v) => (v.includes(c) ? v.filter((x) => x !== c) : [...v, c])), []);
   const changed = numberId !== defaultNumber.id;
 
   const choose = useCallback((c: string) => {
@@ -119,8 +127,8 @@ export function LogCall({
       setTimeout(() => { dayRef.current?.focus(); dayRef.current?.select(); }, 0);
       return;
     }
-    // No answer and Bad number need nothing more, so they save straight away (Undo still catches a wrong key).
-    if (calling?.settings.instant_save !== false && o && savesInstantly(o)) void saveRef.current(c);
+    // Outcomes set to save without Enter (by default No answer, Bad number and No show) save straight away; Undo still catches a wrong key.
+    if (calling?.settings.instant_save !== false && o && savesInstantly(o, calling?.settings.instant_outcomes)) void saveRef.current(c);
   }, [meta, calling]);
 
   // Talk time from the timer, only when someone picked up and you didn't type minutes yourself.
@@ -151,7 +159,9 @@ export function LogCall({
         talk_seconds: minutes ? Number(minutes) * 60 : timerSeconds(o),
         dial_count: attempt.dials,
         lead_seconds: Math.round((Date.now() - attempt.shownAt) / 1000),
+        dialed_at: attempt.dialedAt ? new Date(attempt.dialedAt).toISOString() : null,
         note: note || null,
+        objections: outcomeDef(codeNow)?.objections ? objections.map((c) => ({ code: c })) : [],
       });
       if (numberId) setStored(LAST_NUMBER_KEY, numberId);
       setCode(null);
@@ -160,6 +170,7 @@ export function LogCall({
       setMinutes('');
       setNote('');
       setDoNotCall(false);
+      setObjections([]);
       setKey(newKey());
       await onSaved({
         callId: r.call_id, leadId: d.lead.id, name: [d.lead.first_name, d.lead.last_name].filter(Boolean).join(' ') || 'this lead',
@@ -170,7 +181,7 @@ export function LogCall({
     } finally {
       setSaving(false);
     }
-  }, [code, saving, meta, day, time, key, numberId, minutes, note, doNotCall, d.lead.id, toast, onSaved, attempt]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [code, saving, meta, day, time, key, numberId, minutes, note, doNotCall, objections, d.lead.id, toast, onSaved, attempt]); // eslint-disable-line react-hooks/exhaustive-deps
   const saveRef = useRef(save);
   saveRef.current = save;
 
@@ -185,6 +196,16 @@ export function LogCall({
       }
       if (isTyping(e) || e.ctrlKey || e.metaKey || e.altKey) return;
       if (e.key === 'Escape') return setCode(null);
+      // Shift + 1-9 picks an objection while the chips are showing.
+      const digit = /^Digit([1-9])$/.exec(e.code);
+      if (e.shiftKey && digit && asksObjections) {
+        const o = objectionCodes[Number(digit[1]) - 1];
+        if (o) {
+          e.preventDefault();
+          toggleObjection(o.code);
+        }
+        return;
+      }
       if (keys.actions.do_not_call?.includes(normKey(e.key))) {
         e.preventDefault();
         setDoNotCall((v) => !v);
@@ -200,7 +221,7 @@ export function LogCall({
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [keys, code, save, choose, active, mode]);
+  }, [keys, code, save, choose, active, mode, asksObjections, objectionCodes, toggleObjection]);
 
   if (!d.lead.phone_e164 && !d.lead.other_phones.some((p) => p.e164)) return <p className="error">This lead has no valid phone number.</p>;
   if (d.state?.status === 'dead') return <RestoreBox d={d} onSaved={onRefresh} label={d.state.block_reason ? `${d.state.block_reason}.` : askedNotToCall(d) ? 'Asked not to be called again. This lead is in the dead pile.' : 'This lead is in the dead pile.'} />;
@@ -270,6 +291,16 @@ export function LogCall({
           {k('do_not_call') && <kbd>{k('do_not_call')}</kbd>}Do not call
         </label>
       </div>
+      {code && asksObjections && (
+        <div className="objections" role="group" aria-label="Objections">
+          <span className="help">What held them back? (optional)</span>
+          {objectionCodes.map((o, i) => (
+            <button key={o.code} className={objections.includes(o.code) ? 'active' : undefined} aria-pressed={objections.includes(o.code)} onClick={() => toggleObjection(o.code)}>
+              {i < 9 && <kbd>⇧{i + 1}</kbd>}{o.label}
+            </button>
+          ))}
+        </div>
+      )}
       {code && (
         <div className="row" style={{ alignItems: 'flex-end' }}>
           {needsWhen && (() => {
@@ -304,17 +335,23 @@ export function LogCall({
       )}
       {!code && (
         <p className="help">
-          {calling?.settings.instant_save !== false
-            ? mode === 'appointment'
-              ? 'After the appointment, press the outcome key. No show saves right away; the others save with Enter.'
-              : 'After the call, press the outcome key. No answer and Bad number save right away; the others save with Enter.'
-            : 'After the call, press the outcome key, then Enter.'}{' '}
+          {saveHelp(mode, calling?.settings.instant_save !== false ? outcomes.filter((o) => savesInstantly(o, calling?.settings.instant_outcomes)) : [], outcomes.length)}{' '}
           Dialed more than once? Press <kbd>{k('dials_up')}</kbd> for each extra dial first.
         </p>
       )}
       {d.state?.status === 'invalid' && <RestoreBox d={d} onSaved={onRefresh} label={d.state.block_reason ? `${d.state.block_reason}.` : 'Marked as a bad number.'} />}
     </div>
   );
+}
+
+/** How saving works on this side, e.g. "No answer and Bad number save right away; the others save with Enter." */
+function saveHelp(mode: CallMode, instant: { label: string }[], total: number): string {
+  const after = mode === 'appointment' ? 'After the appointment' : 'After the call';
+  if (!instant.length) return `${after}, press the outcome key, then Enter.`;
+  const names = instant.map((o) => o.label);
+  const list = names.length > 1 ? `${names.slice(0, -1).join(', ')} and ${names.at(-1)}` : names[0];
+  const verb = names.length > 1 ? 'save' : 'saves';
+  return `${after}, press the outcome key. ${list} ${verb} right away${instant.length < total ? '; the others save with Enter' : ''}.`;
 }
 
 function RestoreBox({ d, onSaved, label }: { d: LeadDetail; onSaved: () => Promise<void>; label: string }) {
