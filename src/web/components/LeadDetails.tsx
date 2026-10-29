@@ -4,6 +4,7 @@ import { useApp } from '../App';
 import { APPT_RESULT_LABEL, type ApptResult } from '../../shared/appointments';
 import { outcomeDef } from '../../shared/outcomes';
 import { statusLabel } from '../../shared/leadStatus';
+import { ALL_PARTY_CONSENT_STATES, needsAllPartyConsent } from '../../shared/recordingConsent';
 
 
 function leadAge(iso: string | null | undefined) {
@@ -57,7 +58,8 @@ export function LeadSummary({
   calledBackKey?: string;
 }) {
   const l = d.lead;
-  const { toast } = useApp();
+  const { toast, calling } = useApp();
+  const consent = !!calling?.settings.recording.on && needsAllPartyConsent(l.state);
   // Shown ticked at once; the app's answer follows.
   const [backAt, setBackAt] = useState(d.called_back_at);
   useEffect(() => setBackAt(d.called_back_at), [d.lead.id, d.called_back_at]);
@@ -110,6 +112,11 @@ export function LeadSummary({
             {l.county && <> · <b>{l.county} County</b></>}
             {l.time_zone && <> · <b>{localTime(l.time_zone)}</b> local</>}
           </div>
+          {consent && (
+            <div className="warn" role="note">
+              {ALL_PARTY_CONSENT_STATES[l.state!.toUpperCase()]} needs everyone's consent to record: tell them the call is recorded.
+            </div>
+          )}
         </div>
         <div className="phones">
           <div className="phone-big">{main ? fmtPhone(main) : <span className="error">no valid phone</span>}</div>

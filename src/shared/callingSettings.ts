@@ -55,6 +55,13 @@ export const CallingSettings = z.object({
       voicemail: z.string().max(5000).default(''),
     })
     .default({ agent_name: '', opener: '', voicemail: '' }),
+  /** You record your calls: leads in all-party consent states get a reminder, and the script starts with the disclosure. */
+  recording: z
+    .object({
+      on: z.boolean().default(false),
+      disclosure: z.string().max(1000).default('Just so you know, this call is recorded.'),
+    })
+    .default({ on: false, disclosure: 'Just so you know, this call is recorded.' }),
   goals: z
     .object({
       dials: z.number().int().min(0).max(100000).nullable().default(null),

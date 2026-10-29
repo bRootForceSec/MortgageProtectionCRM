@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { ALL_PARTY_CONSENT_STATES, needsAllPartyConsent } from '../../src/shared/recordingConsent.js';
 import { APPT_RESULT_LABEL, MISSED_RESULTS, openingSide, resultOfColor } from '../../src/shared/appointments.js';
 import { CALLABLE_STATUSES, LEAD_FILTERS, LEAD_STATUSES, LEAD_TABS, isCallable, statusLabel } from '../../src/shared/leadStatus.js';
 import { FUNNEL_STEPS, funnelStepsOf } from '../../src/shared/funnel.js';
@@ -72,5 +73,12 @@ describe('the funnel', () => {
       appt_no_show: [], appt_sat_no_sale: ['sat'], appt_prezi: ['sat', 'prezis'], appt_sale: ['sat', 'prezis', 'sales'], appt_rescheduled: [],
     });
     expect(funnelStepsOf('nope')).toEqual([]);
+  });
+});
+
+describe('recording consent', () => {
+  it('knows the all-party consent states, by two-letter code', () => {
+    expect(['MI', 'mi', 'CA', 'PA', 'OH', 'IN', '', null].map(needsAllPartyConsent)).toEqual([true, true, true, true, false, false, false, false]);
+    expect(Object.keys(ALL_PARTY_CONSENT_STATES)).toHaveLength(14);
   });
 });
