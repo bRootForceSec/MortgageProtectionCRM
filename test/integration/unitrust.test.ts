@@ -206,4 +206,18 @@ describe('appointment calls logged here', () => {
     expect(r.activity).toMatchObject({ dials: 2, contacts: 2, appointments: 2 });
     expect(r.appointments).toMatchObject({ appointments: 2, sold: 1, prezi: 1, sat: 2 });
   });
+
+  it('the funnel can count appointments for the day instead: set earlier counts, set today for later does not', () => {
+    const robert = id('Robert'), ann = id('Ann'), john = id('John');
+    log(robert, 'appointment', '2026-10-27T14:00:00.000Z'); // set yesterday for today
+    log(ann, 'appointment', '2026-10-28T14:10:00.000Z'); // set today for next week
+    log(john, 'appointment', '2026-10-28T14:20:00.000Z'); // set today for today
+    recordUnitrustEvents(db, [
+      ev('blue', 'OH - ROCKET MORTG - ROBERT RAY- (614) 555-0102 RAY', '2026-10-28'),
+      ev('blue', 'OH - ROCKET MORTG - ANN LEE- (312) 555-0103 LEE', '2026-11-04'),
+      ev('green', 'OH - ROCKET MORTG - JOHN DOE- (614) 555-0101 DOE', '2026-10-28'),
+    ], { today: '2026-10-28' }, '2026-10-28T15:00:00.000Z');
+    const t = todayStats(db, '2026-10-28T04:00:00.000Z', '2026-10-29T04:00:00.000Z', undefined, { from: '2026-10-28', to: '2026-10-28' });
+    expect(t).toMatchObject({ appointments: 2, funnel: { on_the_day: 2, sales: 1 } });
+  });
 });

@@ -2,12 +2,15 @@ import { useEffect, useRef, useState } from 'react';
 import { api } from '../api';
 import { useApp } from '../App';
 import { addDays, startOfDay, ymd } from '../when';
+import { getStored, setStored } from '../storage';
 import { FUNNEL_STEPS, type FunnelStep } from '../../shared/funnel';
 
 // Your conversion funnel as an animated 3D graphic sized for an Instagram story (9:16): dials, leads called,
 // pickups and appointments set (first calls), then sat, prezis and sales (appointments), with sales at the bottom.
 // Opened from the funnel button in the corner of the Calling screen.
 // A dial is one ring of a phone; a lead is one person, so several dials can go to the same lead.
+// "Only appts on these days" swaps appointments set for the appointments that were on those days (from the Unitrust
+// calendar or appointment calls logged here), whenever they were set, so the funnel follows the same appointments down.
 
 interface Stats {
   dials: number;
@@ -15,7 +18,7 @@ interface Stats {
   human_contacts: number;
   appointments: number;
   /** Appointments on the days in the range: picked up (sat), presented (prezi or sale), and sales. */
-  funnel: { sat: number; prezis: number; sales: number } | null;
+  funnel: { on_the_day: number; sat: number; prezis: number; sales: number } | null;
 }
 
 const RANGES = [
@@ -46,6 +49,8 @@ const LOOK: Record<FunnelStep, { value: (s: Stats) => number; colors: readonly [
 /** The funnel's steps, top to bottom. */
 const STEPS = FUNNEL_STEPS.map((s) => ({ label: s.label, ...LOOK[s.key] }));
 const N = STEPS.length;
+const APPTS_SET = FUNNEL_STEPS.findIndex((s) => s.key === 'appts_set');
+const ON_THE_DAY_KEY = 'funnel.onTheDay';
 const LAST = N - 1;
 
 /** The button in the corner of the Calling screen: a small funnel that opens the graphic. */
@@ -72,10 +77,13 @@ export function FunnelShowcase({ onClose }: { onClose: () => void }) {
   const { toast } = useApp();
   const [range, setRange] = useState<RangeKey>('today');
   const [stats, setStats] = useState<Stats | null>(null);
+  const [onTheDay, setOnTheDay] = useState(() => getStored(ON_THE_DAY_KEY) === '1');
   useEffect(() => {
     api.get<Stats>('/stats/today', rangeOf(range)).then(setStats).catch((e: Error) => toast(`Couldn't load your numbers: ${e.message}`, 'error'));
   }, [range, toast]);
-  const values = stats ? STEPS.map((s) => s.value(stats)) : null;
+  const values = stats
+    ? STEPS.map((s, i) => (onTheDay && i === APPTS_SET ? stats.funnel?.on_the_day ?? 0 : s.value(stats)))
+    : null;
   const title = RANGES.find(([k]) => k === range)![1];
   return (
     <div
@@ -88,9 +96,17 @@ export function FunnelShowcase({ onClose }: { onClose: () => void }) {
           {RANGES.map(([k, l]) => (
             <button key={k} className={`btn small${k === range ? ' primary' : ''}`} onClick={() => setRange(k)}>{l}</button>
           ))}
+          <label className="row funnel-tick" title="Count the appointments that were on these days, whenever you set them, and leave out ones set for a later day">
+            <input
+              type="checkbox"
+              checked={onTheDay}
+              onChange={(e) => { setOnTheDay(e.target.checked); setStored(ON_THE_DAY_KEY, e.target.checked ? '1' : null); }}
+            />
+            Only appts on these days
+          </label>
           <button className="btn small" onClick={onClose} aria-label="Close" autoFocus>✕</button>
         </div>
-        <FunnelCanvas values={values} title={title} />
+        <FunnelCanvas values={values} title={title} apptsLabel={onTheDay ? 'Appts on the day' : null} />
       </div>
     </div>
   );
@@ -102,12 +118,12 @@ const pctOf = (a: number, b: number) => (b > 0 ? `${Math.round((a / b) * 100)}%`
 interface Particle { x: number; y: number; v: number; hue: string; dies: number; size: number }
 
 /** The animated funnel: seven glowing 3D rings that turn slowly, with sparks falling through them. */
-function FunnelCanvas({ values, title }: { values: number[] | null; title: string }) {
+function FunnelCanvas({ values, title, apptsLabel }: { values: number[] | null; title: string; apptsLabel: string | null }) {
   const ref = useRef<HTMLCanvasElement>(null);
-  const data = useRef<{ values: number[] | null; title: string; shownAt: number }>({ values, title, shownAt: performance.now() });
+  const data = useRef({ values, title, apptsLabel, shownAt: performance.now() });
   useEffect(() => {
-    data.current = { values, title, shownAt: performance.now() };
-  }, [values, title]);
+    data.current = { values, title, apptsLabel, shownAt: performance.now() };
+  }, [values, title, apptsLabel]);
 
   useEffect(() => {
     const canvas = ref.current;
@@ -204,7 +220,7 @@ function FunnelCanvas({ values, title }: { values: number[] | null; title: strin
     };
 
     const draw = (t: number) => {
-      const { values: v, title: ttl, shownAt } = data.current;
+      const { values: v, title: ttl, apptsLabel: apptsName, shownAt } = data.current;
       const grow = Math.min(1, (t - shownAt) / 1400);
       const ease = 1 - Math.pow(1 - grow, 3);
 
@@ -291,7 +307,7 @@ function FunnelCanvas({ values, title }: { values: number[] | null; title: strin
         ctx.fillText(v ? fmt(n) : '…', cx, yMid);
         ctx.font = '600 13px system-ui, -apple-system, Segoe UI, sans-serif';
         ctx.fillStyle = 'rgba(255,255,255,.85)';
-        ctx.fillText(STEPS[i]!.label.toUpperCase(), cx, yMid + 18);
+        ctx.fillText((i === APPTS_SET && apptsName ? apptsName : STEPS[i]!.label).toUpperCase(), cx, yMid + 18);
         ctx.shadowBlur = 0;
         if (i > 0 && v) {
           const y = yOf(i) + bob - gap / 2 + 6;
@@ -310,7 +326,7 @@ function FunnelCanvas({ values, title }: { values: number[] | null; title: strin
         ctx.fillText(`${pctOf(v[LAST]!, v[0]!)} of dials became sales`, cx, H - 84);
         ctx.font = '600 16px system-ui, -apple-system, Segoe UI, sans-serif';
         ctx.fillStyle = 'rgba(255,255,255,.75)';
-        ctx.fillText(`${pctOf(v[LAST]!, v[3]!)} of appointments set became sales`, cx, H - 56);
+        ctx.fillText(`${pctOf(v[LAST]!, v[APPTS_SET]!)} of ${apptsName ? 'appointments on the day' : 'appointments set'} became sales`, cx, H - 56);
       }
       raf = requestAnimationFrame(draw);
     };
