@@ -142,8 +142,8 @@ export function ReportsPage() {
 
       {r && (
         <div className="card">
-          <h3>Best time to call <span className="muted">(contact rate by the lead's local time, all your calls)</span></h3>
-          <BestTime rows={r.best_time} onPick={(key, label) => setDrill({ section: 'best_time', key, metric: 'contacts', title: `Contacts ${label}` })} />
+          <h3>Best time to call <span className="muted">(pickup rate in the lead's local time, all your calls, any dates)</span></h3>
+          <BestTime b={r.best_time} onPick={(key, metric, label) => setDrill({ section: 'best_time', key, metric, title: `${metric === 'contacts' ? 'Pickups' : 'Calls'} ${label}` })} />
         </div>
       )}
 
@@ -307,37 +307,114 @@ function HourChart({ rows, onPick }: { rows: any[]; onPick: (h: number, metric: 
   );
 }
 
-function BestTime({ rows, onPick }: { rows: any[]; onPick: (key: string, label: string) => void }) {
-  if (!rows.length) return <p className="muted">Not enough calls yet.</p>;
-  const by = new Map(rows.map((x) => [x.key, x]));
-  const lo = Math.min(8, ...rows.map((x) => x.hour));
-  const hi = Math.max(20, ...rows.map((x) => x.hour));
+interface BestLine { key: string; attempts: number; contacts: number; contact_rate: number | null; days: number }
+interface BestTimeData {
+  overall: BestLine;
+  by_weekday: (BestLine & { weekday: number })[];
+  by_hour: (BestLine & { hour: number })[];
+  cells: (BestLine & { weekday: number; hour: number })[];
+  untimed_calls: number;
+  min_calls: number;
+}
+const WEEKDAY_NAMES = ['Sundays', 'Mondays', 'Tuesdays', 'Wednesdays', 'Thursdays', 'Fridays', 'Saturdays'];
+
+/**
+ * Best time to call: every call you've made, put together by the lead's local weekday and hour, as the share
+ * picked up. By hour (all days together), by day (all hours together), and each day and hour.
+ */
+function BestTime({ b, onPick }: { b: BestTimeData; onPick: (key: string, metric: 'contacts' | 'attempts', label: string) => void }) {
+  const untimed = b.untimed_calls > 0 && (
+    <p className="help">{b.untimed_calls} call(s) recreated from a spreadsheet's Status column are left out, since their real day and time aren't known.</p>
+  );
+  if (!b.overall.attempts) return <><p className="muted">No calls yet. Each call you log on the Calling page counts here.</p>{untimed}</>;
+  const few = (x: BestLine) => x.attempts < b.min_calls;
+  const shade = (x: BestLine) => ({
+    background: `rgba(34, 139, 34, ${Math.min(0.85, (x.contact_rate ?? 0) * 1.5 + 0.05) * (few(x) ? 0.45 : 1)})`,
+  });
+  const rate = (x: BestLine, label: string) => (
+    <button className="num" onClick={() => onPick(x.key, 'contacts', label)} title={`${label}: ${x.contacts} of ${x.attempts} calls picked up, over ${x.days} day(s)`}>{pct(x.contact_rate)}</button>
+  );
+  const calls = (x: BestLine, label: string) => (
+    <button className="num small" onClick={() => onPick(x.key, 'attempts', label)} title={`Every call ${label}`}>{x.attempts}</button>
+  );
+  const hourBy = new Map(b.by_hour.map((x) => [x.hour, x]));
+  const cellBy = new Map(b.cells.map((x) => [`${x.weekday}:${x.hour}`, x]));
+  const lo = Math.min(8, ...b.by_hour.map((x) => x.hour));
+  const hi = Math.max(20, ...b.by_hour.map((x) => x.hour));
   const hours = Array.from({ length: hi - lo + 1 }, (_, i) => lo + i);
+  const top = Math.max(0.01, ...b.by_hour.map((x) => x.contact_rate ?? 0));
   return (
-    <div className="scroll-x">
-      <table className="heat">
-        <thead><tr><th />{hours.map((h) => <th key={h}>{hourLabel(h)}</th>)}</tr></thead>
-        <tbody>
-          {WEEKDAYS.map((d, wd) => (
-            <tr key={d}>
-              <th>{d}</th>
+    <>
+      <p>
+        Picked up <b>{pct(b.overall.contact_rate)}</b> of {b.overall.attempts} calls, over {b.overall.days} day(s).
+        Each rate is every call at that time put together: pickups divided by calls.
+      </p>
+      <h4>By hour <span className="muted">(all days together)</span></h4>
+      <div className="hour-chart" role="img" aria-label="Pickup rate by hour">
+        {hours.map((h) => {
+          const x = hourBy.get(h);
+          return (
+            <div key={h} className={`hour ${x && few(x) ? 'few' : ''}`}>
+              <div className="bars">
+                {x && (
+                  <button className="bar rate" style={{ height: `${((x.contact_rate ?? 0) / top) * 100}%` }} onClick={() => onPick(x.key, 'contacts', `at ${hourLabel(h)}`)}
+                    title={`${hourLabel(h)}: ${x.contacts} of ${x.attempts} calls picked up`} aria-label={`${hourLabel(h)} ${pct(x.contact_rate)} picked up`} />
+                )}
+              </div>
+              <div className="lbl">{hourLabel(h)}</div>
+              <div className="lbl muted">{x ? pct(x.contact_rate) : '\u00a0'}</div>
+            </div>
+          );
+        })}
+      </div>
+      <h4>By day <span className="muted">(all hours together)</span></h4>
+      <div className="summary-tiles">
+        {b.by_weekday.map((d) => (
+          <div key={d.weekday} className={few(d) ? 'few' : ''}>
+            <b>{d.attempts ? rate(d, `on ${WEEKDAY_NAMES[d.weekday]}`) : '–'}</b>
+            {WEEKDAYS[d.weekday]}
+            <span className="sub small muted">{d.attempts ? `${d.attempts} calls, ${d.days} day(s)` : 'No calls yet'}</span>
+          </div>
+        ))}
+      </div>
+      <h4>Each day and hour</h4>
+      <div className="scroll-x">
+        <table className="heat">
+          <thead><tr><th />{hours.map((h) => <th key={h}>{hourLabel(h)}</th>)}<th>All hours</th></tr></thead>
+          <tbody>
+            {b.by_weekday.map((d) => (
+              <tr key={d.weekday}>
+                <th>{WEEKDAYS[d.weekday]}</th>
+                {hours.map((h) => {
+                  const x = cellBy.get(`${d.weekday}:${h}`);
+                  const label = `${WEEKDAYS[d.weekday]} ${hourLabel(h)}`;
+                  return x ? <td key={h} style={shade(x)}>{rate(x, label)}<div>{calls(x, label)}</div></td> : <td key={h} />;
+                })}
+                <td className="total" style={d.attempts ? shade(d) : undefined}>
+                  {d.attempts ? <>{rate(d, `on ${WEEKDAY_NAMES[d.weekday]}`)}<div>{calls(d, `on ${WEEKDAY_NAMES[d.weekday]}`)}</div></> : <span className="muted small">No calls</span>}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+          <tfoot>
+            <tr>
+              <th>All days</th>
               {hours.map((h) => {
-                const x = by.get(`${wd}:${h}`);
-                if (!x) return <td key={h} />;
-                const rate = x.contact_rate ?? 0;
-                return (
-                  <td key={h} style={{ background: `rgba(34, 139, 34, ${Math.min(0.85, rate * 1.5 + 0.05)})` }} title={`${d} ${hourLabel(h)}: ${x.contacts} of ${x.attempts} picked up`}>
-                    <button className="num" onClick={() => onPick(x.key, `${d} ${hourLabel(h)}`)}>{pct(x.contact_rate)}</button>
-                    <div className="small">{x.attempts}</div>
-                  </td>
-                );
+                const x = hourBy.get(h);
+                return x ? <td key={h} className="total" style={shade(x)}>{rate(x, `at ${hourLabel(h)}`)}<div>{calls(x, `at ${hourLabel(h)}`)}</div></td> : <td key={h} className="total" />;
               })}
+              <td className="total" style={shade(b.overall)}>{rate(b.overall, 'at any time')}<div>{calls(b.overall, 'at any time')}</div></td>
             </tr>
-          ))}
-        </tbody>
-      </table>
-      <p className="help">Each box: the share of calls someone picked up, and (below) how many calls. A few calls don't say much yet.</p>
-    </div>
+          </tfoot>
+        </table>
+      </div>
+      <p className="help">
+        Each box: the share of calls someone picked up, and (below) how many calls. Pale boxes have fewer than {b.min_calls} calls, so they don't say much yet.
+        A day with no calls stays empty: times are the lead's, so a call at 9 AM your time to a lead an hour behind counts at 8 AM.
+        First calls only; Appointment-side calls are left out.
+      </p>
+      {untimed}
+    </>
   );
 }
 

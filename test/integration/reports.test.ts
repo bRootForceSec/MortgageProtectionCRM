@@ -167,7 +167,11 @@ describe('reports', () => {
     for (const c of r.by_county) for (const m of ['leads', 'dials', 'attempts', 'contacts', 'appointments']) check('by_county', c.key, m, (c as any)[m]);
     for (const b of r.by_batch) for (const m of ['leads', 'cost', 'never_called', 'dials', 'reached', 'booked']) check('by_batch', b.key, m, (b as any)[m]);
     for (const b of r.benchmarks) for (const m of ['leads', 'cost', 'never_called', 'dials', 'attempts', 'contacts', 'appointments', 'bad_numbers', 'called_back', 'reached', 'booked']) check('benchmarks', b.key, m, (b as any)[m]);
-    for (const b of r.best_time) check('best_time', b.key, 'contacts', b.contacts);
+    const bt = r.best_time;
+    for (const b of [...bt.cells, ...bt.by_weekday, ...bt.by_hour, bt.overall]) {
+      check('best_time', b.key, 'contacts', b.contacts);
+      check('best_time', b.key, 'attempts', b.attempts);
+    }
     for (const c of r.by_caller) for (const m of ['dials', 'attempts', 'leads_called', 'contacts', 'appointments', 'callbacks']) check('by_caller', c.key, m, (c as any)[m]);
   });
 
@@ -351,6 +355,31 @@ describe('week by week', () => {
     expect(w.types.map((t) => t.key)).toEqual(['B', 'CI-A']);
     expect(w.weeks.reduce((n, x) => n + x.by_type['CI-A']!.appointments, 0)).toBe(1);
     expect(buildReport(db, range()).targets).toMatchObject({ show_rate: 0.8, close_rate: 0.5 });
+  });
+});
+
+describe('best time to call', () => {
+  it('puts every timed first call together by the lead\'s weekday and hour, with every weekday listed', () => {
+    const tz = 'America/Indiana/Indianapolis';
+    const base = buildReport(db, range()).best_time;
+    // Two Thursdays at 6 PM Eastern, one Monday at 10 AM; then a spreadsheet call, which has no real time.
+    log('Amy', 'no_answer', { occurred_at: '2026-10-22T22:10:00.000Z' });
+    log('Ben', 'no_appt', { occurred_at: '2026-10-15T22:40:00.000Z' });
+    log('Cal', 'no_answer', { occurred_at: '2026-10-19T14:05:00.000Z' });
+    const b = buildReport(db, { ...range(), tz }).best_time;
+    expect(b.by_weekday.map((d) => d.weekday)).toEqual([0, 1, 2, 3, 4, 5, 6]);
+    const thu = b.cells.find((c) => c.key === '4:18')!;
+    expect(thu).toMatchObject({ weekday: 4, hour: 18, attempts: 2, contacts: 1, contact_rate: 0.5, days: 2 });
+    expect(b.by_hour.find((h) => h.hour === 18)).toMatchObject({ key: 'hour:18', attempts: 2, contacts: 1 });
+    expect(b.by_weekday[1]).toMatchObject({ key: 'day:1', attempts: 1, contacts: 0, contact_rate: 0, days: 1 });
+    expect(b.overall.attempts).toBe(base.overall.attempts + 3);
+    // Totals add up: every weekday and every hour sum to the overall count.
+    expect(b.by_weekday.reduce((n, d) => n + d.attempts, 0)).toBe(b.overall.attempts);
+    expect(b.by_hour.reduce((n, h) => n + h.attempts, 0)).toBe(b.overall.attempts);
+    expect(b.cells.reduce((n, c) => n + c.contacts, 0)).toBe(b.overall.contacts);
+    // The spreadsheet call from beforeEach is left out and counted as such.
+    expect(b.untimed_calls).toBe(1);
+    expect(drill(db, { ...range(), tz }, { section: 'best_time', key: 'day:4', metric: 'attempts' }).rows.length).toBe(b.by_weekday[4]!.attempts);
   });
 });
 

@@ -1,7 +1,7 @@
 import * as z from 'zod/v4';
 import type { DB } from '../db/connection.js';
 import { AGE_BANDS, ageBand, leadAgeDays } from '../../shared/leadAge.js';
-import type { BestTimes } from '../../shared/bestTime.js';
+import { MIN_ATTEMPTS, type BestTimes } from '../../shared/bestTime.js';
 import { LEAD_NAME, CURRENT_OUTCOME } from '../db/sql.js';
 import { getSetting, setSetting } from '../core/settings.js';
 import { groupWhere } from './groupFilter.js';
@@ -211,13 +211,18 @@ function localParts(iso: string, tz: string | null | undefined, fallback: string
   return { hour, weekday, date: `${p.year}-${p.month}-${p.day}`, time: `${String(hour).padStart(2, '0')}:${p.minute}` };
 }
 
+/** A call's "weekday:hour" in the lead's own time (your time when the lead's zone isn't known). */
+const bestKey = (c: CallRow, tz: string) => {
+  const p = localParts(c.requested_at, c.time_zone, tz);
+  return `${p.weekday}:${p.hour}`;
+};
+
 /** Attempts and pickups by the lead's local weekday and hour, all time, for "Best time first" on the call list. */
 export function bestTimes(db: DB, tz: string): BestTimes {
   const out: BestTimes = {};
   for (const c of loadCalls(db, { from: '', to: '', tz }, false)) {
     if (c.time_known === 0) continue;
-    const p = localParts(c.requested_at, c.time_zone, tz);
-    const t = (out[`${p.weekday}:${p.hour}`] ??= { attempts: 0, pickups: 0 });
+    const t = (out[bestKey(c, tz)] ??= { attempts: 0, pickups: 0 });
     t.attempts++;
     if (c.contact) t.pickups++;
   }
@@ -286,14 +291,16 @@ function buildGroups(db: DB, f: ReportFilter) {
   const hours = groupBy(timed, (c) => String(localParts(c.requested_at, f.tz, f.tz).hour));
   const hourGroups: Group[] = [...hours].map(([k, cs]) => ({ key: k, calls: cs, leads: [] })).sort((a, b) => +a.key - +b.key);
 
-  const best = groupBy(all.filter((c) => c.time_known !== 0), (c) => {
-    const p = localParts(c.requested_at, c.time_zone, f.tz);
-    return `${p.weekday}:${p.hour}`;
-  });
-  const bestGroups: Group[] = [...best].map(([k, cs]) => ({ key: k, calls: cs, leads: [] }));
+  // Best time to call, all time in the lead's own time: each weekday and hour ("3:18"), each weekday over all its
+  // hours ("day:3"), each hour over all days ("hour:18"), and every timed call ("all").
+  const allTimed = all.filter((c) => c.time_known !== 0);
+  const best = groupBy(allTimed, (c) => bestKey(c, f.tz));
+  const bestDays = groupBy(allTimed, (c) => `day:${bestKey(c, f.tz).split(':')[0]}`);
+  const bestHours = groupBy(allTimed, (c) => `hour:${bestKey(c, f.tz).split(':')[1]}`);
+  const bestGroups: Group[] = [...best, ...bestDays, ...bestHours, ['all', allTimed] as [string, CallRow[]]].map(([k, cs]) => ({ key: k, calls: cs, leads: [] }));
 
   // All-time, by how old the lead was when you called it.
-  const byAge = groupBy(all.filter((c) => c.time_known !== 0), (c) => ageBand(leadAgeDays(c.callin_at, c.requested_at)) ?? 'unknown');
+  const byAge = groupBy(allTimed, (c) => ageBand(leadAgeDays(c.callin_at, c.requested_at)) ?? 'unknown');
   const ageGroups: Group[] = [...AGE_BANDS.map((b) => b.key), 'unknown'].filter((k) => byAge.has(k)).map((k) => ({ key: k, calls: byAge.get(k)!, leads: [] }));
 
   const countyCalls = groupBy(inRange, (c) => c.county_key ?? '');
@@ -323,7 +330,34 @@ function buildGroups(db: DB, f: ReportFilter) {
   const callerGroups: Group[] = CALLER_MATCH_ORDER.filter((k) => byMatch.has(k) || backByMatch.has(k))
     .map((k) => ({ key: k, calls: byMatch.get(k) ?? [], leads: backByMatch.get(k) ?? [] }));
 
-  return { activity, hourGroups, bestGroups, ageGroups, countyGroups, batchGroups, typeGroups, callerGroups, allCalls: all, timedCount: timed.length, untimedInRange: inRange.length - timed.length };
+  return { activity, hourGroups, bestGroups, untimedAll: all.length - allTimed.length, ageGroups, countyGroups, batchGroups, typeGroups, callerGroups, allCalls: all, timedCount: timed.length, untimedInRange: inRange.length - timed.length };
+}
+
+/**
+ * Best time to call: the pickup rate (pickups / calls) over all your calls at each weekday and hour, each weekday,
+ * and each hour, in the lead's own time. Every weekday is listed, with 0 calls when you've made none on it.
+ */
+function bestTimeReport(groups: Group[], untimed: number, tz: string) {
+  const by = new Map(groups.map((g) => [g.key, g.calls]));
+  const line = (key: string, cs: CallRow[] = by.get(key) ?? []) => {
+    const m = callMetrics(cs, ['attempts', 'contacts']);
+    // How many different dates the calls fall on, so "62% over 5 Mondays" can be told from one busy Monday.
+    const days = new Set(cs.map((c) => localParts(c.requested_at, c.time_zone, tz).date)).size;
+    return { key, ...m, contact_rate: ratio(m.contacts, m.attempts), days };
+  };
+  return {
+    overall: line('all'),
+    by_weekday: [0, 1, 2, 3, 4, 5, 6].map((weekday) => ({ weekday, ...line(`day:${weekday}`) })),
+    by_hour: groups.filter((g) => g.key.startsWith('hour:')).map((g) => ({ hour: Number(g.key.slice(5)), ...line(g.key, g.calls) })).sort((a, b) => a.hour - b.hour),
+    cells: groups.filter((g) => /^\d:\d+$/.test(g.key)).map((g) => {
+      const [weekday, hour] = g.key.split(':').map(Number);
+      return { weekday: weekday!, hour: hour!, ...line(g.key, g.calls) };
+    }).sort((a, b) => a.weekday - b.weekday || a.hour - b.hour),
+    /** All-time calls left out because their real time isn't known (recreated from a spreadsheet's Status column). */
+    untimed_calls: untimed,
+    /** Below this many calls, a rate says little (and the call list's "Best time first" uses a usual curve instead). */
+    min_calls: MIN_ATTEMPTS,
+  };
 }
 
 export function buildReport(db: DB, f: ReportFilter) {
@@ -359,11 +393,7 @@ export function buildReport(db: DB, f: ReportFilter) {
       untimed_calls: g.untimedInRange,
     },
     by_hour: g.hourGroups.map((h) => ({ hour: +h.key, ...callMetrics(h.calls, HOURLY) })),
-    best_time: g.bestGroups.map((b) => {
-      const [weekday, hour] = b.key.split(':').map(Number);
-      const m = callMetrics(b.calls, ['attempts', 'contacts']);
-      return { key: b.key, weekday: weekday!, hour: hour!, ...m, contact_rate: ratio(m.contacts, m.attempts) };
-    }),
+    best_time: bestTimeReport(g.bestGroups, g.untimedAll, f.tz),
     by_age: g.ageGroups.map((a) => {
       const m = callMetrics(a.calls, ['attempts', 'contacts', 'appointments']);
       return {
@@ -636,6 +666,7 @@ export function reportJson(db: DB, f: ReportFilter) {
       date_range: `Calls from ${f.from} up to (not including) ${f.to}. Local dates and times are in ${f.tz}.`,
       activity: 'Activity and by_hour leave out calls imported from a spreadsheet (time_known = no); by_county and calls include them.',
       all_time: 'best_time, by_batch and benchmarks are all-time for the leads in the county / area-code filter, not just this date range.',
+      best_time: 'best_time is in the lead\'s local time (weekday 0 = Sunday): contact_rate is contacts / attempts over every timed first call, per weekday and hour (cells), per weekday (by_weekday), per hour (by_hour) and overall; days is how many dates those calls fall on. Spreadsheet calls with no real time are left out (untimed_calls).',
       dials_vs_attempts: 'An attempt is one logged call to a lead; one attempt can be several dials (redials of the same number).',
       contact: 'A contact is a call whose outcome counts as talking to a person. Conversations are calls with 2 minutes or more of talk time.',
       do_not_call: 'do_not_call: the person asked not to be called again. It sits beside the outcome, and the lead goes to the dead pile.',
@@ -675,9 +706,12 @@ export function reportSheets(r: ReturnType<typeof buildReport>, calls: ReturnTyp
     { name: 'By hour', rows: r.by_hour.map((h) => ({ hour: hourLabel(h.hour), dials: h.dials, attempts: h.attempts, contacts: h.contacts, appointments: h.appointments })) },
     {
       name: 'Best time to call',
-      rows: [...r.best_time]
-        .sort((x, y) => x.weekday - y.weekday || x.hour - y.hour)
-        .map((b) => ({ day: WEEKDAYS[b.weekday], their_hour: hourLabel(b.hour), attempts: b.attempts, contacts: b.contacts, contact_rate_pct: pct(b.contact_rate) })),
+      rows: [
+        ...r.best_time.cells.map((b) => ({ day: WEEKDAYS[b.weekday], their_hour: hourLabel(b.hour), attempts: b.attempts, contacts: b.contacts, contact_rate_pct: pct(b.contact_rate), days: b.days })),
+        ...r.best_time.by_weekday.map((b) => ({ day: WEEKDAYS[b.weekday], their_hour: 'All hours', attempts: b.attempts, contacts: b.contacts, contact_rate_pct: pct(b.contact_rate), days: b.days })),
+        ...r.best_time.by_hour.map((b) => ({ day: 'All days', their_hour: hourLabel(b.hour), attempts: b.attempts, contacts: b.contacts, contact_rate_pct: pct(b.contact_rate), days: b.days })),
+        { day: 'All days', their_hour: 'All hours', attempts: r.best_time.overall.attempts, contacts: r.best_time.overall.contacts, contact_rate_pct: pct(r.best_time.overall.contact_rate), days: r.best_time.overall.days },
+      ],
     },
     {
       name: 'By lead age',
