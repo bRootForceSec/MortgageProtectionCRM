@@ -28,6 +28,8 @@ export interface StartOptions {
   logStream?: NodeJS.WritableStream;
   /** The desktop app's updater. */
   updater?: UpdateProvider;
+  /** The desktop app: brings its window up on this lead, for lead links clicked in a browser. */
+  openLead?: (leadId: string) => void;
 }
 
 export interface RunningServer {
@@ -103,7 +105,7 @@ export async function startServer(opts: StartOptions = {}): Promise<RunningServe
   const drafts = new DraftWorker(db, secrets);
   const bulk = new BulkImporter(db, config.importsDir, drafts);
   const pageChecker = new PageChecker(db, config.importsDir, () => makeReader(loadAiSettings(db), secrets), (m) => app.log.warn(m));
-  const app = await buildApp({ db, config, token, webDir, logger: true, logStream: opts.logStream, updates, drafts, bulk, secrets, pageChecker });
+  const app = await buildApp({ db, config, token, webDir, logger: true, logStream: opts.logStream, updates, drafts, bulk, secrets, pageChecker, openLead: opts.openLead });
 
   const pidFile = path.join(config.dataDir, 'server.pid');
   fs.writeFileSync(pidFile, String(process.pid), { mode: 0o600 });

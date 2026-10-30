@@ -3,12 +3,13 @@ import { LEAD_NAME, CURRENT_OUTCOME } from '../db/sql.js';
 import { uuidv7, nowIso } from '../ids.js';
 import { getSetting, setSetting } from '../core/settings.js';
 import { rebuildLeadState } from './leadState.js';
+import { leadExists } from './leads.js';
 import { normalizeUsPhone } from './normalize.js';
 import { outcomeDef } from '../../shared/outcomes.js';
 import { APPT_RESULTS, parseUnitrustTitle, resultOfColor, type ApptResult, type UnitrustColor } from '../../shared/appointments.js';
 
-// Appointments read off the Unitrust calendar by the Firefox extension. Each event is matched to a lead by its phone
-// (then by name), stored once per day and phone, and each change of color adds a result row. Leads whose appointment
+// Appointments read off the Unitrust calendar by the Firefox extension. Each event is matched to a lead by a lead link
+// pasted into it when the calendar shows one, else by its phone (then by name), stored once per day and phone, and each change of color adds a result row. Leads whose appointment
 // changed get their state rebuilt, so a no-show or a sat-no-sale comes back to be called.
 //
 // Yellow is either "sat, no sale" or "rescheduled". Unitrust moves a rescheduled event to its new day, so a yellow
@@ -22,6 +23,8 @@ export interface UnitrustEvent {
   /** Start time HH:MM when the extension could tell. */
   time?: string | null;
   color: UnitrustColor;
+  /** The lead from a lead link pasted into the appointment (shared/leadLink.ts), when the calendar showed one. */
+  lead_id?: string | null;
 }
 
 export interface UnitrustSync {
@@ -63,6 +66,7 @@ export function recordUnitrustEvents(db: DB, events: UnitrustEvent[], view: Cale
      VALUES (@id, @lead_id, @scheduled_for, 'unitrust', @created_at, @unitrust_key, @title)`,
   );
   const updateAppt = db.prepare('UPDATE appointment SET scheduled_for = ?, title = ? WHERE id = ?');
+  const moveAppt = db.prepare('UPDATE appointment SET lead_id = ? WHERE id = ?');
   const insertResult = db.prepare('INSERT INTO appointment_result (id, appointment_id, result, entered_at) VALUES (?,?,?,?)');
 
   const earlier = db.prepare(
@@ -97,7 +101,9 @@ export function recordUnitrustEvents(db: DB, events: UnitrustEvent[], view: Cale
       sync.seen++;
       const scheduled = e.time ? `${e.date}T${e.time}` : e.date;
       const existing = byKey.get(key) as { id: string; lead_id: string } | undefined;
-      const leadId = existing?.lead_id ?? findLead(db, phone, name);
+      // A pasted lead link beats matching by phone, and fixes an appointment that phone matching put on the wrong lead.
+      const linked = e.lead_id && leadExists(db, e.lead_id) ? e.lead_id : null;
+      const leadId = linked ?? existing?.lead_id ?? findLead(db, phone, name);
       if (!leadId) {
         sync.unmatched.push(e.title);
         continue;
@@ -106,6 +112,11 @@ export function recordUnitrustEvents(db: DB, events: UnitrustEvent[], view: Cale
       let apptId = existing?.id;
       if (apptId) {
         updateAppt.run(scheduled, e.title, apptId);
+        if (existing && existing.lead_id !== leadId) {
+          moveAppt.run(leadId, apptId);
+          touched.add(existing.lead_id);
+          touched.add(leadId);
+        }
       } else {
         apptId = uuidv7();
         insertAppt.run({ id: apptId, lead_id: leadId, scheduled_for: scheduled, created_at: now, unitrust_key: key, title: e.title });

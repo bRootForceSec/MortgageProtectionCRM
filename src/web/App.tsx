@@ -15,6 +15,7 @@ import { buildKeyMap, type CallingSettingsResponse, type KeyMap } from './shortc
 import { getStored, getStoredJson, setStored, setStoredJson } from './storage';
 import { todayRange, ymd } from './when';
 import { FUNNEL_LABEL } from '../shared/funnel';
+import { leadIdInText } from '../shared/leadLink';
 
 export type Page = 'calling' | 'today' | 'reports' | 'import' | 'leads' | 'calls' | 'numbers' | 'data' | 'settings';
 const PAGES: { key: Page; label: string }[] = [
@@ -67,11 +68,6 @@ export function App() {
     }
   }, []);
   useEffect(() => void reloadMeta(), [reloadMeta]);
-  useEffect(() => {
-    const f = () => setPage(pageFromHash());
-    window.addEventListener('hashchange', f);
-    return () => window.removeEventListener('hashchange', f);
-  }, []);
 
   const toast = useCallback((msg: string, kind: 'ok' | 'error' = 'ok') => {
     setToast({ msg, kind });
@@ -95,6 +91,18 @@ export function App() {
     location.hash = 'calling';
     setPage('calling');
   }, []);
+
+  // #lead/<id>: a lead link (shared/leadLink.ts) opens that lead on the Calling page.
+  useEffect(() => {
+    const f = () => {
+      const leadId = leadIdInText(location.hash);
+      if (leadId) openLead(leadId);
+      else setPage(pageFromHash());
+    };
+    f();
+    window.addEventListener('hashchange', f);
+    return () => window.removeEventListener('hashchange', f);
+  }, [openLead]);
 
   if (authError) {
     return (

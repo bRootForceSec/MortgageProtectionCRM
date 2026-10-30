@@ -6,6 +6,7 @@ import { APPT_RESULT_LABEL, type ApptResult } from '../../shared/appointments';
 import { outcomeDef } from '../../shared/outcomes';
 import { statusLabel } from '../../shared/leadStatus';
 import { ALL_PARTY_CONSENT_STATES, needsAllPartyConsent } from '../../shared/recordingConsent';
+import { leadLink } from '../../shared/leadLink';
 
 
 function leadAge(iso: string | null | undefined) {
@@ -27,6 +28,20 @@ export function StatusBadge({ status }: { status: string }) {
 export function ApptBadge({ result }: { result: string | null | undefined }) {
   if (!result || !(result in APPT_RESULT_LABEL)) return null;
   return <span className={`badge appt appt-${result}`} title="How the latest appointment went (logged here, or from the Unitrust calendar)">{APPT_RESULT_LABEL[result as ApptResult]}</span>;
+}
+
+/** Copies a link to this lead, to paste into its appointment in Unitrust or a calendar. Clicking it opens the lead here. */
+export function CopyLeadLink({ leadId, label = 'Copy link' }: { leadId: string; label?: string }) {
+  const { toast } = useApp();
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(leadLink(location.origin, leadId));
+      toast('Link copied. Paste it into the appointment; clicking it opens this lead.');
+    } catch {
+      toast('Could not copy the link', 'error');
+    }
+  };
+  return <button type="button" className="btn small" onClick={() => void copy()} title="A link to this lead, for the appointment's notes in Unitrust or your calendar">{label}</button>;
 }
 
 /** "They called me back": flips the mark on a lead and says so. Returns the new value. */
@@ -102,6 +117,7 @@ export function LeadSummary({
           <h2>
             <span className="lead-name">{fullName(l)}</span> {d.state && <StatusBadge status={d.state.status} />}{d.state && <ApptBadge result={d.state.appt_result} />}
             {onEdit && <button className="btn small" onClick={onEdit} title="Edit this lead's details">Edit {editKey && <kbd>{editKey}</kbd>}</button>}
+            <CopyLeadLink leadId={l.id} />
             <label className={`called-back ${backAt ? 'on' : ''}`} title={backAt ? `Marked ${fmtDateTime(backAt)}` : 'Tick when this lead calls you back'}>
               <input type="checkbox" checked={!!backAt} onChange={() => void flipBack()} />
               Called me back {calledBackKey && <kbd>{calledBackKey}</kbd>}

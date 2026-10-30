@@ -154,11 +154,17 @@ export function CallingPage() {
     }
   };
 
+  // Only the newest request counts: a slower answer for the lead shown before must not replace the one picked since
+  // (a lead link opens a lead while the last one is still loading).
+  const detailFor = useRef<string | null>(null);
   const loadDetail = useCallback(async (id: string | null) => {
+    detailFor.current = id;
     if (!id) return setDetail(null);
     try {
-      setDetail(await api.get<LeadDetail>(`/leads/${id}`));
+      const d = await api.get<LeadDetail>(`/leads/${id}`);
+      if (detailFor.current === id) setDetail(d);
     } catch {
+      if (detailFor.current !== id) return;
       setDetail(null);
       setSelected(null);
       setStored(SELECTED_KEY, null);
