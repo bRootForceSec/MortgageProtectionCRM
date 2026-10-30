@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
   "name": "Mortgage Protection CRM: Unitrust appointments",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Reads appointment colors off your Unitrust calendar and sends them to the CRM on this computer.",
   "browser_specific_settings": { "gecko": { "id": "unitrust-appointments@mpcrm.local", "strict_min_version": "115.0" } },
   "permissions": ["storage", "http://127.0.0.1/*", "http://localhost/*"],

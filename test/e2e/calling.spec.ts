@@ -278,6 +278,18 @@ test('clear worked leads, add more from Leads, and look up an incoming call with
   await expect(queue.locator('.queue-list li')).toHaveCount(rows);
   await page.screenshot({ path: 'test-results/lookup.png', fullPage: true });
 
+  // Copy link gives a link to paste into the appointment; opening it later goes straight back to this lead.
+  await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
+  await page.getByRole('button', { name: 'Copy link' }).click();
+  const link = await page.evaluate(() => navigator.clipboard.readText());
+  expect(link).toMatch(new RegExp(`^http://127\\.0\\.0\\.1:${PORT}/lead/[0-9a-f-]{36}$`));
+  await page.getByRole('button', { name: 'Back to list' }).click();
+  await expect(page.locator('.lead-name')).toHaveText(current);
+  await page.goto(link);
+  await expect(page.locator('.lead-name')).toHaveText('Robert Ray');
+  await expect(page).toHaveURL(/#calling$/);
+  await expect(page.locator('.lookup-bar')).toContainText('Your list on the left is unchanged');
+
   // Same outcome keys as always; saving goes back to where you were in the list.
   await page.keyboard.press('2');
   await page.keyboard.press('Enter');

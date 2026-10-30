@@ -14,7 +14,8 @@ Unitrust moves a rescheduled appointment to its new day and keeps it yellow. So 
 or one whose earlier appointment disappeared from a day the calendar shows, counts as a reschedule; the one it replaced
 counts as "Rescheduled" on its old day. A rescheduled appointment still yellow after its new day counts as sat with no sale.
 
-Each appointment is matched to a lead by the phone number in its title (then by name). Your own events, like
+Each appointment is matched to a lead by the phone number in its title (then by name). If you pasted the lead's link from
+the CRM (**Copy link** on the lead) into the appointment and the calendar shows it in the event box, that link wins. Your own events, like
 "DONT BOOK! CHURCH", are left alone. A note in the corner of the Unitrust page says what was sent; click it to hide it.
 
 It only reads the page. It never clicks, types or changes anything in Unitrust, and it never sees your Unitrust password.

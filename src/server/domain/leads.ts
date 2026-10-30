@@ -27,6 +27,11 @@ export function listLeads(db: DB, f: LeadFilter) {
 }
 
 /** Everything the lead view shows: the lead, its state, calls with their outcomes and events, notes, links and changes. */
+/** Whether a lead with this id is in the CRM. */
+export function leadExists(db: DB, id: string): boolean {
+  return !!db.prepare('SELECT 1 FROM lead WHERE id = ?').get(id);
+}
+
 export function getLeadDetail(db: DB, importsDir: string, id: string) {
   const lead = db.prepare('SELECT * FROM lead WHERE id = ?').get(id) as any;
   if (!lead) throw new DomainError('lead not found', 404);
