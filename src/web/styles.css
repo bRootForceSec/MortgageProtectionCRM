@@ -153,6 +153,7 @@ table.grid tr.click:hover { background: var(--row-hover); cursor: pointer; }
 .summary-tiles { display: flex; gap: 10px; flex-wrap: wrap; margin: 10px 0; }
 .summary-tiles div { border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; min-width: 110px; background: var(--panel); }
 .summary-tiles b { display: block; font-size: 20px; }
+.summary-tiles .sub { display: block; }
 .toast { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); background: var(--text); color: var(--bg); padding: 8px 14px; border-radius: 8px; z-index: 50; box-shadow: 0 4px 16px rgba(0,0,0,.25); }
 .toast.error { background: var(--bad); color: #fff; }
 .empty { color: var(--muted); padding: 24px; text-align: center; }
@@ -262,6 +263,10 @@ input.pct { width: 64px; }
 table.heat { border-collapse: collapse; font-size: 12px; }
 table.heat th, table.heat td { padding: 3px 5px; text-align: center; border: 1px solid var(--border); min-width: 40px; }
 table.heat td button.num { color: var(--text, inherit); }
+table.heat .total { font-weight: 600; }
+table.heat tfoot th, table.heat tfoot td { border-top: 2px solid var(--border); }
+.hour-chart .bar.rate { width: 70%; background: var(--good); }
+.hour-chart .few .bar, .summary-tiles .few b { opacity: 0.5; }
 .result-keys { display: flex; gap: 4px; flex-wrap: wrap; }
 .checklist td { vertical-align: middle; }
 table.grid tr.selected { background: var(--selected); }
