@@ -285,10 +285,20 @@ test('clear worked leads, add more from Leads, and look up an incoming call with
   expect(link).toMatch(new RegExp(`^http://127\\.0\\.0\\.1:${PORT}/lead/[0-9a-f-]{36}$`));
   await page.getByRole('button', { name: 'Back to list' }).click();
   await expect(page.locator('.lead-name')).toHaveText(current);
+  // The lead shown before loads slowly: its late answer must not replace the linked lead.
+  const linked = link.split('/lead/')[1]!;
+  const slow = /\/api\/leads\/[0-9a-f-]{36}$/;
+  await page.route(slow, async (route) => {
+    if (!route.request().url().endsWith(linked)) await new Promise((r) => setTimeout(r, 800));
+    await route.continue();
+  });
   await page.goto(link);
   await expect(page.locator('.lead-name')).toHaveText('Robert Ray');
   await expect(page).toHaveURL(/#calling$/);
   await expect(page.locator('.lookup-bar')).toContainText('Your list on the left is unchanged');
+  await page.waitForTimeout(1000);
+  await expect(page.locator('.lead-name')).toHaveText('Robert Ray');
+  await page.unroute(slow);
 
   // Same outcome keys as always; saving goes back to where you were in the list.
   await page.keyboard.press('2');
