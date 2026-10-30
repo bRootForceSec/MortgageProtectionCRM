@@ -770,7 +770,8 @@ export function reportSheets(r: ReturnType<typeof buildReport>, calls: ReturnTyp
 /**
  * Your numbers for a time range (the top bar and the funnel). Dials, leads called, pickups and appointments set
  * count first calls made from `from` to `to`. `day` adds that day's appointments (top bar); `days` adds sat, prezis
- * and sales for appointments on those days (funnel), whether you logged them here or in Unitrust.
+ * and sales for appointments on those days (funnel), whether you logged them here or in Unitrust, and how many
+ * appointments were for those days (on_the_day).
  */
 export function todayStats(db: DB, from: string, to: string, day?: string, days?: { from: string; to: string }) {
   const row = db
@@ -795,6 +796,10 @@ export function todayStats(db: DB, from: string, to: string, day?: string, days?
     .get({ from, to }) as Record<string, number>;
   const appts = day && hasAppointments(db) ? appointmentCounts(appointmentsOnDays(db, day, day)) : null;
   const inRange = days ? appointmentCounts(appointmentsOnDays(db, days.from, days.to)) : null;
-  const funnel = inRange ? { sat: inRange.sat, prezis: inRange.prezis, sales: inRange.sold } : null;
+  // on_the_day: appointments for those days, whenever they were set (moved-away ones left out), for the funnel's
+  // "only appointments on these days" tick.
+  const funnel = inRange
+    ? { on_the_day: inRange.appointments - inRange.rescheduled, sat: inRange.sat, prezis: inRange.prezis, sales: inRange.sold }
+    : null;
   return { ...row, goals: loadCallingSettings(db).goals, appts, funnel };
 }
