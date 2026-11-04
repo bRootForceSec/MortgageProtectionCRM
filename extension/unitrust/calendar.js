@@ -9,6 +9,14 @@ globalThis.MpcrmCalendar = (function () {
   var TITLE = /\b[A-Z]{2}\s+-\s+[^\n]+?\s+-\s+[^\n]+?\s*-\s*\(?\d{3}\)?[\s.-]*\d{3,}[\s.-]*\d{3,}(?:[ \t]+[A-Za-z'-]+)?/;
   var DAY = /^(Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s+(\d{1,2})\/(\d{1,2})$/;
   var HOUR = /^(\d{1,2})\s*(am|pm)$/i;
+  // A lead link copied from the CRM (src/shared/leadLink.ts has the same pattern): http://127.0.0.1:5170/lead/<id>.
+  var LEAD_LINK = /\/lead\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\b/i;
+
+  /** The lead id in a lead link inside some text, or null. */
+  function leadIdIn(text) {
+    var m = LEAD_LINK.exec(text || '');
+    return m ? m[1].toLowerCase() : null;
+  }
 
   /** The appointment title inside some text, or null. */
   function extractTitle(text) {
@@ -112,7 +120,11 @@ globalThis.MpcrmCalendar = (function () {
       var key = day.date + '|' + title;
       if (seen.has(key)) continue;
       seen.add(key);
-      events.push({ title: title, date: day.date, time: timeAt(box.top, hours), color: c.color });
+      var ev = { title: title, date: day.date, time: timeAt(box.top, hours), color: c.color };
+      // A lead link pasted into the appointment, when the calendar shows it in the event box.
+      var leadId = leadIdIn(c.box.textContent);
+      if (leadId) ev.lead_id = leadId;
+      events.push(ev);
     }
     var p2 = function (n) { return (n < 10 ? '0' : '') + n; };
     return {
@@ -137,5 +149,5 @@ globalThis.MpcrmCalendar = (function () {
     return p(Math.floor(total / 60)) + ':' + p(total % 60);
   }
 
-  return { read: read, extractTitle: extractTitle, classifyColor: classifyColor, dateFor: dateFor, timeAt: timeAt };
+  return { read: read, leadIdIn: leadIdIn, extractTitle: extractTitle, classifyColor: classifyColor, dateFor: dateFor, timeAt: timeAt };
 })();

@@ -118,7 +118,7 @@ async function start() {
   });
 
   try {
-    server = await startServer({ runtime: 'desktop', portFallback: true, logStream: log, updater });
+    server = await startServer({ runtime: 'desktop', portFallback: true, logStream: log, updater, openLead: (id) => showWindow(id) });
   } catch (e) {
     if (e instanceof AlreadyRunningError) {
       await dialog.showMessageBox({
@@ -217,8 +217,13 @@ function lockDownSession(port: number) {
   });
 }
 
-function showWindow() {
+/** Shows the window, on a lead when given one (a lead link clicked in the browser; the server checked the id). */
+function showWindow(leadId?: string) {
   if (!server) return;
+  const hash = leadId ? `lead/${leadId}` : '';
+  if (win && !win.isDestroyed() && hash) {
+    void win.webContents.executeJavaScript(`location.hash = ${JSON.stringify(hash)}`);
+  }
   if (!win || win.isDestroyed()) {
     win = new BrowserWindow({
       width: 1400,
@@ -236,7 +241,7 @@ function showWindow() {
         win?.hide();
       }
     });
-    void win.loadURL(server.url);
+    void win.loadURL(hash ? `${server.url}#${hash}` : server.url);
   }
   if (win.isMinimized()) win.restore();
   win.show();

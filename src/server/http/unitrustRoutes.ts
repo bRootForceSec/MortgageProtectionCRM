@@ -5,6 +5,7 @@ import type { DB } from '../db/connection.js';
 import type { Secrets } from '../ai/settings.js';
 import { EXTENSION_PATH } from './security.js';
 import { lastUnitrustSync, recordUnitrustEvents } from '../domain/unitrustAppointments.js';
+import { isLeadId } from '../../shared/leadLink.js';
 
 // The Unitrust extension: it posts the appointments it sees on the Unitrust calendar (with its own key, see
 // security.ts), and Settings shows that key and what the last sync found.
@@ -17,6 +18,8 @@ const events = z.object({
         date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
         time: z.string().regex(/^\d{2}:\d{2}$/).nullish(),
         color: z.enum(['blue', 'green', 'red', 'yellow']),
+        /** From a lead link pasted into the appointment. */
+        lead_id: z.string().refine(isLeadId, 'not a lead id').nullish(),
       }),
     )
     .max(2000),

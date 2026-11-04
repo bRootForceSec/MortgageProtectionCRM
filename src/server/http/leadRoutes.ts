@@ -5,7 +5,7 @@ import type { DB } from '../db/connection.js';
 import type { Config } from '../config.js';
 import { DomainError } from '../core/errors.js';
 import { logManualCall, changeOutcome, addLeadAction, addNote, callHistory, changeCallerId } from '../domain/calls.js';
-import { listLeads, getLeadDetail, leadPdfPage, setLinkStatus } from '../domain/leads.js';
+import { leadExists, listLeads, getLeadDetail, leadPdfPage, setLinkStatus } from '../domain/leads.js';
 import { parseList } from '../domain/groupFilter.js';
 import { setLeadTypeForMatching } from '../domain/leadEdit.js';
 import { batchPdf, turnPdfPages, normTurn } from '../domain/pageTurn.js';
@@ -17,11 +17,26 @@ import {
 import { LEAD_FILTERS } from '../../shared/leadStatus.js';
 import { isAgeBand } from '../../shared/leadAge.js';
 import { bestTimes } from '../domain/reports.js';
+import { isLeadId } from '../../shared/leadLink.js';
 
 // Leads, the call list, logging calls, and call history.
 
-export function registerLeadRoutes(app: FastifyInstance, deps: { db: DB; config: Config; pageChecker: PageChecker }) {
+export function registerLeadRoutes(app: FastifyInstance, deps: { db: DB; config: Config; pageChecker: PageChecker; openLead?: (leadId: string) => void }) {
   const { db, config, pageChecker } = deps;
+
+  // ---------- lead links ----------
+  // A link pasted into an appointment (shared/leadLink.ts). It's clicked in any browser, so it needs no cookie, and
+  // the page it shows says nothing about the lead. The desktop app brings its window up on the lead; in a browser
+  // (the Linux service) it goes on to the app, which opens the lead from #lead/<id>.
+  app.get('/lead/:id', async (req, reply) => {
+    const { id } = z.object({ id: z.string().refine(isLeadId, 'not a lead link') }).parse(req.params);
+    if (!leadExists(db, id)) throw new DomainError('That lead is not in the CRM on this computer.', 404);
+    if (!deps.openLead) return reply.redirect(`/#lead/${id}`, 303);
+    deps.openLead(id);
+    return reply
+      .type('text/html; charset=utf-8')
+      .send('<!doctype html><meta charset="utf-8"><title>Opened in the CRM</title><p style="font:16px system-ui;margin:2em">Opened in Mortgage Protection CRM. You can close this tab.</p>');
+  });
 
   // ---------- leads ----------
   const leadFilter = z.object({

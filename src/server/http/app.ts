@@ -47,6 +47,8 @@ export interface AppDeps {
   kde?: KdeConnect;
   /** Turns lead pages upright in imported PDFs. Defaults to one made here. */
   pageChecker?: PageChecker;
+  /** The desktop app: brings its window up on this lead, for lead links clicked in a browser. */
+  openLead?: (leadId: string) => void;
 }
 
 export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
@@ -86,7 +88,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   const bulk = deps.bulk ?? new BulkImporter(db, config.importsDir, drafts);
   const pageChecker = deps.pageChecker ?? new PageChecker(db, config.importsDir, () => makeReader(loadAiSettings(db), secrets));
   registerImportRoutes(app, { db, config, worker: drafts, bulk, secrets });
-  registerLeadRoutes(app, { db, config, pageChecker });
+  registerLeadRoutes(app, { db, config, pageChecker, openLead: deps.openLead });
   registerCallingRoutes(app, { db, kde: deps.kde });
   registerNumberRoutes(app, { db });
   registerReportRoutes(app, { db });

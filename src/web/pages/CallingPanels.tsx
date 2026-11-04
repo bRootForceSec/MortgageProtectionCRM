@@ -6,6 +6,7 @@ import { fillScript } from '../shortcuts';
 import type { Saved } from './LogCall';
 import type { CallMode } from '../../shared/appointments';
 import { needsAllPartyConsent } from '../../shared/recordingConsent';
+import { leadIdInText } from '../../shared/leadLink';
 
 // The smaller parts of the Calling screen: the incoming-call lookup, the First call | Appointment switch, the undo
 // bar, the script and the recent outcomes.
@@ -39,6 +40,14 @@ export function CallerLookup({ inputRef, hotkey, onOpen }: { inputRef: RefObject
 
   useEffect(() => {
     const s = q.trim();
+    // A lead link pasted from an appointment opens that lead.
+    const linked = leadIdInText(s);
+    if (linked) {
+      onOpen(linked);
+      setQ('');
+      setRows(null);
+      return;
+    }
     const digits = s.replace(/\D/g, '');
     // Four digits are enough for a number; two letters for a name.
     if (digits.length < 4 && s.replace(/[^a-z]/gi, '').length < 2) {
@@ -58,7 +67,7 @@ export function CallerLookup({ inputRef, hotkey, onOpen }: { inputRef: RefObject
       }
     }, 150);
     return () => clearTimeout(t);
-  }, [q, toast]);
+  }, [q, toast, onOpen]);
 
   const open = (r: LookupRow | undefined) => {
     if (!r) return;
@@ -73,7 +82,7 @@ export function CallerLookup({ inputRef, hotkey, onOpen }: { inputRef: RefObject
       <input
         ref={inputRef}
         type="search"
-        placeholder={`Incoming call? Type their number to pull them up  ( ${hotkey} )`}
+        placeholder={`Incoming call? Type their number, or paste a lead link  ( ${hotkey} )`}
         value={q}
         onChange={(e) => setQ(e.target.value)}
         onKeyDown={(e) => {
