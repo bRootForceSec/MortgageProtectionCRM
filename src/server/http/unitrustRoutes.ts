@@ -9,6 +9,7 @@ import {
   compLevels, deleteCompLevel, lastPolicySync, linkPolicy, listPolicies, listProducts, recordUnitrustPolicies, saveProduct, setCompLevel,
 } from '../domain/policies.js';
 import { PRODUCT_KINDS } from '../../shared/policies.js';
+import { isLeadId } from '../../shared/leadLink.js';
 
 // The Unitrust extension: it posts the appointments it sees on the Unitrust calendar and the policies on the Business
 // Management Report (with its own key, see security.ts), and Settings shows that key and what the last sync found.
@@ -22,6 +23,8 @@ const events = z.object({
         date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
         time: z.string().regex(/^\d{2}:\d{2}$/).nullish(),
         color: z.enum(['blue', 'green', 'red', 'yellow']),
+        /** From a lead link pasted into the appointment. */
+        lead_id: z.string().refine(isLeadId, 'not a lead id').nullish(),
       }),
     )
     .max(2000),
