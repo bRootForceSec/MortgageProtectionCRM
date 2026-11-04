@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
-import { api, fmtDateTime, fmtMoney, fmtPhone } from '../api';
+import { api, fmtDateTime, fmtMoney, fmtPhone, type PolicyView } from '../api';
+import { policyPay } from '../components/LeadPolicies';
 import { useApp } from '../App';
 import { GroupPicker, useGroups } from '../components/GroupPicker';
 import { LeadViewer, type ViewerItem } from '../components/LeadViewer';
@@ -202,6 +203,8 @@ export function ReportsPage() {
           </p>
         </div>
       )}
+
+      {r?.profit && <Profit p={r.profit} onOpen={(id, name) => setOpen({ id, list: [{ id, name }] })} />}
 
       {r && <ByBatch rows={r.by_batch} N={N} />}
 
@@ -418,13 +421,14 @@ function BestTime({ b, onPick }: { b: BestTimeData; onPick: (key: string, metric
   );
 }
 
-type BatchCol = 'imported_at' | 'leads' | 'cost' | 'never_called' | 'left' | 'dials' | 'reached' | 'booked' | 'sold' | 'close_rate' | 'cost_per_reached' | 'cost_per_booked' | 'cost_per_sale';
+type BatchCol = 'imported_at' | 'leads' | 'cost' | 'never_called' | 'left' | 'dials' | 'reached' | 'booked' | 'sold' | 'close_rate' | 'cost_per_reached' | 'cost_per_booked' | 'cost_per_sale' | 'commission' | 'net';
 const BATCH_COLS: [BatchCol, string, string?][] = [
   ['leads', 'Leads'], ['cost', 'Cost'], ['never_called', 'Never called'], ['left', 'Left to call', 'Never called, no answer yet, or a callback'],
   ['dials', 'Dials'], ['reached', 'Reached'], ['booked', 'Booked'], ['sold', 'Sales'], ['close_rate', 'Close rate', 'Of the leads that sat for an appointment, the share that bought'],
   ['cost_per_reached', '$/reached'], ['cost_per_booked', '$/booked'], ['cost_per_sale', '$/sale'],
+  ['commission', 'Commission', 'Advance on paid policies (Products and comp in Settings)'], ['net', 'Net', 'Commission less what the leads cost'],
 ];
-const SUMMED = ['leads', 'cost', 'never_called', 'left', 'dials', 'reached', 'booked', 'sat', 'sold', 'unpriced'] as const;
+const SUMMED = ['leads', 'cost', 'never_called', 'left', 'dials', 'reached', 'booked', 'sat', 'sold', 'unpriced', 'commission', 'pending'] as const;
 
 /** By batch: each bulk import is one line (open it for its files), with search, filters, sorting and "show more". */
 function ByBatch({ rows, N }: { rows: any[]; N: any }) {
@@ -454,6 +458,7 @@ function ByBatch({ rows, N }: { rows: any[]; N: any }) {
         cost_per_booked: sum.booked ? sum.cost / sum.booked : null,
         cost_per_sale: sum.sold ? sum.cost / sum.sold : null,
         close_rate: sum.sat ? sum.sold / sum.sat : null,
+        net: sum.commission - sum.cost,
         rows: g.rows,
       };
     });
@@ -493,6 +498,11 @@ function ByBatch({ rows, N }: { rows: any[]; N: any }) {
         {cell('never_called', 'Never called')}<td>{b.left}</td>{cell('dials', 'Dials')}{cell('reached', 'Reached')}{cell('booked', 'Booked')}{cell('sold', 'Sales')}
         <td>{pct(b.close_rate)}</td>
         <td>{money(b.cost_per_reached)}</td><td>{money(b.cost_per_booked)}</td><td>{money(b.cost_per_sale)}</td>
+        <td>
+          {drill ? <N section="by_batch" k={b.key} metric="commission" title={`Leads with paid policies: ${b.name}`}>{fmtMoney(b.commission)}</N> : fmtMoney(b.commission)}
+          {b.pending > 0 && <div className="muted small">+{fmtMoney(b.pending)} pending</div>}
+        </td>
+        <NetCell v={b.net} />
       </tr>
     );
   };
@@ -522,6 +532,66 @@ function ByBatch({ rows, N }: { rows: any[]; N: any }) {
       <p className="help">
         Each bulk import is one line; open it to see its files. Click a column to sort. Reached and booked count leads, not calls.
         Sales and close rate come from how appointments went (Unitrust or the Appointment side). Cost comes from each lead's own price.
+      </p>
+    </div>
+  );
+}
+
+/** Profit less than zero shows red. */
+function NetCell({ v }: { v: number }) {
+  return <td className={v < 0 ? 'bad' : v > 0 ? 'good' : undefined}>{fmtMoney(v)}</td>;
+}
+
+const STAGE_LABEL: Record<PolicyView['stage'], string> = { paid: 'Paid', pending: 'Pending', out: 'Not counted' };
+
+/** Profit for these dates: lead spend, commission on policies paid, the pending estimate, and each policy. */
+function Profit({ p, onOpen }: { p: any; onOpen: (leadId: string, name: string) => void }) {
+  const { go } = useApp();
+  const [all, setAll] = useState(false);
+  const rows: PolicyView[] = all ? p.rows : p.rows.slice(0, 15);
+  return (
+    <div className="card">
+      <h3>Profit <span className="muted">(lead spend on batches imported in these dates, commission on policies paid in them)</span></h3>
+      <div className="summary-tiles">
+        <div><b>{fmtMoney(p.lead_spend)}</b>Lead spend</div>
+        <div><b>{fmtMoney(p.commission)}</b>Commission ({p.paid_policies} paid)</div>
+        <div><b className={p.net < 0 ? 'error' : 'ok'}>{fmtMoney(p.net)}</b>Net</div>
+        <div><b>{fmtMoney(p.pending)}</b>Pending ({p.pending_policies} applied, not paid)</div>
+        <div><b>{fmtMoney(p.ap)}</b>AP paid</div>
+        {p.no_lead > 0 && <div><b>{fmtMoney(p.no_lead)}</b>Of it with no lead</div>}
+      </div>
+      {(p.missing_rules > 0 || p.no_level > 0 || p.products_need_rules > 0) && (
+        <p className="warn">
+          {p.missing_rules > 0 && <>{p.missing_rules === 1 ? "1 policy here isn't counted because its product has" : `${p.missing_rules} policies here aren't counted because their products have`} no comp rules yet. </>}
+          {p.no_level > 0 && <>Your comp level isn't set, so {p.no_level} polic{p.no_level === 1 ? 'y' : 'ies'} can't be worked out. </>}
+          <button className="btn small" onClick={() => { go('settings'); setTimeout(() => document.getElementById('products')?.scrollIntoView(), 300); }}>Products and comp</button>
+        </p>
+      )}
+      {p.unknown_statuses.length > 0 && <p className="help">Counted as pending because the CRM doesn't know the status: {p.unknown_statuses.join(', ')}.</p>}
+      {rows.length > 0 && (
+        <div className="scroll-x">
+          <table className="grid">
+            <thead><tr><th>Client</th><th>Lead</th><th>Product</th><th>Status</th><th>Applied</th><th>Paid</th><th>AP</th><th>Pays you</th></tr></thead>
+            <tbody>
+              {rows.map((x) => (
+                <tr key={x.id}>
+                  <td>{x.client_name}</td>
+                  <td>{x.lead_id ? <button className="num" onClick={() => onOpen(x.lead_id!, x.lead_name ?? '')}>{x.lead_name}</button> : <span className="muted">No lead</span>}</td>
+                  <td>{x.carrier} {x.product}</td>
+                  <td>{x.status} <span className="muted small">{STAGE_LABEL[x.stage]}</span></td>
+                  <td>{x.applied_on ?? ''}</td><td>{x.stage === 'paid' ? x.paid_on ?? '' : ''}</td>
+                  <td>{fmtMoney(x.ap_cents)}</td><td>{policyPay(x)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {p.rows.length > 15 && <button className="btn small" onClick={() => setAll(!all)}>{all ? 'Show fewer' : `Show all ${p.rows.length}`}</button>}
+      <p className="help">
+        Commission is the advance: AP × (your comp level on the application day − the product's comp hit) × its advance %.
+        Only Issue-Paid policies count; pending ones are an estimate. Chargebacks and the AP paid after the advance aren't counted.
+        By batch and by lead type below show commission and net for all time.
       </p>
     </div>
   );
@@ -572,6 +642,7 @@ function Benchmarks({ r, N, onSaved }: { r: Report; N: any; onSaved: () => void 
               <th title="Leads reached, and the share of leads called">Reached</th><th title="Leads booked, and the share of leads called">Booked</th>
               <th>Booked per reached</th><th>Sales</th><th title="Of the leads that sat for an appointment, the share that bought">Close rate</th>
               <th>$/reached</th><th>$/booked</th><th>$/sale</th>
+              <th title="Advance on paid policies (Products and comp in Settings)">Commission</th><th title="Commission less what the leads cost">Net</th>
             </tr>
           </thead>
           <tbody>
@@ -602,6 +673,11 @@ function Benchmarks({ r, N, onSaved }: { r: Report; N: any; onSaved: () => void 
                   <td>{b.cost_per_reached == null ? '–' : fmtMoney(b.cost_per_reached)}</td>
                   <td>{b.cost_per_booked == null ? '–' : fmtMoney(b.cost_per_booked)}</td>
                   <td>{b.cost_per_sale == null ? '–' : fmtMoney(b.cost_per_sale)}</td>
+                  <td>
+                    <N section="benchmarks" k={b.key} metric="commission" title={`Leads with paid policies: ${b.label}`}>{fmtMoney(b.commission)}</N>
+                    {b.pending > 0 && <div className="muted small">+{fmtMoney(b.pending)} pending</div>}
+                  </td>
+                  <NetCell v={b.net} />
                 </tr>
               );
             })}

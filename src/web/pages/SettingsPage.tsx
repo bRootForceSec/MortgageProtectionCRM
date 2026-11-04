@@ -4,6 +4,7 @@ import { useApp } from '../App';
 import { useLeadTypes } from '../leadTypes';
 import { CallingCard, ShortcutsCard, ScriptsCard } from './CallingSettingsCards';
 import { UpdatePanel } from '../components/UpdateBar';
+import { ProductsCard } from './ProductsCard';
 
 // Settings: which AI reads scanned lead pages, lead types and prices, the area codes each county is called under, and the app's version and updates.
 
@@ -33,6 +34,7 @@ export function SettingsPage() {
       <ShortcutsCard />
       <ScriptsCard />
       <UnitrustCard />
+      <ProductsCard />
       <AiCard />
       <LeadPagesCard />
       <LeadTypesCard />
@@ -45,6 +47,7 @@ export function SettingsPage() {
 interface UnitrustView {
   key: string | null;
   last_sync: { at: string; seen: number; matched: number; added: number; changed: number; unmatched: string[] } | null;
+  last_policy_sync: { at: string; seen: number; matched: number; added: number; changed: number; unmatched: string[]; new_products: string[]; needs_rules: number; unknown_statuses: string[] } | null;
 }
 
 /** The Firefox extension that reads appointment colors off the Unitrust calendar: its key, and what it last found. */
@@ -92,6 +95,13 @@ function UnitrustCard() {
           ? <>Last sent {fmtDateTime(s.at)}: {s.seen} appointment{s.seen === 1 ? '' : 's'}, {s.matched} matched to leads, {s.added} new, {s.changed} changed color.
               {s.unmatched.length > 0 && <> Not found in the CRM: {s.unmatched.slice(0, 10).join('; ')}{s.unmatched.length > 10 ? ` and ${s.unmatched.length - 10} more` : ''}.</>}</>
           : 'Nothing sent yet. Open your Unitrust calendar in Firefox with the extension installed.'}
+      </p>
+      <p className="help" aria-label="Last Unitrust policy sync">
+        {v.last_policy_sync
+          ? <>Policies last sent {fmtDateTime(v.last_policy_sync.at)}: {v.last_policy_sync.seen} read, {v.last_policy_sync.matched} matched to leads, {v.last_policy_sync.added} new, {v.last_policy_sync.changed} changed.
+              {v.last_policy_sync.unmatched.length > 0 && <> No lead for: {v.last_policy_sync.unmatched.slice(0, 10).join('; ')}{v.last_policy_sync.unmatched.length > 10 ? ` and ${v.last_policy_sync.unmatched.length - 10} more` : ''} (link them from the lead's page).</>}
+              {v.last_policy_sync.unknown_statuses.length > 0 && <> Statuses counted as pending because the CRM doesn't know them: {v.last_policy_sync.unknown_statuses.join(', ')}.</>}</>
+          : 'No policies sent yet. Open the Business Management Report in Unitrust (List View is easiest) with the extension installed.'}
       </p>
     </div>
   );

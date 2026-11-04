@@ -8,11 +8,14 @@ export const COOKIE = 'mpcrm_session';
 //  - Host must be 127.0.0.1/localhost on our port (blocks DNS-rebinding from web pages);
 //  - every /api request needs the access-token cookie, which is set by opening the launch URL once;
 //  - state-changing requests must come from our own Origin.
-// The one exception is EXTENSION_PATH: the Firefox extension posts there with its own key (made in Settings)
+// The one exception is EXTENSION_PATHS: the Firefox extension posts there with its own key (made in Settings)
 // instead of the cookie, from its own origin. That key opens nothing else.
 
 /** Where the Unitrust extension sends what it reads off the calendar. */
 export const EXTENSION_PATH = '/api/unitrust/events';
+/** Where it sends the policies it reads off the Business Management Report. */
+export const EXTENSION_POLICIES_PATH = '/api/unitrust/policies';
+const EXTENSION_PATHS = new Set([EXTENSION_PATH, EXTENSION_POLICIES_PATH]);
 export const EXTENSION_KEY_HEADER = 'x-mpcrm-extension-key';
 
 export function registerSecurity(app: FastifyInstance, opts: { token: string; port: number; extensionKey?: () => string | null }) {
@@ -35,7 +38,7 @@ export function registerSecurity(app: FastifyInstance, opts: { token: string; po
       return reply.redirect(url.pathname + (url.search || ''), 303);
     }
 
-    if (url.pathname === EXTENSION_PATH && req.method === 'POST') {
+    if (EXTENSION_PATHS.has(url.pathname) && req.method === 'POST') {
       const key = opts.extensionKey?.() ?? null;
       const given = req.headers[EXTENSION_KEY_HEADER];
       if (!key || typeof given !== 'string' || !safeEqual(given, key)) {

@@ -1,4 +1,4 @@
-# Unitrust appointments (Firefox extension)
+# Unitrust appointments and policies (Firefox extension)
 
 Reads your Unitrust calendar while you have it open and sends each appointment's color to the CRM on this computer:
 
@@ -19,6 +19,19 @@ the CRM (**Copy link** on the lead) into the appointment and the calendar shows 
 "DONT BOOK! CHURCH", are left alone. A note in the corner of the Unitrust page says what was sent; click it to hide it.
 
 It only reads the page. It never clicks, types or changes anything in Unitrust, and it never sees your Unitrust password.
+
+## Policies (Business Management Report)
+
+Open **Business Management Report** in Unitrust and the extension reads every policy on the page: app number, client name
+and phone, carrier, product, premium, APV and capped APV, status and dates. List View and Card View both work. Each policy is
+matched to a lead by the client's phone (then name), and its commission is worked out from the rules you set in the CRM
+(Settings → Products and comp). A carrier + product the CRM hasn't seen is added with no rules, and the note in the corner
+says it needs them.
+
+- Pick only yourself in the agent filter. If the page shows more than one agent, nothing is sent.
+- Only what's on the page is read, so set **Page Size** to the biggest option and a date range wide enough. The note says when there are more.
+- Card View also shows your level ("Lv. 70") and the Application and Paid dates, which List View doesn't. Opening Card View once in a while keeps those right.
+- If the note says a column can't be found, turn it on with **Columns**, or switch to Card View.
 
 ## Set up
 
@@ -47,3 +60,7 @@ When this folder changes, raise `version` in `manifest.json` and sign again.
 the colored box around it, which day column it sits under, and its start time. `content.js` sends the result
 whenever the calendar changes and every few minutes; `background.js` posts it to `http://127.0.0.1:5170/api/unitrust/events`
 with the key. If Unitrust changes its colors or layout, `calendar.js` is the file to fix.
+
+`business.js` reads the Business Management Report: in List View it finds the column headers by name (and the group above
+them, since there are two "Phone" and two "Amount" columns) and reads each row's cells by which header they sit under; in
+Card View it pairs each label with the values after it. `background.js` posts the result to `/api/unitrust/policies`.

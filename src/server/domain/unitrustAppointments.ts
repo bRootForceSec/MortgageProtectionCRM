@@ -151,8 +151,8 @@ function storedResult(result: ApptResult, was: string | null): string | null {
   return result === was ? null : result;
 }
 
-/** The lead an event is for: by phone (narrowed by name when several share it), else by exact full name. */
-function findLead(db: DB, phoneDigits: string, name: string): string | null {
+/** The lead an event (or a policy) is for: by phone (narrowed by name when several share it), else by exact full name. */
+export function findLead(db: DB, phoneDigits: string, name: string): string | null {
   const upper = name.toUpperCase().replace(/\s+/g, ' ').trim();
   const fullName = `upper(${LEAD_NAME})`;
   const e164 = normalizeUsPhone(phoneDigits).value;
