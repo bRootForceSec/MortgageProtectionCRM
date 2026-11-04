@@ -143,8 +143,12 @@ export interface SavedList {
 export interface CallListResponse {
   items: CallListItem[];
   recent: RecentOutcome[];
-  /** The list's name, when it was loaded from a saved list. */
+  /** The list's name, when it was saved or loaded from a saved list. */
   name: string | null;
+  /** The saved list this call list is (Save writes over it), or null when it isn't saved. */
+  saved_list_id: string | null;
+  /** The call list has leads its saved list doesn't match, or was never saved. */
+  unsaved: boolean;
   saved_lists: SavedList[];
   /** Pickups by the lead's local weekday and hour, for "Best time first". */
   best_times: BestTimes;

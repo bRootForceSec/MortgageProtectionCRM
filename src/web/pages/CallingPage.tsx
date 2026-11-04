@@ -7,7 +7,7 @@ import { EditLead } from '../components/EditLead';
 import { SourcePage } from '../components/SourcePage';
 import { DialQr } from '../components/DialQr';
 import { FunnelButton } from '../components/Funnel';
-import { ClearListDialog, SavedListsDialog, suggestListName } from '../components/CallListDialogs';
+import { ClearListDialog, LoadListDialog, SaveAsDialog, suggestListName } from '../components/CallListDialogs';
 import { isAction, isTyping, keyLabel, type KeyMap } from '../shortcuts';
 import { getStored, getStoredJson, setStored, setStoredJson } from '../storage';
 import { LogCall, type Attempt, type FormValues, type Saved } from './LogCall';
@@ -58,7 +58,7 @@ export function CallingPage() {
   const [showScript, setShowScript] = useState(getStored(SCRIPT_KEY) === '1');
   const [editing, setEditing] = useState(false);
   const [qr, setQr] = useState<string | null>(null);
-  const [listDialog, setListDialog] = useState<'clear' | 'saved' | null>(null);
+  const [listDialog, setListDialog] = useState<'clear' | 'load' | 'save_as' | null>(null);
   const [order, setOrderState] = useState<'set' | 'best_time'>(getStored(ORDER_KEY) === 'best_time' ? 'best_time' : 'set');
   const setOrder = (o: 'set' | 'best_time') => {
     setOrderState(o);
@@ -114,7 +114,7 @@ export function CallingPage() {
   const clearList = async (saveAs: string | null) => {
     try {
       const r = await api.post<{ removed: number; saved: { name: string } | null }>('/call-list/clear', { save_as: saveAs });
-      toast(r.saved ? `Call list cleared. "${r.saved.name}" is in Saved lists.` : `Call list cleared (${r.removed} lead${r.removed === 1 ? '' : 's'})`);
+      toast(r.saved ? `Call list cleared. "${r.saved.name}" is saved.` : `Call list cleared (${r.removed} lead${r.removed === 1 ? '' : 's'})`);
       await afterSwap();
     } catch (e: any) {
       toast(e.message, 'error');
@@ -125,8 +125,31 @@ export function CallingPage() {
     try {
       const name = list?.saved_lists.find((l) => l.id === id)?.name ?? 'list';
       const r = await api.post<{ loaded: number; saved: { name: string } | null }>(`/saved-lists/${id}/load`, { save_current_as: saveCurrentAs });
-      toast(`Loaded "${name}" (${r.loaded} lead${r.loaded === 1 ? '' : 's'})${r.saved ? `. "${r.saved.name}" is in Saved lists.` : ''}`);
+      toast(`Loaded "${name}" (${r.loaded} lead${r.loaded === 1 ? '' : 's'})${r.saved ? `. "${r.saved.name}" is saved.` : ''}`);
       await afterSwap();
+    } catch (e: any) {
+      toast(e.message, 'error');
+    }
+  };
+
+  /** Save: writes over the saved list this is; a list that isn't saved yet asks for a name first. */
+  const saveList = async () => {
+    if (!list?.saved_list_id) return setListDialog('save_as');
+    try {
+      const r = await api.post<{ saved: { name: string } }>('/call-list/save', {});
+      toast(`Saved "${r.saved.name}"`);
+      await loadList();
+    } catch (e: any) {
+      toast(e.message, 'error');
+    }
+  };
+
+  const saveListAs = async (name: string) => {
+    try {
+      const r = await api.post<{ saved: { name: string } }>('/call-list/save-as', { name });
+      toast(`Saved as "${r.saved.name}"`);
+      setListDialog(null);
+      await loadList();
     } catch (e: any) {
       toast(e.message, 'error');
     }
@@ -440,6 +463,7 @@ export function CallingPage() {
     void loadList();
   };
 
+  const current = { count: items.length, savedName: list?.saved_list_id ? list.name : null, unsaved: !!list?.unsaved };
   const k = (a: keyof KeyMap['actions']) => keyLabel(keys.actions[a]?.[0] ?? '');
   const dialLabel = settings?.dial_method === 'qr' ? 'Show QR' : settings?.dial_method === 'kdeconnect' ? 'Dial on phone' : 'Copy number';
 
@@ -458,22 +482,40 @@ export function CallingPage() {
             <button className="btn small" onClick={() => go('leads')} title="Pick leads to call on the Leads page">Add leads</button>
           </div>
           <div className="row list-head">
-            <span className="list-name">{list?.name ? <>List: <b>{list.name}</b></> : null}</span>
+            <span className="list-name">
+              {list?.name ? <>List: <b>{list.name}</b></> : items.length > 0 ? 'Unsaved list' : null}
+              {list?.name && list.unsaved && <span className="unsaved" title="Changes since you last saved this list"> · not saved</span>}
+            </span>
+            <span className="row" style={{ gap: 4 }} role="group" aria-label="Call list">
+              {items.length > 0 && (
+                <>
+                  <button
+                    className="btn small"
+                    onClick={() => void saveList()}
+                    disabled={!list?.unsaved}
+                    title={list?.unsaved ? (list.saved_list_id ? `Save the changes to "${list.name}"` : 'Save this list under a name, to load again later') : 'Saved, nothing has changed'}
+                  >
+                    {list?.unsaved ? 'Save' : 'Saved'}
+                  </button>
+                  <button className="btn small" onClick={() => setListDialog('save_as')} title="Save this list under a new name (or replace a saved one)">Save as…</button>
+                </>
+              )}
+              <button className="btn small" onClick={() => setListDialog('load')} title="Load a list you saved">
+                Load…{list?.saved_lists.length ? ` (${list.saved_lists.length})` : ''}
+              </button>
+              {items.length > 0 && (
+                <button className="btn small" onClick={() => setListDialog('clear')} title="Empty the call list (saving it first if it has changes)">
+                  Clear list
+                </button>
+              )}
+            </span>
+          </div>
+          <div className="row list-head">
             <span className="row" style={{ gap: 4 }} role="group" aria-label="Order">
               <button className={`btn small ${order === 'set' ? 'primary' : ''}`} aria-pressed={order === 'set'} onClick={() => setOrder('set')} title="The order you set, or the order leads were added">As set</button>
               <button className={`btn small ${order === 'best_time' ? 'primary' : ''}`} aria-pressed={order === 'best_time'} onClick={() => setOrder('best_time')}
                 title="Leads it's the best time to call right now first, by your pickup rate at that hour in their time (evenings, until you have your own numbers). Before 8 AM or from 9 PM their time goes last.">
                 Best time first
-              </button>
-            </span>
-            <span className="row" style={{ gap: 4 }}>
-              {items.length > 0 && (
-                <button className="btn small" onClick={() => setListDialog('clear')} title="Empty the call list, keeping it as a saved list if you want">
-                  Clear list
-                </button>
-              )}
-              <button className="btn small" onClick={() => setListDialog('saved')} title="Lists you put away to call later">
-                Saved lists{list?.saved_lists.length ? ` (${list.saved_lists.length})` : ''}
               </button>
             </span>
           </div>
@@ -482,16 +524,19 @@ export function CallingPage() {
           <ClearListDialog
             title={`Clear the call list (${items.length} lead${items.length === 1 ? '' : 's'})?`}
             confirmLabel="Clear list"
-            count={items.length}
+            current={current}
             defaultName={suggestListName(items, list?.name ?? null)}
             onConfirm={clearList}
             onCancel={() => setListDialog(null)}
           />
         )}
-        {listDialog === 'saved' && list && (
-          <SavedListsDialog
+        {listDialog === 'save_as' && list && (
+          <SaveAsDialog lists={list.saved_lists} defaultName={suggestListName(items, list.name)} onSave={saveListAs} onCancel={() => setListDialog(null)} />
+        )}
+        {listDialog === 'load' && list && (
+          <LoadListDialog
             lists={list.saved_lists}
-            count={items.length}
+            current={{ ...current, savedId: list.saved_list_id }}
             defaultName={suggestListName(items, list.name)}
             onLoad={loadSaved}
             onDelete={deleteSaved}

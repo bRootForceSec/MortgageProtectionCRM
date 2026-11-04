@@ -12,7 +12,7 @@ import { batchPdf, turnPdfPages, normTurn } from '../domain/pageTurn.js';
 import type { PageChecker } from '../domain/pageTurnFix.js';
 import {
   addMatchingToCallList, addToCallList, clearWorked, getCallList, moveToBottom,
-  recentOutcomes, removeFromCallList, type LeadFilter, callListName, listSavedLists, clearCallList, loadSavedList, deleteSavedList, setCalledBack,
+  recentOutcomes, removeFromCallList, type LeadFilter, callListMeta, listSavedLists, clearCallList, loadSavedList, deleteSavedList, saveCallList, saveCallListAs, setCalledBack,
 } from '../domain/callList.js';
 import { LEAD_FILTERS } from '../../shared/leadStatus.js';
 import { isAgeBand } from '../../shared/leadAge.js';
@@ -66,7 +66,7 @@ export function registerLeadRoutes(app: FastifyInstance, deps: { db: DB; config:
   app.get('/api/call-list', async (req) => {
     const { tz } = z.object({ tz: z.string().max(64).optional() }).parse(req.query);
     return {
-      items: getCallList(db), recent: recentOutcomes(db), name: callListName(db), saved_lists: listSavedLists(db),
+      items: getCallList(db), recent: recentOutcomes(db), ...callListMeta(db), saved_lists: listSavedLists(db),
       best_times: bestTimes(db, tz || Intl.DateTimeFormat().resolvedOptions().timeZone),
     };
   });
@@ -92,6 +92,14 @@ export function registerLeadRoutes(app: FastifyInstance, deps: { db: DB; config:
   app.post('/api/call-list/clear', async (req) => {
     const b = z.object({ save_as: savedName.nullish() }).parse(req.body ?? {});
     return clearCallList(db, b.save_as);
+  });
+  // Save writes over the saved list the call list is; Save as makes one (or writes over the one with that name).
+  app.post('/api/call-list/save', async () => ({ saved: saveCallList(db) }));
+  app.post('/api/call-list/save-as', async (req) => {
+    const b = z.object({ name: savedName.min(1, 'give the list a name') }).parse(req.body);
+    const saved = saveCallListAs(db, b.name);
+    if (!saved) throw new DomainError('the call list is empty', 409);
+    return { saved };
   });
   app.post('/api/saved-lists/:id/load', async (req) => {
     const { id } = z.object({ id: z.string().max(64) }).parse(req.params);
