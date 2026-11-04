@@ -121,6 +121,14 @@ export function App() {
           <TodayStats />
         </div>
         <UpdateBar />
+        {!!meta?.products_need_rules && page !== 'settings' && (
+          <div className="update-bar" role="note">
+            <span className="warn">
+              {meta.products_need_rules} product{meta.products_need_rules === 1 ? '' : 's'} from Unitrust need{meta.products_need_rules === 1 ? 's' : ''} comp rules, so profit can't count {meta.products_need_rules === 1 ? 'its' : 'their'} policies yet.
+            </span>
+            <button className="btn small" onClick={() => { go('settings'); setTimeout(() => document.getElementById('products')?.scrollIntoView(), 300); }}>Set comp rules</button>
+          </div>
+        )}
         <div className="page" style={page === 'calling' ? { padding: 0, overflow: 'hidden' } : undefined}>
           {page === 'calling' && <CallingPage />}
           {page === 'today' && <TodayPage />}

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, fmtDateTime, fmtPhone, type LeadDetail } from '../api';
 import { useApp } from '../App';
 import { LeadSummary, CallHistory, Notes, StatusBadge, toggleCalledBack } from './LeadDetails';
+import { LeadPolicies } from './LeadPolicies';
 import { SourcePage } from './SourcePage';
 import { isCallable } from '../../shared/leadStatus';
 import { EditLead } from './EditLead';
@@ -138,6 +139,7 @@ export function LeadViewer({ id, list = [], onClose }: { id: string; list?: View
               <>
                 <LeadSummary d={d} onEdit={() => setEditing(true)} editKey={editKey} calledBackKey={keyLabel(keys.actions.called_back?.[0] ?? '')}
                   onCalledBack={(at) => setD((x) => (x ? { ...x, called_back_at: at } : x))} />
+                <LeadPolicies key={d.lead.id} leadId={d.lead.id} />
                 <section className="calls-notes" aria-label="History">
                   <div>
                     <h3>Calls</h3>

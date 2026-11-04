@@ -14,6 +14,8 @@ import { bulkOfBatch } from './importHistory.js';
 import { callsAskingObjections, objectionCounts } from './objections.js';
 import { appointmentCounts, appointmentsOnDays, hasAppointments, type ApptRow } from './unitrustAppointments.js';
 import { APPT_RESULTS } from '../../shared/appointments.js';
+import { commissionByLead, hasPolicies, listPolicies, productsNeedingRules, type PolicyView } from './policies.js';
+import { hasRules, policyStage } from '../../shared/policies.js';
 
 // Reports. Every number is computed from a group of rows (calls or leads), and the same group answers
 // "show me the calls behind this number", so a total and its drill-down can never disagree.
@@ -84,10 +86,14 @@ interface LeadRow {
   sat: boolean;
   sold: boolean;
   called_back_at: string | null;
+  /** Advance on this lead's paid policies, in cents (policies whose product has its comp rules set). */
+  commission: number;
+  /** The same for its submitted policies not paid yet: an estimate, not in profit. */
+  pending: number;
 }
 
 type CallMetric = 'attempts' | 'dials' | 'leads_called' | 'contacts' | 'conversations' | 'talk_minutes' | 'appointments' | 'callbacks' | 'bad_numbers';
-type LeadMetric = 'leads' | 'cost' | 'never_called' | 'reached' | 'booked' | 'sat' | 'sold' | 'called_back';
+type LeadMetric = 'leads' | 'cost' | 'never_called' | 'reached' | 'booked' | 'sat' | 'sold' | 'called_back' | 'commission' | 'pending';
 
 const CALL_METRICS: Record<CallMetric, { pred: (c: CallRow) => boolean; val: (cs: CallRow[]) => number }> = {
   attempts: { pred: () => true, val: (cs) => cs.length },
@@ -109,6 +115,8 @@ const LEAD_METRICS: Record<LeadMetric, { pred: (l: LeadRow) => boolean; val: (ls
   sat: { pred: (l) => l.sat, val: (ls) => ls.length },
   sold: { pred: (l) => l.sold, val: (ls) => ls.length },
   called_back: { pred: (l) => l.called_back_at != null, val: (ls) => ls.length },
+  commission: { pred: (l) => l.commission > 0, val: (ls) => ls.reduce((n, l) => n + l.commission, 0) },
+  pending: { pred: (l) => l.pending > 0, val: (ls) => ls.reduce((n, l) => n + l.pending, 0) },
 };
 
 function callMetrics(cs: CallRow[], keys: CallMetric[]) {
@@ -176,17 +184,22 @@ function loadLeads(db: DB, f: ReportFilter, calls: CallRow[]): LeadRow[] {
        LEFT JOIN lead_called_back cb ON cb.lead_id = l.id
        WHERE ${g.sql} ORDER BY b.imported_at, l.created_at`,
     )
-    .all(g.params) as Omit<LeadRow, 'reached' | 'booked' | 'sat' | 'sold'>[];
+    .all(g.params) as Omit<LeadRow, 'reached' | 'booked' | 'sat' | 'sold' | 'commission' | 'pending'>[];
   const callsBy = groupBy(calls, (c) => c.lead_id);
   // How each lead's appointments went, all time.
   const appts = hasAppointments(db) ? groupBy(appointmentsOnDays(db, '0000-01-01', '9999-12-31', g), (a) => a.lead_id) : new Map<string, ApptRow[]>();
   const reachedStep = (l: { lead_id: string }, step: 'sat' | 'sales') =>
     (appts.get(l.lead_id) ?? []).some((a) => a.outcome !== 'pending' && APPT_RESULTS[a.outcome].funnel.includes(step));
+  const money = hasPolicies(db) ? commissionByLead(listPolicies(db)) : new Map<string, { commission: number; pending: number }>();
   return rows.map((l) => {
     const cs = callsBy.get(l.lead_id) ?? [];
     // Booked: a call ended with "appointment set" (older history may say sat or sold, which also means it was booked).
     const booked = cs.some((c) => c.outcome_code != null && BOOKED_CODES.has(c.outcome_code));
-    return { ...l, reached: cs.some((c) => c.contact === 1), booked, sat: reachedStep(l, 'sat'), sold: reachedStep(l, 'sales') };
+    const m = money.get(l.lead_id);
+    return {
+      ...l, reached: cs.some((c) => c.contact === 1), booked, sat: reachedStep(l, 'sat'), sold: reachedStep(l, 'sales'),
+      commission: m?.commission ?? 0, pending: m?.pending ?? 0,
+    };
   });
 }
 
@@ -265,7 +278,7 @@ function loadCountyCodes(db: DB) {
   }
   return countyCodes;
 }
-const BATCH_LEADS: LeadMetric[] = ['leads', 'cost', 'never_called', 'reached', 'booked', 'sat', 'sold'];
+const BATCH_LEADS: LeadMetric[] = ['leads', 'cost', 'never_called', 'reached', 'booked', 'sat', 'sold', 'commission', 'pending'];
 const TYPE_LEADS: LeadMetric[] = [...BATCH_LEADS, 'called_back'];
 const TYPE_CALLS: CallMetric[] = ['dials', 'attempts', 'contacts', 'appointments', 'bad_numbers'];
 
@@ -330,7 +343,7 @@ function buildGroups(db: DB, f: ReportFilter) {
   const callerGroups: Group[] = CALLER_MATCH_ORDER.filter((k) => byMatch.has(k) || backByMatch.has(k))
     .map((k) => ({ key: k, calls: byMatch.get(k) ?? [], leads: backByMatch.get(k) ?? [] }));
 
-  return { activity, hourGroups, bestGroups, untimedAll: all.length - allTimed.length, ageGroups, countyGroups, batchGroups, typeGroups, callerGroups, allCalls: all, timedCount: timed.length, untimedInRange: inRange.length - timed.length };
+  return { leads, activity, hourGroups, bestGroups, untimedAll: all.length - allTimed.length, ageGroups, countyGroups, batchGroups, typeGroups, callerGroups, allCalls: all, timedCount: timed.length, untimedInRange: inRange.length - timed.length };
 }
 
 /**
@@ -382,6 +395,8 @@ export function buildReport(db: DB, f: ReportFilter) {
     cost_per_sale: ratio(m.cost, m.sold),
     /** Of the leads that sat for an appointment: how many bought. */
     close_rate: ratio(m.sold, m.sat),
+    /** Paid commission less what the leads cost. */
+    net: m.commission - m.cost,
   });
 
   return {
@@ -470,6 +485,7 @@ export function buildReport(db: DB, f: ReportFilter) {
       .sort((x, y) => x.key.localeCompare(y.key)),
     targets,
     appointments: unitrustSection(db, f, types),
+    profit: profitSection(db, f, g.leads, batches),
     objections: objectionSection(db, f, types),
     weekly: weeklyRatios(db, f, g.allCalls, types),
   };
@@ -512,6 +528,49 @@ export function weeklyRatios(db: DB, f: ReportFilter, all: CallRow[], types: Map
         sat: a.sat, sold: a.sold, no_show: a.no_show, show_rate: a.show_rate, close_rate: a.close_rate,
       };
     }),
+  };
+}
+
+/**
+ * Profit for the dates: lead spend on batches imported in them, commission on policies paid in them (by Paid date),
+ * and the estimate on policies applied for in them that aren't paid yet. Policies with no lead count too (as "No lead"),
+ * unless a county or area-code filter is on. Policies whose product has no comp rules are counted, not added.
+ */
+function profitSection(db: DB, f: ReportFilter, leads: LeadRow[], batches: Map<string, { imported_at: string }>) {
+  if (!hasPolicies(db)) return null;
+  const fromDay = localParts(f.from, f.tz, f.tz).date;
+  const toDay = localParts(new Date(Date.parse(f.to) - 1).toISOString(), f.tz, f.tz).date;
+  const filtered = !!(f.counties?.length || f.areaCodes?.length);
+  const inFilter = new Set(leads.map((l) => l.lead_id));
+  const day = (d: string | null) => !!d && d >= fromDay && d <= toDay;
+  const policies = listPolicies(db).filter((p) => (p.lead_id ? inFilter.has(p.lead_id) : !filtered));
+  const paid = policies.filter((p) => p.stage === 'paid' && day(p.paid_on));
+  const pending = policies.filter((p) => p.stage === 'pending' && day(p.applied_on));
+  const sum = (ps: PolicyView[]) => ps.reduce((n, p) => n + (p.commission_cents ?? 0), 0);
+  const spend = leads
+    .filter((l) => {
+      const at = batches.get(l.batch_id)?.imported_at;
+      return !!at && at >= f.from && at < f.to;
+    })
+    .reduce((n, l) => n + (l.price_cents ?? 0), 0);
+  const commission = sum(paid);
+  const shown = [...paid, ...pending];
+  return {
+    lead_spend: spend,
+    commission,
+    pending: sum(pending),
+    net: commission - spend,
+    paid_policies: paid.length,
+    pending_policies: pending.length,
+    ap: paid.reduce((n, p) => n + (p.ap_cents ?? 0), 0),
+    no_lead: sum(paid.filter((p) => !p.lead_id)),
+    /** Policies here whose product is missing a comp rule (not added in), and products missing rules overall. */
+    missing_rules: shown.filter((p) => !hasRules(p)).length,
+    products_need_rules: productsNeedingRules(db),
+    /** Policies here with no comp level to work from. */
+    no_level: shown.filter((p) => p.level == null).length,
+    unknown_statuses: [...new Set(shown.filter((p) => p.status && !policyStage(p.status).known).map((p) => p.status!))],
+    rows: shown.slice(0, 500),
   };
 }
 
@@ -671,6 +730,7 @@ export function reportJson(db: DB, f: ReportFilter) {
       contact: 'A contact is a call whose outcome counts as talking to a person. Conversations are calls with 2 minutes or more of talk time.',
       do_not_call: 'do_not_call: the person asked not to be called again. It sits beside the outcome, and the lead goes to the dead pile.',
       sat_sold: 'In by_batch and benchmarks, sat and sold count leads whose appointment sat (sat no sale, prezi or sale) or sold, from Unitrust or the Appointment side, all time. close_rate is sold / sat; cost_per_sale is cost / sold.',
+      profit: 'profit: lead_spend is the price of leads in batches imported in the dates; commission is the advance on policies paid in the dates (AP x (comp level - comp hit) % x advance %), pending the same for policies applied for in the dates and not paid yet. commission, pending and net in by_batch and benchmarks are all time. Chargebacks and the part of the AP after the advance are not counted.',
       rates: 'Rates are fractions from 0 to 1 (null when there is nothing to divide by). Money is in cents.',
       caller_id_match: 'local: the caller ID area code is one set for the lead\'s county (or the lead\'s own area code); out_of_area: it is not; unknown: no caller ID recorded.',
     },
@@ -736,6 +796,7 @@ export function reportSheets(r: ReturnType<typeof buildReport>, calls: ReturnTyp
         batch: b.name, imported: b.imported_at, lead_types: b.lead_types, leads: b.leads, cost: money(b.cost), never_called: b.never_called,
         dials: b.dials, reached: b.reached, booked: b.booked, sat: b.sat, sold: b.sold, close_rate_pct: pct(b.close_rate),
         cost_per_reached: money(b.cost_per_reached), cost_per_booked: money(b.cost_per_booked), cost_per_sale: money(b.cost_per_sale),
+        commission: money(b.commission), pending: money(b.pending), net: money(b.net),
       })),
     },
     {
@@ -748,8 +809,19 @@ export function reportSheets(r: ReturnType<typeof buildReport>, calls: ReturnTyp
         booked_per_reached_pct: pct(b.booked_per_reached), target_pct: pct(b.booked_target),
         sat: b.sat, sold: b.sold, close_rate_pct: pct(b.close_rate),
         cost_per_reached: money(b.cost_per_reached), cost_per_booked: money(b.cost_per_booked), cost_per_sale: money(b.cost_per_sale),
+        commission: money(b.commission), pending: money(b.pending), net: money(b.net),
       })),
     },
+    ...(r.profit
+      ? [{
+        name: 'Policies',
+        rows: r.profit.rows.map((p) => ({
+          client: p.client_name ?? '', lead: p.lead_name ?? '', carrier: p.carrier, product: p.product, status: p.status ?? '',
+          counts_as: p.stage, applied: p.applied_on ?? '', paid: p.paid_on ?? '', ap: money(p.ap_cents), comp_level: p.level ?? '',
+          comp_hit: p.comp_hit_points ?? '', advance_pct: p.advance_pct ?? '', commission: money(p.commission_cents),
+        })),
+      }]
+      : []),
     ...(r.objections
       ? [{
         name: 'Objections',

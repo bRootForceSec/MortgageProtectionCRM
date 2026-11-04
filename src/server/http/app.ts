@@ -26,6 +26,7 @@ import { registerNumberRoutes } from './numberRoutes.js';
 import { registerReportRoutes } from './reportRoutes.js';
 import { registerDataRoutes } from './dataRoutes.js';
 import { registerUnitrustRoutes } from './unitrustRoutes.js';
+import { productsNeedingRules } from '../domain/policies.js';
 import { KdeConnect } from '../dialer.js';
 
 export interface AppDeps {
@@ -123,6 +124,8 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     numbers: listNumbers(db),
     data_dir: config.dataDir,
     version: updates.build,
+    /** Products the Unitrust extension found that still need their comp rules (Settings → Products and comp). */
+    products_need_rules: productsNeedingRules(db),
   }));
 
   // ---------- static UI ----------

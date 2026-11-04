@@ -100,6 +100,51 @@ export interface Meta {
   numbers: CallerNumber[];
   data_dir: string;
   version: { commit: string; built_at: string | null };
+  /** Products the Unitrust extension found that still need their comp rules. */
+  products_need_rules: number;
+}
+
+// Mirrors src/server/domain/policies.ts.
+export interface Product {
+  id: string;
+  carrier: string;
+  name: string;
+  kind: 'term' | 'final_expense' | 'other' | null;
+  comp_hit_points: number | null;
+  advance_pct: number | null;
+  policies: number;
+  needs_rules: boolean;
+}
+export interface CompLevel {
+  id: string;
+  level: number;
+  effective_from: string;
+  source: 'unitrust' | 'manual';
+  created_at: string;
+}
+export interface PolicyView {
+  id: string;
+  unitrust_app_id: string;
+  policy_number: string | null;
+  lead_id: string | null;
+  lead_name: string | null;
+  lead_linked_by: 'auto' | 'manual' | null;
+  client_name: string | null;
+  carrier: string;
+  product: string;
+  product_id: string;
+  kind: Product['kind'];
+  status: string | null;
+  stage: 'paid' | 'pending' | 'out';
+  premium_cents: number | null;
+  ap_cents: number | null;
+  applied_on: string | null;
+  paid_on: string | null;
+  lapsed_on: string | null;
+  level: number | null;
+  comp_hit_points: number | null;
+  advance_pct: number | null;
+  commission_cents: number | null;
 }
 
 /** A lead on the call list (Calling page). */
