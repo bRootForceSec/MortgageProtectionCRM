@@ -270,7 +270,7 @@ export function LeadsPage() {
         <ClearListDialog
           title={`Replace your call list with ${replacing === 'all' ? `all ${total} matching` : `${picked.size} ticked`} lead${(replacing === 'all' ? total : picked.size) === 1 ? '' : 's'}?`}
           confirmLabel="Replace call list"
-          count={onList}
+          current={{ count: onList, savedName: callList.saved_list_id ? callList.name : null, unsaved: callList.unsaved }}
           defaultName={suggestListName(callList.items, callList.name)}
           onConfirm={(name) => (replacing === 'all' ? addAll({ save_current_as: name }) : addPicked({ save_current_as: name }))}
           onCancel={() => setReplacing(null)}

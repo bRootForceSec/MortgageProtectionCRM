@@ -263,8 +263,9 @@ function top(db: DB): number {
 }
 
 // ---------- saved lists ----------
-// A saved list is a call list put away to come back to later (say, one area code while you call another).
-// Loading it makes it the call list again and takes it off the saved lists, so there is only ever one copy.
+// A saved list is a copy of a call list you can come back to (say, one area code while you call another).
+// Save writes the call list over the saved list it came from; Save as makes a new one (or writes over the
+// one with that name). Load makes a copy of a saved list the call list; the saved list stays where it is.
 // Each lead keeps the time it was added, so leads you already worked still show as worked when it comes back.
 
 export interface SavedList {
@@ -276,13 +277,48 @@ export interface SavedList {
   to_call: number;
 }
 
-/** The name of the list being called, if it came from a saved list or was named. */
-export function callListName(db: DB): string | null {
-  return (db.prepare('SELECT name FROM call_list_meta WHERE id = 1').get() as { name: string | null } | undefined)?.name ?? null;
+/** Which saved list the call list is, if any, and whether it changed since it was saved or loaded. */
+export interface CallListMeta {
+  /** The list's name: the saved list it is, or the name it had when loaded before saved lists were kept. */
+  name: string | null;
+  saved_list_id: string | null;
+  /** True when the call list has leads that its saved list doesn't match (or it was never saved). */
+  unsaved: boolean;
 }
 
-function setCallListName(db: DB, name: string | null) {
-  db.prepare('INSERT INTO call_list_meta (id, name) VALUES (1, ?) ON CONFLICT(id) DO UPDATE SET name = excluded.name').run(name);
+/** The name of the list being called, if it came from a saved list or was named. */
+export function callListName(db: DB): string | null {
+  return callListMeta(db).name;
+}
+
+export function callListMeta(db: DB): CallListMeta {
+  const m = db.prepare('SELECT name, saved_list_id FROM call_list_meta WHERE id = 1').get() as
+    | { name: string | null; saved_list_id: string | null }
+    | undefined;
+  const listId = m?.saved_list_id ?? null;
+  return { name: m?.name ?? null, saved_list_id: listId, unsaved: differsFromSaved(db, listId) };
+}
+
+/** Whether the call list differs from saved list `listId` (same leads, order and added times). Empty never counts. */
+function differsFromSaved(db: DB, listId: string | null): boolean {
+  const n = (db.prepare('SELECT COUNT(*) n FROM call_list_item').get() as { n: number }).n;
+  if (n === 0) return false;
+  if (!listId) return true;
+  const diff = db
+    .prepare(
+      `SELECT EXISTS (SELECT lead_id, position, added_at FROM call_list_item
+                      EXCEPT SELECT lead_id, position, added_at FROM saved_call_list_item WHERE list_id = @id)
+           OR EXISTS (SELECT lead_id, position, added_at FROM saved_call_list_item WHERE list_id = @id
+                      EXCEPT SELECT lead_id, position, added_at FROM call_list_item) d`,
+    )
+    .get({ id: listId }) as { d: number };
+  return diff.d === 1;
+}
+
+function setCallListMeta(db: DB, name: string | null, savedListId: string | null) {
+  db.prepare(
+    'INSERT INTO call_list_meta (id, name, saved_list_id) VALUES (1, ?, ?) ON CONFLICT(id) DO UPDATE SET name = excluded.name, saved_list_id = excluded.saved_list_id',
+  ).run(name, savedListId);
 }
 
 const WORKED = `EXISTS (SELECT 1 FROM call c WHERE c.lead_id = i.lead_id AND c.voided_at IS NULL AND c.requested_at >= i.added_at)`;
@@ -297,42 +333,73 @@ export function listSavedLists(db: DB): SavedList[] {
     .all() as SavedList[];
 }
 
+/** Writes the call list into saved list `listId` (made if missing) under `name`, and makes it the list's saved list. */
+function writeSaved(db: DB, listId: string, name: string, now: string): SavedList {
+  db.prepare('INSERT INTO saved_call_list (id, name, saved_at) VALUES (?, ?, ?) ON CONFLICT(id) DO UPDATE SET name = excluded.name, saved_at = excluded.saved_at').run(listId, name, now);
+  db.prepare('DELETE FROM saved_call_list_item WHERE list_id = ?').run(listId);
+  db.prepare('INSERT INTO saved_call_list_item (list_id, lead_id, position, added_at) SELECT ?, lead_id, position, added_at FROM call_list_item').run(listId);
+  setCallListMeta(db, name, listId);
+  return listSavedLists(db).find((l) => l.id === listId)!;
+}
+
 /**
- * Empties the call list. With a name, the leads on it are first kept as a saved list (returned).
- * Their calls and outcomes are never touched.
+ * Save as: keeps the call list as a saved list named `name`. A saved list with that name (any case) is
+ * written over; otherwise a new one is made. Returns null for an empty list or a blank name.
+ */
+export function saveCallListAs(db: DB, name: string, now = nowIso()): SavedList | null {
+  const n = name.trim();
+  return db.transaction(() => {
+    if (!n || !(db.prepare('SELECT 1 FROM call_list_item LIMIT 1').get())) return null;
+    const same = db.prepare('SELECT id FROM saved_call_list WHERE name = ? COLLATE NOCASE ORDER BY saved_at DESC LIMIT 1').get(n) as { id: string } | undefined;
+    return writeSaved(db, same?.id ?? uuidv7(), n, now);
+  })();
+}
+
+/** Save: writes the call list over the saved list it is. Throws when it isn't one yet (use Save as). */
+export function saveCallList(db: DB, now = nowIso()): SavedList {
+  return db.transaction(() => {
+    const m = db.prepare('SELECT sl.id, sl.name FROM call_list_meta m JOIN saved_call_list sl ON sl.id = m.saved_list_id WHERE m.id = 1').get() as
+      | { id: string; name: string }
+      | undefined;
+    if (!m) throw new DomainError('this call list has no name yet: use Save as', 409);
+    if (!(db.prepare('SELECT 1 FROM call_list_item LIMIT 1').get())) throw new DomainError('the call list is empty', 409);
+    return writeSaved(db, m.id, m.name, now);
+  })();
+}
+
+/**
+ * Empties the call list. With a name, the leads on it are first kept as a saved list (returned),
+ * as Save as does. Their calls and outcomes are never touched.
  */
 export function clearCallList(db: DB, saveAs?: string | null, now = nowIso()): { removed: number; saved: SavedList | null } {
   return db.transaction(() => {
     const n = (db.prepare('SELECT COUNT(*) n FROM call_list_item').get() as { n: number }).n;
-    let saved: SavedList | null = null;
-    const name = saveAs?.trim();
-    if (name && n > 0) {
-      const id = uuidv7();
-      db.prepare('INSERT INTO saved_call_list (id, name, saved_at) VALUES (?, ?, ?)').run(id, name, now);
-      db.prepare('INSERT INTO saved_call_list_item (list_id, lead_id, position, added_at) SELECT ?, lead_id, position, added_at FROM call_list_item').run(id);
-      saved = listSavedLists(db).find((l) => l.id === id) ?? null;
-    }
+    const saved = saveAs ? saveCallListAs(db, saveAs, now) : null;
     db.prepare('DELETE FROM call_list_item').run();
-    setCallListName(db, null);
+    setCallListMeta(db, null, null);
     return { removed: n, saved };
   })();
 }
 
-/** Makes a saved list the call list again (the current one is cleared first, kept under `saveCurrentAs` if given). */
+/**
+ * Load: the call list becomes a copy of a saved list, which stays saved. The current list is cleared first
+ * (kept under `saveCurrentAs` if given).
+ */
 export function loadSavedList(db: DB, listId: string, saveCurrentAs?: string | null, now = nowIso()): { loaded: number; saved: SavedList | null } | null {
   return db.transaction(() => {
-    const list = db.prepare('SELECT name FROM saved_call_list WHERE id = ?').get(listId) as { name: string } | undefined;
-    if (!list) return null;
+    if (!db.prepare('SELECT 1 FROM saved_call_list WHERE id = ?').get(listId)) return null;
     const { saved } = clearCallList(db, saveCurrentAs, now);
+    // Saving the current list under this list's name writes over it, so read the name afterwards.
+    const list = db.prepare('SELECT name FROM saved_call_list WHERE id = ?').get(listId) as { name: string };
     const loaded = db
       .prepare('INSERT INTO call_list_item (lead_id, position, added_at) SELECT lead_id, position, added_at FROM saved_call_list_item WHERE list_id = ?')
       .run(listId).changes;
-    db.prepare('DELETE FROM saved_call_list WHERE id = ?').run(listId);
-    setCallListName(db, list.name);
+    setCallListMeta(db, list.name, listId);
     return { loaded, saved };
   })();
 }
 
+/** Deletes a saved list. The call list keeps its leads (and its name) but is no longer saved anywhere. */
 export function deleteSavedList(db: DB, listId: string): boolean {
   return db.prepare('DELETE FROM saved_call_list WHERE id = ?').run(listId).changes > 0;
 }

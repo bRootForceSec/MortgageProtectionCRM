@@ -6,7 +6,7 @@ import { commitImport } from '../../src/server/domain/importer.js';
 import { logManualCall, changeOutcome, voidCall, addLeadAction } from '../../src/server/domain/calls.js';
 import {
   addBatchToCallList, addMatchingToCallList, addToCallList, clearWorked, getCallList, moveToBottom, recentOutcomes, removeFromCallList,
-  callListName, clearCallList, deleteSavedList, listSavedLists, loadSavedList, setCalledBack, leadFilterWhere,
+  callListName, callListMeta, clearCallList, deleteSavedList, listSavedLists, loadSavedList, saveCallList, saveCallListAs, setCalledBack, leadFilterWhere,
 } from '../../src/server/domain/callList.js';
 import { loadCallingSettings, saveCallingSettings } from '../../src/server/domain/callingSettings.js';
 import { buildApp } from '../../src/server/http/app.js';
@@ -141,7 +141,7 @@ describe('clearing, replacing and saved lists', () => {
     expect(listSavedLists(db)).toHaveLength(1);
   });
 
-  it('loading a saved list brings it back in order with worked leads still worked, and puts the current list away', () => {
+  it('loading a saved list brings it back in order with worked leads still worked; the saved copy stays', () => {
     addBatchToCallList(db, batch, ago(5000));
     const order = names();
     const first = getCallList(db)[0]!.lead_id;
@@ -154,16 +154,56 @@ describe('clearing, replacing and saved lists', () => {
     expect(r.loaded).toBe(order.length);
     expect(names()).toEqual(order);
     expect(getCallList(db).find((i) => i.lead_id === first)!.done).toMatchObject({ label: 'No answer' });
-    expect(callListName(db)).toBe('Area 352');
-    // The loaded list left the saved lists; the one it replaced took its place.
-    expect(listSavedLists(db).map((l) => l.name)).toEqual(['Jane only']);
+    expect(callListMeta(db)).toEqual({ name: 'Area 352', saved_list_id: saved.id, unsaved: false });
+    // The loaded list stays saved, next to the one it replaced.
+    expect(listSavedLists(db).map((l) => l.name).sort()).toEqual(['Area 352', 'Jane only']);
 
     // Clearing again without a name drops the list name too.
     clearCallList(db);
     expect(callListName(db)).toBeNull();
     expect(loadSavedList(db, 'nope')).toBeNull();
-    expect(deleteSavedList(db, listSavedLists(db)[0]!.id)).toBe(true);
+    for (const l of listSavedLists(db)) expect(deleteSavedList(db, l.id)).toBe(true);
     expect(listSavedLists(db)).toEqual([]);
+  });
+
+  it('save writes over the list it is; save as makes a new one or replaces the one with that name', () => {
+    addBatchToCallList(db, batch, ago(5000));
+    const n = getCallList(db).length;
+    expect(callListMeta(db)).toEqual({ name: null, saved_list_id: null, unsaved: true });
+    // Not saved yet: Save needs a name first.
+    expect(() => saveCallList(db)).toThrow(/Save as/);
+
+    const a = saveCallListAs(db, ' Marion ')!;
+    expect(a).toMatchObject({ name: 'Marion', total: n });
+    expect(callListMeta(db)).toEqual({ name: 'Marion', saved_list_id: a.id, unsaved: false });
+    // Saving doesn't touch the call list.
+    expect(getCallList(db)).toHaveLength(n);
+
+    // A change (skip, remove, add) shows as unsaved until you save.
+    removeFromCallList(db, getCallList(db)[0]!.lead_id);
+    expect(callListMeta(db).unsaved).toBe(true);
+    expect(saveCallList(db)).toMatchObject({ id: a.id, name: 'Marion', total: n - 1 });
+    expect(callListMeta(db).unsaved).toBe(false);
+    moveToBottom(db, getCallList(db)[0]!.lead_id);
+    expect(callListMeta(db).unsaved).toBe(true);
+
+    // Save as a new name: a second list, and the call list is now that one.
+    const b = saveCallListAs(db, 'Marion v2')!;
+    expect(b.id).not.toBe(a.id);
+    expect(callListMeta(db)).toMatchObject({ name: 'Marion v2', saved_list_id: b.id, unsaved: false });
+    // Save as an existing name (any case) writes over it rather than making a duplicate.
+    const c = saveCallListAs(db, 'marion')!;
+    expect(c.id).toBe(a.id);
+    expect(listSavedLists(db)).toHaveLength(2);
+    expect(saveCallListAs(db, '   ')).toBeNull();
+
+    // Deleting the list it is leaves the leads on the call list, unsaved.
+    deleteSavedList(db, a.id);
+    expect(callListMeta(db)).toMatchObject({ saved_list_id: null, unsaved: true });
+    expect(getCallList(db)).toHaveLength(n - 1);
+    // An empty list is never "unsaved".
+    clearCallList(db);
+    expect(callListMeta(db).unsaved).toBe(false);
   });
 
   it("filters: no answer vs talked, last call today; worked leads can go back on the list", async () => {
@@ -219,9 +259,15 @@ describe('clearing, replacing and saved lists', () => {
 
     const load = await post(`/api/saved-lists/${got.saved_lists[0].id}/load`, { save_current_as: null });
     expect(load.json()).toMatchObject({ loaded: n, saved: null });
-    expect((await app.inject({ url: '/api/call-list', headers })).json()).toMatchObject({ name: 'First list', saved_lists: [] });
+    expect((await app.inject({ url: '/api/call-list', headers })).json()).toMatchObject({ name: 'First list', unsaved: false, saved_lists: [{ name: 'First list' }] });
 
-    expect((await post('/api/call-list/clear', {})).json()).toMatchObject({ removed: n, saved: null });
+    // Save and Save as.
+    removeFromCallList(db, jane);
+    expect((await post('/api/call-list/save', {})).json()).toMatchObject({ saved: { name: 'First list', total: n - 1 } });
+    expect((await post('/api/call-list/save-as', { name: 'Second' })).json()).toMatchObject({ saved: { name: 'Second' } });
+    expect((await post('/api/call-list/save-as', { name: ' ' })).statusCode).toBe(400);
+
+    expect((await post('/api/call-list/clear', {})).json()).toMatchObject({ removed: n - 1, saved: null });
     expect((await post('/api/saved-lists/missing/load', {})).statusCode).toBe(404);
     await app.close();
   });

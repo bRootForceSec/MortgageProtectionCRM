@@ -412,7 +412,7 @@ test('API refuses requests without the access cookie', async ({ request }) => {
   expect(r.status()).toBe(401);
 });
 
-test('clear the call list into a saved list, load it back, and replace it from Leads', async ({ page }) => {
+test('save the call list, save as, load it back, and replace it from Leads', async ({ page }) => {
   await page.goto(launchUrl);
   await page.getByRole('button', { name: 'Calling', exact: true }).click();
   const queue = page.getByLabel('Queue');
@@ -420,33 +420,49 @@ test('clear the call list into a saved list, load it back, and replace it from L
   const n = await queue.locator('.queue-list li').count();
   expect(n).toBeGreaterThan(0);
 
-  // Clear it, keeping it as a saved list (ticked by default).
-  await queue.getByRole('button', { name: 'Clear list' }).click();
+  // Save on a list that was never saved asks for a name, then saves without touching the list.
+  await expect(queue.getByText('Unsaved list')).toBeVisible();
+  await queue.getByRole('button', { name: 'Save', exact: true }).click();
   await page.getByLabel('Saved list name').fill('Old area');
+  await page.getByRole('dialog', { name: 'Save call list as' }).getByRole('button', { name: 'Save', exact: true }).click();
+  await expect(page.getByText('Saved as "Old area"')).toBeVisible();
+  await expect(queue.getByText('List: Old area')).toBeVisible();
+  await expect(queue.getByRole('button', { name: 'Saved', exact: true })).toBeDisabled();
+  await expect(queue.locator('.queue-list li')).toHaveCount(n);
+
+  // Save as the same name offers to replace it rather than making a second one.
+  await queue.getByRole('button', { name: 'Save as…' }).click();
+  await expect(page.getByLabel('Saved list name')).toHaveValue('Old area');
+  await expect(page.getByRole('button', { name: 'Replace "Old area"' })).toBeVisible();
+  await page.getByRole('button', { name: 'Cancel' }).click();
+
+  // Clearing a saved, unchanged list doesn't ask to save it again.
+  await queue.getByRole('button', { name: 'Clear list' }).click();
+  await expect(page.getByRole('alertdialog').getByText('saved as Old area')).toBeVisible();
   await page.getByRole('alertdialog').getByRole('button', { name: 'Clear list' }).click();
-  await expect(page.getByText('"Old area" is in Saved lists.')).toBeVisible();
   await expect(page.getByText('Your call list is empty.')).toBeVisible();
 
   // Load it back: same leads, and it carries its name.
-  await queue.getByRole('button', { name: 'Saved lists (1)' }).click();
+  await queue.getByRole('button', { name: 'Load… (1)' }).click();
   await expect(page.getByText(`of ${n} left to call`)).toBeVisible();
   await page.getByRole('button', { name: 'Load Old area' }).click();
   await expect(queue.locator('.queue-list li')).toHaveCount(n);
   await expect(queue.getByText('List: Old area')).toBeVisible();
+  await page.screenshot({ path: 'test-results/save-load.png' });
 
-  // Replace it from Leads with every lead talked to before (no appointment), keeping the old one.
+  // Replace it from Leads with every lead talked to before (no appointment). It's saved, so nothing to keep.
   await page.getByRole('button', { name: 'Leads', exact: true }).click();
   await page.getByRole('button', { name: 'Talked, no appt', exact: true }).click();
   await page.getByLabel(/Replace the call list/).check();
   await page.getByRole('button', { name: /^Replace with all \d+ matching$/ }).click();
-  await expect(page.getByLabel('Saved list name')).toHaveValue('Old area');
+  await expect(page.getByRole('alertdialog').getByText('saved as Old area')).toBeVisible();
   await page.screenshot({ path: 'test-results/replace-list.png' });
   await page.getByRole('button', { name: 'Replace call list' }).click();
   await expect(page.getByText(/^Call list replaced/)).toBeVisible();
 
   await page.getByRole('button', { name: 'Calling', exact: true }).click();
-  await queue.getByRole('button', { name: 'Saved lists (1)' }).click();
-  await expect(page.getByRole('dialog', { name: 'Saved lists' }).getByText('Old area')).toBeVisible();
+  await queue.getByRole('button', { name: 'Load… (1)' }).click();
+  await expect(page.getByRole('dialog', { name: 'Load a call list' }).getByText('Old area')).toBeVisible();
   await page.screenshot({ path: 'test-results/saved-lists.png' });
 });
 
