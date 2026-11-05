@@ -662,3 +662,26 @@ test('an appointment about to start: an alert, and its prep card on Today', asyn
   await expect(card).toContainText('not in Unitrust yet');
   await page.screenshot({ path: 'test-results/today-appointments.png', fullPage: true });
 });
+
+test('on the spot: Run it now saves the Appt set and stays on the lead, on the Appointment side', async ({ page }) => {
+  await page.goto(launchUrl);
+  await page.getByRole('button', { name: 'Calling', exact: true }).click();
+  await expect(page.locator('.phone-big')).toBeVisible();
+  const lead = await page.locator('.lead-name').innerText();
+  const tabs = page.getByRole('tablist', { name: 'Kind of call' });
+  await expect(tabs.getByRole('tab', { name: 'First call' })).toHaveAttribute('aria-selected', 'true');
+  // 3 picks Appt set; Shift+Enter runs it now.
+  await page.keyboard.press('3');
+  await expect(page.getByRole('button', { name: /Run it now/ })).toBeVisible();
+  await page.keyboard.press('Shift+Enter');
+  await expect(page.locator('.undo-bar')).toContainText('Appt set, running it now');
+  await expect(page.locator('.lead-name')).toHaveText(lead);
+  await expect(tabs.getByRole('tab', { name: 'Appointment' })).toHaveAttribute('aria-selected', 'true');
+  await expect(page.locator('.timer')).toBeVisible();
+  await page.screenshot({ path: 'test-results/on-the-spot.png', fullPage: true });
+  // When it's done: 4, Enter logs the sale and moves on.
+  await page.keyboard.press('4');
+  await page.keyboard.press('Enter');
+  await expect(page.locator('.undo-bar')).toContainText(`Saved for ${lead}: Sale`);
+  await expect(page.getByLabel('Current lead').locator('.badge.appt-sold')).toBeVisible();
+});

@@ -7,6 +7,7 @@ import { leadExists } from './leads.js';
 import { normalizeUsPhone } from './normalize.js';
 import { outcomeDef } from '../../shared/outcomes.js';
 import { APPT_RESULTS, parseUnitrustTitle, resultOfColor, type ApptResult, type UnitrustColor } from '../../shared/appointments.js';
+import { onTheSpotOn } from './appointments.js';
 
 // Appointments read off the Unitrust calendar by the Firefox extension. Each event is matched to a lead by a lead link
 // pasted into it when the calendar shows one, else by its phone (then by name), stored once per day and phone, and each change of color adds a result row. Leads whose appointment
@@ -191,6 +192,8 @@ export interface ApptRow {
   outcome: ApptOutcome;
   /** Where the outcome came from: an appointment call logged here, or the Unitrust color. */
   source: 'app' | 'unitrust';
+  /** Set and run on the same call ("Run it now"), not booked ahead. */
+  on_the_spot: boolean;
 }
 
 /** Appointment calls logged here (not undone), with their current outcome. */
@@ -213,7 +216,7 @@ export function appointmentsOnDays(db: DB, fromDay: string, toDay: string, leadW
       `WITH app AS (${APP_CALLS})
        SELECT a.id, a.lead_id, ${LEAD_NAME} lead_name, l.lead_type,
               substr(a.scheduled_for, 1, 10) day, CASE WHEN length(a.scheduled_for) > 10 THEN substr(a.scheduled_for, 12, 5) END time,
-              a.title, a.internal_status,
+              a.title, a.internal_status, ${onTheSpotOn('a.lead_id', 'substr(a.scheduled_for, 1, 10)')} on_the_spot,
               (SELECT result FROM appointment_result r WHERE r.appointment_id = a.id ORDER BY entered_at DESC, id DESC LIMIT 1) result,
               (SELECT app.outcome_code FROM app WHERE app.lead_id = a.lead_id AND app.day >= substr(a.scheduled_for, 1, 10)
                  AND NOT EXISTS (SELECT 1 FROM appointment a2 WHERE ${scheduled}
@@ -223,12 +226,13 @@ export function appointmentsOnDays(db: DB, fromDay: string, toDay: string, leadW
        WHERE a.recorded_via = 'unitrust' AND substr(a.scheduled_for, 1, 10) BETWEEN @from AND @to AND ${leadWhere.sql}
        ORDER BY a.scheduled_for, lead_name`,
     )
-    .all({ ...leadWhere.params, from: fromDay, to: toDay }) as (Omit<ApptRow, 'outcome' | 'source'> & { internal_status: string; result: string | null; app_code: string | null })[];
-  const fromUnitrust: ApptRow[] = rows.map(({ internal_status, result, app_code, ...r }) => {
+    .all({ ...leadWhere.params, from: fromDay, to: toDay }) as (Omit<ApptRow, 'outcome' | 'source' | 'on_the_spot'> & { internal_status: string; result: string | null; app_code: string | null; on_the_spot: number })[];
+  const fromUnitrust: ApptRow[] = rows.map(({ internal_status, result, app_code, on_the_spot, ...r }) => {
     const app = outcomeDef(app_code)?.apptResult ?? undefined;
     return {
       ...r,
       source: app ? 'app' : 'unitrust',
+      on_the_spot: !!on_the_spot,
       outcome: internal_status === 'rescheduled' ? 'rescheduled'
         : app ?? (result === 'sold' || result === 'no_show' || result === 'sat_no_sale' ? result : 'pending'),
     };
@@ -237,15 +241,16 @@ export function appointmentsOnDays(db: DB, fromDay: string, toDay: string, leadW
   const own = db
     .prepare(
       `WITH app AS (${APP_CALLS})
-       SELECT app.id, app.lead_id, ${LEAD_NAME} lead_name, l.lead_type, app.day, app.outcome_code
+       SELECT app.id, app.lead_id, ${LEAD_NAME} lead_name, l.lead_type, app.day, app.outcome_code,
+              ${onTheSpotOn('app.lead_id', 'app.day')} on_the_spot
        FROM app JOIN lead l ON l.id = app.lead_id
        WHERE app.day BETWEEN @from AND @to AND ${leadWhere.sql}
          AND NOT EXISTS (SELECT 1 FROM appointment a WHERE a.lead_id = app.lead_id AND a.recorded_via = 'unitrust' AND substr(a.scheduled_for, 1, 10) <= app.day)
        ORDER BY app.requested_at`,
     )
-    .all({ ...leadWhere.params, from: fromDay, to: toDay }) as { id: string; lead_id: string; lead_name: string; lead_type: string | null; day: string; outcome_code: string }[];
-  const fromApp: ApptRow[] = own.map(({ outcome_code, ...r }) => ({
-    ...r, time: null, title: null, source: 'app', outcome: outcomeDef(outcome_code)?.apptResult ?? 'pending',
+    .all({ ...leadWhere.params, from: fromDay, to: toDay }) as { id: string; lead_id: string; lead_name: string; lead_type: string | null; day: string; outcome_code: string; on_the_spot: number }[];
+  const fromApp: ApptRow[] = own.map(({ outcome_code, on_the_spot, ...r }) => ({
+    ...r, time: null, title: null, source: 'app', on_the_spot: !!on_the_spot, outcome: outcomeDef(outcome_code)?.apptResult ?? 'pending',
   }));
   return [...fromUnitrust, ...fromApp].sort((x, y) => x.day.localeCompare(y.day) || x.lead_name.localeCompare(y.lead_name));
 }

@@ -449,6 +449,16 @@ export function CallingPage() {
   // Enter saves and moves straight on; the undo bar (or Z) brings you back.
   const onSaved = async (s: Saved) => {
     setSaved(s);
+    // Run it now: same lead, Appointment side, timer started again for the presentation.
+    if (s.onTheSpot) {
+      setModePick({ leadId: s.leadId, mode: 'appointment' });
+      setRestore(null);
+      setAttempt((a) => ({ ...freshAttempt(), to: a.to, timerStart: settings?.use_timer === false ? null : Date.now() }));
+      bumpStats();
+      markDone(s.leadId, { label: s.label, dials: s.dials });
+      await refreshDetail();
+      return;
+    }
     // The next time this lead is on screen, its side is picked again from how it stands now.
     setModePick(null);
     setRestore(null);

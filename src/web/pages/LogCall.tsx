@@ -48,6 +48,8 @@ export interface Saved {
   at: number;
   /** The lead's time zone, so an undone callback comes back in their time. */
   tz: string | null;
+  /** Appt set with "Run it now": stay on this lead, on the Appointment side. */
+  onTheSpot?: boolean;
 }
 
 function Timer({ start, onReset }: { start: number; onReset: () => void }) {
@@ -144,11 +146,14 @@ export function LogCall({
       ? Math.round((Date.now() - attempt.timerStart) / 1000)
       : null;
 
-  const save = useCallback(async (codeNow: string | null = code) => {
+  /** `onTheSpot`: Appt set, and you're running it now (Shift+Enter): the appointment is now, whatever day was typed. */
+  const save = useCallback(async (codeNow: string | null = code, onTheSpot = false) => {
     if (!codeNow || saving) return;
     const o = meta?.outcome_codes.find((x) => x.code === codeNow) ?? null;
     const cb = o?.requires_callback_time ? readCallback(day, time, new Date(), d.lead.time_zone) : null;
-    const appt = outcomeDef(codeNow)?.apptSet && day.trim() ? readCallback(day, time, new Date(), d.lead.time_zone) : null;
+    const isApptSet = !!outcomeDef(codeNow)?.apptSet;
+    const spot = onTheSpot && isApptSet;
+    const appt = spot ? { at: new Date(), anyTime: false } : isApptSet && day.trim() ? readCallback(day, time, new Date(), d.lead.time_zone) : null;
     const bad = cb && 'error' in cb ? cb : appt && 'error' in appt ? appt : null;
     if (bad) {
       toast(bad.error, 'error');
@@ -165,6 +170,7 @@ export function LogCall({
         callback_due_at: cb && !('error' in cb) ? cb.at.toISOString() : null,
         callback_any_time: cb && !('error' in cb) ? cb.anyTime : null,
         appointment_for: appt && !('error' in appt) ? toWall(appt) : null,
+        on_the_spot: spot,
         do_not_call: doNotCall,
         talk_seconds: minutes ? Number(minutes) * 60 : timerSeconds(o),
         dial_count: attempt.dials,
@@ -184,7 +190,8 @@ export function LogCall({
       setKey(newKey());
       await onSaved({
         callId: r.call_id, leadId: d.lead.id, name: [d.lead.first_name, d.lead.last_name].filter(Boolean).join(' ') || 'this lead',
-        label: `${o?.label ?? codeNow}${doNotCall ? ', do not call' : ''}`, dials: attempt.dials, at: Date.now(), tz: d.lead.time_zone ?? null,
+        label: `${o?.label ?? codeNow}${spot ? ', running it now' : ''}${doNotCall ? ', do not call' : ''}`, dials: attempt.dials, at: Date.now(),
+        tz: d.lead.time_zone ?? null, onTheSpot: spot,
       });
     } catch (e: any) {
       toast(e.message, 'error');
@@ -201,7 +208,7 @@ export function LogCall({
       if (document.querySelector('.modal-back') || !active) return;
       if (e.key === 'Enter' && code && (!isTyping(e) || e.ctrlKey || e.metaKey || ['callback-day', 'callback-time', 'log-note', 'log-minutes'].includes((e.target as HTMLElement).id))) {
         e.preventDefault();
-        void save();
+        void save(code, e.shiftKey);
         return;
       }
       if (isTyping(e) || e.ctrlKey || e.metaKey || e.altKey) return;
@@ -341,6 +348,12 @@ export function LogCall({
             <input id="log-note" value={note} onChange={(e) => setNote(e.target.value)} />
           </label>
           <button className="btn primary" onClick={() => void save()} disabled={saving}>Save <kbd>Enter</kbd></button>
+          {apptWhen && (
+            <button className="btn" onClick={() => void save(code, true)} disabled={saving}
+              title="On the spot: saves the appointment as set for now, stays on this lead and switches to the Appointment side, so you log how it went when you're done">
+              Run it now <kbd>⇧Enter</kbd>
+            </button>
+          )}
           <button className="btn" onClick={() => setCode(null)}>Cancel <kbd>Esc</kbd></button>
         </div>
       )}

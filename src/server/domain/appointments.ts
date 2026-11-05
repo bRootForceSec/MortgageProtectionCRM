@@ -11,13 +11,18 @@ import type { PrepCard } from '../../shared/appointments.js';
 
 const WALL = /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])(T([01]\d|2[0-3]):[0-5]\d)?$/;
 
-/** Stores the time typed for the appointment set on this call. Call it inside the transaction that logs the call. */
-export function recordAppointmentTime(db: DB, leadId: string, callId: string, fromNumberId: string | null, scheduledFor: string, now = nowIso()) {
+/**
+ * Stores the time typed for the appointment set on this call. Call it inside the transaction that logs the call.
+ * `onTheSpot`: you ran it right away on the same call ("Run it now"), so it's counted apart in Reports.
+ */
+export function recordAppointmentTime(
+  db: DB, leadId: string, callId: string, fromNumberId: string | null, scheduledFor: string, now = nowIso(), onTheSpot = false,
+) {
   if (!WALL.test(scheduledFor)) throw new DomainError('appointment time must look like 2026-10-30 or 2026-10-30T14:00');
   db.prepare(
-    `INSERT INTO appointment (id, lead_id, scheduled_for, set_on_call_id, set_from_number_id, recorded_via, created_at)
-     VALUES (?, ?, ?, ?, ?, 'in_app_on_call', ?)`,
-  ).run(uuidv7(), leadId, scheduledFor, callId, fromNumberId, now);
+    `INSERT INTO appointment (id, lead_id, scheduled_for, set_on_call_id, set_from_number_id, recorded_via, on_the_spot, created_at)
+     VALUES (?, ?, ?, ?, ?, 'in_app_on_call', ?, ?)`,
+  ).run(uuidv7(), leadId, scheduledFor, callId, fromNumberId, onTheSpot ? 1 : 0, now);
 }
 
 /** The typed appointment time of a call, if it still stands. */
@@ -32,6 +37,15 @@ export function appointmentTimeOfCall(db: DB, callId: string): string | null {
 export function cancelAppointmentsOfCall(db: DB, callId: string) {
   db.prepare("UPDATE appointment SET internal_status = 'canceled' WHERE set_on_call_id = ? AND recorded_via = 'in_app_on_call' AND internal_status = 'scheduled'").run(callId);
 }
+
+/**
+ * SQL: true when the lead had an on-the-spot appointment (set and run on the same call, not undone) on that day.
+ * `leadId` and `day` are SQL expressions; `day` is YYYY-MM-DD in your time.
+ */
+export const onTheSpotOn = (leadId: string, day: string) =>
+  `EXISTS (SELECT 1 FROM appointment ots JOIN call otc ON otc.id = ots.set_on_call_id
+     WHERE ots.lead_id = ${leadId} AND ots.on_the_spot = 1 AND ots.internal_status = 'scheduled' AND otc.voided_at IS NULL
+       AND substr(ots.scheduled_for, 1, 10) = ${day})`;
 
 export interface NextAppointment {
   scheduled_for: string;
@@ -60,7 +74,8 @@ export function currentAppointment(db: DB, leadId: string): NextAppointment | nu
 
 /**
  * The appointments on one day (YYYY-MM-DD, your time), earliest first, by the same rule as `currentAppointment`:
- * a time you typed drops out once Unitrust sends an appointment for that lead.
+ * a time you typed drops out once Unitrust sends an appointment for that lead. On-the-spot ones are left out: they
+ * already ran on the call, so there's nothing to prepare or be alerted for.
  */
 export function appointmentsOnDay(db: DB, day: string): PrepCard[] {
   return db
@@ -75,7 +90,7 @@ export function appointmentsOnDay(db: DB, day: string): PrepCard[] {
                 ORDER BY n.created_at DESC LIMIT 1) last_note
        FROM appointment a JOIN lead l ON l.id = a.lead_id LEFT JOIN lead_state s ON s.lead_id = a.lead_id
        LEFT JOIN call c ON c.id = a.set_on_call_id
-       WHERE substr(a.scheduled_for, 1, 10) = ? AND a.internal_status = 'scheduled' AND c.voided_at IS NULL
+       WHERE substr(a.scheduled_for, 1, 10) = ? AND a.internal_status = 'scheduled' AND c.voided_at IS NULL AND NOT ${onTheSpotOn('a.lead_id', 'substr(a.scheduled_for, 1, 10)')}
          AND a.recorded_via IN ('unitrust', 'in_app_on_call')
          AND NOT (a.recorded_via = 'in_app_on_call' AND EXISTS (
            SELECT 1 FROM appointment u WHERE u.lead_id = a.lead_id AND u.recorded_via = 'unitrust' AND u.created_at >= a.created_at))

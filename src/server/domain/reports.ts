@@ -595,6 +595,9 @@ function unitrustSection(db: DB, f: ReportFilter, types: Map<string, string>) {
   const rows = appointmentsOnDays(db, fromDay, toDay, groupWhere('l.county_key', f));
   return {
     ...appointmentCounts(rows),
+    /** Appointments set and run on the same call ("Run it now"), and the ones booked ahead, counted apart. */
+    on_the_spot: appointmentCounts(rows.filter((r) => r.on_the_spot)),
+    booked_ahead: appointmentCounts(rows.filter((r) => !r.on_the_spot)),
     by_type: [...groupBy(rows, (r) => r.lead_type ?? '')]
       .map(([k, rs]) => ({ key: k, label: k ? types.get(k) ?? k : 'No lead type', ...appointmentCounts(rs) }))
       .sort((x, y) => x.key.localeCompare(y.key)),
