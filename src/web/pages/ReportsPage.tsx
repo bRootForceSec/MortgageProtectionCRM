@@ -243,6 +243,18 @@ function Appointments({ a, onOpen }: { a: any; onOpen: (id: string, list: Viewer
         <div><b>{pct(a.show_rate)}</b>Show rate</div>
         <div><b>{pct(a.close_rate)}</b>Close rate</div>
       </div>
+      {a.on_the_spot?.appointments > 0 && (
+        <table className="grid">
+          <thead><tr><th></th><th>Appointments</th><th>Sat</th><th>Prezis</th><th>Sales</th><th>Close rate</th></tr></thead>
+          <tbody>
+            {([['On the spot', a.on_the_spot], ['Booked ahead', a.booked_ahead]] as const).map(([label, t]: readonly [string, any]) => (
+              <tr key={label}>
+                <td>{label}</td><td>{t.appointments}</td><td>{t.sat}</td><td>{t.prezis}</td><td>{t.sold}</td><td>{pct(t.close_rate)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
       {a.by_type.length > 0 && (
         <table className="grid">
           <thead><tr><th>Lead type</th><th>Appointments</th><th>Sat</th><th>Sales</th><th>No-shows</th><th>Rescheduled</th><th>Not updated</th><th>Show rate</th><th>Close rate</th></tr></thead>
@@ -264,7 +276,7 @@ function Appointments({ a, onOpen }: { a: any; onOpen: (id: string, list: Viewer
             <tbody>
               {shown.map((x) => (
                 <tr key={x.id} className="click" onClick={() => onOpen(x.lead_id, list)}>
-                  <td>{x.day}</td><td>{x.time ?? ''}</td><td>{x.lead_name}</td><td>{x.lead_type ?? ''}</td>
+                  <td>{x.day}</td><td>{x.time ?? ''}</td><td>{x.lead_name}{x.on_the_spot && <span className="badge" title="Set and run on the same call">on the spot</span>}</td><td>{x.lead_type ?? ''}</td>
                   <td><span className={`badge appt-${x.outcome === 'pending' ? 'not_set' : x.outcome}`}>{apptLabel(x.outcome)}</span></td>
                   <td className="muted">{x.title}</td>
                 </tr>
@@ -275,7 +287,7 @@ function Appointments({ a, onOpen }: { a: any; onOpen: (id: string, list: Viewer
         </details>
       )}
       <p className="help">
-        Sat is sales plus sat with no sale. Show rate is sat out of sat plus no-shows; close rate is sales out of sat.
+        Sat is sales plus sat with no sale. On the spot means set and run on the same call (Run it now on the Calling screen). Show rate is sat out of sat plus no-shows; close rate is sales out of sat.
         Rescheduled counts appointments moved off these days; the new appointment counts on its new day. Numbers change when you update a status in Unitrust
         and the extension sees it, so keep the calendar open in Firefox.
       </p>

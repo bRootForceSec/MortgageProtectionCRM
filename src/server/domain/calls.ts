@@ -33,6 +33,8 @@ export interface ManualCallInput {
   note?: string | null;
   /** Appt set: when the appointment is, in your time ("2026-10-30" or "2026-10-30T14:00"). Optional; Unitrust confirms it. */
   appointment_for?: string | null;
+  /** Appt set and run right away on this call ("Run it now"). Needs appointment_for (now). */
+  on_the_spot?: boolean | null;
   /** Objections heard on the call (chips on the Calling screen). */
   objections?: ObjectionInput[] | null;
 }
@@ -127,7 +129,9 @@ export function logManualCall(db: DB, input: ManualCallInput) {
     recordObjections(db, callId, input.objections ?? [], 'manual', now);
     if (input.appointment_for) {
       if (!outcomeDef(outcome.code)?.apptSet) throw new DomainError('only an appointment set takes an appointment time');
-      recordAppointmentTime(db, lead.id, callId, input.from_number_id ?? null, input.appointment_for, now);
+      recordAppointmentTime(db, lead.id, callId, input.from_number_id ?? null, input.appointment_for, now, !!input.on_the_spot);
+    } else if (input.on_the_spot) {
+      throw new DomainError('an on-the-spot appointment needs its time');
     }
     rebuildLeadState(db, [lead.id]);
     return { call_id: callId, duplicate: false };
