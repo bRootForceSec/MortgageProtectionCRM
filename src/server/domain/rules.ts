@@ -35,6 +35,7 @@ export function saveRules(db: DB, input: unknown): Rule[] {
       if (a.kind !== 'set_field') continue;
       const f = fields.get(a.field_id);
       if (!f) throw new DomainError(`${r.name}: that field is gone`);
+      if (f.type === 'formula') throw new DomainError(`${r.name}: ${f.label} is worked out from its formula, so a rule can't set it`);
       try {
         normalizeCustomValue(f, a.value);
       } catch (e) {

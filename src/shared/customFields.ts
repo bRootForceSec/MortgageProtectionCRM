@@ -10,6 +10,7 @@ export const CUSTOM_FIELD_TYPES = [
   { key: 'date', label: 'Date' },
   { key: 'yes_no', label: 'Yes / no' },
   { key: 'choice', label: 'Pick from a list' },
+  { key: 'formula', label: 'Formula (worked out)' },
 ] as const;
 export type CustomFieldType = (typeof CUSTOM_FIELD_TYPES)[number]['key'];
 const TYPE_KEYS = CUSTOM_FIELD_TYPES.map((t) => t.key) as [CustomFieldType, ...CustomFieldType[]];
@@ -19,6 +20,8 @@ export const CustomFieldInput = z.object({
   type: z.enum(TYPE_KEYS),
   /** The choices, for "Pick from a list". */
   options: z.array(z.string().trim().min(1).max(60)).max(50).optional(),
+  /** The formula, for "Formula" (shared/formula.ts). */
+  formula: z.string().max(2000).optional(),
 });
 export type CustomFieldInput = z.infer<typeof CustomFieldInput>;
 
@@ -30,6 +33,14 @@ export interface CustomField {
   sort_order: number;
   /** How many leads have a value. */
   leads: number;
+  /** For a formula field: the formula, and what it works out to (null when it has a mistake). */
+  formula: string | null;
+  result: 'number' | 'text' | 'yes_no' | null;
+}
+
+/** Whether a field holds numbers (so it can be filtered by a range and sorted by). */
+export function isNumericField(f: Pick<CustomField, 'type' | 'result'>): boolean {
+  return f.type === 'number' || f.type === 'money' || (f.type === 'formula' && f.result === 'number');
 }
 
 /**
@@ -65,6 +76,8 @@ export function normalizeCustomValue(f: Pick<CustomField, 'label' | 'type' | 'op
       if (['no', 'n', 'false', '0'].includes(s)) return 'no';
       throw bad('needs yes or no');
     }
+    case 'formula':
+      throw bad('is worked out from its formula');
     case 'choice': {
       const hit = f.options.find((o) => o.toLowerCase() === v.toLowerCase());
       if (!hit) throw bad(`pick one of ${f.options.join(', ')}`);
@@ -74,8 +87,9 @@ export function normalizeCustomValue(f: Pick<CustomField, 'label' | 'type' | 'op
 }
 
 /** A kept value as you read it. */
-export function showCustomValue(f: Pick<CustomField, 'type'>, v: string | null | undefined): string {
+export function showCustomValue(f: Pick<CustomField, 'type'> & { result?: CustomField['result'] }, v: string | null | undefined): string {
   if (v == null || v === '') return '';
+  if (f.type === 'formula') return f.result === 'yes_no' ? (v === 'yes' ? 'Yes' : 'No') : v;
   if (f.type === 'money') return `$${Number(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   if (f.type === 'yes_no') return v === 'yes' ? 'Yes' : 'No';
   if (f.type === 'date') {

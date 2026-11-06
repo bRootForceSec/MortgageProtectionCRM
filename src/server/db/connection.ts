@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { syncOutcomeCodes } from './outcomeCodes.js';
+import { syncFieldValueView } from '../domain/formulas.js';
 
 export type DB = Database.Database;
 
@@ -24,6 +25,8 @@ export function openDatabase(file: string): DB {
   migrate(db);
   // Outcomes are defined in src/shared/outcomes.ts; the table is kept as a copy of them.
   syncOutcomeCodes(db);
+  // Formula fields are worked out by a view; it's made again in case how formulas turn into SQL changed.
+  syncFieldValueView(db);
   return db;
 }
 

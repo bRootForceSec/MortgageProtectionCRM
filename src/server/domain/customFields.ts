@@ -3,29 +3,60 @@ import { nowIso, uuidv7 } from '../ids.js';
 import { DomainError } from '../core/errors.js';
 import { audit } from '../core/audit.js';
 import { normalizeCustomValue, type CustomField, type CustomFieldInput } from '../../shared/customFields.js';
+import { FormulaError, formulaFieldLabels, parseFormula, renameFormulaField } from '../../shared/formula.js';
+import { compileFormula, formulaResults, syncFieldValueView } from './formulas.js';
 
 // Custom fields: fields you add to every lead. Defining them is audited; a value typed on a lead is kept in the lead's
 // change history (lead_change, under the field's name) like any other edit.
 
-interface FieldRow { id: string; label: string; type: CustomField['type']; options_json: string | null; sort_order: number; leads: number }
+interface FieldRow { id: string; label: string; type: CustomField['type']; options_json: string | null; formula: string | null; sort_order: number; leads: number }
 
-const toField = (r: FieldRow): CustomField => ({ id: r.id, label: r.label, type: r.type, options: r.options_json ? (JSON.parse(r.options_json) as string[]) : [], sort_order: r.sort_order, leads: r.leads });
-
+/** `leads` counts typed values: a formula field has none of its own. */
 export function listCustomFields(db: DB): CustomField[] {
-  return (db
+  const rows = db
     .prepare('SELECT f.*, (SELECT COUNT(*) FROM lead_custom_value v WHERE v.field_id = f.id) leads FROM custom_field f ORDER BY f.sort_order, f.created_at')
-    .all() as FieldRow[]).map(toField);
+    .all() as FieldRow[];
+  const results = formulaResults(rows);
+  return rows.map((r) => ({
+    id: r.id, label: r.label, type: r.type, options: r.options_json ? (JSON.parse(r.options_json) as string[]) : [], sort_order: r.sort_order, leads: r.leads,
+    formula: r.type === 'formula' ? r.formula : null, result: results.get(r.id) ?? null,
+  }));
 }
 
 function getField(db: DB, id: string): CustomField {
-  const r = db.prepare('SELECT f.*, (SELECT COUNT(*) FROM lead_custom_value v WHERE v.field_id = f.id) leads FROM custom_field f WHERE f.id = ?').get(id) as FieldRow | undefined;
-  if (!r) throw new DomainError('that field is gone', 404);
-  return toField(r);
+  const f = listCustomFields(db).find((x) => x.id === id);
+  if (!f) throw new DomainError('that field is gone', 404);
+  return f;
+}
+
+/** The formula fields that use this field (by name), other than itself. */
+function usedBy(db: DB, f: Pick<CustomField, 'id' | 'label'>): string[] {
+  return listCustomFields(db)
+    .filter((x) => x.type === 'formula' && x.id !== f.id && formulaUses(x.formula, f.label))
+    .map((x) => x.label);
+}
+
+function formulaUses(formula: string | null, label: string): boolean {
+  try {
+    return formulaFieldLabels(parseFormula(formula ?? '')).some((l) => l.toLowerCase() === label.toLowerCase());
+  } catch {
+    return false;
+  }
 }
 
 function checkInput(db: DB, b: CustomFieldInput, id: string | null): string | null {
   const clash = db.prepare('SELECT id FROM custom_field WHERE label = ?').get(b.label) as { id: string } | undefined;
   if (clash && clash.id !== id) throw new DomainError(`there is already a field called "${b.label}"`, 409);
+  if (/[[\]]/.test(b.label)) throw new DomainError("a field name can't have [ or ] in it, so formulas can use it");
+  if (b.type === 'formula') {
+    try {
+      const fields = (db.prepare('SELECT id, label, type, formula FROM custom_field').all() as CustomField[]).filter((f) => f.id !== id);
+      compileFormula(b.formula ?? '', [...fields, { id: id ?? '(new)', label: b.label, type: 'formula', formula: b.formula ?? '' } as CustomField], id ?? '(new)');
+    } catch (e) {
+      if (e instanceof FormulaError) throw new DomainError(`${b.label}: ${e.message}`);
+      throw e;
+    }
+  }
   if (b.type !== 'choice') return null;
   // The same choice typed twice (any case) is kept once, as first typed.
   const seen = new Set<string>();
@@ -39,20 +70,34 @@ export function createCustomField(db: DB, b: CustomFieldInput, now = nowIso()): 
     const options = checkInput(db, b, null);
     const id = uuidv7();
     const order = (db.prepare('SELECT coalesce(max(sort_order), 0) + 1 n FROM custom_field').get() as { n: number }).n;
-    db.prepare('INSERT INTO custom_field (id, label, type, options_json, sort_order, created_at) VALUES (?,?,?,?,?,?)').run(id, b.label, b.type, options, order, now);
+    db.prepare('INSERT INTO custom_field (id, label, type, options_json, formula, sort_order, created_at) VALUES (?,?,?,?,?,?,?)').run(
+      id, b.label, b.type, options, b.type === 'formula' ? b.formula!.trim() : null, order, now,
+    );
     audit(db, 'custom_field', id, 'insert', null, b, now);
+    if (b.type === 'formula') syncFieldValueView(db);
     return getField(db, id);
   })();
 }
 
-/** Renames a field or changes its choices. Its kind can change only while no lead has a value, so no value turns invalid. */
+/**
+ * Renames a field, changes its choices or its formula. Its kind can change only while no lead has a value, so no value
+ * turns invalid, and not while a formula uses it. A rename is carried into the formulas that use the field.
+ */
 export function updateCustomField(db: DB, id: string, b: CustomFieldInput): CustomField {
   return db.transaction(() => {
     const old = getField(db, id);
     if (b.type !== old.type && old.leads) throw new DomainError(`${old.leads} lead${old.leads === 1 ? ' has' : 's have'} a value in this field, so its kind can't change. Make a new field instead.`, 409);
-    const options = checkInput(db, b, id);
-    db.prepare('UPDATE custom_field SET label = ?, type = ?, options_json = ? WHERE id = ?').run(b.label, b.type, options, id);
+    const users = usedBy(db, old);
+    if (b.type !== old.type && users.length) throw new DomainError(`${users.join(', ')} use${users.length === 1 ? 's' : ''} this field in a formula, so its kind can't change`, 409);
+    if (b.label !== old.label) {
+      const set = db.prepare('UPDATE custom_field SET formula = ? WHERE id = ?');
+      for (const f of listCustomFields(db)) if (f.type === 'formula' && f.id !== id && f.formula) set.run(renameFormulaField(f.formula, old.label, b.label), f.id);
+    }
+    const formula = b.type === 'formula' ? renameFormulaField(b.formula ?? '', old.label, b.label).trim() : null;
+    const options = checkInput(db, { ...b, formula: formula ?? undefined }, id);
+    db.prepare('UPDATE custom_field SET label = ?, type = ?, options_json = ?, formula = ? WHERE id = ?').run(b.label, b.type, options, formula, id);
     audit(db, 'custom_field', id, 'update', old, b);
+    if (b.type === 'formula' || old.type === 'formula' || users.length) syncFieldValueView(db);
     return getField(db, id);
   })();
 }
@@ -72,21 +117,24 @@ export function moveCustomField(db: DB, id: string, by: -1 | 1): CustomField[] {
   })();
 }
 
-/** Deletes a field and every lead's value in it. */
+/** Deletes a field and every lead's value in it. A field a formula uses can't be deleted. */
 export function deleteCustomField(db: DB, id: string): { removed_from: number } {
   return db.transaction(() => {
     const old = getField(db, id);
+    const users = usedBy(db, old);
+    if (users.length) throw new DomainError(`${users.join(', ')} use${users.length === 1 ? 's' : ''} this field in a formula. Change ${users.length === 1 ? 'that formula' : 'those formulas'} first.`, 409);
     const n = db.prepare('DELETE FROM lead_custom_value WHERE field_id = ?').run(id).changes;
     db.prepare('DELETE FROM custom_field WHERE id = ?').run(id);
     audit(db, 'custom_field', id, 'delete', old, null);
+    if (old.type === 'formula') syncFieldValueView(db);
     return { removed_from: n };
   })();
 }
 
-/** Every field with this lead's value (null when it has none), in order. */
-export function leadCustomValues(db: DB, leadId: string): { field_id: string; label: string; type: CustomField['type']; options: string[]; value: string | null }[] {
-  const values = new Map((db.prepare('SELECT field_id, value FROM lead_custom_value WHERE lead_id = ?').all(leadId) as { field_id: string; value: string }[]).map((r) => [r.field_id, r.value]));
-  return listCustomFields(db).map((f) => ({ field_id: f.id, label: f.label, type: f.type, options: f.options, value: values.get(f.id) ?? null }));
+/** Every field with this lead's value (null when it has none), in order. Formula fields come worked out. */
+export function leadCustomValues(db: DB, leadId: string): { field_id: string; label: string; type: CustomField['type']; result: CustomField['result']; options: string[]; value: string | null }[] {
+  const values = new Map((db.prepare('SELECT field_id, value FROM lead_field_value WHERE lead_id = ?').all(leadId) as { field_id: string; value: unknown }[]).map((r) => [r.field_id, String(r.value)]));
+  return listCustomFields(db).map((f) => ({ field_id: f.id, label: f.label, type: f.type, result: f.result, options: f.options, value: values.get(f.id) ?? null }));
 }
 
 /** Sets this lead's values (field id → typed value; blank clears it). Returns how many changed. Call inside a transaction. */

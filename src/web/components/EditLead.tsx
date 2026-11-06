@@ -148,7 +148,7 @@ export function EditLead({ d, onClose, onSaved }: { d: LeadDetail; onClose: () =
               {types.map((t) => <option key={t.code} value={t.code}>{t.label}</option>)}
             </select>
           </label>
-          {d.custom.map((f) => (
+          {d.custom.filter((f) => f.type !== 'formula').map((f) => (
             <label key={f.field_id} className="field">
               <span>{f.label}</span>
               <CustomFieldInput field={f} value={custom[f.field_id] ?? ''} onChange={(v) => setCustom({ ...custom, [f.field_id]: v })} />
