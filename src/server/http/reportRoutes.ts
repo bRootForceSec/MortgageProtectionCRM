@@ -6,6 +6,7 @@ import { parseList } from '../domain/groupFilter.js';
 import { buildReport, drill, DrillSpec, loadTargets, reportCalls, reportJson, reportSheets, saveTargets, type ReportFilter, todayStats } from '../domain/reports.js';
 import { toCsv, toXlsx } from '../domain/exporter.js';
 import { unmarkedAppointments } from '../domain/unitrustAppointments.js';
+import { loadReportLayouts, saveReportLayouts } from '../domain/reportLayouts.js';
 import { isApptDays, type ApptDays } from '../../shared/leadFilter.js';
 
 const filterQuery = z.object({
@@ -32,6 +33,10 @@ export function registerReportRoutes(app: FastifyInstance, deps: { db: DB }) {
 
   // ---------- reports ----------
   app.get('/api/reports', async (req) => buildReport(db, toFilter(filterQuery.parse(req.query))));
+
+  // How you arranged Reports, and your saved presets.
+  app.get('/api/reports/layouts', async () => loadReportLayouts(db));
+  app.put('/api/reports/layouts', async (req) => saveReportLayouts(db, req.body));
 
   app.get('/api/reports/drill', async (req) => {
     const q = filterQuery.extend(DrillSpec.shape).parse(req.query);

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { api, fmtDateTime, fmtMoney, fmtPhone } from '../api';
 import { useApp } from '../App';
+import { REPORT_CARDS, cardView, fullLayout, type ReportCard, type ReportCardKey, type ReportLayouts, type ReportView } from '../../shared/reportLayout';
 import { GroupPicker, useGroups } from '../components/GroupPicker';
 import { LeadViewer, type ViewerItem } from '../components/LeadViewer';
 import { getStored, setStored } from '../storage';
@@ -76,10 +77,131 @@ export function ReportsPage() {
     setStored('mpcrm.reports.range', range);
   }, [range]);
 
+  // Your arrangement of the cards, and the presets you saved.
+  const [layouts, setLayouts] = useState<ReportLayouts>({ current: [], presets: {} });
+  const [arranging, setArranging] = useState(false);
+  useEffect(() => {
+    api.get<ReportLayouts>('/reports/layouts').then(setLayouts).catch((e) => toast(`Couldn't load your Reports layout: ${e.message}`, 'error'));
+  }, [toast]);
+  const layout = fullLayout(layouts.current);
+  const saveLayouts = async (next: ReportLayouts) => {
+    setLayouts(next);
+    try {
+      setLayouts(await api.put<ReportLayouts>('/reports/layouts', next));
+    } catch (e: any) {
+      toast(e.message, 'error');
+    }
+  };
+  const setCard = (key: ReportCardKey, patch: Partial<ReportCard>) =>
+    void saveLayouts({ ...layouts, current: layout.map((c) => (c.key === key ? { ...c, ...patch } : c)) });
+  const moveCard = (key: ReportCardKey, by: -1 | 1) => {
+    const i = layout.findIndex((c) => c.key === key);
+    const j = i + by;
+    if (i < 0 || j < 0 || j >= layout.length) return;
+    const next = [...layout];
+    [next[i], next[j]] = [next[j]!, next[i]!];
+    void saveLayouts({ ...layouts, current: next });
+  };
+
   /** A number you can click to see the rows behind it. */
   const N = ({ section, k = 'all', metric, title, children }: { section: Section; k?: string; metric: string; title: string; children: React.ReactNode }) => (
     <button className="num" onClick={() => setDrill({ section, key: k, metric, title })} title="Show what's behind this number">{children}</button>
   );
+
+  /** Each card of the page, by key. Reports draws the ones you show, in your order (Arrange). */
+  const cards: Record<ReportCardKey, (view: ReportView | null) => React.ReactNode> = {
+    activity: () => a && (
+      <div className="card">
+          <h3>Activity <span className="muted">{from.toLocaleDateString()}{to.getTime() - from.getTime() > 86_400_000 ? ` – ${addDays(to, -1).toLocaleDateString()}` : ''}</span></h3>
+          <div className="summary-tiles">
+            <div><b><N section="activity" metric="dials" title="Dials">{a.dials}</N></b>Dials</div>
+            <div><b><N section="activity" metric="attempts" title="Attempts">{a.attempts}</N></b>Attempts</div>
+            <div><b><N section="activity" metric="leads_called" title="Leads called">{a.leads_called}</N></b>Leads called</div>
+            <div><b><N section="activity" metric="contacts" title="Contacts">{a.contacts}</N></b>Contacts</div>
+            <div><b><N section="activity" metric="conversations" title="Conversations of 2+ minutes">{a.conversations}</N></b>Talks of 2+ min</div>
+            <div><b><N section="activity" metric="talk_minutes" title="Calls with talk time">{a.talk_minutes}</N></b>Talk minutes</div>
+            <div><b><N section="activity" metric="appointments" title="Appointments set">{a.appointments}</N></b>Appointments</div>
+            <div><b><N section="activity" metric="callbacks" title="Callbacks">{a.callbacks}</N></b>Callbacks</div>
+            <div><b><N section="activity" metric="bad_numbers" title="Bad numbers">{a.bad_numbers}</N></b>Bad numbers</div>
+            <div><b>{num(a.attempts_per_lead)}</b>Attempts per lead</div>
+            <div><b>{num(a.dials_per_contact)}</b>Dials per contact</div>
+          </div>
+          {a.untimed_calls > 0 && <p className="help">{a.untimed_calls} call(s) imported from a spreadsheet fall in these dates. They're left out here and in "by hour" because their real time isn't known, and counted in the county, batch and benchmark numbers.</p>}
+        </div>
+    ),
+    appointments: () => r?.appointments && <Appointments a={r.appointments} onOpen={(id, list) => setOpen({ id, list })} />,
+    by_hour: (view) => r && (
+      <div className="card">
+          <h3>By hour <span className="muted">(your time)</span></h3>
+          {view === 'table' ? <HourTable rows={r.by_hour} /> : <HourChart rows={r.by_hour} onPick={(h, metric) => setDrill({ section: 'by_hour', key: String(h), metric, title: `${metric === 'contacts' ? 'Contacts' : 'Dials'} at ${hourLabel(h)}` })} />}
+        </div>
+    ),
+    best_time: () => r && (
+      <div className="card">
+          <h3>Best time to call <span className="muted">(pickup rate in the lead's local time, all your calls, any dates)</span></h3>
+          <BestTime b={r.best_time} onPick={(key, metric, label) => setDrill({ section: 'best_time', key, metric, title: `${metric === 'contacts' ? 'Pickups' : 'Calls'} ${label}` })} />
+        </div>
+    ),
+    by_county: () => r && (
+      <div className="card">
+          <h3>By county</h3>
+          <table className="grid">
+            <thead><tr><th>County</th><th>Area codes</th><th>Leads</th><th>Dials</th><th>Attempts</th><th>Contacts</th><th>Appointments</th></tr></thead>
+            <tbody>
+              {r.by_county.map((c: any) => {
+                const name = c.name ? `${c.name}, ${c.state ?? ''}` : 'No county';
+                const cell = (metric: string, label: string) => <td><N section="by_county" k={c.key} metric={metric} title={`${label}: ${name}`}>{c[metric]}</N></td>;
+                return (
+                  <tr key={c.key}>
+                    <td>{name}</td><td className="muted">{c.area_codes}</td>
+                    {cell('leads', 'Leads')}{cell('dials', 'Dials')}{cell('attempts', 'Attempts')}{cell('contacts', 'Contacts')}{cell('appointments', 'Appointments')}
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+          <p className="help">Leads are every lead you have in the county; the call numbers are for these dates.</p>
+        </div>
+    ),
+    by_caller: () => r && (
+      <div className="card">
+          <h3>Local vs out-of-area caller ID</h3>
+          {r.by_caller.length === 0 ? (
+            <p className="muted">No calls in these dates.</p>
+          ) : (
+            <table className="grid">
+              <thead>
+                <tr><th>Caller ID</th><th>Dials</th><th>Attempts</th><th>Pickups</th><th>Pickup rate</th><th>Appointments</th><th>Appts per attempt</th><th>Appts per pickup</th><th>Callbacks set</th><th>Called you back</th></tr>
+              </thead>
+              <tbody>
+                {r.by_caller.map((c: any) => {
+                  const label = CALLER_LABELS[c.key] ?? c.key;
+                  const cell = (metric: string, title: string) => <td><N section="by_caller" k={c.key} metric={metric} title={`${title}: ${label}`}>{c[metric]}</N></td>;
+                  return (
+                    <tr key={c.key}>
+                      <td>{label}</td>
+                      {cell('dials', 'Dials')}{cell('attempts', 'Attempts')}{cell('contacts', 'Pickups')}<td>{pct(c.contact_rate)}</td>
+                      {cell('appointments', 'Appointments')}<td>{pct(c.appt_rate)}</td><td>{pct(c.appts_per_contact)}</td>{cell('callbacks', 'Callbacks set')}
+                      <td><N section="by_caller" k={c.key} metric="called_back" title={`Called you back: ${label}`}>{c.called_back}</N> <span className="muted">({pct(c.called_back_rate)} of leads called)</span></td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          )}
+          <p className="help">
+            Local means the number you called from has one of the area codes for the lead's county (Settings)
+            (or the lead's own area code, for a county with none set). A pickup is any call where you reached a person.
+            Called you back counts leads you ticked "Called me back" in these dates, under the number you last called them from.
+          </p>
+        </div>
+    ),
+    by_batch: () => r && <ByBatch rows={r.by_batch} N={N} />,
+    objections: () => r?.objections && <Objections o={r.objections} />,
+    benchmarks: () => r && <Benchmarks r={r} N={N} onSaved={load} />,
+    weekly: () => r?.weekly && <Weekly w={r.weekly} targets={r.targets} />,
+    by_age: () => r?.by_age?.length > 0 && <ByAge rows={r.by_age} />,
+  };
 
   const q = new URLSearchParams(Object.entries(params).filter(([, v]) => v) as [string, string][]).toString();
   const a = r?.activity;
@@ -111,103 +233,14 @@ export function ReportsPage() {
         </div>
       </div>
 
-      {a && (
-        <div className="card">
-          <h3>Activity <span className="muted">{from.toLocaleDateString()}{to.getTime() - from.getTime() > 86_400_000 ? ` – ${addDays(to, -1).toLocaleDateString()}` : ''}</span></h3>
-          <div className="summary-tiles">
-            <div><b><N section="activity" metric="dials" title="Dials">{a.dials}</N></b>Dials</div>
-            <div><b><N section="activity" metric="attempts" title="Attempts">{a.attempts}</N></b>Attempts</div>
-            <div><b><N section="activity" metric="leads_called" title="Leads called">{a.leads_called}</N></b>Leads called</div>
-            <div><b><N section="activity" metric="contacts" title="Contacts">{a.contacts}</N></b>Contacts</div>
-            <div><b><N section="activity" metric="conversations" title="Conversations of 2+ minutes">{a.conversations}</N></b>Talks of 2+ min</div>
-            <div><b><N section="activity" metric="talk_minutes" title="Calls with talk time">{a.talk_minutes}</N></b>Talk minutes</div>
-            <div><b><N section="activity" metric="appointments" title="Appointments set">{a.appointments}</N></b>Appointments</div>
-            <div><b><N section="activity" metric="callbacks" title="Callbacks">{a.callbacks}</N></b>Callbacks</div>
-            <div><b><N section="activity" metric="bad_numbers" title="Bad numbers">{a.bad_numbers}</N></b>Bad numbers</div>
-            <div><b>{num(a.attempts_per_lead)}</b>Attempts per lead</div>
-            <div><b>{num(a.dials_per_contact)}</b>Dials per contact</div>
-          </div>
-          {a.untimed_calls > 0 && <p className="help">{a.untimed_calls} call(s) imported from a spreadsheet fall in these dates. They're left out here and in "by hour" because their real time isn't known, and counted in the county, batch and benchmark numbers.</p>}
-        </div>
-      )}
+      <ArrangeBar layouts={layouts} arranging={arranging} onArrange={setArranging} onChange={saveLayouts} />
 
-      {r?.appointments && <Appointments a={r.appointments} onOpen={(id, list) => setOpen({ id, list })} />}
-
-      {r && (
-        <div className="card">
-          <h3>By hour <span className="muted">(your time)</span></h3>
-          <HourChart rows={r.by_hour} onPick={(h, metric) => setDrill({ section: 'by_hour', key: String(h), metric, title: `${metric === 'contacts' ? 'Contacts' : 'Dials'} at ${hourLabel(h)}` })} />
-        </div>
-      )}
-
-      {r && (
-        <div className="card">
-          <h3>Best time to call <span className="muted">(pickup rate in the lead's local time, all your calls, any dates)</span></h3>
-          <BestTime b={r.best_time} onPick={(key, metric, label) => setDrill({ section: 'best_time', key, metric, title: `${metric === 'contacts' ? 'Pickups' : 'Calls'} ${label}` })} />
-        </div>
-      )}
-
-      {r && (
-        <div className="card">
-          <h3>By county</h3>
-          <table className="grid">
-            <thead><tr><th>County</th><th>Area codes</th><th>Leads</th><th>Dials</th><th>Attempts</th><th>Contacts</th><th>Appointments</th></tr></thead>
-            <tbody>
-              {r.by_county.map((c: any) => {
-                const name = c.name ? `${c.name}, ${c.state ?? ''}` : 'No county';
-                const cell = (metric: string, label: string) => <td><N section="by_county" k={c.key} metric={metric} title={`${label}: ${name}`}>{c[metric]}</N></td>;
-                return (
-                  <tr key={c.key}>
-                    <td>{name}</td><td className="muted">{c.area_codes}</td>
-                    {cell('leads', 'Leads')}{cell('dials', 'Dials')}{cell('attempts', 'Attempts')}{cell('contacts', 'Contacts')}{cell('appointments', 'Appointments')}
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-          <p className="help">Leads are every lead you have in the county; the call numbers are for these dates.</p>
-        </div>
-      )}
-
-      {r && (
-        <div className="card">
-          <h3>Local vs out-of-area caller ID</h3>
-          {r.by_caller.length === 0 ? (
-            <p className="muted">No calls in these dates.</p>
-          ) : (
-            <table className="grid">
-              <thead>
-                <tr><th>Caller ID</th><th>Dials</th><th>Attempts</th><th>Pickups</th><th>Pickup rate</th><th>Appointments</th><th>Appts per attempt</th><th>Appts per pickup</th><th>Callbacks set</th><th>Called you back</th></tr>
-              </thead>
-              <tbody>
-                {r.by_caller.map((c: any) => {
-                  const label = CALLER_LABELS[c.key] ?? c.key;
-                  const cell = (metric: string, title: string) => <td><N section="by_caller" k={c.key} metric={metric} title={`${title}: ${label}`}>{c[metric]}</N></td>;
-                  return (
-                    <tr key={c.key}>
-                      <td>{label}</td>
-                      {cell('dials', 'Dials')}{cell('attempts', 'Attempts')}{cell('contacts', 'Pickups')}<td>{pct(c.contact_rate)}</td>
-                      {cell('appointments', 'Appointments')}<td>{pct(c.appt_rate)}</td><td>{pct(c.appts_per_contact)}</td>{cell('callbacks', 'Callbacks set')}
-                      <td><N section="by_caller" k={c.key} metric="called_back" title={`Called you back: ${label}`}>{c.called_back}</N> <span className="muted">({pct(c.called_back_rate)} of leads called)</span></td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          )}
-          <p className="help">
-            Local means the number you called from has one of the area codes for the lead's county (Settings)
-            (or the lead's own area code, for a county with none set). A pickup is any call where you reached a person.
-            Called you back counts leads you ticked "Called me back" in these dates, under the number you last called them from.
-          </p>
-        </div>
-      )}
-
-      {r && <ByBatch rows={r.by_batch} N={N} />}
-
-      {r?.objections && <Objections o={r.objections} />}
-      {r && <Benchmarks r={r} N={N} onSaved={load} />}
-      {r?.weekly && <Weekly w={r.weekly} targets={r.targets} />}
+      {layout.filter((c) => arranging || !c.hidden).map((c, i) => (
+        <section key={c.key} className={arranging ? `arrange-card${c.hidden ? ' is-hidden' : ''}` : undefined} aria-label={REPORT_CARDS[c.key].label}>
+          {arranging && <CardControls card={c} first={i === 0} last={i === layout.length - 1} onMove={(d) => moveCard(c.key, d)} onChange={(patch) => setCard(c.key, patch)} />}
+          {(!arranging || !c.hidden) && cards[c.key](cardView(c))}
+        </section>
+      ))}
 
       {drill && <DrillModal params={params} drill={drill} onClose={() => setDrill(null)} onOpen={(id, list) => setOpen({ id, list })} />}
       {open && <LeadViewer id={open.id} list={open.list} onClose={() => setOpen(null)} />}
@@ -737,6 +770,116 @@ function Weekly({ w, targets }: { w: any; targets: any }) {
         Appts per pickup counts first calls in that week. Show and close rate count the appointments on that week's days,
         from Unitrust or logged here. Targets start from the flier (80% sit, 50% close); change them with Edit targets above.
       </p>
+    </div>
+  );
+}
+
+/** Arrange: move cards, hide them, pick chart or table; save the arrangement as a preset and load one back. */
+function ArrangeBar({ layouts, arranging, onArrange, onChange }: {
+  layouts: ReportLayouts; arranging: boolean; onArrange: (on: boolean) => void; onChange: (next: ReportLayouts) => Promise<void>;
+}) {
+  const { toast } = useApp();
+  const [name, setName] = useState('');
+  const names = Object.keys(layouts.presets).sort((a, b) => a.localeCompare(b));
+  const saveAs = async () => {
+    const n = name.trim();
+    if (!n) return toast('Give the layout a name first', 'error');
+    await onChange({ ...layouts, presets: { ...layouts.presets, [n]: fullLayout(layouts.current) } });
+    setName('');
+    toast(`Saved layout "${n}"`);
+  };
+  const load = (n: string) => {
+    const p = layouts.presets[n];
+    if (p) void onChange({ ...layouts, current: p }).then(() => toast(`Loaded layout "${n}"`));
+  };
+  const remove = (n: string) => {
+    const { [n]: _gone, ...rest } = layouts.presets;
+    void onChange({ ...layouts, presets: rest });
+  };
+  return (
+    <div className="card arrange-bar">
+      <div className="row">
+        <button className={`btn small${arranging ? ' primary' : ''}`} onClick={() => onArrange(!arranging)}>{arranging ? 'Done arranging' : 'Arrange cards'}</button>
+        {names.length > 0 && (
+          <label className="choice-inline">
+            Layout{' '}
+            <select value="" onChange={(e) => e.target.value && load(e.target.value)} aria-label="Load a saved layout">
+              <option value="">Load…</option>
+              {names.map((n) => <option key={n} value={n}>{n}</option>)}
+            </select>
+          </label>
+        )}
+        {arranging && (
+          <>
+            <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Name this layout" maxLength={40} aria-label="Layout name" style={{ width: 180 }} />
+            <button className="btn small" onClick={() => void saveAs()}>Save as preset</button>
+            <button className="btn small" onClick={() => void onChange({ ...layouts, current: [] })}>Back to default</button>
+          </>
+        )}
+      </div>
+      {arranging && names.length > 0 && (
+        <div className="row" style={{ marginTop: 6 }}>
+          <span className="muted small">Saved:</span>
+          {names.map((n) => (
+            <span key={n} className="badge">{n} <button className="link" onClick={() => remove(n)} aria-label={`Delete layout ${n}`}>×</button></span>
+          ))}
+        </div>
+      )}
+      {arranging && <p className="help">Move cards with the arrows, hide the ones you don't use, and pick chart or table where a card has both. Changes save as you go.</p>}
+    </div>
+  );
+}
+
+/** The controls above a card while you arrange. */
+function CardControls({ card, first, last, onMove, onChange }: {
+  card: ReportCard & { key: ReportCardKey }; first: boolean; last: boolean; onMove: (by: -1 | 1) => void; onChange: (patch: Partial<ReportCard>) => void;
+}) {
+  const def: { label: string; views?: readonly ReportView[] } = REPORT_CARDS[card.key];
+  const view = cardView(card);
+  return (
+    <div className="row card-controls">
+      <b>{def.label}</b>
+      <button className="btn small" disabled={first} onClick={() => onMove(-1)} aria-label={`Move ${def.label} up`}>↑</button>
+      <button className="btn small" disabled={last} onClick={() => onMove(1)} aria-label={`Move ${def.label} down`}>↓</button>
+      <label className="choice-inline"><input type="checkbox" checked={!card.hidden} onChange={(e) => onChange({ hidden: !e.target.checked })} aria-label={`Show ${def.label}`} /> Show</label>
+      {def.views && (
+        <span className="tabs" role="group" aria-label={`${def.label} as`}>
+          {def.views.map((v) => <button key={v} className={view === v ? 'active' : ''} onClick={() => onChange({ view: v })}>{v === 'chart' ? 'Chart' : 'Table'}</button>)}
+        </span>
+      )}
+    </div>
+  );
+}
+
+/** By hour as a table: dials, attempts, contacts and the contact rate for each hour you called. */
+function HourTable({ rows }: { rows: any[] }) {
+  if (!rows.length) return <p className="muted">No calls in these dates.</p>;
+  return (
+    <table className="grid">
+      <thead><tr><th>Hour</th><th>Dials</th><th>Attempts</th><th>Contacts</th><th title="Contacts out of attempts">Contact rate</th><th>Appointments</th></tr></thead>
+      <tbody>
+        {[...rows].sort((a, b) => a.hour - b.hour).map((x) => (
+          <tr key={x.hour}><td>{hourLabel(x.hour)}</td><td>{x.dials}</td><td>{x.attempts}</td><td>{x.contacts}</td><td>{pct(x.attempts ? x.contacts / x.attempts : null)}</td><td>{x.appointments ?? 0}</td></tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+/** All time, by how old the lead was when you called it: are older leads still worth the calls? */
+function ByAge({ rows }: { rows: any[] }) {
+  return (
+    <div className="card">
+      <h3>By lead age <span className="muted">(all time, the lead's age when you called)</span></h3>
+      <table className="grid">
+        <thead><tr><th>Lead age</th><th>Attempts</th><th>Pickups</th><th>Pickup rate</th><th>Appts set</th><th>Appts per pickup</th></tr></thead>
+        <tbody>
+          {rows.map((a) => (
+            <tr key={a.key}><td>{a.label}</td><td>{a.attempts}</td><td>{a.contacts}</td><td>{pct(a.contact_rate)}</td><td>{a.appointments}</td><td>{pct(a.booked_per_pickup)}</td></tr>
+          ))}
+        </tbody>
+      </table>
+      <p className="help">Age is the days from the call-in date on the lead page to the call. First calls only.</p>
     </div>
   );
 }

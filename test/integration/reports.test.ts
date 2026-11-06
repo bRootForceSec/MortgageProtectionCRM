@@ -68,6 +68,18 @@ beforeEach(async () => {
 });
 
 describe('reports', () => {
+  it('keeps how you arranged the cards, and the layouts you saved', async () => {
+    const get = async () => (await app.inject({ method: 'GET', url: '/api/reports/layouts', headers: auth })).json();
+    expect(await get()).toEqual({ current: [], presets: {} });
+    const mine = { current: [{ key: 'by_caller', hidden: false }, { key: 'by_hour', hidden: false, view: 'table' }], presets: { Friday: [{ key: 'weekly', hidden: false }] } };
+    const put = (payload: object) => app.inject({ method: 'PUT', url: '/api/reports/layouts', headers: write, payload });
+    expect((await put(mine)).statusCode).toBe(200);
+    expect(await get()).toEqual(mine);
+    expect((await put({ current: [{ key: 'by_hour', view: 'pie' }] })).statusCode).toBe(400);
+    expect((await put({ presets: { '  ': [] } })).statusCode).toBe(400);
+    expect(await get()).toEqual(mine);
+  });
+
   it('counts activity, leaving out undone calls and calls with no real time', () => {
     const r = buildReport(db, range());
     expect(r.activity).toMatchObject({
