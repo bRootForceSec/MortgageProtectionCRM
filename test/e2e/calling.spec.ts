@@ -679,3 +679,32 @@ test('on the spot: Run it now saves the Appt set and stays on the lead, on the A
   await expect(page.locator('.undo-bar')).toContainText(`Saved for ${lead}: Appt: Sale`);
   await expect(page.getByLabel('Current lead').locator('.badge.appt-sold')).toBeVisible();
 });
+
+test('Settings → Outcomes: rename a button, hide one, show Callback, then reset', async ({ page }) => {
+  await page.goto(launchUrl);
+  await page.getByRole('button', { name: 'Settings' }).click();
+  const card = page.locator('#outcomes');
+  await card.getByLabel('Name for Dial: Bad number').fill('Dial: Wrong #');
+  await card.getByLabel('Show a button for Dial: Picked up').uncheck();
+  await card.getByLabel('Show a button for Callback').check();
+  await card.getByRole('button', { name: 'Save outcomes' }).click();
+  await expect(page.getByText('Outcomes saved')).toBeVisible();
+  await page.screenshot({ path: 'test-results/outcomes-settings.png', fullPage: true });
+
+  // The buttons the Calling screen gets (the lead showing now is in the dead pile, so it has none to click).
+  const buttons = async () => {
+    const meta = await (await page.request.get(new URL('/api/meta', page.url()).href)).json();
+    return meta.outcome_codes.filter((o: any) => o.kind === 'first_call' && o.offered).map((o: any) => o.label);
+  };
+  expect(await buttons()).toEqual(['Dial: No answer', 'Dial: Appt set', 'Dial: Wrong #', 'Callback']);
+
+  // Reset shows only on the three changed rows, and goes away once a row is back to its default.
+  const resets = card.getByRole('button', { name: 'Reset' });
+  await expect(resets).toHaveCount(3);
+  for (let i = 0; i < 3; i++) await resets.first().click();
+  await expect(resets).toHaveCount(0);
+  await card.getByRole('button', { name: 'Save outcomes' }).click();
+  await expect(page.getByText('Outcomes saved')).toHaveCount(1);
+  await expect(card.getByLabel('Name for Dial: Bad number')).toHaveValue('Dial: Bad number');
+  expect(await buttons()).toEqual(['Dial: No answer', 'Dial: Picked up', 'Dial: Appt set', 'Dial: Bad number']);
+});

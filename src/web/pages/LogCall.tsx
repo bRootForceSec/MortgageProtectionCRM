@@ -114,7 +114,7 @@ export function LogCall({
     if (!numberId && defaultNumber.id) setNumberId(defaultNumber.id);
   }, [defaultNumber.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const outcomes = useMemo(() => (meta?.outcome_codes ?? []).filter((o) => o.kind === mode && outcomeDef(o.code)?.offered !== false), [meta, mode]);
+  const outcomes = useMemo(() => (meta?.outcome_codes ?? []).filter((o) => o.kind === mode && o.offered), [meta, mode]);
   const outcome = outcomes.find((o) => o.code === code) ?? null;
   const needsWhen = !!outcome?.requires_callback_time;
   // Appt set: the appointment's day and time, optional, typed like a callback.

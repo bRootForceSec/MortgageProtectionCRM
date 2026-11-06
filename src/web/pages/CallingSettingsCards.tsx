@@ -8,7 +8,7 @@ import {
 import type { CallingSettings, ShortcutAction } from '../../shared/callingSettings';
 import { parsePlan, SUGGESTED_FOLLOW_UPS } from '../../shared/followUps';
 import { APPT_RESULT_LABEL } from '../../shared/appointments';
-import { outcomeDef, savesInstantly } from '../../shared/outcomes';
+import { outcomeDef, savesInstantly, type OutcomeOverrides } from '../../shared/outcomes';
 
 // Settings for the Calling screen: retry gap, dialing, timer, goals, alerts, shortcuts and scripts.
 
@@ -125,7 +125,7 @@ export function CallingCard() {
           {s.instant_save && (['first_call', 'appointment'] as const).map((side) => (
             <span key={side} className="row" style={{ marginTop: 4 }}>
               <span className="help">{side === 'appointment' ? 'Appointment:' : 'First call:'}</span>
-              {(meta?.outcome_codes ?? []).filter((o) => o.kind === side && !o.requires_callback_time && outcomeDef(o.code)?.offered !== false).map((o) => (
+              {(meta?.outcome_codes ?? []).filter((o) => o.kind === side && !o.requires_callback_time && o.offered).map((o) => (
                 <label key={o.code} className="choice-inline">
                   <input type="checkbox" checked={savesInstantly(o, s.instant_outcomes)}
                     onChange={(e) => set({ instant_outcomes: { ...s.instant_outcomes, [o.code]: e.target.checked } })} /> {o.label}
@@ -262,7 +262,7 @@ export function ShortcutsCard() {
               </tr>
             );
           })}
-          {meta?.outcome_codes.filter((o) => outcomeDef(o.code)?.offered !== false).map((o) => {
+          {meta?.outcome_codes.filter((o) => o.offered).map((o) => {
             const k = km.outcomeKey[o.code];
             const waiting = capture?.kind === 'outcome' && capture.id === o.code;
             return (
@@ -288,3 +288,75 @@ export function ShortcutsCard() {
   );
 }
 
+
+/** What an outcome counts as, in a few words, so a renamed one still says what it does. */
+function outcomeMeaning(code: string): string {
+  const d = outcomeDef(code);
+  if (!d) return '';
+  const parts = [
+    d.pickup && 'a pickup',
+    d.apptSet && 'an appt set',
+    d.callback && 'a callback (asks for a day)',
+    d.group === 'invalid' && 'a bad number',
+    d.marksDead && 'the dead pile',
+    d.apptResult && `appointment: ${APPT_RESULT_LABEL[d.apptResult].toLowerCase()}`,
+  ].filter(Boolean);
+  return parts.length ? `Counts as ${parts.join(', ')}` : 'Not reached';
+}
+
+/** Settings → Outcomes: rename the buttons and choose which ones show. What each one means stays the same. */
+export function OutcomesCard() {
+  const { meta, reloadMeta, toast } = useApp();
+  const rows = meta?.outcome_codes ?? [];
+  const [draft, setDraft] = useState<Record<string, { label: string; offered: boolean }>>({});
+  const value = (code: string, label: string, offered: boolean) => draft[code] ?? { label, offered };
+  const dirty = Object.keys(draft).length > 0;
+  const save = async () => {
+    const overrides: OutcomeOverrides = Object.fromEntries(rows.map((o) => [o.code, value(o.code, o.label, o.offered)]));
+    try {
+      await api.put('/settings/outcomes', { overrides });
+      await reloadMeta();
+      setDraft({});
+      toast('Outcomes saved');
+    } catch (e: any) {
+      toast(e.message, 'error');
+    }
+  };
+  return (
+    <div className="card" id="outcomes">
+      <h2>Outcomes</h2>
+      <p className="help">
+        Rename any outcome or hide its button. What it counts as (pickup, appt set, sale...) stays the same, so your numbers don't change.
+        Keys are under Keyboard shortcuts. Older calls show the new name too.
+      </p>
+      {(['first_call', 'appointment'] as const).map((side) => (
+        <div key={side}>
+          <h3>{side === 'appointment' ? 'Appointment side' : 'First call side'}</h3>
+          <table className="grid" style={{ maxWidth: 760 }}>
+            <thead><tr><th>Name</th><th>Button</th><th>What it does</th><th></th></tr></thead>
+            <tbody>
+              {rows.filter((o) => o.kind === side).map((o) => {
+                const v = value(o.code, o.label, o.offered);
+                const def = outcomeDef(o.code);
+                const set = (patch: Partial<typeof v>) => setDraft((d) => ({ ...d, [o.code]: { ...v, ...patch } }));
+                const isDefault = !!def && v.label === def.label && v.offered === def.offered;
+                return (
+                  <tr key={o.code}>
+                    <td><input value={v.label} maxLength={40} onChange={(e) => set({ label: e.target.value })} aria-label={`Name for ${def?.label ?? o.code}`} style={{ width: 220 }} /></td>
+                    <td><input type="checkbox" checked={v.offered} onChange={(e) => set({ offered: e.target.checked })} aria-label={`Show a button for ${v.label}`} /></td>
+                    <td className="muted small">{outcomeMeaning(o.code)}</td>
+                    <td>{def && !isDefault && <button className="btn small" onClick={() => set({ label: def.label, offered: def.offered })}>Reset</button>}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      ))}
+      <div className="row" style={{ marginTop: 8 }}>
+        <button className="btn primary" disabled={!dirty} onClick={() => void save()}>Save outcomes</button>
+        {dirty && <button className="btn" onClick={() => setDraft({})}>Cancel</button>}
+      </div>
+    </div>
+  );
+}

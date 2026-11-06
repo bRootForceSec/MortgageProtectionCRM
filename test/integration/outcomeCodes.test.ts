@@ -5,6 +5,9 @@ import { describe, it, expect } from 'vitest';
 import { tempDb } from '../helpers.js';
 import { migrate } from '../../src/server/db/connection.js';
 import { outcomeRow, sqlCodes, syncOutcomeCodes } from '../../src/server/db/outcomeCodes.js';
+import { loadOutcomeOverrides, saveOutcomeOverrides } from '../../src/server/domain/callingSettings.js';
+import { activeOutcomeCodes } from '../../src/server/domain/calls.js';
+import { DomainError } from '../../src/server/core/errors.js';
 import { APPT_OUTCOME_RESULT, BOOKED_CODES, OUTCOMES, outcomeDef, savesInstantly } from '../../src/shared/outcomes.js';
 
 // Characterization: the outcome_code table after every migration has run, on a new database (and so on every
@@ -111,5 +114,37 @@ describe('outcome codes', () => {
     expect(savesInstantly(row('callback'), chosen)).toBe(false);
     expect(savesInstantly(row('bad_number'), chosen)).toBe(true);
     expect(savesInstantly(row('appt_sat_no_sale'), chosen)).toBe(false);
+  });
+});
+
+describe('your outcome names and buttons (Settings → Outcomes)', () => {
+  const label = (db: ReturnType<typeof tempDb>['db'], code: string) => (db.prepare('SELECT label FROM outcome_code WHERE code = ?').get(code) as { label: string }).label;
+  const offered = (db: ReturnType<typeof tempDb>['db']) => Object.fromEntries((activeOutcomeCodes(db) as { code: string; offered: boolean }[]).map((o) => [o.code, o.offered]));
+
+  it('renames an outcome everywhere and hides or shows its button, keeping what it means', () => {
+    const { db } = tempDb();
+    expect(offered(db)).toMatchObject({ no_answer: true, callback: false });
+    saveOutcomeOverrides(db, { no_answer: { label: 'NA', offered: true }, callback: { label: 'Callback', offered: true }, bad_number: { offered: false } });
+    expect(label(db, 'no_answer')).toBe('NA');
+    expect(offered(db)).toMatchObject({ no_answer: true, callback: true, bad_number: false });
+    // Only what differs from the default is kept, and it survives the next start.
+    expect(loadOutcomeOverrides(db)).toEqual({ no_answer: { label: 'NA' }, callback: { offered: true }, bad_number: { offered: false } });
+    expect(syncOutcomeCodes(db)).toBe(0);
+    expect(label(db, 'no_answer')).toBe('NA');
+    expect(outcomeDef('no_answer')?.group).toBe('no_contact');
+    // Saving the defaults again puts everything back.
+    saveOutcomeOverrides(db, {});
+    expect(label(db, 'no_answer')).toBe('Dial: No answer');
+    expect(offered(db)).toMatchObject({ callback: false, bad_number: true });
+  });
+
+  it('refuses unknown or retired outcomes, blank names and a side with no buttons', () => {
+    const { db } = tempDb();
+    expect(() => saveOutcomeOverrides(db, { nope: { label: 'x' } })).toThrow(DomainError);
+    expect(() => saveOutcomeOverrides(db, { busy: { label: 'x' } })).toThrow(DomainError);
+    expect(() => saveOutcomeOverrides(db, { no_answer: { label: '  ' } })).toThrow();
+    const allOff = Object.fromEntries(Object.entries(OUTCOMES).filter(([, o]) => o.kind === 'appointment' && o.active).map(([c]) => [c, { offered: false }]));
+    expect(() => saveOutcomeOverrides(db, allOff)).toThrow(/at least one button on the Appointment side/);
+    expect(loadOutcomeOverrides(db)).toEqual({});
   });
 });

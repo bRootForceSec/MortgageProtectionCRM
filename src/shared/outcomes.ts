@@ -1,3 +1,4 @@
+import * as z from 'zod/v4';
 import type { ApptResult, CallMode } from './appointments.js';
 
 // Every call outcome there is, and what each one means. This is the one place outcomes are defined: the server
@@ -85,6 +86,18 @@ export const OUTCOMES = {
 export type OutcomeCode = keyof typeof OUTCOMES;
 
 const entries = Object.entries(OUTCOMES) as [OutcomeCode, OutcomeDef][];
+
+/**
+ * Your changes to the outcomes, from Settings → Outcomes: a new name, or whether it has a button. What an outcome
+ * means (pickup, appt set, sale...) stays as defined above. Kept in the `outcome_overrides` setting.
+ */
+export const OutcomeOverride = z.object({
+  label: z.string().trim().min(1, 'give the outcome a name').max(40).optional(),
+  offered: z.boolean().optional(),
+});
+export type OutcomeOverride = z.infer<typeof OutcomeOverride>;
+export const OutcomeOverrides = z.record(z.string().max(64), OutcomeOverride);
+export type OutcomeOverrides = z.infer<typeof OutcomeOverrides>;
 
 /** The outcome codes for which `test` holds. */
 export function outcomeCodes(test: (o: OutcomeDef) => boolean): OutcomeCode[] {

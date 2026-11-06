@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { api, fmtDateTime } from '../api';
 import { useApp } from '../App';
 import { useLeadTypes } from '../leadTypes';
-import { CallingCard, ShortcutsCard } from './CallingSettingsCards';
+import { CallingCard, OutcomesCard, ShortcutsCard } from './CallingSettingsCards';
 import { UpdatePanel } from '../components/UpdateBar';
 import { ProductsCard } from './ProductsCard';
 import { RoutinesCard } from './RoutinesCard';
@@ -32,6 +32,7 @@ export function SettingsPage() {
   return (
     <>
       <CallingCard />
+      <OutcomesCard />
       <RoutinesCard />
       <ShortcutsCard />
       <UnitrustCard />

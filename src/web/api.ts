@@ -77,6 +77,8 @@ export interface OutcomeCode {
   counts_as_human_contact: number;
   /** Which side of the Calling screen it belongs to. */
   kind: CallMode;
+  /** Has a button on the Calling screen (Settings → Outcomes). */
+  offered: boolean;
 }
 
 export interface CallerNumber {

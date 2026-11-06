@@ -9,6 +9,7 @@ import { groupWhere, searchWhere } from './groupFilter.js';
 import { callObjections, recordObjections, type ObjectionInput } from './objections.js';
 import { appointmentTimeOfCall, cancelAppointmentsOfCall, recordAppointmentTime } from './appointments.js';
 import { currentOpenerVersion } from './scripts.js';
+import { loadOutcomeOverrides } from '../db/outcomeCodes.js';
 
 export interface ManualCallInput {
   lead_id: string;
@@ -253,9 +254,11 @@ export function addNote(db: DB, leadId: string, body: string, callId?: string | 
   return { note_id: id };
 }
 
-/** Active outcome codes, in key order. */
+/** Active outcome codes, in key order, each saying whether it has a button on the Calling screen. */
 export function activeOutcomeCodes(db: DB) {
-  return db.prepare('SELECT * FROM outcome_code WHERE active = 1 ORDER BY sort_order').all();
+  const over = loadOutcomeOverrides(db);
+  const rows = db.prepare('SELECT * FROM outcome_code WHERE active = 1 ORDER BY sort_order').all() as { code: string }[];
+  return rows.map((r) => ({ ...r, offered: over[r.code]?.offered ?? outcomeDef(r.code)?.offered ?? true }));
 }
 
 /**
