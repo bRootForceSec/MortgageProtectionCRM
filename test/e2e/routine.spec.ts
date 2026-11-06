@@ -37,7 +37,7 @@ test('work the day by routine: imports, then a step saved from Leads', async ({ 
   const nav = (name: string) => page.locator('.topbar nav').getByRole('button', { name, exact: true }).click();
 
   // Import without putting the leads on the list: the routine's imports step does that.
-  await page.getByRole('button', { name: 'Import', exact: true }).click();
+  await page.locator('.topbar nav').getByRole('button', { name: 'Import', exact: true }).click();
   const file = path.join(dataDir, 'Morning leads.csv');
   fs.copyFileSync('test/fixtures/sample-leads.csv', file);
   await page.locator('input[type=file]:not([webkitdirectory])').setInputFiles(file);

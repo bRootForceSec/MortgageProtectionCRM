@@ -41,7 +41,7 @@ test('import a sheet, log calls by keyboard, and start an Appt set', async ({ pa
   await expect(page.getByRole('cell', { name: '(614) 555-0199' })).toBeVisible();
 
   // Import.
-  await page.getByRole('button', { name: 'Import', exact: true }).click();
+  await page.locator('.topbar nav').getByRole('button', { name: 'Import', exact: true }).click();
   const file = path.join(dataDir, 'October leads.csv');
   fs.copyFileSync('test/fixtures/sample-leads.csv', file);
   // The file picker, not the folder picker next to it.
