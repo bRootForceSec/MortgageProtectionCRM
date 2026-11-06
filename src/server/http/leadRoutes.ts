@@ -5,6 +5,7 @@ import type { DB } from '../db/connection.js';
 import type { Config } from '../config.js';
 import { DomainError } from '../core/errors.js';
 import { logManualCall, changeOutcome, addLeadAction, addNote, callHistory, changeCallerId } from '../domain/calls.js';
+import { runCallRules } from '../domain/rules.js';
 import { leadExists, listLeads, getLeadDetail, leadPdfPage, setLinkStatus } from '../domain/leads.js';
 import { parseList } from '../domain/groupFilter.js';
 import { setLeadTypeForMatching } from '../domain/leadEdit.js';
@@ -199,7 +200,10 @@ export function registerLeadRoutes(app: FastifyInstance, deps: { db: DB; config:
       on_the_spot: z.boolean().nullish(),
       objections: z.array(z.object({ code: z.string().max(40), note: z.string().max(2000).nullish() })).max(20).nullish(),
     }).parse(req.body);
-    return logManualCall(db, { ...b, lead_id: id });
+    const r = logManualCall(db, { ...b, lead_id: id });
+    // Rules for this outcome run after the call is saved; one that fails is in the rules log, never the call's error.
+    if (!r.duplicate) runCallRules(db, r.call_id);
+    return r;
   });
 
   app.post('/api/calls/:id/outcomes', async (req) => {
@@ -212,7 +216,9 @@ export function registerLeadRoutes(app: FastifyInstance, deps: { db: DB; config:
       do_not_call: z.boolean().nullish(),
       note: z.string().max(10000).nullish(),
     }).parse(req.body);
-    return changeOutcome(db, id, b);
+    const r = changeOutcome(db, id, b);
+    runCallRules(db, id);
+    return r;
   });
 
   app.post('/api/leads/:id/actions', async (req) => {

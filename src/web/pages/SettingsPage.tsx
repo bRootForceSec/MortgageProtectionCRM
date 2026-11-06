@@ -6,6 +6,7 @@ import { CallingCard, OutcomesCard, ShortcutsCard } from './CallingSettingsCards
 import { UpdatePanel } from '../components/UpdateBar';
 import { ProductsCard } from './ProductsCard';
 import { RoutinesCard } from './RoutinesCard';
+import { RulesCard } from './RulesCard';
 import { useTags } from '../tags';
 import { CustomFieldsCard } from './CustomFieldsCard';
 
@@ -36,6 +37,7 @@ export function SettingsPage() {
       <CallingCard />
       <OutcomesCard />
       <RoutinesCard />
+      <RulesCard />
       <ShortcutsCard />
       <UnitrustCard />
       <ProductsCard />

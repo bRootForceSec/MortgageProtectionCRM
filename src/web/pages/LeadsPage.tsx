@@ -14,6 +14,7 @@ import { LEAD_TABS, isCallable } from '../../shared/leadStatus';
 import { APPT_DAYS, DIAL_GAPS, IMPORTED_WHEN, LAST_CALL, gapLabel } from '../../shared/leadFilter';
 import { UnmarkedAppointments } from '../components/UnmarkedAppointments';
 import { SaveStepDialog } from '../components/SaveStepDialog';
+import { NewRuleFromFilters } from './RulesCard';
 import { useTags } from '../tags';
 import { useCustomFields } from '../customFields';
 import { CustomFieldInput } from '../components/CustomFieldInput';
@@ -78,6 +79,7 @@ export function LeadsPage() {
   }, [field, fieldValue]);
   const [changingType, setChangingType] = useState(false);
   const [savingStep, setSavingStep] = useState(false);
+  const [makingRule, setMakingRule] = useState(false);
   const [rows, setRows] = useState<any[]>([]);
   const [total, setTotal] = useState(0);
   const [picked, setPicked] = useState<Set<string>>(new Set());
@@ -273,6 +275,9 @@ export function LeadsPage() {
           <button className="btn" onClick={() => setSavingStep(true)} title="Keep these filters as a step of your daily routine (Settings → Calling → Routines)">
             Save as routine step
           </button>
+          <button className="btn" onClick={() => setMakingRule(true)} title="Do something to the leads matching these filters every day, or when you save a call (Settings → Rules)">
+            Make a rule
+          </button>
           <button className="btn" onClick={() => go('calling')}>Go to Calling</button>
         </div>
       </div>
@@ -333,6 +338,9 @@ export function LeadsPage() {
       )}
       {savingStep && (
         <SaveStepDialog filter={Object.fromEntries(Object.entries(filters).filter(([, v]) => v))} onClose={() => setSavingStep(false)} />
+      )}
+      {makingRule && (
+        <NewRuleFromFilters filter={Object.fromEntries(Object.entries(filters).filter(([, v]) => v))} onClose={() => setMakingRule(false)} />
       )}
       {tagging && (
         <TagMatchingDialog
