@@ -344,3 +344,10 @@ export function fmtMoney(cents: number | null | undefined): string {
 export function fullName(l: { first_name?: string | null; last_name?: string | null; [k: string]: unknown }): string {
   return [l.first_name, l.last_name].filter(Boolean).join(' ') || '(no name)';
 }
+
+/** Appointments still blue in Unitrust on some days (GET /appointments/unmarked). Mirrors ApptRow on the server, in part. */
+export interface UnmarkedAppts {
+  from: string;
+  to: string;
+  appointments: { id: string; lead_id: string; lead_name: string; day: string; time: string | null }[];
+}

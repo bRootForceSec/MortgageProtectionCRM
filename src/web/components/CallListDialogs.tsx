@@ -234,3 +234,47 @@ export function LoadListDialog(props: {
     </Modal>
   );
 }
+
+/**
+ * Starts a routine step: its leads go under the call list, or take its place (saving the current list first if it
+ * has changes). `extra` shows above the choice, e.g. the blue-appointments reminder for a no-shows step.
+ */
+export function StartStepDialog(props: {
+  name: string;
+  count: number;
+  mode: 'add' | 'replace';
+  current: CurrentList;
+  defaultName: string;
+  extra?: ReactNode;
+  onStart: (mode: 'add' | 'replace', saveCurrentAs: string | null) => Promise<void>;
+  onCancel: () => void;
+}) {
+  const [mode, setMode] = useState(props.current.count ? props.mode : 'add');
+  const keep = useKeep(props.current, props.defaultName);
+  const [busy, run] = useBusy();
+  const replacing = mode === 'replace' && props.current.count > 0;
+  const n = `${props.count} lead${props.count === 1 ? '' : 's'}`;
+  return (
+    <Modal title={`Start: ${props.name}`} onClose={props.onCancel} onSubmit={() => void run(() => props.onStart(mode, replacing ? keep.saveAs : null))}>
+      {props.extra}
+      <p style={{ marginTop: 0 }}>{props.count ? `${n} to call.` : 'Nothing new to call for this step right now.'}</p>
+      {props.current.count > 0 && (
+        <div role="radiogroup" aria-label="Where the leads go" style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 8 }}>
+          <label className="choice-inline">
+            <input type="radio" name="step-mode" checked={mode === 'add'} onChange={() => setMode('add')} /> Add them under the call list
+          </label>
+          <label className="choice-inline">
+            <input type="radio" name="step-mode" checked={mode === 'replace'} onChange={() => setMode('replace')} /> Replace the call list ({props.current.count} on it now)
+          </label>
+        </div>
+      )}
+      {replacing && <KeepCurrent {...keep.props} />}
+      <div className="row">
+        <button className={`btn ${replacing && keep.losing ? 'danger' : 'primary'}`} type="submit" disabled={busy || (replacing && keep.blocked)}>
+          {replacing ? 'Replace and start' : 'Start'}
+        </button>
+        <button className="btn" type="button" onClick={props.onCancel}>Cancel</button>
+      </div>
+    </Modal>
+  );
+}

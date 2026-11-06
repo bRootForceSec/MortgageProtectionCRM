@@ -404,3 +404,16 @@ th button.sort { background: none; border: 0; padding: 0; font: inherit; font-we
 .prep-facts dt { font-size: 0.8em; opacity: 0.7; }
 .prep-facts dd { margin: 0; }
 .prep-note { margin: 8px 0 0; white-space: pre-wrap; }
+
+/* Today's routine, above the call list */
+.routine { margin-bottom: 6px; }
+.routine-steps { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; font-size: 13px; }
+.routine-name { margin-right: 4px; }
+.routine-step { border: 1px solid var(--border); background: var(--panel-2); color: inherit; border-radius: 12px; padding: 2px 8px; cursor: pointer; font-size: 12px; }
+.routine-step.next { border-color: var(--accent); }
+.routine-step.started { border-style: dashed; border-color: var(--accent); }
+.routine-step.done { border-color: var(--good); color: var(--good); }
+.routine .list-done { margin: 6px 0 0; }
+.routine-edit { border-top: 1px solid var(--border); padding: 8px 0; }
+.routine-step-list { margin: 6px 0; padding-left: 20px; }
+.routine-step-list li { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 4px 0; font-size: 13px; }

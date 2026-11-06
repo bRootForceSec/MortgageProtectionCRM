@@ -31,14 +31,14 @@ test('policies from Unitrust: set a new product\'s comp rules, then see the prof
   await page.goto(launchUrl);
   const origin = `http://127.0.0.1:${PORT}`;
   const { key } = await (await page.request.post(`${origin}/api/unitrust/key`, { headers: { origin } })).json();
-  const today = new Date();
-  const day = `${String(today.getMonth() + 1).padStart(2, '0')}/${String(today.getDate()).padStart(2, '0')}/${today.getFullYear()}`;
+  // Today where the browser is (playwright.config.ts), not where this test runs: just after midnight UTC they differ.
+  const day = new Date().toLocaleDateString('en-US', { timeZone: 'America/New_York', month: '2-digit', day: '2-digit', year: 'numeric' });
   const sent = await page.request.post(`${origin}/api/unitrust/policies`, {
     headers: { 'x-mpcrm-extension-key': key, origin: 'moz-extension://abc' },
     data: {
       level: 70,
       policies: [
-        { app_id: 'Uni-100001', client_name: 'Pat Sample', client_phone: '(312) 555-0144', carrier: 'AMERICO', product: 'Term 100', capped_apv: '$663.48', apv: '$663.48', status: 'Issue-Paid', submitted: day },
+        { app_id: 'Uni-100001', client_name: 'Pat Sample', client_phone: '(312) 555-0144', carrier: 'AMERICO', product: 'Term 100', capped_apv: '$663.48', apv: '$663.48', status: 'Issue-Paid', submitted: day, paid: day },
         { app_id: 'Uni-100002', client_name: 'Chris Example', client_phone: '(312) 555-0145', carrier: 'AMERICAN AMICABLE', product: 'Home Certainty', capped_apv: '$1,036.68', status: 'Issued Not Paid', submitted: day },
       ],
     },

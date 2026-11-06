@@ -12,10 +12,9 @@ import { batchPdf, turnPdfPages, normTurn } from '../domain/pageTurn.js';
 import type { PageChecker } from '../domain/pageTurnFix.js';
 import {
   addMatchingToCallList, addToCallList, clearWorked, getCallList, moveToBottom,
-  recentOutcomes, removeFromCallList, type LeadFilter, callListMeta, listSavedLists, clearCallList, loadSavedList, deleteSavedList, saveCallList, saveCallListAs, setCalledBack,
+  recentOutcomes, removeFromCallList, toLeadFilter, callListMeta, listSavedLists, clearCallList, loadSavedList, deleteSavedList, saveCallList, saveCallListAs, setCalledBack,
 } from '../domain/callList.js';
-import { LEAD_FILTERS } from '../../shared/leadStatus.js';
-import { isAgeBand } from '../../shared/leadAge.js';
+import { LeadQuery } from '../../shared/leadFilter.js';
 import { bestTimes } from '../domain/reports.js';
 import { isLeadId } from '../../shared/leadLink.js';
 
@@ -39,41 +38,12 @@ export function registerLeadRoutes(app: FastifyInstance, deps: { db: DB; config:
   });
 
   // ---------- leads ----------
-  const leadFilter = z.object({
-    status: z.enum(LEAD_FILTERS).default('all'),
-    search: z.string().max(100).optional(),
-    batch_id: z.string().max(64).optional(),
-    bulk_id: z.string().max(64).optional(),
-    counties: z.string().max(4000).optional(),
-    area_codes: z.string().max(400).optional(),
-    tried_before: z.string().max(40).optional(),
-    tried_after: z.string().max(40).optional(),
-    not_on_list: z.union([z.boolean(), z.enum(['1', '0', 'true', 'false'])]).optional(),
-    /** A lead type code, or "none" for leads with no type. */
-    lead_type: z.string().max(20).optional(),
-    /** A lead age band (shared/leadAge.ts), or "unknown" for leads with no call-in date. */
-    age: z.string().refine((v) => v === 'unknown' || isAgeBand(v), 'unknown lead age').optional(),
-  });
-  const toFilter = (q: z.infer<typeof leadFilter>): LeadFilter => ({
-    status: q.status,
-    search: q.search,
-    batch_id: q.batch_id || undefined,
-    bulk_id: q.bulk_id || undefined,
-    counties: parseList(q.counties),
-    areaCodes: parseList(q.area_codes),
-    tried_before: q.tried_before || undefined,
-    tried_after: q.tried_after || undefined,
-    not_on_list: q.not_on_list === true || q.not_on_list === '1' || q.not_on_list === 'true',
-    lead_type: !q.lead_type ? undefined : q.lead_type === 'none' ? '' : q.lead_type,
-    age: (q.age || undefined) as LeadFilter['age'],
-  });
-
-  app.get('/api/leads', async (req) => listLeads(db, toFilter(leadFilter.parse(req.query))));
+  app.get('/api/leads', async (req) => listLeads(db, toLeadFilter(LeadQuery.parse(req.query))));
   // Fixes the lead type after import: every lead matching the filters (e.g. one batch) gets the new type and its price.
   app.post('/api/leads/set-type', async (req) => {
     const body = (req.body ?? {}) as Record<string, unknown>;
     const { set_type } = z.object({ set_type: z.string().min(1).max(20).regex(/^[A-Za-z0-9-]+$/).nullable() }).parse(body);
-    return setLeadTypeForMatching(db, toFilter(leadFilter.parse(body)), set_type);
+    return setLeadTypeForMatching(db, toLeadFilter(LeadQuery.parse(body)), set_type);
   });
 
   // ---------- the call list ----------
@@ -97,7 +67,7 @@ export function registerLeadRoutes(app: FastifyInstance, deps: { db: DB; config:
   app.post('/api/call-list/add-matching', async (req) => {
     const body = (req.body ?? {}) as Record<string, unknown>;
     const o = replaceOpts.parse({ replace: body.replace, save_current_as: body.save_current_as });
-    const f = toFilter(leadFilter.parse(body));
+    const f = toLeadFilter(LeadQuery.parse(body));
     return db.transaction(() => {
       if (o.replace) clearCallList(db, o.save_current_as);
       return addMatchingToCallList(db, f);

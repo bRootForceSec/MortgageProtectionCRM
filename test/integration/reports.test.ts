@@ -368,10 +368,16 @@ describe('best time to call', () => {
     log('Cal', 'no_answer', { occurred_at: '2026-10-19T14:05:00.000Z' });
     const b = buildReport(db, { ...range(), tz }).best_time;
     expect(b.by_weekday.map((d) => d.weekday)).toEqual([0, 1, 2, 3, 4, 5, 6]);
+    // The setup's calls are an hour ago, so on a Thursday evening or a Monday they land in the same cells: count on top of them.
+    const was = <T extends { attempts: number; contacts: number; days?: number }>(x: T | undefined) => ({ attempts: x?.attempts ?? 0, contacts: x?.contacts ?? 0, days: x?.days ?? 0 });
+    const thuWas = was(base.cells.find((c) => c.key === '4:18'));
     const thu = b.cells.find((c) => c.key === '4:18')!;
-    expect(thu).toMatchObject({ weekday: 4, hour: 18, attempts: 2, contacts: 1, contact_rate: 0.5, days: 2 });
-    expect(b.by_hour.find((h) => h.hour === 18)).toMatchObject({ key: 'hour:18', attempts: 2, contacts: 1 });
-    expect(b.by_weekday[1]).toMatchObject({ key: 'day:1', attempts: 1, contacts: 0, contact_rate: 0, days: 1 });
+    expect(thu).toMatchObject({ weekday: 4, hour: 18, attempts: thuWas.attempts + 2, contacts: thuWas.contacts + 1, days: thuWas.days + 2 });
+    expect(thu.contact_rate).toBeCloseTo(thu.contacts / thu.attempts);
+    const hourWas = was(base.by_hour.find((h) => h.hour === 18));
+    expect(b.by_hour.find((h) => h.hour === 18)).toMatchObject({ key: 'hour:18', attempts: hourWas.attempts + 2, contacts: hourWas.contacts + 1 });
+    const monWas = was(base.by_weekday[1]);
+    expect(b.by_weekday[1]).toMatchObject({ key: 'day:1', attempts: monWas.attempts + 1, contacts: monWas.contacts, days: monWas.days + 1 });
     expect(b.overall.attempts).toBe(base.overall.attempts + 3);
     // Totals add up: every weekday and every hour sum to the overall count.
     expect(b.by_weekday.reduce((n, d) => n + d.attempts, 0)).toBe(b.overall.attempts);

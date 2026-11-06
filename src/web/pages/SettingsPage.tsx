@@ -5,6 +5,7 @@ import { useLeadTypes } from '../leadTypes';
 import { CallingCard, ShortcutsCard, ScriptsCard } from './CallingSettingsCards';
 import { UpdatePanel } from '../components/UpdateBar';
 import { ProductsCard } from './ProductsCard';
+import { RoutinesCard } from './RoutinesCard';
 
 // Settings: which AI reads scanned lead pages, lead types and prices, the area codes each county is called under, and the app's version and updates.
 
@@ -31,6 +32,7 @@ export function SettingsPage() {
   return (
     <>
       <CallingCard />
+      <RoutinesCard />
       <ShortcutsCard />
       <ScriptsCard />
       <UnitrustCard />

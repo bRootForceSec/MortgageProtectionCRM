@@ -3,8 +3,9 @@ import { LEAD_NAME, CURRENT_OUTCOME } from '../db/sql.js';
 import { APPT_RESULTS, type ApptResult } from '../../shared/appointments.js';
 import { isCallable } from '../../shared/leadStatus.js';
 import { AGE_BANDS, type AgeBand } from '../../shared/leadAge.js';
+import { isLastCall, lastCallRange, type ApptDays, type ImportedWhen, type LeadQuery } from '../../shared/leadFilter.js';
 import { nowIso, uuidv7 } from '../ids.js';
-import { groupWhere, searchWhere } from './groupFilter.js';
+import { groupWhere, parseList, searchWhere } from './groupFilter.js';
 import { DomainError } from '../core/errors.js';
 import { loadCallingSettings } from './callingSettings.js';
 
@@ -31,6 +32,73 @@ export interface LeadFilter {
   lead_type?: string;
   /** Only leads whose call-in date is this many days back (see shared/leadAge.ts), or 'unknown' for none. */
   age?: AgeBand | 'unknown';
+  /** Only leads from files imported on these days (any number of batches). */
+  imported?: ImportedWhen;
+  /** Only leads with an appointment on these days (from Unitrust, or an appointment call logged here). */
+  appt_days?: ApptDays;
+  /** Leave out leads dialed in the last this many minutes. */
+  not_within_min?: number;
+}
+
+/** The Leads filters as the API (or a routine step) gives them, with relative choices worked out now. */
+export function toLeadFilter(q: LeadQuery, now = new Date()): LeadFilter {
+  const last = q.last_call && isLastCall(q.last_call) ? lastCallRange(q.last_call, now) : null;
+  return {
+    status: q.status,
+    search: q.search,
+    batch_id: q.batch_id || undefined,
+    bulk_id: q.bulk_id || undefined,
+    counties: parseList(q.counties),
+    areaCodes: parseList(q.area_codes),
+    tried_before: last ? last.before : q.tried_before || undefined,
+    tried_after: last ? last.after : q.tried_after || undefined,
+    not_on_list: q.not_on_list === true || q.not_on_list === '1' || q.not_on_list === 'true',
+    lead_type: !q.lead_type ? undefined : q.lead_type === 'none' ? '' : q.lead_type,
+    age: (q.age || undefined) as LeadFilter['age'],
+    imported: (q.imported || undefined) as ImportedWhen | undefined,
+    appt_days: (q.appt_days || undefined) as ApptDays | undefined,
+    not_within_min: q.not_within_min || undefined,
+  };
+}
+
+/** Today on this computer, as an SQL date expression. */
+const TODAY = "date('now', 'localtime')";
+
+/**
+ * The first and last day (YYYY-MM-DD, as SQL expressions) of an appointment-day choice. "Since my last calling day"
+ * runs from the last day before today with a call through yesterday, so on a Monday it takes in the weekend.
+ */
+export function apptDaysSql(key: ApptDays): { from: string; to: string } {
+  const yesterday = `date(${TODAY}, '-1 day')`;
+  if (key === 'yesterday') return { from: yesterday, to: yesterday };
+  const lastCallDay = `(SELECT max(date(c.requested_at, 'localtime')) FROM call c
+    WHERE c.voided_at IS NULL AND c.initiation_result = 'accepted' AND date(c.requested_at, 'localtime') < ${TODAY})`;
+  return { from: `coalesce(${lastCallDay}, ${yesterday})`, to: yesterday };
+}
+
+/** The appointment-day choice as actual days, YYYY-MM-DD. */
+export function apptDayRange(db: DB, key: ApptDays): { from: string; to: string } {
+  const d = apptDaysSql(key);
+  return db.prepare(`SELECT ${d.from} "from", ${d.to} "to"`).get() as { from: string; to: string };
+}
+
+function importedWhere(when: ImportedWhen | undefined): string {
+  if (!when) return '1';
+  const day = "date(ib.imported_at, 'localtime')";
+  const cond = when === 'today' ? `${day} = ${TODAY}` : when === 'yesterday' ? `${day} = date(${TODAY}, '-1 day')` : `${day} >= date(${TODAY}, '-6 days')`;
+  return `l.batch_id IN (SELECT ib.id FROM import_batch ib WHERE ${cond})`;
+}
+
+/** Leads with an appointment on those days: one in Unitrust (not moved away), or an appointment call logged here. */
+function apptDaysWhere(key: ApptDays | undefined): string {
+  if (!key) return '1';
+  const d = apptDaysSql(key);
+  return `l.id IN (
+    SELECT a.lead_id FROM appointment a WHERE a.recorded_via = 'unitrust' AND a.internal_status = 'scheduled'
+      AND substr(a.scheduled_for, 1, 10) BETWEEN ${d.from} AND ${d.to}
+    UNION
+    SELECT c.lead_id FROM call c JOIN call_outcome o ON o.call_id = c.id AND ${CURRENT_OUTCOME} JOIN outcome_code oc ON oc.code = o.outcome_code
+      WHERE c.voided_at IS NULL AND oc.kind = 'appointment' AND date(c.requested_at, 'localtime') BETWEEN ${d.from} AND ${d.to})`;
 }
 
 /** Leads page tabs for how the latest appointment went (lead_state.appt_result). */
@@ -71,13 +139,16 @@ export function leadFilterWhere(f: LeadFilter): { sql: string; params: Record<st
     '(@lf_before IS NULL OR (s.last_call_at IS NOT NULL AND s.last_call_at < @lf_before))',
     '(@lf_after IS NULL OR (s.last_call_at IS NOT NULL AND s.last_call_at >= @lf_after))',
     ageWhere(f.age),
+    importedWhere(f.imported),
+    apptDaysWhere(f.appt_days),
+    f.not_within_min ? '(s.last_call_at IS NULL OR s.last_call_at < @lf_gap)' : '1',
     f.not_on_list ? `l.id NOT IN (SELECT i.lead_id FROM call_list_item i WHERE NOT ${WORKED})` : '1',
     group.sql,
     search.sql,
   ];
   return {
     sql: parts.join(' AND '),
-    params: { lf_status: status, ...(appt ? { lf_appt: appt } : {}), lf_batch: f.batch_id ?? null, lf_type: f.lead_type ?? null, ...(f.bulk_id ? { lf_bulk: f.bulk_id } : {}), lf_before: f.tried_before ?? null, lf_after: f.tried_after ?? null, ...group.params, ...search.params },
+    params: { lf_status: status, ...(appt ? { lf_appt: appt } : {}), lf_batch: f.batch_id ?? null, lf_type: f.lead_type ?? null, ...(f.bulk_id ? { lf_bulk: f.bulk_id } : {}), lf_before: f.tried_before ?? null, lf_after: f.tried_after ?? null, ...(f.not_within_min ? { lf_gap: new Date(Date.now() - f.not_within_min * 60_000).toISOString() } : {}), ...group.params, ...search.params },
   };
 }
 
@@ -321,7 +392,8 @@ function setCallListMeta(db: DB, name: string | null, savedListId: string | null
   ).run(name, savedListId);
 }
 
-const WORKED = `EXISTS (SELECT 1 FROM call c WHERE c.lead_id = i.lead_id AND c.voided_at IS NULL AND c.requested_at >= i.added_at)`;
+/** In a query over `call_list_item i`: the lead was called (and not undone) since it went on the list. */
+export const WORKED = `EXISTS (SELECT 1 FROM call c WHERE c.lead_id = i.lead_id AND c.voided_at IS NULL AND c.requested_at >= i.added_at)`;
 
 export function listSavedLists(db: DB): SavedList[] {
   return db
