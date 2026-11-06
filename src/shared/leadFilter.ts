@@ -1,0 +1,68 @@
+// Relative day choices for the Leads filters (and the routine steps built on them). They're kept as keys, not
+// dates, so a saved step means the same thing every day; the server works out the days in the computer's time.
+
+export const IMPORTED_WHEN = [
+  { key: 'today', label: 'Imported today' },
+  { key: 'yesterday', label: 'Imported yesterday' },
+  { key: 'week', label: 'Imported in the past 7 days' },
+] as const;
+export type ImportedWhen = (typeof IMPORTED_WHEN)[number]['key'];
+
+export const APPT_DAYS = [
+  { key: 'yesterday', label: 'Appointment yesterday', title: 'Leads with an appointment yesterday' },
+  {
+    key: 'since_last_calling_day',
+    label: 'Appointment since my last calling day',
+    title: 'Leads with an appointment from the last day you made calls through yesterday. On a Monday after a weekend off, that is Friday to Sunday.',
+  },
+] as const;
+export type ApptDays = (typeof APPT_DAYS)[number]['key'];
+
+/** "Not dialed in the last N minutes" choices. */
+export const DIAL_GAPS = [15, 30, 60, 120, 240] as const;
+
+export function isImportedWhen(v: unknown): v is ImportedWhen {
+  return IMPORTED_WHEN.some((x) => x.key === v);
+}
+
+export function isApptDays(v: unknown): v is ApptDays {
+  return APPT_DAYS.some((x) => x.key === v);
+}
+
+export function gapLabel(min: number): string {
+  return min < 60 ? `${min} min` : `${min / 60} hour${min === 60 ? '' : 's'}`;
+}
+
+/** When the last call was: a recent window, or long enough ago to try again. Never-called leads match none of them. */
+export const LAST_CALL = [
+  { key: 'today', label: 'Last call today' },
+  { key: 'not_today', label: 'Called before, not today' },
+  { key: 'yesterday', label: 'Last call yesterday' },
+  { key: 'week', label: 'Last call in the past 7 days' },
+  { key: '4h', label: 'Last call 4+ hours ago' },
+  { key: '1d', label: 'Last call 1+ day ago' },
+  { key: '3d', label: 'Last call 3+ days ago' },
+  { key: '7d', label: 'Last call 1+ week ago' },
+] as const;
+export type LastCall = (typeof LAST_CALL)[number]['key'];
+
+export function isLastCall(v: unknown): v is LastCall {
+  return LAST_CALL.some((x) => x.key === v);
+}
+
+/** The times a last-call choice stands for, in this computer's time. */
+export function lastCallRange(key: LastCall, now = new Date()): { after?: string; before?: string } {
+  const day = (back: number) => new Date(now.getFullYear(), now.getMonth(), now.getDate() - back).toISOString();
+  const ago = (ms: number) => new Date(now.getTime() - ms).toISOString();
+  const H = 3_600_000;
+  switch (key) {
+    case 'today': return { after: day(0) };
+    case 'not_today': return { before: day(0) };
+    case 'yesterday': return { after: day(1), before: day(0) };
+    case 'week': return { after: day(6) };
+    case '4h': return { before: ago(4 * H) };
+    case '1d': return { before: ago(24 * H) };
+    case '3d': return { before: ago(72 * H) };
+    case '7d': return { before: ago(168 * H) };
+  }
+}

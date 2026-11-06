@@ -6,33 +6,16 @@ import { ApptBadge, StatusBadge } from '../components/LeadDetails';
 import { LeadViewer } from '../components/LeadViewer';
 import { GroupPicker, useGroups } from '../components/GroupPicker';
 import { getStored, setStored } from '../storage';
-import { addDays, startOfDay } from '../when';
 import { useLeadTypes } from '../leadTypes';
 import { AGE_BANDS } from '../../shared/leadAge';
 import { BatchPicker } from '../components/BatchBrowse';
 import type { LeadType } from '../importTypes';
 import { LEAD_TABS, isCallable } from '../../shared/leadStatus';
+import { APPT_DAYS, DIAL_GAPS, IMPORTED_WHEN, LAST_CALL, gapLabel } from '../../shared/leadFilter';
+import { UnmarkedAppointments } from '../components/UnmarkedAppointments';
 
 // Where you pick who to call: filter the leads, tick the ones you want (or take every match),
 // and add them to the bottom of the call list on the Calling page, or put them in place of it.
-
-/** Midnight at the start of today, your time, `days` days back. */
-function dayStart(days = 0): string {
-  return addDays(startOfDay(new Date()), -days).toISOString();
-}
-
-/** When the last call was: a recent window, or long enough ago to try again. */
-const LAST_CALL: { key: string; label: string; range: () => { after?: string; before?: string } }[] = [
-  { key: '', label: 'Last call: any time', range: () => ({}) },
-  { key: 'today', label: 'Last call today', range: () => ({ after: dayStart() }) },
-  { key: 'yesterday', label: 'Last call yesterday', range: () => ({ after: dayStart(1), before: dayStart() }) },
-  { key: 'week', label: 'Last call in the past 7 days', range: () => ({ after: dayStart(6) }) },
-  { key: '4h', label: 'Last call 4+ hours ago', range: () => ({ before: ago(4 * 3600_000) }) },
-  { key: '1d', label: 'Last call 1+ day ago', range: () => ({ before: ago(86_400_000) }) },
-  { key: '3d', label: 'Last call 3+ days ago', range: () => ({ before: ago(3 * 86_400_000) }) },
-  { key: '7d', label: 'Last call 1+ week ago', range: () => ({ before: ago(7 * 86_400_000) }) },
-];
-const ago = (ms: number) => new Date(Date.now() - ms).toISOString();
 
 const SHOW_KEY = 'mpcrm.leads.show';
 
@@ -63,6 +46,12 @@ export function LeadsPage() {
   const [leadType, setLeadType] = useState('');
   /** A lead age band, "unknown" for leads with no call-in date, or '' for any. */
   const [age, setAge] = useState('');
+  /** Imported today, yesterday or this week (shared/leadFilter.ts), or '' for any time. */
+  const [imported, setImported] = useState('');
+  /** Appointment yesterday or since your last calling day, or '' for any. */
+  const [apptDays, setApptDays] = useState('');
+  /** Leave out leads dialed in the last this many minutes; 0 for no limit. */
+  const [gap, setGap] = useState(0);
   const { types } = useLeadTypes();
   const [changingType, setChangingType] = useState(false);
   const [rows, setRows] = useState<any[]>([]);
@@ -81,21 +70,20 @@ export function LeadsPage() {
   const outcomeLabel = (c: string | null) => (c ? meta?.outcome_codes.find((o) => o.code === c)?.label ?? c : '');
 
 
-  const filters = useMemo(() => {
-    const r = (LAST_CALL.find((x) => x.key === tried) ?? LAST_CALL[0]!).range();
-    return {
-      status,
-      search,
-      batch_id: batch && !batch.startsWith('bulk:') ? batch : undefined,
-      bulk_id: batch.startsWith('bulk:') ? batch.slice(5) : undefined,
-      tried_before: r.before,
-      tried_after: r.after,
-      not_on_list: notOnList ? '1' : undefined,
-      lead_type: leadType || undefined,
-      age: age || undefined,
-      ...groupParams,
-    };
-  }, [status, search, batch, tried, notOnList, leadType, age, groupParams.counties, groupParams.area_codes]); // eslint-disable-line react-hooks/exhaustive-deps
+  const filters = useMemo(() => ({
+    status,
+    search,
+    batch_id: batch && !batch.startsWith('bulk:') ? batch : undefined,
+    bulk_id: batch.startsWith('bulk:') ? batch.slice(5) : undefined,
+    last_call: tried || undefined,
+    not_on_list: notOnList ? '1' : undefined,
+    lead_type: leadType || undefined,
+    age: age || undefined,
+    imported: imported || undefined,
+    appt_days: apptDays || undefined,
+    not_within_min: gap ? String(gap) : undefined,
+    ...groupParams,
+  }), [status, search, batch, tried, notOnList, leadType, age, imported, apptDays, gap, groupParams.counties, groupParams.area_codes]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const load = useCallback(
     () => api.get<{ rows: any[]; total: number }>('/leads', filters).then((r) => { setRows(r.rows); setTotal(r.total); }),
@@ -117,7 +105,7 @@ export function LeadsPage() {
     return n;
   });
 
-  const filtered = status !== 'all' || !!search || !!batch || !!tried || notOnList || !!leadType || !!age;
+  const filtered = status !== 'all' || !!search || !!batch || !!tried || notOnList || !!leadType || !!age || !!imported || !!apptDays || !!gap;
   const clearFilters = () => {
     setStatus('all');
     setSearch('');
@@ -126,6 +114,9 @@ export function LeadsPage() {
     setNotOnList(false);
     setLeadType('');
     setAge('');
+    setImported('');
+    setApptDays('');
+    setGap(0);
   };
   const typeLabel = (code: string | null) => (code ? types.find((t) => t.code === code)?.label ?? code : '');
 
@@ -189,8 +180,21 @@ export function LeadsPage() {
           {AGE_BANDS.map((b) => <option key={b.key} value={b.key}>{b.label}</option>)}
           <option value="unknown">No call-in date</option>
         </select>
+        <select value={imported} onChange={(e) => setImported(e.target.value)} aria-label="Imported" title="When the lead's file was imported, counting every file imported those days">
+          <option value="">Imported any time</option>
+          {IMPORTED_WHEN.map((t) => <option key={t.key} value={t.key}>{t.label}</option>)}
+        </select>
+        <select value={apptDays} onChange={(e) => setApptDays(e.target.value)} aria-label="Appointment day" title={APPT_DAYS.find((d) => d.key === apptDays)?.title ?? 'Leads with an appointment on these days (from Unitrust, or logged here)'}>
+          <option value="">Appointment any day</option>
+          {APPT_DAYS.map((t) => <option key={t.key} value={t.key} title={t.title}>{t.label}</option>)}
+        </select>
         <select value={tried} onChange={(e) => setTried(e.target.value)} aria-label="Last call">
+          <option value="">Last call: any time</option>
           {LAST_CALL.map((t) => <option key={t.key} value={t.key}>{t.label}</option>)}
+        </select>
+        <select value={gap} onChange={(e) => setGap(Number(e.target.value))} aria-label="Not dialed recently" title="Leave out leads you dialed in the last few minutes, so you don't ring them straight back">
+          <option value={0}>Dialed any time</option>
+          {DIAL_GAPS.map((m) => <option key={m} value={m}>Not dialed in the last {gapLabel(m)}</option>)}
         </select>
         <label className="row" style={{ gap: 4 }} title="Leaves out leads still waiting to be called on the list. Ones you already called from it can go back on.">
           <input type="checkbox" checked={notOnList} onChange={(e) => setNotOnList(e.target.checked)} /> Not on the call list
@@ -222,6 +226,7 @@ export function LeadsPage() {
           <button className="btn" onClick={() => go('calling')}>Go to Calling</button>
         </div>
       </div>
+      {apptDays && <UnmarkedAppointments days={apptDays} onOpen={setOpen} />}
       <table className="grid">
         <thead>
           <tr>

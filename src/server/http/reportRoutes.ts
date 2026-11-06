@@ -5,6 +5,8 @@ import { DomainError } from '../core/errors.js';
 import { parseList } from '../domain/groupFilter.js';
 import { buildReport, drill, DrillSpec, loadTargets, reportCalls, reportJson, reportSheets, saveTargets, type ReportFilter, todayStats } from '../domain/reports.js';
 import { toCsv, toXlsx } from '../domain/exporter.js';
+import { unmarkedAppointments } from '../domain/unitrustAppointments.js';
+import { isApptDays, type ApptDays } from '../../shared/leadFilter.js';
 
 const filterQuery = z.object({
   from: z.string().max(40),
@@ -77,5 +79,11 @@ export function registerReportRoutes(app: FastifyInstance, deps: { db: DB }) {
     const ymd = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
     const q = z.object({ from: z.string().max(40), to: z.string().max(40), day: ymd.optional(), from_day: ymd.optional(), to_day: ymd.optional() }).parse(req.query);
     return todayStats(db, q.from, q.to, q.day, q.from_day && q.to_day ? { from: q.from_day, to: q.to_day } : undefined);
+  });
+
+  // Appointments on those days still blue in Unitrust, for the reminder beside the no-shows.
+  app.get('/api/appointments/unmarked', async (req) => {
+    const q = z.object({ days: z.string().refine(isApptDays, 'unknown appointment day') }).parse(req.query);
+    return unmarkedAppointments(db, q.days as ApptDays);
   });
 }

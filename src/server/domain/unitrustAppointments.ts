@@ -8,6 +8,8 @@ import { normalizeUsPhone } from './normalize.js';
 import { outcomeDef } from '../../shared/outcomes.js';
 import { APPT_RESULTS, parseUnitrustTitle, resultOfColor, type ApptResult, type UnitrustColor } from '../../shared/appointments.js';
 import { onTheSpotOn } from './appointments.js';
+import { apptDayRange } from './callList.js';
+import type { ApptDays } from '../../shared/leadFilter.js';
 
 // Appointments read off the Unitrust calendar by the Firefox extension. Each event is matched to a lead by a lead link
 // pasted into it when the calendar shows one, else by its phone (then by name), stored once per day and phone, and each change of color adds a result row. Leads whose appointment
@@ -287,4 +289,13 @@ export function hasAppointments(db: DB): boolean {
     `SELECT 1 WHERE EXISTS (SELECT 1 FROM appointment WHERE recorded_via = 'unitrust')
        OR EXISTS (SELECT 1 FROM call_outcome o JOIN outcome_code oc ON oc.code = o.outcome_code WHERE oc.kind = 'appointment')`,
   ).get();
+}
+
+/**
+ * Appointments on an appointment-day choice that are still blue: no color in Unitrust yet and nothing logged here.
+ * Until they're marked they can't count as no-shows, so the no-shows step reminds you about them.
+ */
+export function unmarkedAppointments(db: DB, key: ApptDays): { from: string; to: string; appointments: ApptRow[] } {
+  const days = apptDayRange(db, key);
+  return { ...days, appointments: appointmentsOnDays(db, days.from, days.to).filter((a) => a.outcome === 'pending') };
 }

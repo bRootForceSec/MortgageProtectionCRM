@@ -16,6 +16,7 @@ import {
 } from '../domain/callList.js';
 import { LEAD_FILTERS } from '../../shared/leadStatus.js';
 import { isAgeBand } from '../../shared/leadAge.js';
+import { isApptDays, isImportedWhen, isLastCall, lastCallRange, type ApptDays, type ImportedWhen } from '../../shared/leadFilter.js';
 import { bestTimes } from '../domain/reports.js';
 import { isLeadId } from '../../shared/leadLink.js';
 
@@ -48,25 +49,36 @@ export function registerLeadRoutes(app: FastifyInstance, deps: { db: DB; config:
     area_codes: z.string().max(400).optional(),
     tried_before: z.string().max(40).optional(),
     tried_after: z.string().max(40).optional(),
+    /** A last-call choice (shared/leadFilter.ts), worked out now. Used instead of tried_before and tried_after. */
+    last_call: z.string().refine((v) => !v || isLastCall(v), 'unknown last call choice').optional(),
     not_on_list: z.union([z.boolean(), z.enum(['1', '0', 'true', 'false'])]).optional(),
     /** A lead type code, or "none" for leads with no type. */
     lead_type: z.string().max(20).optional(),
     /** A lead age band (shared/leadAge.ts), or "unknown" for leads with no call-in date. */
     age: z.string().refine((v) => v === 'unknown' || isAgeBand(v), 'unknown lead age').optional(),
+    imported: z.string().refine((v) => !v || isImportedWhen(v), 'unknown import day').optional(),
+    appt_days: z.string().refine((v) => !v || isApptDays(v), 'unknown appointment day').optional(),
+    not_within_min: z.coerce.number().int().min(0).max(10_080).optional(),
   });
-  const toFilter = (q: z.infer<typeof leadFilter>): LeadFilter => ({
-    status: q.status,
-    search: q.search,
-    batch_id: q.batch_id || undefined,
-    bulk_id: q.bulk_id || undefined,
-    counties: parseList(q.counties),
-    areaCodes: parseList(q.area_codes),
-    tried_before: q.tried_before || undefined,
-    tried_after: q.tried_after || undefined,
-    not_on_list: q.not_on_list === true || q.not_on_list === '1' || q.not_on_list === 'true',
-    lead_type: !q.lead_type ? undefined : q.lead_type === 'none' ? '' : q.lead_type,
-    age: (q.age || undefined) as LeadFilter['age'],
-  });
+  const toFilter = (q: z.infer<typeof leadFilter>): LeadFilter => {
+    const last = q.last_call && isLastCall(q.last_call) ? lastCallRange(q.last_call) : null;
+    return {
+      status: q.status,
+      search: q.search,
+      batch_id: q.batch_id || undefined,
+      bulk_id: q.bulk_id || undefined,
+      counties: parseList(q.counties),
+      areaCodes: parseList(q.area_codes),
+      tried_before: last ? last.before : q.tried_before || undefined,
+      tried_after: last ? last.after : q.tried_after || undefined,
+      not_on_list: q.not_on_list === true || q.not_on_list === '1' || q.not_on_list === 'true',
+      lead_type: !q.lead_type ? undefined : q.lead_type === 'none' ? '' : q.lead_type,
+      age: (q.age || undefined) as LeadFilter['age'],
+      imported: (q.imported || undefined) as ImportedWhen | undefined,
+      appt_days: (q.appt_days || undefined) as ApptDays | undefined,
+      not_within_min: q.not_within_min || undefined,
+    };
+  };
 
   app.get('/api/leads', async (req) => listLeads(db, toFilter(leadFilter.parse(req.query))));
   // Fixes the lead type after import: every lead matching the filters (e.g. one batch) gets the new type and its price.
