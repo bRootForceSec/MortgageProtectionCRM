@@ -441,3 +441,14 @@ th button.sort { background: none; border: 0; padding: 0; font: inherit; font-we
 /* Settings → Google Calendar: the setup steps */
 .steps { margin: 4px 0 8px; padding-left: 20px; }
 .steps li { margin-bottom: 2px; }
+
+/* Leads: the page buttons */
+.pager { display: inline-flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.pager .btn.small { min-width: 28px; }
+.pager-bottom { display: flex; justify-content: flex-end; margin: 8px 0; }
+
+/* Settings: sections, and the menu to jump between them */
+.settings-nav { position: sticky; top: -12px; z-index: 5; display: flex; flex-wrap: wrap; gap: 6px; margin: -12px -12px 8px; padding: 12px 12px 8px; background: var(--bg); border-bottom: 1px solid var(--border); }
+.settings-section { scroll-margin-top: 56px; margin-bottom: 24px; }
+.settings-section > h1 { font-size: 20px; margin: 16px 0 2px; }
+.settings-section > .help { margin: 0 0 8px; }

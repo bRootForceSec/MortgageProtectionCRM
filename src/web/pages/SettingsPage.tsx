@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { api, fmtDateTime } from '../api';
 import { useApp } from '../App';
 import { useLeadTypes } from '../leadTypes';
@@ -11,7 +11,8 @@ import { useTags } from '../tags';
 import { CustomFieldsCard } from './CustomFieldsCard';
 import { GoogleCalendarCard } from './GoogleCalendarCard';
 
-// Settings: which AI reads scanned lead pages, lead types and prices, the area codes each county is called under, and the app's version and updates.
+// Settings, in sections with a menu at the top to jump between them: calling, your day (routines and rules), leads
+// (types, tags, your fields, counties), Unitrust and Google, imports (AI and lead pages), and the app's version.
 
 interface AiSettings {
   provider: 'claude_code' | 'anthropic_api' | 'openai_compatible' | 'off';
@@ -32,24 +33,30 @@ interface County {
   built_in: string[];
 }
 
+const SECTIONS: { id: string; title: string; help: string; cards: () => ReactNode }[] = [
+  { id: 'settings-calling', title: 'Calling', help: 'How calling works, your outcomes and keyboard keys.', cards: () => <><CallingCard /><OutcomesCard /><ShortcutsCard /></> },
+  { id: 'settings-day', title: 'Your day', help: 'The order you call in, and what happens on its own.', cards: () => <><RoutinesCard /><RulesCard /></> },
+  { id: 'settings-leads', title: 'Leads', help: 'Lead types and prices, tags, your own fields and formulas, and counties.', cards: () => <><LeadTypesCard /><TagsCard /><CustomFieldsCard /><CountiesCard /></> },
+  { id: 'settings-connected', title: 'Unitrust and Google', help: 'The Unitrust extension, products and comp, and Google Calendar.', cards: () => <><UnitrustCard /><ProductsCard /><GoogleCalendarCard /></> },
+  { id: 'settings-imports', title: 'Imports', help: 'The AI that reads scanned lead pages, and how pages are kept.', cards: () => <><AiCard /><LeadPagesCard /></> },
+  { id: 'settings-app', title: 'App', help: 'Version and updates.', cards: () => <UpdatePanel /> },
+];
+
 export function SettingsPage() {
   return (
     <>
-      <CallingCard />
-      <OutcomesCard />
-      <RoutinesCard />
-      <RulesCard />
-      <ShortcutsCard />
-      <UnitrustCard />
-      <GoogleCalendarCard />
-      <ProductsCard />
-      <AiCard />
-      <LeadPagesCard />
-      <LeadTypesCard />
-      <TagsCard />
-      <CustomFieldsCard />
-      <CountiesCard />
-      <UpdatePanel />
+      <nav className="settings-nav" aria-label="Settings sections">
+        {SECTIONS.map((s) => (
+          <button key={s.id} className="btn small" title={s.help} aria-label={`${s.title} settings`} onClick={() => document.getElementById(s.id)?.scrollIntoView({ block: 'start' })}>{s.title}</button>
+        ))}
+      </nav>
+      {SECTIONS.map((s) => (
+        <section key={s.id} id={s.id} className="settings-section" aria-labelledby={`${s.id}-title`}>
+          <h1 id={`${s.id}-title`}>{s.title}</h1>
+          <p className="help">{s.help}</p>
+          {s.cards()}
+        </section>
+      ))}
     </>
   );
 }

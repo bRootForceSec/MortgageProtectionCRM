@@ -300,3 +300,21 @@ test('Google Calendar in Settings: the steps, saving your key, then Connect', as
   await card.scrollIntoViewIfNeeded();
   await page.screenshot({ path: 'test-results/google-calendar-settings.png' });
 });
+
+test('Settings in sections with a menu; Leads shows which leads and how many on a page', async ({ page }) => {
+  await page.goto(launchUrl);
+  const nav = (name: string) => page.locator('.topbar nav').getByRole('button', { name, exact: true }).click();
+  await nav('Settings');
+  const menu = page.getByRole('navigation', { name: 'Settings sections' });
+  await expect(menu.getByRole('button')).toHaveText(['Calling', 'Your day', 'Leads', 'Unitrust and Google', 'Imports', 'App']);
+  await menu.getByRole('button', { name: 'Unitrust and Google settings' }).click();
+  await expect(page.getByRole('region', { name: 'Unitrust and Google' }).locator('#google-calendar')).toBeInViewport();
+  await expect(page.getByRole('region', { name: 'Leads' }).locator('#custom-fields')).toHaveCount(1);
+  await page.screenshot({ path: 'test-results/settings-sections.png' });
+
+  await nav('Leads');
+  const shown = page.getByLabel('Leads shown').first();
+  await expect(shown).toHaveText(/^1–\d+ of \d+$/);
+  await page.getByLabel('Leads per page').first().selectOption('25');
+  await expect(page.getByLabel('Leads per page').first()).toHaveValue('25');
+});

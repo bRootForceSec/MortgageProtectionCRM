@@ -11,7 +11,7 @@ import { AGE_BANDS } from '../../shared/leadAge';
 import { BatchPicker } from '../components/BatchBrowse';
 import type { LeadType } from '../importTypes';
 import { LEAD_TABS, isCallable } from '../../shared/leadStatus';
-import { APPT_DAYS, DIAL_GAPS, IMPORTED_WHEN, LAST_CALL, gapLabel } from '../../shared/leadFilter';
+import { APPT_DAYS, DIAL_GAPS, IMPORTED_WHEN, LAST_CALL, LEAD_PAGE_SIZES, gapLabel } from '../../shared/leadFilter';
 import { UnmarkedAppointments } from '../components/UnmarkedAppointments';
 import { SaveStepDialog } from '../components/SaveStepDialog';
 import { NewRuleFromFilters } from './RulesCard';
@@ -90,6 +90,12 @@ export function LeadsPage() {
   const [makingRule, setMakingRule] = useState(false);
   const [rows, setRows] = useState<any[]>([]);
   const [total, setTotal] = useState(0);
+  /** Which page of the list (from 1), and how many on a page (remembered). */
+  const [page, setPage] = useState(1);
+  const [perPage, setPerPage] = useState(() => {
+    const n = Number(getStored('leads_per_page'));
+    return (LEAD_PAGE_SIZES as readonly number[]).includes(n) ? n : 100;
+  });
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [open, setOpen] = useState<string | null>(null);
   const [groups, setGroups, groupParams] = useGroups();
@@ -126,15 +132,28 @@ export function LeadsPage() {
   }), [status, search, batch, tried, notOnList, leadType, age, imported, apptDays, gap, tag, fieldId, keptValue, numeric, fieldMin, fieldMax, sortField, groupParams.counties, groupParams.area_codes]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const load = useCallback(
-    () => api.get<{ rows: any[]; total: number }>('/leads', filters).then((r) => { setRows(r.rows); setTotal(r.total); }),
-    [filters],
+    () => api.get<{ rows: any[]; total: number; page: number }>('/leads', { ...filters, page: String(page), per_page: String(perPage) })
+      .then((r) => { setRows(r.rows); setTotal(r.total); if (r.page !== page) setPage(r.page); }),
+    [filters, page, perPage],
   );
   useEffect(() => {
     const t = setTimeout(() => void load(), 200);
     return () => clearTimeout(t);
   }, [load]);
   // A new filter starts a new choice.
-  useEffect(() => setPicked(new Set()), [filters]);
+  useEffect(() => {
+    setPicked(new Set());
+    setPage(1);
+  }, [filters]);
+  const pager = (
+    <Pager
+      page={page}
+      perPage={perPage}
+      total={total}
+      onPage={setPage}
+      onPerPage={(n) => { setPerPage(n); setPage(1); setStored('leads_per_page', String(n)); }}
+    />
+  );
 
   const pickable = rows.filter((r) => isCallable(r.status) && (!r.on_list || replaceNow));
   const allPicked = pickable.length > 0 && pickable.every((r) => picked.has(r.id));
@@ -282,7 +301,8 @@ export function LeadsPage() {
         {filtered && <button className="btn small" onClick={clearFilters}>Clear filters</button>}
       </div>
       <div className="leads-tools">
-        <span className="muted">{total} lead{total === 1 ? '' : 's'}{rows.length < total ? ` (showing the first ${rows.length})` : ''}</span>
+        <span className="muted">{total} lead{total === 1 ? '' : 's'}</span>
+        {pager}
         <div className="add-bar">
           {onList > 0 && (
             <label className="row" style={{ gap: 4 }} title="Empty the call list first, so only these leads are on it. You can keep the old list to call later.">
@@ -360,7 +380,7 @@ export function LeadsPage() {
           })}
         </tbody>
       </table>
-      {rows.length === 0 && <div className="empty">No leads here.</div>}
+      {rows.length === 0 ? <div className="empty">No leads here.</div> : total > perPage && <div className="pager-bottom">{pager}</div>}
       {replacing && callList && (
         <ClearListDialog
           title={`Replace your call list with ${replacing === 'all' ? `all ${total} matching` : `${picked.size} ticked`} lead${(replacing === 'all' ? total : picked.size) === 1 ? '' : 's'}?`}
@@ -532,5 +552,34 @@ function TagMatchingDialog(props: {
         </div>
       </form>
     </div>
+  );
+}
+
+/** Page buttons for the Leads list: which leads are shown, first/previous/next/last, and how many on a page. */
+function Pager(props: { page: number; perPage: number; total: number; onPage: (p: number) => void; onPerPage: (n: number) => void }) {
+  const { page, perPage, total } = props;
+  const last = Math.max(1, Math.ceil(total / perPage));
+  if (!total) return null;
+  const from = (page - 1) * perPage + 1;
+  const to = Math.min(total, page * perPage);
+  return (
+    <span className="pager" role="group" aria-label="Pages">
+      {last > 1 && (
+        <>
+          <button className="btn small" disabled={page <= 1} onClick={() => props.onPage(1)} aria-label="First page">«</button>
+          <button className="btn small" disabled={page <= 1} onClick={() => props.onPage(page - 1)} aria-label="Previous page">‹</button>
+        </>
+      )}
+      <span className="muted" aria-label="Leads shown">{from.toLocaleString()}–{to.toLocaleString()} of {total.toLocaleString()}</span>
+      {last > 1 && (
+        <>
+          <button className="btn small" disabled={page >= last} onClick={() => props.onPage(page + 1)} aria-label="Next page">›</button>
+          <button className="btn small" disabled={page >= last} onClick={() => props.onPage(last)} aria-label="Last page">»</button>
+        </>
+      )}
+      <select value={perPage} onChange={(e) => props.onPerPage(Number(e.target.value))} aria-label="Leads per page">
+        {LEAD_PAGE_SIZES.map((n) => <option key={n} value={n}>{n} a page</option>)}
+      </select>
+    </span>
   );
 }
