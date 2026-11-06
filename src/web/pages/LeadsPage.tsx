@@ -14,6 +14,7 @@ import { LEAD_TABS, isCallable } from '../../shared/leadStatus';
 import { APPT_DAYS, DIAL_GAPS, IMPORTED_WHEN, LAST_CALL, gapLabel } from '../../shared/leadFilter';
 import { UnmarkedAppointments } from '../components/UnmarkedAppointments';
 import { SaveStepDialog } from '../components/SaveStepDialog';
+import { useTags } from '../tags';
 
 // Where you pick who to call: filter the leads, tick the ones you want (or take every match),
 // and add them to the bottom of the call list on the Calling page, or put them in place of it.
@@ -53,7 +54,11 @@ export function LeadsPage() {
   const [apptDays, setApptDays] = useState('');
   /** Leave out leads dialed in the last this many minutes; 0 for no limit. */
   const [gap, setGap] = useState(0);
+  /** A tag id, "none" for leads with no tags, or '' for any. */
+  const [tag, setTag] = useState('');
   const { types } = useLeadTypes();
+  const { tags, reload: reloadTags } = useTags();
+  const [tagging, setTagging] = useState(false);
   const [changingType, setChangingType] = useState(false);
   const [savingStep, setSavingStep] = useState(false);
   const [rows, setRows] = useState<any[]>([]);
@@ -84,8 +89,9 @@ export function LeadsPage() {
     imported: imported || undefined,
     appt_days: apptDays || undefined,
     not_within_min: gap ? String(gap) : undefined,
+    tag: tag || undefined,
     ...groupParams,
-  }), [status, search, batch, tried, notOnList, leadType, age, imported, apptDays, gap, groupParams.counties, groupParams.area_codes]); // eslint-disable-line react-hooks/exhaustive-deps
+  }), [status, search, batch, tried, notOnList, leadType, age, imported, apptDays, gap, tag, groupParams.counties, groupParams.area_codes]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const load = useCallback(
     () => api.get<{ rows: any[]; total: number }>('/leads', filters).then((r) => { setRows(r.rows); setTotal(r.total); }),
@@ -107,7 +113,7 @@ export function LeadsPage() {
     return n;
   });
 
-  const filtered = status !== 'all' || !!search || !!batch || !!tried || notOnList || !!leadType || !!age || !!imported || !!apptDays || !!gap;
+  const filtered = status !== 'all' || !!search || !!batch || !!tried || notOnList || !!leadType || !!age || !!imported || !!apptDays || !!gap || !!tag;
   const clearFilters = () => {
     setStatus('all');
     setSearch('');
@@ -119,6 +125,7 @@ export function LeadsPage() {
     setImported('');
     setApptDays('');
     setGap(0);
+    setTag('');
   };
   const typeLabel = (code: string | null) => (code ? types.find((t) => t.code === code)?.label ?? code : '');
 
@@ -177,6 +184,11 @@ export function LeadsPage() {
           {types.map((t) => <option key={t.code} value={t.code}>{t.label}</option>)}
           <option value="none">No lead type</option>
         </select>
+        <select value={tag} onChange={(e) => setTag(e.target.value)} aria-label="Tag">
+          <option value="">Any tags</option>
+          {tags.map((t) => <option key={t.id} value={t.id}>Tagged {t.name}</option>)}
+          <option value="none">No tags</option>
+        </select>
         <select value={age} onChange={(e) => setAge(e.target.value)} aria-label="Lead age" title="Days since the lead called in (the call-in date on the lead page)">
           <option value="">Any lead age</option>
           {AGE_BANDS.map((b) => <option key={b.key} value={b.key}>{b.label}</option>)}
@@ -225,6 +237,9 @@ export function LeadsPage() {
           <button className="btn" disabled={!total} onClick={() => setChangingType(true)} title="Fix the lead type on every lead matching these filters, e.g. one batch">
             Change lead type
           </button>
+          <button className="btn" disabled={!total} onClick={() => setTagging(true)} title="Put a tag on (or take it off) every lead matching these filters">
+            Tag all matching
+          </button>
           <button className="btn" onClick={() => setSavingStep(true)} title="Keep these filters as a step of your daily routine (Settings → Calling → Routines)">
             Save as routine step
           </button>
@@ -266,7 +281,7 @@ export function LeadsPage() {
                     />
                   )}
                 </td>
-                <td>{fullName(r)}</td>
+                <td>{fullName(r)}{(r.tags as string[]).map((t) => <span key={t} className="tag-chip" style={{ marginLeft: 4, paddingRight: 8 }}>{t}</span>)}</td>
                 <td>{fmtPhone(r.phone_e164)}</td><td>{r.county ?? ''}</td><td>{[r.city, r.state].filter(Boolean).join(', ')}</td>
                 <td title={typeLabel(r.lead_type)}>{r.lead_type ?? ''}</td><td className="nowrap">{fmtLeadAge(r.callin_at)}</td><td>{r.batch_name}</td><td><StatusBadge status={r.status} /><ApptBadge result={r.appt_result} />{r.on_list && <span className="badge" style={{ marginLeft: 4 }}>on call list</span>}</td>
                 <td>{r.attempts_total}</td><td>{fmtDateTime(r.last_call_at)}</td><td>{outcomeLabel(r.last_outcome_code)}</td>
@@ -288,6 +303,28 @@ export function LeadsPage() {
       )}
       {savingStep && (
         <SaveStepDialog filter={Object.fromEntries(Object.entries(filters).filter(([, v]) => v))} onClose={() => setSavingStep(false)} />
+      )}
+      {tagging && (
+        <TagMatchingDialog
+          total={total}
+          tags={tags.map((t) => t.name)}
+          scope={filtered ? 'matching these filters' : 'in the CRM'}
+          onCancel={() => setTagging(false)}
+          onConfirm={async (name, remove) => {
+            try {
+              const r = await api.post<{ changed: number; matched: number; tag: { id: string; name: string } }>('/leads/tag-matching', { ...filters, tag_name: name, remove });
+              const n = `${r.changed} lead${r.changed === 1 ? '' : 's'}`;
+              const rest = r.matched - r.changed;
+              toast(remove
+                ? `Took "${r.tag.name}" off ${n}${rest ? `; ${rest} didn't have it` : ''}`
+                : `Tagged ${n} "${r.tag.name}"${rest ? `; ${rest} already were` : ''}`);
+              setTagging(false);
+              await Promise.all([load(), reloadTags()]);
+            } catch (e: any) {
+              toast(e.message, 'error');
+            }
+          }}
+        />
       )}
       {changingType && (
         <ChangeTypeDialog
@@ -314,7 +351,7 @@ export function LeadsPage() {
         <LeadViewer
           id={open}
           list={rows.map((r) => ({ id: r.id, name: fullName(r), status: r.status, phone: r.phone_e164, county: r.county }))}
-          onClose={() => { setOpen(null); void load(); }}
+          onClose={() => { setOpen(null); void load(); void reloadTags(); }}
         />
       )}
     </>
@@ -367,6 +404,56 @@ function ChangeTypeDialog(props: {
           </p>
           <div className="row">
             <button className="btn primary" type="submit" disabled={busy || !code}>Change {n}</button>
+            <button className="btn" type="button" onClick={props.onCancel}>Cancel</button>
+          </div>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+/** Puts a tag on every lead matching the filters, or takes one off. A new name makes a new tag. */
+function TagMatchingDialog(props: {
+  total: number;
+  tags: string[];
+  scope: string;
+  onConfirm: (name: string, remove: boolean) => Promise<void>;
+  onCancel: () => void;
+}) {
+  const [name, setName] = useState('');
+  const [remove, setRemove] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const n = `${props.total} lead${props.total === 1 ? '' : 's'}`;
+  const isNew = !!name.trim() && !props.tags.some((t) => t.toLowerCase() === name.trim().toLowerCase());
+  return (
+    <div className="modal-back" onKeyDown={(e) => e.key === 'Escape' && (e.stopPropagation(), props.onCancel())}>
+      <form
+        className="modal small-modal"
+        role="dialog"
+        aria-label="Tag all matching"
+        onSubmit={async (e) => {
+          e.preventDefault();
+          setBusy(true);
+          try {
+            await props.onConfirm(name.trim(), remove);
+          } finally {
+            setBusy(false);
+          }
+        }}
+      >
+        <header><b>Tag all {n} {props.scope}</b></header>
+        <div className="body">
+          <label className="field">
+            <span>Tag</span>
+            <input list="tag-matching-names" value={name} onChange={(e) => setName(e.target.value)} autoFocus maxLength={40} aria-label="Tag name" placeholder="Type a tag, new or old" />
+            <datalist id="tag-matching-names">{props.tags.map((t) => <option key={t} value={t} />)}</datalist>
+          </label>
+          <label className="row" style={{ gap: 4 }}>
+            <input type="checkbox" checked={remove} onChange={(e) => setRemove(e.target.checked)} /> Take this tag off instead
+          </label>
+          <p className="help">{isNew && !remove ? `"${name.trim()}" is a new tag. ` : ''}You can rename or delete tags in Settings → Tags.</p>
+          <div className="row">
+            <button className="btn primary" type="submit" disabled={busy || !name.trim() || (remove && isNew)}>{remove ? `Take it off ${n}` : `Tag ${n}`}</button>
             <button className="btn" type="button" onClick={props.onCancel}>Cancel</button>
           </div>
         </div>

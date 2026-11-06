@@ -85,7 +85,8 @@ export interface RoutineToday {
 }
 
 /** A step's filter in words, e.g. "No answer · Last call today · Not dialed in the last 1 hour". */
-export function describeFilter(f: Partial<LeadQuery>): string {
+/** The filter in words. `tagName` turns a tag id into its name (a deleted tag shows as "a deleted tag"). */
+export function describeFilter(f: Partial<LeadQuery>, tagName?: (id: string) => string | undefined): string {
   const label = <T extends { key: string; label: string }>(list: readonly T[], key: string | undefined) => (key ? list.find((x) => x.key === key)?.label ?? key : null);
   const lists = (v: string | undefined, one: string, many: string) => {
     const n = v ? v.split(',').filter(Boolean).length : 0;
@@ -99,6 +100,7 @@ export function describeFilter(f: Partial<LeadQuery>): string {
     f.not_within_min ? `Not dialed in the last ${gapLabel(f.not_within_min)}` : null,
     f.lead_type ? (f.lead_type === 'none' ? 'No lead type' : `Lead type ${f.lead_type}`) : null,
     f.age ? (f.age === 'unknown' ? 'No call-in date' : `Age ${label(AGE_BANDS, f.age)}`) : null,
+    f.tag ? (f.tag === 'none' ? 'No tags' : `Tagged "${tagName?.(f.tag) ?? 'a deleted tag'}"`) : null,
     f.batch_id || f.bulk_id ? 'One import' : null,
     lists(f.counties, 'county', 'counties'),
     lists(f.area_codes, 'area code', 'area codes'),

@@ -6,6 +6,7 @@ import { leadFilterWhere, onCallList, type LeadFilter } from './callList.js';
 import { batchPdf } from './pageTurn.js';
 import { otherPhones } from './leadPhones.js';
 import { currentAppointment } from './appointments.js';
+import { leadTags } from './tags.js';
 
 // Reading leads for the Leads page and the lead view, and resolving "same person?" links.
 
@@ -15,7 +16,8 @@ export function listLeads(db: DB, f: LeadFilter) {
   const rows = db
     .prepare(
       `SELECT l.id, l.first_name, l.last_name, l.phone_e164, l.state, l.city, l.county, l.lead_type, l.callin_at, b.name batch_name, s.status, s.attempts_total,
-              s.last_call_at, s.last_outcome_code, s.next_due_at, s.appt_result
+              s.last_call_at, s.last_outcome_code, s.next_due_at, s.appt_result,
+              (SELECT json_group_array(t.name) FROM (SELECT t.name FROM lead_tag x JOIN tag t ON t.id = x.tag_id WHERE x.lead_id = l.id ORDER BY t.name COLLATE NOCASE) t) tags_json
        FROM lead l JOIN lead_state s ON s.lead_id = l.id JOIN import_batch b ON b.id = l.batch_id
        WHERE ${w.sql}
        ORDER BY coalesce(s.last_call_at, l.created_at) DESC LIMIT 500`,
@@ -23,15 +25,15 @@ export function listLeads(db: DB, f: LeadFilter) {
     .all(w.params) as any[];
   const total = (db.prepare(`SELECT COUNT(*) n FROM lead l JOIN lead_state s ON s.lead_id = l.id WHERE ${w.sql}`).get(w.params) as { n: number }).n;
   const listed = onCallList(db, rows.map((r) => r.id));
-  return { rows: rows.map((r) => ({ ...r, on_list: listed.has(r.id) })), total };
+  return { rows: rows.map(({ tags_json, ...r }) => ({ ...r, tags: JSON.parse(tags_json) as string[], on_list: listed.has(r.id) })), total };
 }
 
-/** Everything the lead view shows: the lead, its state, calls with their outcomes and events, notes, links and changes. */
 /** Whether a lead with this id is in the CRM. */
 export function leadExists(db: DB, id: string): boolean {
   return !!db.prepare('SELECT 1 FROM lead WHERE id = ?').get(id);
 }
 
+/** Everything the lead view shows: the lead, its state, calls with their outcomes and events, notes, links and changes. */
 export function getLeadDetail(db: DB, importsDir: string, id: string) {
   const lead = db.prepare('SELECT * FROM lead WHERE id = ?').get(id) as any;
   if (!lead) throw new DomainError('lead not found', 404);
@@ -76,6 +78,7 @@ export function getLeadDetail(db: DB, importsDir: string, id: string) {
     source_pdf: lead.source_page != null && !!batchPdf(importsDir, lead.batch_id),
     called_back_at: (db.prepare('SELECT at FROM lead_called_back WHERE lead_id = ?').get(id) as { at: string } | undefined)?.at ?? null,
     appointment: currentAppointment(db, id),
+    tags: leadTags(db, id),
     calls,
     // Notes saved with a call you undid are left out (the undo puts the note back in the form).
     notes: db

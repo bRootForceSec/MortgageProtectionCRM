@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { api, fmtDateTime, fmtDob, fmtDuration, fmtMoney, fmtPhone, fullName, localTime, personAge, type LeadDetail, type Call } from '../api';
+import { api, fmtDateTime, fmtDob, fmtDuration, fmtMoney, fmtPhone, fullName, localTime, personAge, type LeadDetail, type Call, type TagRef } from '../api';
+import { useTags } from '../tags';
 import { useApp } from '../App';
 import { describeCallback, fromWall, ymd } from '../when';
 import { APPT_RESULT_LABEL, type ApptResult } from '../../shared/appointments';
@@ -148,6 +149,7 @@ export function LeadSummary({
             {l.county && <> · <b>{l.county} County</b></>}
             {l.time_zone && <> · <b>{localTime(l.time_zone)}</b> local</>}
           </div>
+          <LeadTags leadId={l.id} initial={d.tags} />
           {d.appointment && d.appointment.scheduled_for.slice(0, 10) >= ymd(new Date()) && (
             <div className="appt-when" title={d.appointment.source === 'app' ? 'Typed when you set it. Unitrust confirms or moves it.' : 'From the Unitrust calendar'}>
               Appointment <b>{describeCallback(fromWall(d.appointment.scheduled_for))}</b>
@@ -202,6 +204,66 @@ export function LeadSummary({
       {d.linked.length > 0 && <LinkedLeads d={d} />}
       {(warnings.length > 0 || importNotes) && <p className="help">Import notes: {[importNotes, ...warnings].filter(Boolean).join(' ')}</p>}
     </>
+  );
+}
+
+/** The lead's tags: take one off with ×, or type a name to add one (a new name makes a new tag). */
+export function LeadTags({ leadId, initial }: { leadId: string; initial: TagRef[] }) {
+  const { toast } = useApp();
+  const { tags: all, reload } = useTags();
+  const [tags, setTags] = useState(initial);
+  const [adding, setAdding] = useState<string | null>(null);
+  useEffect(() => setTags(initial), [leadId, initial]);
+  const add = async () => {
+    const name = adding?.trim();
+    if (!name) return setAdding(null);
+    try {
+      setTags(await api.post<TagRef[]>(`/leads/${leadId}/tags`, { name }));
+      setAdding(null);
+      void reload();
+    } catch (e: any) {
+      toast(e.message, 'error');
+    }
+  };
+  const remove = async (t: TagRef) => {
+    try {
+      setTags(await api.del<TagRef[]>(`/leads/${leadId}/tags/${t.id}`));
+    } catch (e: any) {
+      toast(e.message, 'error');
+    }
+  };
+  const listId = `tags-${leadId}`;
+  return (
+    <div className="tag-row" aria-label="Tags">
+      {tags.map((t) => (
+        <span key={t.id} className="tag-chip">
+          {t.name}
+          <button type="button" aria-label={`Take tag ${t.name} off`} title="Take this tag off" onClick={() => void remove(t)}>×</button>
+        </span>
+      ))}
+      {adding == null ? (
+        <button type="button" className="btn small" onClick={() => setAdding('')} title="Your own labels on leads. Filter by them on Leads and in routine steps.">+ Tag</button>
+      ) : (
+        <form className="row" style={{ gap: 4, display: 'inline-flex' }} onSubmit={(e) => (e.preventDefault(), void add())}>
+          <input
+            autoFocus
+            list={listId}
+            aria-label="Tag name"
+            placeholder="Tag name"
+            maxLength={40}
+            value={adding}
+            onChange={(e) => setAdding(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Escape') { e.stopPropagation(); setAdding(null); } }}
+            style={{ width: 140 }}
+          />
+          <datalist id={listId}>
+            {all.filter((t) => !tags.some((x) => x.id === t.id)).map((t) => <option key={t.id} value={t.name} />)}
+          </datalist>
+          <button className="btn small primary" type="submit">Add</button>
+          <button className="btn small" type="button" onClick={() => setAdding(null)}>Cancel</button>
+        </form>
+      )}
+    </div>
   );
 }
 
