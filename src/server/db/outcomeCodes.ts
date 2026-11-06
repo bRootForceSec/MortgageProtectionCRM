@@ -1,15 +1,22 @@
 import type { DB } from './connection.js';
 import { sqlList } from './sql.js';
-import { OUTCOMES, outcomeCodes, type OutcomeDef } from '../../shared/outcomes.js';
+import { OUTCOMES, OutcomeOverrides, outcomeCodes, type OutcomeDef, type OutcomeOverride } from '../../shared/outcomes.js';
+import { getSetting } from '../core/settings.js';
 
 // The outcome_code table is a copy of the registry in src/shared/outcomes.ts, so SQL can join on it. It is brought
 // in line after the migrations run, each time the database opens. Rows are never deleted: calls reference them.
 
-/** The outcome_code row for a registry entry. */
-export function outcomeRow(code: string, o: OutcomeDef) {
+/** Your renames and hidden buttons (Settings → Outcomes). A bad stored value is ignored rather than blocking calls. */
+export function loadOutcomeOverrides(db: DB): OutcomeOverrides {
+  const r = OutcomeOverrides.safeParse(getSetting<unknown>(db, 'outcome_overrides') ?? {});
+  return r.success ? r.data : {};
+}
+
+/** The outcome_code row for a registry entry, with your new name if you gave it one. */
+export function outcomeRow(code: string, o: OutcomeDef, over: OutcomeOverride = {}) {
   return {
     code,
-    label: o.label,
+    label: over.label ?? o.label,
     grp: o.group,
     kind: o.kind,
     hotkey: o.hotkey,
@@ -37,9 +44,10 @@ export function syncOutcomeCodes(db: DB): number {
        IS NOT (excluded.label, excluded.grp, excluded.kind, excluded.hotkey, excluded.counts_as_human_contact,
             excluded.requires_callback_time, excluded.marks_dead, excluded.sort_order, excluded.active, excluded.lead_effect)`,
   );
+  const overrides = loadOutcomeOverrides(db);
   return db.transaction(() => {
     let changed = 0;
-    for (const [code, o] of Object.entries(OUTCOMES)) changed += up.run(outcomeRow(code, o)).changes;
+    for (const [code, o] of Object.entries(OUTCOMES)) changed += up.run(outcomeRow(code, o, overrides[code])).changes;
     return changed;
   })();
 }

@@ -3,7 +3,7 @@ import * as z from 'zod/v4';
 import type { DB } from '../db/connection.js';
 import { voidCall } from '../domain/calls.js';
 import { DomainError } from '../core/errors.js';
-import { loadCallingSettings, saveCallingSettings } from '../domain/callingSettings.js';
+import { loadCallingSettings, loadOutcomeOverrides, saveCallingSettings, saveOutcomeOverrides } from '../domain/callingSettings.js';
 import { SHORTCUT_ACTIONS } from '../../shared/callingSettings.js';
 import { rebuildLeadState } from '../domain/leadState.js';
 import { KdeConnect } from '../dialer.js';
@@ -30,6 +30,13 @@ export function registerCallingRoutes(app: FastifyInstance, deps: { db: DB; kde?
     // A new retry gap or follow-up plan changes when leads come back.
     if (saved.retry_gap_minutes !== before.retry_gap_minutes || JSON.stringify(saved.follow_ups) !== JSON.stringify(before.follow_ups)) rebuildLeadState(db);
     return { settings: saved, actions: SHORTCUT_ACTIONS };
+  });
+
+  // ---------- your outcome names and buttons ----------
+  app.get('/api/settings/outcomes', async () => ({ overrides: loadOutcomeOverrides(db) }));
+  app.put('/api/settings/outcomes', async (req) => {
+    const b = z.object({ overrides: z.unknown() }).parse(req.body);
+    return { overrides: saveOutcomeOverrides(db, b.overrides) };
   });
 
   // ---------- daily routines ----------
