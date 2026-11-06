@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { api, fmtDateTime, fmtMoney, fmtPhone } from '../api';
 import { useApp } from '../App';
 import { REPORT_CARDS, cardView, fullLayout, type ReportCard, type ReportCardKey, type ReportLayouts, type ReportView } from '../../shared/reportLayout';
@@ -84,13 +84,22 @@ export function ReportsPage() {
     api.get<ReportLayouts>('/reports/layouts').then(setLayouts).catch((e) => toast(`Couldn't load your Reports layout: ${e.message}`, 'error'));
   }, [toast]);
   const layout = fullLayout(layouts.current);
-  const saveLayouts = async (next: ReportLayouts) => {
+  // Saves go one at a time, in order, and only the answer to the latest one is shown: clicking quickly through
+  // several changes must not let an earlier save's answer (or arrival) undo a later change.
+  const saving = useRef<{ chain: Promise<void>; seq: number }>({ chain: Promise.resolve(), seq: 0 });
+  const saveLayouts = (next: ReportLayouts): Promise<void> => {
     setLayouts(next);
-    try {
-      setLayouts(await api.put<ReportLayouts>('/reports/layouts', next));
-    } catch (e: any) {
-      toast(e.message, 'error');
-    }
+    const seq = ++saving.current.seq;
+    const done = saving.current.chain.then(async () => {
+      try {
+        const saved = await api.put<ReportLayouts>('/reports/layouts', next);
+        if (seq === saving.current.seq) setLayouts(saved);
+      } catch (e: any) {
+        toast(e.message, 'error');
+      }
+    });
+    saving.current.chain = done;
+    return done;
   };
   const setCard = (key: ReportCardKey, patch: Partial<ReportCard>) =>
     void saveLayouts({ ...layouts, current: layout.map((c) => (c.key === key ? { ...c, ...patch } : c)) });

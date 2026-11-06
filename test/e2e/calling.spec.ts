@@ -710,6 +710,15 @@ test('Settings → Outcomes: rename a button, hide one, show Callback, then rese
 });
 
 test('Reports: arrange the cards, show By hour as a table, save a layout and load it back', async ({ page }) => {
+  // The first layout save answers slowly, as on a busy computer: the later changes must still win.
+  let slowed = false;
+  await page.route('**/api/reports/layouts', async (route) => {
+    if (route.request().method() === 'PUT' && !slowed) {
+      slowed = true;
+      await new Promise((r) => setTimeout(r, 400));
+    }
+    await route.continue();
+  });
   await page.goto(launchUrl);
   await page.getByRole('button', { name: 'Reports' }).click();
   const order = () => page.locator('main section[aria-label], section[aria-label]').evaluateAll((els) => els.map((e) => e.getAttribute('aria-label')));
