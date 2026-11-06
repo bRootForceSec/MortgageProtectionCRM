@@ -1,6 +1,7 @@
 import type { OutcomeCode } from './api';
 import type { CallingSettings, ShortcutAction } from '../shared/callingSettings';
 import type { CallMode } from '../shared/appointments';
+import { outcomeDef } from '../shared/outcomes';
 
 // Keyboard shortcuts you can change in Settings. Each action can have several keys; each outcome has one.
 // Outcome keys belong to a side of the Calling screen (First call or Appointment), so both sides can use 1 to 5.
@@ -33,6 +34,7 @@ export function buildKeyMap(r: CallingSettingsResponse | null, outcomes: Outcome
   const outcomeKey: Record<string, string | null> = {};
   const map: KeyMap['outcomes'] = { first_call: new Map(), appointment: new Map() };
   for (const o of outcomes) {
+    if (outcomeDef(o.code)?.offered === false) continue;
     const over = r?.settings.shortcuts.outcomes[o.code];
     const k = over !== undefined ? over : o.hotkey;
     outcomeKey[o.code] = k ? normKey(k) : null;

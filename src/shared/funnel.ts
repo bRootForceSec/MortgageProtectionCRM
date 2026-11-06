@@ -12,7 +12,7 @@ export const FUNNEL_STEPS: readonly { key: FunnelStep; label: string }[] = [
   { key: 'pickups', label: 'Pickups' },
   { key: 'appts_set', label: 'Appts set' },
   { key: 'sat', label: 'Sat' },
-  { key: 'prezis', label: 'Prezis' },
+  { key: 'prezis', label: 'Presentations' },
   { key: 'sales', label: 'Sales' },
 ];
 

@@ -33,12 +33,12 @@ export const APPT_RESULTS: Record<ApptResult, ApptResultDef> = {
     tab: { key: 'appt_no_show', label: 'No-shows', title: 'Their latest appointment was a no-show (logged here, or red in Unitrust)' },
   },
   sat_no_sale: {
-    label: 'Sat, no sale', missed: true, funnel: ['sat'], color: null,
-    tab: { key: 'appt_sat_no_sale', label: 'Sat, no sale', title: 'Picked up for their latest appointment, no presentation (logged here, or yellow in Unitrust)' },
+    label: 'Picked up, no presentation', missed: true, funnel: ['sat'], color: null,
+    tab: { key: 'appt_sat_no_sale', label: 'Appt picked up', title: 'Picked up for their latest appointment, no presentation (logged here, or yellow in Unitrust)' },
   },
   prezi: {
-    label: 'Prezi, no sale', missed: true, funnel: ['sat', 'prezis'], color: null,
-    tab: { key: 'appt_prezi', label: 'Prezis', title: 'You presented at their latest appointment and lost them' },
+    label: 'Presentation, no sale', missed: true, funnel: ['sat', 'prezis'], color: null,
+    tab: { key: 'appt_prezi', label: 'Presentations', title: 'You presented at their latest appointment and lost them' },
   },
   sold: {
     label: 'Sold', missed: false, funnel: ['sat', 'prezis', 'sales'], color: 'green',

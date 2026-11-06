@@ -1,3 +1,4 @@
+import { outcomeDef } from '../../src/shared/outcomes.js';
 import { describe, it, expect, beforeEach } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -141,14 +142,15 @@ describe('manual call logging', () => {
     expect((db.prepare('SELECT status FROM lead_state WHERE lead_id = ?').get(jane) as any).status).toBe('retry');
   });
 
-  it('offers five outcomes on keys 1 to 5', () => {
+  it('offers four outcomes on keys 1 to 4, and keeps Callback without a key', () => {
     expect(db.prepare("SELECT hotkey, code, label FROM outcome_code WHERE active = 1 AND kind = 'first_call' ORDER BY sort_order").all()).toEqual([
-      { hotkey: '1', code: 'no_answer', label: 'No answer' },
-      { hotkey: '2', code: 'no_appt', label: 'Talked, no appt' },
-      { hotkey: '3', code: 'appointment', label: 'Appt set' },
-      { hotkey: '4', code: 'bad_number', label: 'Bad number' },
-      { hotkey: '5', code: 'callback', label: 'Callback' },
+      { hotkey: '1', code: 'no_answer', label: 'Dial: No answer' },
+      { hotkey: '2', code: 'no_appt', label: 'Dial: Picked up' },
+      { hotkey: '3', code: 'appointment', label: 'Dial: Appt set' },
+      { hotkey: '4', code: 'bad_number', label: 'Dial: Bad number' },
+      { hotkey: null, code: 'callback', label: 'Callback' },
     ]);
+    expect(outcomeDef('callback')?.offered).toBe(false);
     logManualCall(db, { lead_id: jane, idempotency_key: key(), outcome_code: 'no_appt' });
     expect(db.prepare('SELECT status FROM lead_state WHERE lead_id = ?').get(jane)).toEqual({ status: 'retry' }); // back after the gap
     logManualCall(db, { lead_id: jane, idempotency_key: key(), outcome_code: 'bad_number' });
@@ -157,11 +159,11 @@ describe('manual call logging', () => {
 
   it('offers five appointment outcomes on the same keys 1 to 5', () => {
     expect(db.prepare("SELECT hotkey, code, label FROM outcome_code WHERE active = 1 AND kind = 'appointment' ORDER BY sort_order").all()).toEqual([
-      { hotkey: '1', code: 'appt_no_show', label: 'No show' },
-      { hotkey: '2', code: 'appt_sat_no_sale', label: 'Sat, no sale' },
-      { hotkey: '3', code: 'appt_prezi', label: 'Prezi' },
-      { hotkey: '4', code: 'appt_sale', label: 'Sale' },
-      { hotkey: '5', code: 'appt_rescheduled', label: 'Rescheduled' },
+      { hotkey: '1', code: 'appt_no_show', label: 'Appt: No show' },
+      { hotkey: '2', code: 'appt_sat_no_sale', label: 'Appt: Picked up' },
+      { hotkey: '3', code: 'appt_prezi', label: 'Appt: Presentation' },
+      { hotkey: '4', code: 'appt_sale', label: 'Appt: Sale' },
+      { hotkey: '5', code: 'appt_rescheduled', label: 'Appt: Rescheduled' },
     ]);
   });
 

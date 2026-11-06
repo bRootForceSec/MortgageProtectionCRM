@@ -27,8 +27,8 @@ describe('lead statuses and Leads tabs', () => {
 
   it('the tabs, in order', () => {
     expect(LEAD_TABS.map((t) => `${t.key}:${t.label}`)).toEqual([
-      'all:All', 'new:Never called', 'no_answer:No answer', 'talked:Talked, no appt', 'callback:Callbacks', 'appointment_set:Appointment set',
-      'appt_no_show:No-shows', 'appt_sat_no_sale:Sat, no sale', 'appt_prezi:Prezis', 'appt_sold:Sold', 'invalid:Bad numbers', 'dead:Dead pile',
+      'all:All', 'new:Never called', 'no_answer:No answer', 'talked:Picked up, no appt', 'callback:Callbacks', 'appointment_set:Appointment set',
+      'appt_no_show:No-shows', 'appt_sat_no_sale:Appt picked up', 'appt_prezi:Presentations', 'appt_sold:Sold', 'invalid:Bad numbers', 'dead:Dead pile',
     ]);
   });
 
@@ -42,7 +42,7 @@ describe('lead statuses and Leads tabs', () => {
 describe('appointment results', () => {
   it('labels and which put the lead back', () => {
     expect(APPT_RESULT_LABEL).toEqual({
-      not_set: 'Appt booked', rescheduled: 'Rescheduled', sold: 'Sold', no_show: 'No-show', sat_no_sale: 'Sat, no sale', prezi: 'Prezi, no sale',
+      not_set: 'Appt booked', rescheduled: 'Rescheduled', sold: 'Sold', no_show: 'No-show', sat_no_sale: 'Picked up, no presentation', prezi: 'Presentation, no sale',
     });
     expect(MISSED_RESULTS).toEqual(['no_show', 'sat_no_sale', 'prezi']);
   });
@@ -63,7 +63,7 @@ describe('appointment results', () => {
 
 describe('the funnel', () => {
   it('steps, top to bottom', () => {
-    expect(FUNNEL_STEPS.map((s) => s.label)).toEqual(['Dials', 'Leads called', 'Pickups', 'Appts set', 'Sat', 'Prezis', 'Sales']);
+    expect(FUNNEL_STEPS.map((s) => s.label)).toEqual(['Dials', 'Leads called', 'Pickups', 'Appts set', 'Sat', 'Presentations', 'Sales']);
   });
 
   it('which steps one call with each outcome reaches', () => {

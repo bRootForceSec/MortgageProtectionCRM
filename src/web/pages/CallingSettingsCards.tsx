@@ -9,7 +9,7 @@ import type { CallingSettings, ShortcutAction } from '../../shared/callingSettin
 import { parsePlan, SUGGESTED_FOLLOW_UPS } from '../../shared/followUps';
 import { APPT_RESULT_LABEL } from '../../shared/appointments';
 import { ALL_PARTY_CONSENT_STATES } from '../../shared/recordingConsent';
-import { savesInstantly } from '../../shared/outcomes';
+import { outcomeDef, savesInstantly } from '../../shared/outcomes';
 
 // Settings for the Calling screen: retry gap, dialing, timer, goals, alerts, shortcuts and scripts.
 
@@ -126,7 +126,7 @@ export function CallingCard() {
           {s.instant_save && (['first_call', 'appointment'] as const).map((side) => (
             <span key={side} className="row" style={{ marginTop: 4 }}>
               <span className="help">{side === 'appointment' ? 'Appointment:' : 'First call:'}</span>
-              {(meta?.outcome_codes ?? []).filter((o) => o.kind === side && !o.requires_callback_time).map((o) => (
+              {(meta?.outcome_codes ?? []).filter((o) => o.kind === side && !o.requires_callback_time && outcomeDef(o.code)?.offered !== false).map((o) => (
                 <label key={o.code} className="choice-inline">
                   <input type="checkbox" checked={savesInstantly(o, s.instant_outcomes)}
                     onChange={(e) => set({ instant_outcomes: { ...s.instant_outcomes, [o.code]: e.target.checked } })} /> {o.label}
@@ -139,7 +139,7 @@ export function CallingCard() {
 
         <label>Missed appointments</label>
         <span>
-          <label className="choice-inline"><input type="checkbox" checked={s.missed_appts_first} onChange={(e) => set({ missed_appts_first: e.target.checked })} /> put a lead a no-show, sat no sale or prezi sent back at the top of the call list when I add it</label>
+          <label className="choice-inline"><input type="checkbox" checked={s.missed_appts_first} onChange={(e) => set({ missed_appts_first: e.target.checked })} /> put a lead a no-show, appt picked up or presentation sent back at the top of the call list when I add it</label>
         </span>
 
         <label>Follow-ups</label>
@@ -263,7 +263,7 @@ export function ShortcutsCard() {
               </tr>
             );
           })}
-          {meta?.outcome_codes.map((o) => {
+          {meta?.outcome_codes.filter((o) => outcomeDef(o.code)?.offered !== false).map((o) => {
             const k = km.outcomeKey[o.code];
             const waiting = capture?.kind === 'outcome' && capture.id === o.code;
             return (

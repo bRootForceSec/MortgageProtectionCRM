@@ -235,8 +235,8 @@ function Appointments({ a, onOpen }: { a: any; onOpen: (id: string, list: Viewer
         <div><b>{a.appointments}</b>Appointments</div>
         <div><b>{a.sat}</b>Sat</div>
         <div><b>{a.sold}</b>Sales</div>
-        <div><b>{a.prezi}</b>Prezi, no sale</div>
-        <div><b>{a.sat_no_sale}</b>Sat, no sale</div>
+        <div><b>{a.prezi}</b>Presentation, no sale</div>
+        <div><b>{a.sat_no_sale}</b>Picked up, no presentation</div>
         <div><b>{a.no_show}</b>No-shows</div>
         <div><b>{a.rescheduled}</b>Rescheduled</div>
         <div><b>{a.pending}</b>Not updated yet</div>
@@ -245,7 +245,7 @@ function Appointments({ a, onOpen }: { a: any; onOpen: (id: string, list: Viewer
       </div>
       {a.on_the_spot?.appointments > 0 && (
         <table className="grid">
-          <thead><tr><th></th><th>Appointments</th><th>Sat</th><th>Prezis</th><th>Sales</th><th>Close rate</th></tr></thead>
+          <thead><tr><th></th><th>Appointments</th><th>Sat</th><th>Presentations</th><th>Sales</th><th>Close rate</th></tr></thead>
           <tbody>
             {([['On the spot', a.on_the_spot], ['Booked ahead', a.booked_ahead]] as const).map(([label, t]: readonly [string, any]) => (
               <tr key={label}>
@@ -762,7 +762,7 @@ function Objections({ o }: { o: any }) {
   const share = (n: number, of: number) => (of ? <span className="muted small"> {pct(n / of)}</span> : null);
   return (
     <div className="card">
-      <h3>Objections <span className="muted">({o.calls} talked, sat or prezi call{o.calls === 1 ? '' : 's'} in these dates)</span></h3>
+      <h3>Objections <span className="muted">({o.calls} picked up or presentation call{o.calls === 1 ? '' : 's'} in these dates)</span></h3>
       <div className="scroll-x">
         <table className="grid">
           <thead>
@@ -779,7 +779,7 @@ function Objections({ o }: { o: any }) {
           </tbody>
         </table>
       </div>
-      <p className="help">The chips you ticked after Talked, no appt, Sat, no sale and Prezi. The small % is out of those calls; a call can have more than one.</p>
+      <p className="help">The chips you ticked after Dial: Picked up, Appt: Picked up and Appt: Presentation. The small % is out of those calls; a call can have more than one.</p>
     </div>
   );
 }

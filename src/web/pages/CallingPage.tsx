@@ -2,7 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { callbackFields, fromWall } from '../when';
 import { api, fmtLeadAge, fmtPhone, fmtRelative, fmtDateTime, type LeadDetail, type CallListItem, type CallListResponse } from '../api';
 import { useApp } from '../App';
-import { ApptBadge, LeadSummary, CallHistory, Notes, toggleCalledBack } from '../components/LeadDetails';
+import { ApptBadge, LeadSummary, CallHistory, Notes, copyCalendarTag, toggleCalledBack } from '../components/LeadDetails';
 import { EditLead } from '../components/EditLead';
 import { SourcePage } from '../components/SourcePage';
 import { DialQr } from '../components/DialQr';
@@ -436,6 +436,7 @@ export function CallingPage() {
       else if (act('undo')) { e.preventDefault(); void undo(); }
       else if (act('edit')) { if (detail) { e.preventDefault(); setEditing(true); } }
       else if (act('called_back')) { if (ready && detail) { e.preventDefault(); void toggleCalledBack(detail, toast).then((at) => calledBack(detail.lead.id, at)); } }
+      else if (act('copy_tag')) { if (detail) { e.preventDefault(); void copyCalendarTag(detail.lead, toast); } }
       else if (act('switch_mode')) { if (ready && detail) { e.preventDefault(); switchMode(mode === 'appointment' ? 'first_call' : 'appointment'); } }
       else if (act('script')) { e.preventDefault(); setShowScript((v) => { setStored(SCRIPT_KEY, v ? '0' : '1'); return !v; }); }
     };
@@ -628,7 +629,7 @@ export function CallingPage() {
           <span className="help">
             <kbd>{k('list_up')}</kbd><kbd>{k('list_down')}</kbd> move <kbd>{k('skip')}</kbd> skip to the bottom <kbd>{k('dial')}</kbd> {dialLabel.toLowerCase()} <kbd>{k('dial_alt')}</kbd> other number{' '}
             <kbd>{k('dials_down')}</kbd><kbd>{k('dials_up')}</kbd> dials <kbd>Enter</kbd> save and next <kbd>{k('undo')}</kbd> undo <kbd>{k('note')}</kbd> note{' '}
-            <kbd>{k('edit')}</kbd> edit <kbd>{k('switch_mode')}</kbd> first call / appointment <kbd>{k('script')}</kbd> script <kbd>{k('lookup')}</kbd> look up a caller <kbd>{k('called_back')}</kbd> called me back
+            <kbd>{k('edit')}</kbd> edit <kbd>{k('switch_mode')}</kbd> first call / appointment <kbd>{k('script')}</kbd> script <kbd>{k('lookup')}</kbd> look up a caller <kbd>{k('called_back')}</kbd> called me back <kbd>{k('copy_tag')}</kbd> copy for calendar
           </span>
         </header>
       </section>
@@ -652,7 +653,7 @@ export function CallingPage() {
           ) : (
             <>
               <LeadSummary d={detail} onDial={dial} dialLabel={dialLabel} dialKey={k('dial')} altKey={k('dial_alt')} onEdit={() => setEditing(true)} editKey={k('edit')}
-                calledBackKey={k('called_back')} onCalledBack={(at) => calledBack(detail.lead.id, at)} />
+                calledBackKey={k('called_back')} tagKey={k('copy_tag')} onCalledBack={(at) => calledBack(detail.lead.id, at)} />
               {showScript && <ScriptPanel d={detail} />}
               <LogCall
                 key={`${detail.lead.id}-${mode}-${restore?.leadId === detail.lead.id ? restore.n : 0}`}

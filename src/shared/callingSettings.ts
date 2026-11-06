@@ -21,6 +21,7 @@ export const SHORTCUT_ACTIONS = {
   script: { label: 'Show or hide the script', keys: ['p'] },
   lookup: { label: 'Look up an incoming caller by number', keys: ['l'] },
   called_back: { label: 'Mark (or unmark) that this lead called you back', keys: ['b'] },
+  copy_tag: { label: 'Copy "#MP Lead ID Last name" for your calendar', keys: ['i'] },
   do_not_call: { label: 'Tick (or untick) "Do not call" for this call', keys: ['d'] },
   switch_mode: { label: 'Switch between First call and Appointment', keys: ['m'] },
 } as const;

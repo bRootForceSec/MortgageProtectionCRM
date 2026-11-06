@@ -2,7 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { describeCallback, differentZone, readCallback, toWall } from '../when';
 import { api, fmtPhone, newKey, type LeadDetail } from '../api';
 import { useApp } from '../App';
-import { CopyLeadLink } from '../components/LeadDetails';
+import { CopyLeadLink, calendarTag, copyCalendarTag } from '../components/LeadDetails';
 import { isTyping, keyLabel, normKey, type KeyMap } from '../shortcuts';
 import { getStored, setStored } from '../storage';
 import type { CallMode } from '../../shared/appointments';
@@ -114,7 +114,7 @@ export function LogCall({
     if (!numberId && defaultNumber.id) setNumberId(defaultNumber.id);
   }, [defaultNumber.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const outcomes = useMemo(() => (meta?.outcome_codes ?? []).filter((o) => o.kind === mode), [meta, mode]);
+  const outcomes = useMemo(() => (meta?.outcome_codes ?? []).filter((o) => o.kind === mode && outcomeDef(o.code)?.offered !== false), [meta, mode]);
   const outcome = outcomes.find((o) => o.code === code) ?? null;
   const needsWhen = !!outcome?.requires_callback_time;
   // Appt set: the appointment's day and time, optional, typed like a callback.
@@ -335,6 +335,7 @@ export function LogCall({
                   <input id="callback-time" value={time} onChange={(e) => setTime(e.target.value)} placeholder="any time" style={{ width: 90 }} autoComplete="off" />
                 </label>
                 {apptWhen && <CopyLeadLink leadId={d.lead.id} label="Copy link for Unitrust" />}
+                {apptWhen && <button type="button" className="btn small" onClick={() => void copyCalendarTag(d.lead, toast)} title="What you type into your calendar">Copy {calendarTag(d.lead)}</button>}
                 <span className={'error' in cb ? 'help warn' : 'help'} aria-live="polite">{'error' in cb ? (day ? cb.error : apptWhen ? 'Leave blank if you don\'t know yet; Unitrust fills it in.' : '') : describeCallback(cb, new Date(), d.lead.time_zone)}</span>
               </div>
             );
