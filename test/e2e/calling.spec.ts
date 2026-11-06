@@ -708,3 +708,45 @@ test('Settings → Outcomes: rename a button, hide one, show Callback, then rese
   await expect(card.getByLabel('Name for Dial: Bad number')).toHaveValue('Dial: Bad number');
   expect(await buttons()).toEqual(['Dial: No answer', 'Dial: Picked up', 'Dial: Appt set', 'Dial: Bad number']);
 });
+
+test('Reports: arrange the cards, show By hour as a table, save a layout and load it back', async ({ page }) => {
+  await page.goto(launchUrl);
+  await page.getByRole('button', { name: 'Reports' }).click();
+  const order = () => page.locator('main section[aria-label], section[aria-label]').evaluateAll((els) => els.map((e) => e.getAttribute('aria-label')));
+  await expect(page.getByRole('heading', { name: /^Activity/ })).toBeVisible();
+  const before = await order();
+  expect(before.slice(0, 3)).toEqual(['Activity', 'Local vs out-of-area caller ID', 'By lead type']);
+  expect(before).not.toContain('By lead age');
+
+  await page.getByRole('button', { name: 'Arrange cards' }).click();
+  await page.getByLabel('Show Activity').uncheck();
+  await page.getByLabel('Show By lead age').check();
+  await page.getByRole('button', { name: 'Move By lead type up' }).click();
+  await page.getByRole('group', { name: 'By hour as' }).getByRole('button', { name: 'Table' }).click();
+  await page.getByLabel('Layout name').fill('Friday');
+  await page.getByRole('button', { name: 'Save as preset' }).click();
+  await expect(page.getByText('Saved layout "Friday"')).toBeVisible();
+  await page.screenshot({ path: 'test-results/reports-arrange.png', fullPage: true });
+  await page.getByRole('button', { name: 'Done arranging' }).click();
+
+  await expect(page.getByRole('heading', { name: /^Activity/ })).toHaveCount(0);
+  await expect(page.getByRole('heading', { name: /^By lead age/ })).toBeVisible();
+  expect((await order()).slice(0, 2)).toEqual(['By lead type', 'Local vs out-of-area caller ID']);
+  await expect(page.locator('section[aria-label="By hour"] table')).toBeVisible();
+
+  // Back to default, then load Friday again; it all survives a reload.
+  await page.getByRole('button', { name: 'Arrange cards' }).click();
+  await page.getByRole('button', { name: 'Back to default' }).click();
+  await page.getByRole('button', { name: 'Done arranging' }).click();
+  await expect(page.getByRole('heading', { name: /^Activity/ })).toBeVisible();
+  await page.getByLabel('Load a saved layout').selectOption('Friday');
+  await expect(page.getByRole('heading', { name: /^Activity/ })).toHaveCount(0);
+  await page.reload();
+  await page.getByRole('button', { name: 'Reports' }).click();
+  await expect(page.getByRole('heading', { name: /^By lead age/ })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /^Activity/ })).toHaveCount(0);
+
+  // Leave Reports as it was for anything after this.
+  await page.getByRole('button', { name: 'Arrange cards' }).click();
+  await page.getByRole('button', { name: 'Back to default' }).click();
+});
