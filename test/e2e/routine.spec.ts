@@ -37,7 +37,7 @@ test('work the day by routine: imports, then a step saved from Leads', async ({ 
   const nav = (name: string) => page.locator('.topbar nav').getByRole('button', { name, exact: true }).click();
 
   // Import without putting the leads on the list: the routine's imports step does that.
-  await page.getByRole('button', { name: 'Import', exact: true }).click();
+  await page.locator('.topbar nav').getByRole('button', { name: 'Import', exact: true }).click();
   const file = path.join(dataDir, 'Morning leads.csv');
   fs.copyFileSync('test/fixtures/sample-leads.csv', file);
   await page.locator('input[type=file]:not([webkitdirectory])').setInputFiles(file);
@@ -194,4 +194,48 @@ test('your fields: define them in Settings, fill one in on a lead, filter Leads 
   await expect(page.getByText('No leads here.')).toBeVisible();
   await page.getByLabel('Who decides is').selectOption('Wife');
   await expect(page.getByText('1 lead', { exact: true })).toBeVisible();
+});
+
+test('rules: a ready-made one, one made from the Leads filters, preview, run now and the log', async ({ page }) => {
+  page.on('dialog', (d) => void d.accept());
+  await page.goto(launchUrl);
+  const nav = (name: string) => page.locator('.topbar nav').getByRole('button', { name, exact: true }).click();
+
+  // From Leads: the leads tagged Spanish get tagged Hot, when you press Run now.
+  await nav('Leads');
+  await page.getByLabel('Tag', { exact: true }).selectOption({ label: 'Tagged Spanish' });
+  await expect(page.getByText('1 lead', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Make a rule' }).click();
+  const editor = page.getByRole('dialog', { name: 'New rule' });
+  await expect(editor).toContainText('Tagged "Spanish"');
+  await editor.getByLabel('Rule name').fill('Spanish are hot');
+  await editor.getByLabel('When', { exact: true }).selectOption('manual');
+  await editor.getByLabel('Action 1', { exact: true }).selectOption('add_tag');
+  await editor.getByLabel('Action 1 tag').fill('Hot');
+  await editor.getByRole('button', { name: 'Preview' }).click();
+  await expect(editor.getByLabel('Preview')).toContainText('Would match 1 lead');
+  await expect(editor.getByLabel('Preview')).toContainText('Tag "Hot": 1 lead');
+  await editor.getByRole('button', { name: 'Save rule' }).click();
+  await expect(editor).toHaveCount(0);
+
+  // Settings: add the ready-made no-show rule, switched off.
+  await nav('Settings');
+  const card = page.locator('#rules');
+  await card.getByLabel('Add a ready-made rule').selectOption({ label: "Yesterday's no-shows onto the call list" });
+  const starter = page.getByRole('dialog', { name: 'New rule' });
+  await expect(starter.getByLabel('Rule name')).toHaveValue("Yesterday's no-shows onto the call list");
+  await starter.getByRole('button', { name: 'Save rule' }).click();
+  await expect(card.getByLabel("Rule Yesterday's no-shows onto the call list")).toContainText('At 08:00 every day');
+  await expect(card.getByLabel("Rule Yesterday's no-shows onto the call list")).toContainText('No-shows · Appointment yesterday');
+
+  // Run the Leads one now: the log has it.
+  const mine = card.getByLabel('Rule Spanish are hot');
+  await expect(mine).toContainText('Only when you press Run now');
+  await mine.getByRole('button', { name: 'Run now' }).click();
+  await expect(page.getByText('"Spanish are hot" ran on 1 lead')).toBeVisible();
+  await card.getByText(/^Log: what rules did/).click();
+  await expect(card.getByLabel('Rules log')).toContainText('Spanish are hot');
+  await expect(card.getByLabel('Rules log')).toContainText('Tag "Hot": 1 lead');
+  await card.scrollIntoViewIfNeeded();
+  await page.screenshot({ path: 'test-results/rules-settings.png' });
 });

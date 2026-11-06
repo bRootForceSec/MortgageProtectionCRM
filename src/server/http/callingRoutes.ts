@@ -11,6 +11,7 @@ import { parseList } from '../domain/groupFilter.js';
 import { callbacksDue } from '../domain/callList.js';
 import { appointmentsOnDay } from '../domain/appointments.js';
 import { chooseRoutine, loadRoutines, routineToday, saveRoutines, startStep } from '../domain/routines.js';
+import { loadRules, previewRule, ruleRuns, runRuleById, saveRules } from '../domain/rules.js';
 
 const idParam = z.object({ id: z.string().max(64) });
 
@@ -37,6 +38,17 @@ export function registerCallingRoutes(app: FastifyInstance, deps: { db: DB; kde?
   app.put('/api/settings/outcomes', async (req) => {
     const b = z.object({ overrides: z.unknown() }).parse(req.body);
     return { overrides: saveOutcomeOverrides(db, b.overrides) };
+  });
+
+  // ---------- rules (shared/rules.ts) ----------
+  app.get('/api/rules', async () => ({ rules: loadRules(db) }));
+  app.put('/api/rules', async (req) => ({ rules: saveRules(db, z.object({ rules: z.unknown() }).parse(req.body).rules) }));
+  // What a rule (as edited, not yet saved) would do now. Changes nothing.
+  app.post('/api/rules/preview', async (req) => previewRule(db, z.object({ rule: z.unknown() }).parse(req.body).rule));
+  app.post('/api/rules/:id/run', async (req) => runRuleById(db, idParam.parse(req.params).id, false));
+  app.get('/api/rules/runs', async (req) => {
+    const q = z.object({ rule_id: z.string().max(64).optional(), all: z.enum(['1', '0']).optional() }).parse(req.query);
+    return { runs: ruleRuns(db, { ruleId: q.rule_id, all: q.all === '1' }) };
   });
 
   // ---------- daily routines ----------

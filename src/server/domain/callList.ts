@@ -42,6 +42,12 @@ export interface LeadFilter {
   tag?: string;
   /** Only leads with a value in this custom field: any value, or `value` (any case). */
   custom?: { field_id: string; value?: string };
+  /** Only leads with an appointment this many days ago. */
+  appt_days_ago?: number;
+  /** Only leads waiting on the call list. */
+  on_list?: boolean;
+  /** Only this lead (a rule run for one lead's call). */
+  only_lead?: string;
 }
 
 /** The Leads filters as the API (or a routine step) gives them, with relative choices worked out now. */
@@ -64,6 +70,8 @@ export function toLeadFilter(q: LeadQuery, now = new Date()): LeadFilter {
     not_within_min: q.not_within_min || undefined,
     tag: !q.tag ? undefined : q.tag === 'none' ? '' : q.tag,
     custom: q.field_id ? { field_id: q.field_id, value: q.field_value || undefined } : undefined,
+    appt_days_ago: q.appt_days_ago ?? undefined,
+    on_list: q.on_list === true || q.on_list === '1' || q.on_list === 'true',
   };
 }
 
@@ -99,12 +107,25 @@ function importedWhere(when: ImportedWhen | undefined): string {
 function apptDaysWhere(key: ApptDays | undefined): string {
   if (!key) return '1';
   const d = apptDaysSql(key);
+  return apptOnDays(d.from, d.to);
+}
+
+/** Leads with an appointment between two days (SQL date expressions). */
+function apptOnDays(from: string, to: string): string {
+  const d = { from, to };
   return `l.id IN (
     SELECT a.lead_id FROM appointment a WHERE a.recorded_via = 'unitrust' AND a.internal_status = 'scheduled'
       AND substr(a.scheduled_for, 1, 10) BETWEEN ${d.from} AND ${d.to}
     UNION
     SELECT c.lead_id FROM call c JOIN call_outcome o ON o.call_id = c.id AND ${CURRENT_OUTCOME} JOIN outcome_code oc ON oc.code = o.outcome_code
       WHERE c.voided_at IS NULL AND oc.kind = 'appointment' AND date(c.requested_at, 'localtime') BETWEEN ${d.from} AND ${d.to})`;
+}
+
+/** Leads with an appointment exactly this many days ago (in this computer's days). */
+function apptDaysAgoWhere(n: number | undefined): string {
+  if (n == null) return '1';
+  const day = `date(${TODAY}, '-${Math.trunc(n)} days')`;
+  return apptOnDays(day, day);
 }
 
 /** Leads page tabs for how the latest appointment went (lead_state.appt_result). */
@@ -147,6 +168,9 @@ export function leadFilterWhere(f: LeadFilter): { sql: string; params: Record<st
     ageWhere(f.age),
     importedWhere(f.imported),
     apptDaysWhere(f.appt_days),
+    apptDaysAgoWhere(f.appt_days_ago),
+    f.only_lead ? 'l.id = @lf_only' : '1',
+    f.on_list ? `l.id IN (SELECT i.lead_id FROM call_list_item i WHERE NOT ${WORKED})` : '1',
     f.not_within_min ? '(s.last_call_at IS NULL OR s.last_call_at < @lf_gap)' : '1',
     f.tag === undefined ? '1' : f.tag === '' ? 'l.id NOT IN (SELECT lead_id FROM lead_tag)' : 'l.id IN (SELECT lead_id FROM lead_tag WHERE tag_id = @lf_tag)',
     f.custom
@@ -158,7 +182,7 @@ export function leadFilterWhere(f: LeadFilter): { sql: string; params: Record<st
   ];
   return {
     sql: parts.join(' AND '),
-    params: { lf_status: status, ...(appt ? { lf_appt: appt } : {}), lf_batch: f.batch_id ?? null, lf_type: f.lead_type ?? null, ...(f.bulk_id ? { lf_bulk: f.bulk_id } : {}), lf_before: f.tried_before ?? null, lf_after: f.tried_after ?? null, ...(f.tag ? { lf_tag: f.tag } : {}), ...(f.custom ? { lf_field: f.custom.field_id, ...(f.custom.value ? { lf_fval: f.custom.value } : {}) } : {}), ...(f.not_within_min ? { lf_gap: new Date(Date.now() - f.not_within_min * 60_000).toISOString() } : {}), ...group.params, ...search.params },
+    params: { lf_status: status, ...(appt ? { lf_appt: appt } : {}), lf_batch: f.batch_id ?? null, lf_type: f.lead_type ?? null, ...(f.bulk_id ? { lf_bulk: f.bulk_id } : {}), lf_before: f.tried_before ?? null, lf_after: f.tried_after ?? null, ...(f.tag ? { lf_tag: f.tag } : {}), ...(f.only_lead ? { lf_only: f.only_lead } : {}), ...(f.custom ? { lf_field: f.custom.field_id, ...(f.custom.value ? { lf_fval: f.custom.value } : {}) } : {}), ...(f.not_within_min ? { lf_gap: new Date(Date.now() - f.not_within_min * 60_000).toISOString() } : {}), ...group.params, ...search.params },
   };
 }
 

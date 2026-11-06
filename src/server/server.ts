@@ -11,6 +11,7 @@ import { Updates, readBuildInfo, type Runtime, type UpdateProvider } from './upd
 import { DraftWorker } from './domain/drafts.js';
 import { BulkImporter } from './domain/bulkImport.js';
 import { PageChecker } from './domain/pageTurnFix.js';
+import { RuleRunner } from './domain/rules.js';
 import { makeReader } from './ai/readers.js';
 import { loadAiSettings } from './ai/settings.js';
 import { Secrets } from './ai/settings.js';
@@ -114,6 +115,9 @@ export async function startServer(opts: StartOptions = {}): Promise<RunningServe
   // Carry on reading any PDF import that was in progress when the app stopped.
   drafts.resumeAll();
   bulk.resume();
+  // Rules that run every day at a time (Settings → Rules).
+  const rules = new RuleRunner(db, (m) => app.log.warn(m));
+  rules.start();
   // One time: turn upright the sideways or upside-down pages of leads imported before imports did it.
   const t0 = setTimeout(() => void pageChecker.start(false), 5_000);
   t0.unref();
@@ -145,6 +149,7 @@ export async function startServer(opts: StartOptions = {}): Promise<RunningServe
       clearInterval(t2);
       clearTimeout(t0);
       pageChecker.stop();
+      rules.stop();
       drafts.stop();
       bulk.stop();
       await app.close();

@@ -96,6 +96,7 @@ export function describeFilter(f: Partial<LeadQuery>, names: { tag?: (id: string
     f.status && f.status !== 'all' ? label(LEAD_TABS, f.status) ?? (f.status === 'appt_missed' ? 'Missed appointments' : f.status) : 'All leads',
     label(IMPORTED_WHEN, f.imported),
     label(APPT_DAYS, f.appt_days),
+    f.appt_days_ago != null ? (f.appt_days_ago === 1 ? 'Appointment yesterday' : f.appt_days_ago === 0 ? 'Appointment today' : `Appointment ${f.appt_days_ago} days ago`) : null,
     label(LAST_CALL, f.last_call),
     f.not_within_min ? `Not dialed in the last ${gapLabel(f.not_within_min)}` : null,
     f.lead_type ? (f.lead_type === 'none' ? 'No lead type' : `Lead type ${f.lead_type}`) : null,
@@ -107,5 +108,6 @@ export function describeFilter(f: Partial<LeadQuery>, names: { tag?: (id: string
     lists(f.area_codes, 'area code', 'area codes'),
     f.search ? `Search "${f.search}"` : null,
     f.not_on_list === '1' || f.not_on_list === true ? 'Not on the call list' : null,
+    f.on_list === '1' || f.on_list === true ? 'Waiting on the call list' : null,
   ].filter(Boolean).join(' · ');
 }

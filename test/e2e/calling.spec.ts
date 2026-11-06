@@ -41,7 +41,7 @@ test('import a sheet, log calls by keyboard, and start an Appt set', async ({ pa
   await expect(page.getByRole('cell', { name: '(614) 555-0199' })).toBeVisible();
 
   // Import.
-  await page.getByRole('button', { name: 'Import', exact: true }).click();
+  await page.locator('.topbar nav').getByRole('button', { name: 'Import', exact: true }).click();
   const file = path.join(dataDir, 'October leads.csv');
   fs.copyFileSync('test/fixtures/sample-leads.csv', file);
   // The file picker, not the folder picker next to it.
@@ -710,6 +710,15 @@ test('Settings → Outcomes: rename a button, hide one, show Callback, then rese
 });
 
 test('Reports: arrange the cards, show By hour as a table, save a layout and load it back', async ({ page }) => {
+  // The first layout save answers slowly, as on a busy computer: the later changes must still win.
+  let slowed = false;
+  await page.route('**/api/reports/layouts', async (route) => {
+    if (route.request().method() === 'PUT' && !slowed) {
+      slowed = true;
+      await new Promise((r) => setTimeout(r, 400));
+    }
+    await route.continue();
+  });
   await page.goto(launchUrl);
   await page.getByRole('button', { name: 'Reports' }).click();
   const order = () => page.locator('main section[aria-label], section[aria-label]').evaluateAll((els) => els.map((e) => e.getAttribute('aria-label')));

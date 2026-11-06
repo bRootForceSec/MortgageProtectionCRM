@@ -27,7 +27,8 @@ function cleanName(name: string): string {
   return n;
 }
 
-function tagByName(db: DB, name: string): { id: string; name: string } | undefined {
+/** The tag with this name (any case), if there is one. */
+export function tagByName(db: DB, name: string): { id: string; name: string } | undefined {
   return db.prepare('SELECT id, name FROM tag WHERE name = ?').get(name) as { id: string; name: string } | undefined;
 }
 

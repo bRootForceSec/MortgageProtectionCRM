@@ -1,0 +1,387 @@
+import { useCallback, useEffect, useState } from 'react';
+import { api, fmtDateTime, newKey } from '../api';
+import { useApp } from '../App';
+import { useTags } from '../tags';
+import { useCustomFields } from '../customFields';
+import { CustomFieldInput } from '../components/CustomFieldInput';
+import { describeFilter, WEEKDAYS } from '../../shared/routines';
+import { APPT_DAYS, LAST_CALL, type LeadQuery } from '../../shared/leadFilter';
+import { LEAD_TABS } from '../../shared/leadStatus';
+import {
+  ACTION_LABELS, STARTER_RULES, TRIGGER_LABELS, describeAction, describeTrigger,
+  type ActionResult, type Rule, type RuleAction, type RuleRun, type RuleTrigger,
+} from '../../shared/rules';
+
+// Settings → Rules: "when this happens, for leads like these, do that". Each rule shows what it does in words, with
+// Preview (what it would do now, changing nothing), Run now, and the log of what it did.
+
+type Filter = Partial<LeadQuery>;
+
+/** The names the descriptions need: tags, your fields and outcomes. */
+function useNames() {
+  const { meta } = useApp();
+  const { tags, tagName } = useTags();
+  const { fields, fieldName } = useCustomFields();
+  const outcomeLabel = useCallback((c: string) => meta?.outcome_codes.find((o) => o.code === c)?.label ?? c, [meta]);
+  return { tags, tagName, fields, fieldName, outcomeLabel };
+}
+
+function resultText(r: ActionResult, fieldName: (id: string) => string | undefined): string {
+  return `${describeAction(r.action, fieldName)}: ${r.changed} lead${r.changed === 1 ? '' : 's'}${r.note ? ` (${r.note})` : ''}`;
+}
+
+/** What a run did (or Preview would do), in a few lines. */
+export function RunSummary({ run, fieldName }: { run: RuleRun; fieldName: (id: string) => string | undefined }) {
+  if (run.error) return <div className="error">Didn't run: {run.error}. Nothing was changed.</div>;
+  return (
+    <div>
+      <div>{run.dry_run ? 'Would match' : 'Matched'} <b>{run.matched}</b> lead{run.matched === 1 ? '' : 's'}{run.leads.length ? `: ${run.leads.slice(0, 8).map((l) => l.name).join(', ')}${run.matched > 8 ? '…' : ''}` : ''}</div>
+      {run.matched > 0 && <ul className="help" style={{ margin: '2px 0 0 18px' }}>{run.results.map((r, i) => <li key={i}>{resultText(r, fieldName)}</li>)}</ul>}
+    </div>
+  );
+}
+
+export function RulesCard() {
+  const { toast } = useApp();
+  const names = useNames();
+  const [rules, setRules] = useState<Rule[] | null>(null);
+  const [runs, setRuns] = useState<RuleRun[]>([]);
+  const [editing, setEditing] = useState<Rule | null>(null);
+  const [shown, setShown] = useState<Record<string, RuleRun>>({});
+  const load = useCallback(async () => {
+    try {
+      const [r, l] = await Promise.all([api.get<{ rules: Rule[] }>('/rules'), api.get<{ runs: RuleRun[] }>('/rules/runs')]);
+      setRules(r.rules);
+      setRuns(l.runs);
+    } catch (e: any) {
+      toast(`Couldn't load rules: ${e.message}`, 'error');
+    }
+  }, [toast]);
+  useEffect(() => void load(), [load]);
+  if (!rules) return null;
+
+  const save = async (next: Rule[]): Promise<boolean> => {
+    try {
+      setRules((await api.put<{ rules: Rule[] }>('/rules', { rules: next })).rules);
+      return true;
+    } catch (e: any) {
+      toast(e.message, 'error');
+      return false;
+    }
+  };
+  const act = async (r: Rule, dry: boolean) => {
+    try {
+      const run = dry ? await api.post<RuleRun>('/rules/preview', { rule: r }) : await api.post<RuleRun>(`/rules/${r.id}/run`, {});
+      setShown((s) => ({ ...s, [r.id]: run }));
+      if (!dry) {
+        toast(run.error ? `"${r.name}" didn't run: ${run.error}` : `"${r.name}" ran on ${run.matched} lead${run.matched === 1 ? '' : 's'}`, run.error ? 'error' : undefined);
+        await load();
+      }
+    } catch (e: any) {
+      toast(e.message, 'error');
+    }
+  };
+  const addStarter = (i: string) => {
+    const s = STARTER_RULES[Number(i)];
+    if (s) setEditing({ ...s, id: newKey() });
+  };
+
+  return (
+    <div className="card" id="rules">
+      <h2>Rules</h2>
+      <p className="help">
+        When something happens, do something to the leads it fits: every day at a time, or when you save a call. A rule acts on the leads matching its
+        filters (set them here, or on Leads with <b>Make a rule</b>). <b>Preview</b> shows what it would do now without changing anything; every run is in the log below.
+      </p>
+      {rules.length === 0 && <p className="muted">No rules yet.</p>}
+      <ul className="rule-list">
+        {rules.map((r) => (
+          <li key={r.id} className="rule" aria-label={`Rule ${r.name}`}>
+            <div className="row" style={{ justifyContent: 'space-between' }}>
+              <label className="row" style={{ gap: 6 }}>
+                <input type="checkbox" checked={r.enabled} aria-label={`${r.name} on`} onChange={(e) => void save(rules.map((x) => (x.id === r.id ? { ...x, enabled: e.target.checked } : x)))} />
+                <b>{r.name}</b>{!r.enabled && <span className="muted">(off)</span>}
+              </label>
+              <span className="row" style={{ gap: 4 }}>
+                <button className="btn small" onClick={() => void act(r, true)}>Preview</button>
+                <button className="btn small" onClick={() => void act(r, false)} title="Run it now, whatever its trigger">Run now</button>
+                <button className="btn small" onClick={() => setEditing(r)}>Edit</button>
+                <button className="btn small" onClick={() => { if (window.confirm(`Delete the rule "${r.name}"? Its log stays.`)) void save(rules.filter((x) => x.id !== r.id)); }}>Delete</button>
+              </span>
+            </div>
+            <div className="help" style={{ margin: '4px 0 0' }}>
+              <div><b>When:</b> {describeTrigger(r.trigger, names.outcomeLabel)}</div>
+              <div><b>Leads:</b> {describeFilter(r.filter, { tag: names.tagName, field: names.fieldName })}</div>
+              <div><b>Do:</b> {r.actions.map((a) => describeAction(a, names.fieldName)).join(', then ')}</div>
+            </div>
+            {shown[r.id] && (
+              <div className="rule-result" aria-label={`${shown[r.id]!.dry_run ? 'Preview' : 'Run'} of ${r.name}`}>
+                <b>{shown[r.id]!.dry_run ? 'Preview (nothing changed)' : 'Just ran'}:</b> <RunSummary run={shown[r.id]!} fieldName={names.fieldName} />
+              </div>
+            )}
+          </li>
+        ))}
+      </ul>
+      <div className="row">
+        <button className="btn" onClick={() => setEditing({ id: newKey(), name: '', enabled: true, trigger: { kind: 'daily', time: '08:00', days: [0, 1, 2, 3, 4, 5, 6] }, filter: { status: 'all' }, actions: [{ kind: 'add_to_list' }] })}>
+          + New rule
+        </button>
+        <select aria-label="Add a ready-made rule" value="" onChange={(e) => addStarter(e.target.value)}>
+          <option value="">+ Ready-made rule…</option>
+          {STARTER_RULES.map((s, i) => <option key={s.name} value={i}>{s.name}</option>)}
+        </select>
+      </div>
+      <details style={{ marginTop: 10 }}>
+        <summary>Log: what rules did ({runs.length})</summary>
+        {runs.length === 0 ? <p className="muted">Nothing yet. Runs that matched no leads aren't listed.</p> : (
+          <ul className="history" aria-label="Rules log">
+            {runs.map((run) => (
+              <li key={run.id}>
+                <span className="muted">{fmtDateTime(run.at)}</span> <b>{run.rule_name}</b> <span className="muted">({run.trigger === 'daily' ? 'daily' : run.trigger === 'call_saved' ? 'call saved' : 'run by you'})</span>
+                <RunSummary run={run} fieldName={names.fieldName} />
+              </li>
+            ))}
+          </ul>
+        )}
+      </details>
+      {editing && (
+        <RuleEditor
+          rule={editing}
+          isNew={!rules.some((r) => r.id === editing.id)}
+          onCancel={() => setEditing(null)}
+          onSave={async (r) => {
+            const next = rules.some((x) => x.id === r.id) ? rules.map((x) => (x.id === r.id ? r : x)) : [...rules, r];
+            if (await save(next)) {
+              setEditing(null);
+              toast(`Saved "${r.name}"${r.enabled ? '' : ' (off)'}`);
+            }
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+/** Makes a new rule from the Leads filters: opens the editor, then adds it to your rules. */
+export function NewRuleFromFilters({ filter, onClose }: { filter: Filter; onClose: () => void }) {
+  const { toast } = useApp();
+  const [rule] = useState<Rule>(() => ({ id: newKey(), name: '', enabled: true, trigger: { kind: 'daily', time: '08:00', days: [0, 1, 2, 3, 4, 5, 6] }, filter, actions: [{ kind: 'add_to_list' }] }));
+  return (
+    <RuleEditor
+      rule={rule}
+      isNew
+      onCancel={onClose}
+      onSave={async (r) => {
+        try {
+          const { rules } = await api.get<{ rules: Rule[] }>('/rules');
+          await api.put('/rules', { rules: [...rules, r] });
+          toast(`Saved "${r.name}". See it in Settings → Rules.`);
+          onClose();
+        } catch (e: any) {
+          toast(e.message, 'error');
+        }
+      }}
+    />
+  );
+}
+
+const emptyAction = (kind: RuleAction['kind'], firstField: string | undefined): RuleAction => {
+  switch (kind) {
+    case 'add_tag':
+    case 'remove_tag': return { kind, tag: '' };
+    case 'set_field': return { kind, field_id: firstField ?? '', value: '' };
+    case 'mark_dead': return { kind, reason: '' };
+    default: return { kind };
+  }
+};
+
+function RuleEditor(props: { rule: Rule; isNew: boolean; onSave: (r: Rule) => Promise<void>; onCancel: () => void }) {
+  const { meta, toast } = useApp();
+  const names = useNames();
+  const [r, setR] = useState<Rule>(props.rule);
+  const [preview, setPreview] = useState<RuleRun | null>(null);
+  const [busy, setBusy] = useState(false);
+  const set = (patch: Partial<Rule>) => { setR({ ...r, ...patch }); setPreview(null); };
+  const setFilter = (key: keyof Filter, v: unknown) => {
+    const f: Record<string, unknown> = { ...r.filter, [key]: v };
+    if (v === '' || v == null) delete f[key];
+    set({ filter: f as Filter });
+  };
+  const setTrigger = (t: RuleTrigger) => set({ trigger: t });
+  const setAction = (i: number, a: RuleAction) => set({ actions: r.actions.map((x, j) => (j === i ? a : x)) });
+  const outcomes = meta?.outcome_codes ?? [];
+  const runPreview = async () => {
+    try {
+      setPreview(await api.post<RuleRun>('/rules/preview', { rule: { ...r, name: r.name || 'New rule' } }));
+    } catch (e: any) {
+      toast(e.message, 'error');
+    }
+  };
+  // Appointment day: one choice for the two kept forms (a named range, or a number of days ago).
+  const apptValue = r.filter.appt_days ? `k:${r.filter.appt_days}` : r.filter.appt_days_ago != null ? `n:${r.filter.appt_days_ago}` : '';
+  const setAppt = (v: string) => {
+    const f: Record<string, unknown> = { ...r.filter };
+    delete f.appt_days;
+    delete f.appt_days_ago;
+    if (v.startsWith('k:')) f.appt_days = v.slice(2);
+    if (v.startsWith('n:')) f.appt_days_ago = Number(v.slice(2));
+    set({ filter: f as Filter });
+  };
+  const listValue = r.filter.on_list === '1' || r.filter.on_list === true ? 'on' : r.filter.not_on_list === '1' || r.filter.not_on_list === true ? 'off' : '';
+  const setList = (v: string) => {
+    const f: Record<string, unknown> = { ...r.filter };
+    delete f.on_list;
+    delete f.not_on_list;
+    if (v === 'on') f.on_list = '1';
+    if (v === 'off') f.not_on_list = '1';
+    set({ filter: f as Filter });
+  };
+
+  return (
+    <div className="modal-back" onKeyDown={(e) => e.key === 'Escape' && (e.stopPropagation(), props.onCancel())}>
+      <form
+        className="modal"
+        style={{ width: 'min(760px, 100%)' }}
+        role="dialog"
+        aria-label={props.isNew ? 'New rule' : 'Edit rule'}
+        onSubmit={async (e) => {
+          e.preventDefault();
+          setBusy(true);
+          try {
+            await props.onSave({ ...r, name: r.name.trim() });
+          } finally {
+            setBusy(false);
+          }
+        }}
+      >
+        <header><b>{props.isNew ? 'New rule' : `Edit "${props.rule.name}"`}</b><button type="button" className="btn small" onClick={props.onCancel}>Close <kbd>Esc</kbd></button></header>
+        <div className="body rule-editor">
+          <label className="field">
+            <span>Name</span>
+            <input autoFocus value={r.name} maxLength={80} onChange={(e) => set({ name: e.target.value })} aria-label="Rule name" placeholder="e.g. Yesterday's no-shows onto the list" />
+          </label>
+
+          <fieldset>
+            <legend>When</legend>
+            <select value={r.trigger.kind} aria-label="When" onChange={(e) => {
+              const k = e.target.value as RuleTrigger['kind'];
+              setTrigger(k === 'daily' ? { kind: 'daily', time: '08:00', days: [0, 1, 2, 3, 4, 5, 6] } : k === 'call_saved' ? { kind: 'call_saved', outcomes: [] } : { kind: 'manual' });
+            }}>
+              {(Object.keys(TRIGGER_LABELS) as RuleTrigger['kind'][]).map((k) => <option key={k} value={k}>{TRIGGER_LABELS[k]}</option>)}
+            </select>
+            {r.trigger.kind === 'daily' && (() => {
+              const t = r.trigger;
+              return (
+                <div className="row" style={{ flexWrap: 'wrap', gap: 8, marginTop: 6 }}>
+                  <label className="row" style={{ gap: 4 }}>at <input type="time" value={t.time} aria-label="Time" onChange={(e) => setTrigger({ ...t, time: e.target.value || '08:00' })} /></label>
+                  {WEEKDAYS.map((d, i) => (
+                    <label key={d} className="row" style={{ gap: 2 }}>
+                      <input type="checkbox" checked={t.days.includes(i)} onChange={(e) => setTrigger({ ...t, days: e.target.checked ? [...t.days, i].sort() : t.days.filter((x) => x !== i) })} /> {d}
+                    </label>
+                  ))}
+                  <span className="help" style={{ margin: 0 }}>If the app is closed then, it runs when you next open it that day.</span>
+                </div>
+              );
+            })()}
+            {r.trigger.kind === 'call_saved' && (() => {
+              const t = r.trigger;
+              return (
+                <div style={{ marginTop: 6 }}>
+                  <span className="help">With any of these outcomes (none ticked: any outcome). It acts on that call's lead, if it fits the filters below.</span>
+                  <div className="row" style={{ flexWrap: 'wrap', gap: 8 }}>
+                    {outcomes.map((o) => (
+                      <label key={o.code} className="row" style={{ gap: 2 }}>
+                        <input type="checkbox" checked={t.outcomes.includes(o.code)} onChange={(e) => setTrigger({ ...t, outcomes: e.target.checked ? [...t.outcomes, o.code] : t.outcomes.filter((x) => x !== o.code) })} /> {o.label}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              );
+            })()}
+          </fieldset>
+
+          <fieldset>
+            <legend>For leads like these</legend>
+            <div className="row" style={{ flexWrap: 'wrap', gap: 6 }}>
+              <select value={r.filter.status ?? 'all'} aria-label="Leads tab" onChange={(e) => setFilter('status', e.target.value)}>
+                {LEAD_TABS.map((t) => <option key={t.key} value={t.key}>{t.key === 'all' ? 'All leads' : t.label}</option>)}
+              </select>
+              <select value={apptValue} aria-label="Appointment" onChange={(e) => setAppt(e.target.value)}>
+                <option value="">Appointment any day</option>
+                {[0, 1, 2, 3, 4, 5, 6, 7, 14].map((n) => <option key={n} value={`n:${n}`}>{n === 0 ? 'Appointment today' : n === 1 ? 'Appointment yesterday' : `Appointment ${n} days ago`}</option>)}
+                {APPT_DAYS.filter((d) => d.key !== 'yesterday').map((d) => <option key={d.key} value={`k:${d.key}`}>{d.label}</option>)}
+              </select>
+              <select value={r.filter.last_call ?? ''} aria-label="Last call" onChange={(e) => setFilter('last_call', e.target.value)}>
+                <option value="">Last call: any time</option>
+                {LAST_CALL.map((t) => <option key={t.key} value={t.key}>{t.label}</option>)}
+              </select>
+              <select value={listValue} aria-label="Call list" onChange={(e) => setList(e.target.value)}>
+                <option value="">On the call list or not</option>
+                <option value="on">Waiting on the call list</option>
+                <option value="off">Not on the call list</option>
+              </select>
+              <select value={r.filter.tag ?? ''} aria-label="Tag" onChange={(e) => setFilter('tag', e.target.value)}>
+                <option value="">Any tags</option>
+                {names.tags.map((t) => <option key={t.id} value={t.id}>Tagged {t.name}</option>)}
+                <option value="none">No tags</option>
+              </select>
+            </div>
+            <p className="help" style={{ marginBottom: 0 }}>
+              {describeFilter(r.filter, { tag: names.tagName, field: names.fieldName })}. For other filters (county, lead type, your fields…), set them on Leads and use <b>Make a rule</b>.
+            </p>
+          </fieldset>
+
+          <fieldset>
+            <legend>Do this</legend>
+            {r.actions.map((a, i) => (
+              <div key={i} className="row" style={{ gap: 6, marginBottom: 4, flexWrap: 'wrap' }}>
+                <span className="muted">{i + 1}.</span>
+                <select value={a.kind} aria-label={`Action ${i + 1}`} onChange={(e) => setAction(i, emptyAction(e.target.value as RuleAction['kind'], names.fields[0]?.id))}>
+                  {(Object.keys(ACTION_LABELS) as RuleAction['kind'][]).filter((k) => k !== 'set_field' || names.fields.length).map((k) => <option key={k} value={k}>{ACTION_LABELS[k]}</option>)}
+                </select>
+                {(a.kind === 'add_tag' || a.kind === 'remove_tag') && (
+                  <>
+                    <input list="rule-tag-names" value={a.tag} maxLength={40} placeholder="Tag name" aria-label={`Action ${i + 1} tag`} onChange={(e) => setAction(i, { ...a, tag: e.target.value })} />
+                    <datalist id="rule-tag-names">{names.tags.map((t) => <option key={t.id} value={t.name} />)}</datalist>
+                  </>
+                )}
+                {a.kind === 'set_field' && (() => {
+                  const f = names.fields.find((x) => x.id === a.field_id);
+                  return (
+                    <>
+                      <select value={a.field_id} aria-label={`Action ${i + 1} field`} onChange={(e) => setAction(i, { ...a, field_id: e.target.value, value: '' })}>
+                        {!f && <option value={a.field_id}>A deleted field</option>}
+                        {names.fields.map((x) => <option key={x.id} value={x.id}>{x.label}</option>)}
+                      </select>
+                      to {f && <CustomFieldInput field={f} value={a.value} onChange={(v) => setAction(i, { ...a, value: v })} ariaLabel={`Action ${i + 1} value`} blank="(blank)" />}
+                    </>
+                  );
+                })()}
+                {a.kind === 'mark_dead' && (
+                  <input value={a.reason ?? ''} maxLength={200} placeholder={`Reason (default: Rule: ${r.name || 'its name'})`} aria-label={`Action ${i + 1} reason`} onChange={(e) => setAction(i, { ...a, reason: e.target.value })} style={{ minWidth: 240 }} />
+                )}
+                {r.actions.length > 1 && <button type="button" className="btn small" aria-label={`Remove action ${i + 1}`} onClick={() => set({ actions: r.actions.filter((_, j) => j !== i) })}>✕</button>}
+              </div>
+            ))}
+            {r.actions.length < 10 && <button type="button" className="btn small" onClick={() => set({ actions: [...r.actions, { kind: 'add_tag', tag: '' }] })}>+ Another action</button>}
+          </fieldset>
+
+          <label className="row" style={{ gap: 4 }}>
+            <input type="checkbox" checked={r.enabled} onChange={(e) => set({ enabled: e.target.checked })} /> On
+          </label>
+
+          {preview && (
+            <div className="rule-result" aria-label="Preview">
+              <b>If it ran now (nothing changed):</b> <RunSummary run={preview} fieldName={names.fieldName} />
+            </div>
+          )}
+          <div className="row">
+            <button type="submit" className="btn primary" disabled={busy || !r.name.trim()}>Save rule</button>
+            <button type="button" className="btn" onClick={() => void runPreview()}>Preview</button>
+            <button type="button" className="btn" onClick={props.onCancel}>Cancel</button>
+          </div>
+        </div>
+      </form>
+    </div>
+  );
+}
