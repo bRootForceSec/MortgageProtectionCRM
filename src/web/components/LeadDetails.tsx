@@ -143,6 +143,8 @@ export function LeadSummary({
               <input type="checkbox" checked={!!backAt} onChange={() => void flipBack()} />
               Called me back {calledBackKey && <kbd>{calledBackKey}</kbd>}
             </label>
+            {/* With the buttons, so tags take no extra height above the outcome buttons. */}
+            <LeadTags leadId={l.id} initial={d.tags} />
           </h2>
           <div className="where">
             {age != null && <><b>Age {age}</b> · </>}
@@ -150,7 +152,6 @@ export function LeadSummary({
             {l.county && <> · <b>{l.county} County</b></>}
             {l.time_zone && <> · <b>{localTime(l.time_zone)}</b> local</>}
           </div>
-          <LeadTags leadId={l.id} initial={d.tags} />
           {d.appointment && d.appointment.scheduled_for.slice(0, 10) >= ymd(new Date()) && (
             <div className="appt-when" title={d.appointment.source === 'app' ? 'Typed when you set it. Unitrust confirms or moves it.' : 'From the Unitrust calendar'}>
               Appointment <b>{describeCallback(fromWall(d.appointment.scheduled_for))}</b>
@@ -236,7 +237,7 @@ export function LeadTags({ leadId, initial }: { leadId: string; initial: TagRef[
   };
   const listId = `tags-${leadId}`;
   return (
-    <div className="tag-row" aria-label="Tags">
+    <span className="tag-row" role="group" aria-label="Tags">
       {tags.map((t) => (
         <span key={t.id} className="tag-chip">
           {t.name}
@@ -265,7 +266,7 @@ export function LeadTags({ leadId, initial }: { leadId: string; initial: TagRef[
           <button className="btn small" type="button" onClick={() => setAdding(null)}>Cancel</button>
         </form>
       )}
-    </div>
+    </span>
   );
 }
 
