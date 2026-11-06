@@ -6,7 +6,7 @@ import { describeCallback, fromWall, ymd } from '../when';
 import { APPT_RESULT_LABEL, type ApptResult } from '../../shared/appointments';
 import { outcomeDef } from '../../shared/outcomes';
 import { statusLabel } from '../../shared/leadStatus';
-import { leadLink } from '../../shared/leadLink';
+import { calendarTag, leadLink } from '../../shared/leadLink';
 import { showCustomValue } from '../../shared/customFields';
 
 
@@ -43,11 +43,6 @@ export function CopyLeadLink({ leadId, label = 'Copy link' }: { leadId: string; 
     }
   };
   return <button type="button" className="btn small" onClick={() => void copy()} title="A link to this lead, for the appointment's notes in Unitrust or your calendar">{label}</button>;
-}
-
-/** What you type into your calendar for an appointment: "#MP <Lead ID> <Last name>". */
-export function calendarTag(l: LeadDetail['lead']): string {
-  return ['#MP', l.source_lead_id, l.last_name].filter(Boolean).join(' ');
 }
 
 /** Copies the lead's calendar text and says what was copied. */

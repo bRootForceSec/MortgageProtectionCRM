@@ -35,7 +35,7 @@ export function saveAiSettings(db: DB, input: unknown): AiSettings {
   return s;
 }
 
-export type SecretName = 'anthropic_api_key' | 'openai_api_key' | 'unitrust_extension_key';
+export type SecretName = 'anthropic_api_key' | 'openai_api_key' | 'unitrust_extension_key' | 'google_client_id' | 'google_client_secret' | 'google_refresh_token';
 
 export class Secrets {
   constructor(private file: string) {}

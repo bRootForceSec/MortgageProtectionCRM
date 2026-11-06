@@ -3,6 +3,7 @@ import { randomBytes } from 'node:crypto';
 import * as z from 'zod/v4';
 import type { DB } from '../db/connection.js';
 import type { Secrets } from '../ai/settings.js';
+import type { GoogleCalendar } from '../domain/googleCalendar.js';
 import { EXTENSION_PATH, EXTENSION_POLICIES_PATH } from './security.js';
 import { lastUnitrustSync, recordUnitrustEvents } from '../domain/unitrustAppointments.js';
 import {
@@ -62,12 +63,15 @@ const policies = z.object({
 
 const points = z.number().min(-100).max(200).nullable();
 
-export function registerUnitrustRoutes(app: FastifyInstance, deps: { db: DB; secrets: Secrets }) {
-  const { db, secrets } = deps;
+export function registerUnitrustRoutes(app: FastifyInstance, deps: { db: DB; secrets: Secrets; calendar: GoogleCalendar }) {
+  const { db, secrets, calendar } = deps;
 
   app.post(EXTENSION_PATH, async (req) => {
     const b = events.parse(req.body);
-    return recordUnitrustEvents(db, b.events, { today: b.today, days: b.days });
+    const r = recordUnitrustEvents(db, b.events, { today: b.today, days: b.days });
+    // New or moved appointments go on Google Calendar soon.
+    if (r.added || r.changed || r.matched) calendar.kick();
+    return r;
   });
 
   app.post(EXTENSION_POLICIES_PATH, async (req) => recordUnitrustPolicies(db, policies.parse(req.body)));

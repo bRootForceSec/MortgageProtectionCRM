@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useRef, useState } from 'react';
+import { Fragment, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { api } from '../api';
 import { useApp } from '../App';
 import { useCustomFields } from '../customFields';
@@ -42,16 +42,22 @@ function FormulaEditor(props: { name: string; fieldId: string | null; value: str
     }, 300);
     return () => { live = false; clearTimeout(t); };
   }, [value, fieldId]);
+  /** Where the cursor goes once text put in shows (set as that render lands, so typing right after isn't moved). */
+  const caret = useRef<number | null>(null);
+  useLayoutEffect(() => {
+    const el = box.current;
+    if (caret.current == null || !el) return;
+    el.focus();
+    el.setSelectionRange(caret.current, caret.current);
+    caret.current = null;
+  }, [value]);
   /** Puts text in at the cursor. */
   const insert = (text: string) => {
     const el = box.current;
     const at = el ? el.selectionStart : value.length;
     const end = el ? el.selectionEnd : value.length;
+    caret.current = at + text.length;
     props.onChange(value.slice(0, at) + text + value.slice(end));
-    requestAnimationFrame(() => {
-      el?.focus();
-      el?.setSelectionRange(at + text.length, at + text.length);
-    });
   };
   const p = preview;
   const show = (v: string | null) => (v == null ? '(blank)' : p?.result === 'yes_no' ? (v === 'yes' ? 'Yes' : 'No') : v);

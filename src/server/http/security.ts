@@ -1,5 +1,6 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { timingSafeEqual } from 'node:crypto';
+import { GOOGLE_CALLBACK_PATH } from './googleRoutes.js';
 
 export const COOKIE = 'mpcrm_session';
 
@@ -9,7 +10,9 @@ export const COOKIE = 'mpcrm_session';
 //  - every /api request needs the access-token cookie, which is set by opening the launch URL once;
 //  - state-changing requests must come from our own Origin.
 // The one exception is EXTENSION_PATHS: the Firefox extension posts there with its own key (made in Settings)
-// instead of the cookie, from its own origin. That key opens nothing else.
+// instead of the cookie, from its own origin. That key opens nothing else. And Google sends your browser back to
+// GOOGLE_CALLBACK_PATH after signing in, maybe without the cookie: it only finishes a sign-in the CRM started, by its
+// one-time state (googleRoutes.ts).
 
 /** Where the Unitrust extension sends what it reads off the calendar. */
 export const EXTENSION_PATH = '/api/unitrust/events';
@@ -46,6 +49,8 @@ export function registerSecurity(app: FastifyInstance, opts: { token: string; po
       }
       return;
     }
+
+    if (url.pathname === GOOGLE_CALLBACK_PATH && req.method === 'GET') return;
 
     if (req.url.startsWith('/api/')) {
       if (!safeEqual(readCookie(req) ?? '', opts.token)) {

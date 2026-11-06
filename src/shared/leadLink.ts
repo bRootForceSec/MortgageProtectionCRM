@@ -21,3 +21,8 @@ export function leadIdInText(text: string | null | undefined): string | null {
   const m = IN_TEXT.exec(text ?? '');
   return m ? m[1]!.toLowerCase() : null;
 }
+
+/** What goes on your calendar for a lead's appointment: "#MP <Lead ID> <Last name>". */
+export function calendarTag(l: { source_lead_id?: string | null; last_name?: string | null; [other: string]: unknown }): string {
+  return ['#MP', l.source_lead_id, l.last_name].filter(Boolean).join(' ');
+}
