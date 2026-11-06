@@ -1,3 +1,4 @@
+import type { CustomFieldType } from '../shared/customFields';
 import { ageOn } from '../shared/age';
 import { leadAgeDays } from '../shared/leadAge';
 import type { OtherPhone } from '../shared/phones';
@@ -275,6 +276,8 @@ export interface LeadDetail {
   called_back_at: string | null;
   /** Your tags on this lead, by name. */
   tags: TagRef[];
+  /** Every custom field, in order, with this lead's value (null for none). */
+  custom: { field_id: string; label: string; type: CustomFieldType; options: string[]; value: string | null }[];
   calls: Call[];
   notes: { id: string; body: string; created_at: string; call_id: string | null }[];
   actions: { id: string; action: string; reason: string | null; created_at: string }[];

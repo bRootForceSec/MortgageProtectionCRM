@@ -7,6 +7,7 @@ import { batchPdf } from './pageTurn.js';
 import { otherPhones } from './leadPhones.js';
 import { currentAppointment } from './appointments.js';
 import { leadTags } from './tags.js';
+import { leadCustomValues } from './customFields.js';
 
 // Reading leads for the Leads page and the lead view, and resolving "same person?" links.
 
@@ -79,6 +80,7 @@ export function getLeadDetail(db: DB, importsDir: string, id: string) {
     called_back_at: (db.prepare('SELECT at FROM lead_called_back WHERE lead_id = ?').get(id) as { at: string } | undefined)?.at ?? null,
     appointment: currentAppointment(db, id),
     tags: leadTags(db, id),
+    custom: leadCustomValues(db, id),
     calls,
     // Notes saved with a call you undid are left out (the undo puts the note back in the form).
     notes: db

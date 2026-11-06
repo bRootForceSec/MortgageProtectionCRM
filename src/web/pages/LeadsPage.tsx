@@ -15,6 +15,9 @@ import { APPT_DAYS, DIAL_GAPS, IMPORTED_WHEN, LAST_CALL, gapLabel } from '../../
 import { UnmarkedAppointments } from '../components/UnmarkedAppointments';
 import { SaveStepDialog } from '../components/SaveStepDialog';
 import { useTags } from '../tags';
+import { useCustomFields } from '../customFields';
+import { CustomFieldInput } from '../components/CustomFieldInput';
+import { normalizeCustomValue } from '../../shared/customFields';
 
 // Where you pick who to call: filter the leads, tick the ones you want (or take every match),
 // and add them to the bottom of the call list on the Calling page, or put them in place of it.
@@ -59,6 +62,20 @@ export function LeadsPage() {
   const { types } = useLeadTypes();
   const { tags, reload: reloadTags } = useTags();
   const [tagging, setTagging] = useState(false);
+  /** A custom field to filter on ('' for none), and the value it must have ('' for any value). */
+  const [fieldId, setFieldId] = useState('');
+  const [fieldValue, setFieldValue] = useState('');
+  const { fields } = useCustomFields();
+  const field = fields.find((f) => f.id === fieldId);
+  const keptValue = useMemo(() => {
+    if (!field || !fieldValue.trim()) return undefined;
+    try {
+      return normalizeCustomValue(field, fieldValue) ?? undefined;
+    } catch {
+      // Not a value this field can hold (e.g. letters in a number): compare what was typed, which matches no one.
+      return fieldValue.trim();
+    }
+  }, [field, fieldValue]);
   const [changingType, setChangingType] = useState(false);
   const [savingStep, setSavingStep] = useState(false);
   const [rows, setRows] = useState<any[]>([]);
@@ -90,8 +107,10 @@ export function LeadsPage() {
     appt_days: apptDays || undefined,
     not_within_min: gap ? String(gap) : undefined,
     tag: tag || undefined,
+    field_id: fieldId || undefined,
+    field_value: fieldId ? keptValue : undefined,
     ...groupParams,
-  }), [status, search, batch, tried, notOnList, leadType, age, imported, apptDays, gap, tag, groupParams.counties, groupParams.area_codes]); // eslint-disable-line react-hooks/exhaustive-deps
+  }), [status, search, batch, tried, notOnList, leadType, age, imported, apptDays, gap, tag, fieldId, keptValue, groupParams.counties, groupParams.area_codes]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const load = useCallback(
     () => api.get<{ rows: any[]; total: number }>('/leads', filters).then((r) => { setRows(r.rows); setTotal(r.total); }),
@@ -113,7 +132,7 @@ export function LeadsPage() {
     return n;
   });
 
-  const filtered = status !== 'all' || !!search || !!batch || !!tried || notOnList || !!leadType || !!age || !!imported || !!apptDays || !!gap || !!tag;
+  const filtered = status !== 'all' || !!search || !!batch || !!tried || notOnList || !!leadType || !!age || !!imported || !!apptDays || !!gap || !!tag || !!fieldId;
   const clearFilters = () => {
     setStatus('all');
     setSearch('');
@@ -126,6 +145,8 @@ export function LeadsPage() {
     setApptDays('');
     setGap(0);
     setTag('');
+    setFieldId('');
+    setFieldValue('');
   };
   const typeLabel = (code: string | null) => (code ? types.find((t) => t.code === code)?.label ?? code : '');
 
@@ -189,6 +210,15 @@ export function LeadsPage() {
           {tags.map((t) => <option key={t.id} value={t.id}>Tagged {t.name}</option>)}
           <option value="none">No tags</option>
         </select>
+        {fields.length > 0 && (
+          <span className="row" style={{ gap: 4 }}>
+            <select value={fieldId} onChange={(e) => { setFieldId(e.target.value); setFieldValue(''); }} aria-label="Your field" title="Only leads with this field filled in, or with the value you pick">
+              <option value="">Any of your fields</option>
+              {fields.map((f) => <option key={f.id} value={f.id}>{f.label}</option>)}
+            </select>
+            {field && <CustomFieldInput field={field} value={fieldValue} onChange={setFieldValue} ariaLabel={`${field.label} is`} blank="any value" />}
+          </span>
+        )}
         <select value={age} onChange={(e) => setAge(e.target.value)} aria-label="Lead age" title="Days since the lead called in (the call-in date on the lead page)">
           <option value="">Any lead age</option>
           {AGE_BANDS.map((b) => <option key={b.key} value={b.key}>{b.label}</option>)}

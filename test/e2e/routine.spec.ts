@@ -151,3 +151,47 @@ test('tags: tag a lead, tag all matching, filter by tag, a routine step by tag, 
   await card.scrollIntoViewIfNeeded();
   await page.screenshot({ path: 'test-results/tags-settings.png' });
 });
+
+test('your fields: define them in Settings, fill one in on a lead, filter Leads on it', async ({ page }) => {
+  page.on('dialog', (d) => void d.accept());
+  await page.goto(launchUrl);
+  const nav = (name: string) => page.locator('.topbar nav').getByRole('button', { name, exact: true }).click();
+
+  await nav('Settings');
+  const card = page.locator('#custom-fields');
+  await card.getByLabel('New field name').fill('Mortgage payment');
+  await card.getByLabel('New field kind').selectOption('money');
+  await card.getByRole('button', { name: 'Add field' }).click();
+  await expect(card.getByLabel('New field name')).toHaveValue('');
+  await card.getByLabel('New field name').fill('Who decides');
+  await card.getByLabel('New field kind').selectOption('choice');
+  await card.getByLabel('New field choices').fill('Husband, Wife, Both');
+  await card.getByRole('button', { name: 'Add field' }).click();
+  await expect(card.locator('tbody tr')).toHaveCount(3);
+  await card.scrollIntoViewIfNeeded();
+  await page.screenshot({ path: 'test-results/custom-fields-settings.png' });
+
+  // Fill them in on a lead with Edit; a wrong value says what's wrong.
+  await nav('Leads');
+  await page.locator('table.grid tbody tr').first().click();
+  const viewer = page.getByRole('dialog', { name: 'Lead' });
+  await viewer.getByRole('button', { name: /^Edit/ }).first().click();
+  const edit = page.getByRole('dialog', { name: 'Edit lead' });
+  await edit.getByLabel('Mortgage payment').fill('lots');
+  await edit.getByRole('button', { name: /^Save/ }).click();
+  await expect(page.getByText('Mortgage payment: needs a number')).toBeVisible();
+  await edit.getByLabel('Mortgage payment').fill('1,850');
+  await edit.getByLabel('Who decides').selectOption('Wife');
+  await edit.getByRole('button', { name: /^Save/ }).click();
+  await expect(edit).toHaveCount(0);
+  await expect(viewer.locator('.facts')).toContainText('Mortgage payment$1,850.00');
+  await expect(viewer.locator('.facts')).toContainText('Who decidesWife');
+  await page.keyboard.press('Escape');
+
+  await page.getByLabel('Your field').selectOption({ label: 'Who decides' });
+  await expect(page.getByText('1 lead', { exact: true })).toBeVisible();
+  await page.getByLabel('Who decides is').selectOption('Husband');
+  await expect(page.getByText('No leads here.')).toBeVisible();
+  await page.getByLabel('Who decides is').selectOption('Wife');
+  await expect(page.getByText('1 lead', { exact: true })).toBeVisible();
+});

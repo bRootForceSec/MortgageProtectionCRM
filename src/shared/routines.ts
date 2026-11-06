@@ -85,8 +85,8 @@ export interface RoutineToday {
 }
 
 /** A step's filter in words, e.g. "No answer · Last call today · Not dialed in the last 1 hour". */
-/** The filter in words. `tagName` turns a tag id into its name (a deleted tag shows as "a deleted tag"). */
-export function describeFilter(f: Partial<LeadQuery>, tagName?: (id: string) => string | undefined): string {
+/** The filter in words. `names` turns tag and custom field ids into their names (a deleted one says so). */
+export function describeFilter(f: Partial<LeadQuery>, names: { tag?: (id: string) => string | undefined; field?: (id: string) => string | undefined } = {}): string {
   const label = <T extends { key: string; label: string }>(list: readonly T[], key: string | undefined) => (key ? list.find((x) => x.key === key)?.label ?? key : null);
   const lists = (v: string | undefined, one: string, many: string) => {
     const n = v ? v.split(',').filter(Boolean).length : 0;
@@ -100,7 +100,8 @@ export function describeFilter(f: Partial<LeadQuery>, tagName?: (id: string) => 
     f.not_within_min ? `Not dialed in the last ${gapLabel(f.not_within_min)}` : null,
     f.lead_type ? (f.lead_type === 'none' ? 'No lead type' : `Lead type ${f.lead_type}`) : null,
     f.age ? (f.age === 'unknown' ? 'No call-in date' : `Age ${label(AGE_BANDS, f.age)}`) : null,
-    f.tag ? (f.tag === 'none' ? 'No tags' : `Tagged "${tagName?.(f.tag) ?? 'a deleted tag'}"`) : null,
+    f.tag ? (f.tag === 'none' ? 'No tags' : `Tagged "${names.tag?.(f.tag) ?? 'a deleted tag'}"`) : null,
+    f.field_id ? `${names.field?.(f.field_id) ?? 'A deleted field'} ${f.field_value ? `is "${f.field_value}"` : 'filled in'}` : null,
     f.batch_id || f.bulk_id ? 'One import' : null,
     lists(f.counties, 'county', 'counties'),
     lists(f.area_codes, 'area code', 'area codes'),

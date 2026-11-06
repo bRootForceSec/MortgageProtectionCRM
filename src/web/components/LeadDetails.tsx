@@ -7,6 +7,7 @@ import { APPT_RESULT_LABEL, type ApptResult } from '../../shared/appointments';
 import { outcomeDef } from '../../shared/outcomes';
 import { statusLabel } from '../../shared/leadStatus';
 import { leadLink } from '../../shared/leadLink';
+import { showCustomValue } from '../../shared/customFields';
 
 
 function leadAge(iso: string | null | undefined) {
@@ -200,6 +201,7 @@ export function LeadSummary({
         )}
         {Object.entries(extra).map(([k, v]) => <Fact key={k} label={k} v={v} />)}
         {l.source_page != null && <Fact label="PDF page" v={l.source_page} />}
+        {d.custom.map((c) => <Fact key={c.field_id} label={c.label} v={showCustomValue(c, c.value)} />)}
       </div>
       {d.linked.length > 0 && <LinkedLeads d={d} />}
       {(warnings.length > 0 || importNotes) && <p className="help">Import notes: {[importNotes, ...warnings].filter(Boolean).join(' ')}</p>}

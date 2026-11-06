@@ -7,6 +7,7 @@ import { UpdatePanel } from '../components/UpdateBar';
 import { ProductsCard } from './ProductsCard';
 import { RoutinesCard } from './RoutinesCard';
 import { useTags } from '../tags';
+import { CustomFieldsCard } from './CustomFieldsCard';
 
 // Settings: which AI reads scanned lead pages, lead types and prices, the area codes each county is called under, and the app's version and updates.
 
@@ -42,6 +43,7 @@ export function SettingsPage() {
       <LeadPagesCard />
       <LeadTypesCard />
       <TagsCard />
+      <CustomFieldsCard />
       <CountiesCard />
       <UpdatePanel />
     </>
