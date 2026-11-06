@@ -44,6 +44,22 @@ export function CopyLeadLink({ leadId, label = 'Copy link' }: { leadId: string; 
   return <button type="button" className="btn small" onClick={() => void copy()} title="A link to this lead, for the appointment's notes in Unitrust or your calendar">{label}</button>;
 }
 
+/** What you type into your calendar for an appointment: "#MP <Lead ID> <Last name>". */
+export function calendarTag(l: LeadDetail['lead']): string {
+  return ['#MP', l.source_lead_id, l.last_name].filter(Boolean).join(' ');
+}
+
+/** Copies the lead's calendar text and says what was copied. */
+export async function copyCalendarTag(l: LeadDetail['lead'], toast: (m: string, kind?: 'error') => void) {
+  const tag = calendarTag(l);
+  try {
+    await navigator.clipboard.writeText(tag);
+    toast(l.source_lead_id ? `Copied "${tag}"` : `Copied "${tag}" (this lead has no Lead ID)`);
+  } catch {
+    toast('Could not copy', 'error');
+  }
+}
+
 /** "They called me back": flips the mark on a lead and says so. Returns the new value. */
 export async function toggleCalledBack(d: LeadDetail, toast: (m: string, kind?: 'error') => void): Promise<string | null> {
   try {
@@ -58,7 +74,7 @@ export async function toggleCalledBack(d: LeadDetail, toast: (m: string, kind?: 
 
 /** Header + key facts used on the calling screen and the lead modal. */
 export function LeadSummary({
-  d, onDial, dialLabel = 'Copy number', dialKey, altKey, onEdit, editKey, onCalledBack, calledBackKey,
+  d, onDial, dialLabel = 'Copy number', dialKey, altKey, onEdit, editKey, onCalledBack, calledBackKey, tagKey,
 }: {
   d: LeadDetail;
   /** On the Calling screen: dial (or copy, or show a QR code, per Settings) and start the attempt. */
@@ -72,6 +88,8 @@ export function LeadSummary({
   /** After the "called me back" mark changes, so the page can reload the lead. */
   onCalledBack?: (at: string | null) => void;
   calledBackKey?: string;
+  /** Key that copies the calendar text. */
+  tagKey?: string;
 }) {
   const l = d.lead;
   const { toast, calling } = useApp();
@@ -118,6 +136,9 @@ export function LeadSummary({
             <span className="lead-name">{fullName(l)}</span> {d.state && <StatusBadge status={d.state.status} />}{d.state && <ApptBadge result={d.state.appt_result} />}
             {onEdit && <button className="btn small" onClick={onEdit} title="Edit this lead's details">Edit {editKey && <kbd>{editKey}</kbd>}</button>}
             <CopyLeadLink leadId={l.id} />
+            <button type="button" className="btn small" onClick={() => void copyCalendarTag(l, toast)} title="Copies what you type into your calendar for the appointment">
+              Copy {calendarTag(l)} {tagKey && <kbd>{tagKey}</kbd>}
+            </button>
             <label className={`called-back ${backAt ? 'on' : ''}`} title={backAt ? `Marked ${fmtDateTime(backAt)}` : 'Tick when this lead calls you back'}>
               <input type="checkbox" checked={!!backAt} onChange={() => void flipBack()} />
               Called me back {calledBackKey && <kbd>{calledBackKey}</kbd>}

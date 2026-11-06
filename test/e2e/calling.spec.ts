@@ -28,7 +28,7 @@ test.afterAll(() => {
   server?.kill('SIGTERM');
 });
 
-test('import a sheet, log calls by keyboard, and set a callback', async ({ page }) => {
+test('import a sheet, log calls by keyboard, and start an Appt set', async ({ page }) => {
   page.on('dialog', (d) => void d.accept());
   await page.goto(launchUrl);
   await expect(page).toHaveURL(`http://127.0.0.1:${PORT}/`);
@@ -79,7 +79,7 @@ test('import a sheet, log calls by keyboard, and set a callback', async ({ page 
   await expect(page.getByLabel('Queue').locator('.queue-list li')).toHaveCount(4);
   await page.screenshot({ path: 'test-results/calling.png', fullPage: true });
 
-  // Talked, no appt: press 2, then Shift+1 for the Price objection (optional), then Enter. Enter saves and moves straight on to the next lead.
+  // Dial: Picked up: press 2, then Shift+1 for the Price objection (optional), then Enter. Enter saves and moves straight on to the next lead.
   await page.keyboard.press('2');
   const objections = page.getByRole('group', { name: 'Objections' });
   await expect(objections.getByRole('button')).toHaveText([/Price/, /Spouse/, /Already covered/, /Think about it/, /Health/, /Trust/, /Other/]);
@@ -87,7 +87,7 @@ test('import a sheet, log calls by keyboard, and set a callback', async ({ page 
   await expect(objections.getByRole('button', { name: /Price/ })).toHaveAttribute('aria-pressed', 'true');
   await page.keyboard.press('Enter');
   await expect(page.locator('.undo-bar')).toContainText(`Saved for ${first}`);
-  await expect(page.locator('.undo-bar')).toContainText('Talked, no appt');
+  await expect(page.locator('.undo-bar')).toContainText('Dial: Picked up');
   await expect(page.locator('.lead-name')).not.toHaveText(first);
   const second = await page.locator('.lead-name').innerText();
   await expect(page.locator('.topbar .stats')).toContainText('Leads called 1');
@@ -99,35 +99,26 @@ test('import a sheet, log calls by keyboard, and set a callback', async ({ page 
   // Up arrow goes back to it and shows the call; down comes back.
   await page.keyboard.press('ArrowUp');
   await expect(page.locator('.lead-name')).toHaveText(first);
-  await expect(page.getByLabel('History').getByText('Talked, no appt')).toBeVisible();
+  await expect(page.getByLabel('History').getByText('Dial: Picked up')).toBeVisible();
   await expect(page.getByLabel('History').getByText('from Sideline')).toBeVisible();
   await page.keyboard.press('ArrowDown');
   await expect(page.locator('.lead-name')).toHaveText(second);
 
-  // Callback: 5 opens the picker on "tomorrow"; a blank time means any time that day.
+  // Callback has no button any more, so 5 does nothing on the First call side.
+  const firstSide = page.getByRole('group', { name: 'Outcome' }).getByRole('button');
+  await expect(firstSide).toHaveText([/Dial: No answer/, /Dial: Picked up/, /Dial: Appt set/, /Dial: Bad number/]);
   await page.keyboard.press('5');
-  await expect(page.locator('#callback-day')).toBeFocused();
-  await expect(page.locator('#callback-day')).toHaveValue('tomorrow');
-  await expect(page.locator('.callback-picker')).toContainText(/Tomorrow, .*any time/);
-  await page.keyboard.press('Enter');
-  await expect(page.locator('.undo-bar')).toContainText('Callback');
-  await expect(page.locator('.lead-name')).not.toHaveText(second);
+  await expect(page.locator('#callback-day')).toHaveCount(0);
 
-  // Undo brings the lead back with the callback filled in; change it to Friday at 2 and save again.
-  await page.keyboard.press('z');
-  await expect(page.locator('.lead-name')).toHaveText(second);
-  await expect(page.getByRole('group', { name: 'Outcome' }).getByRole('button', { name: /Callback/ })).toHaveClass(/active/);
-  await expect(page.locator('.callback-picker')).toContainText(/Tomorrow, .*any time/);
-  await page.locator('#callback-day').fill('fri');
-  await page.locator('#callback-time').fill('2');
-  await expect(page.locator('.callback-picker')).toContainText(/Fri.* at 2:00/);
-  await page.keyboard.press('Enter');
+  // Appt set: 3 asks for the day, with the calendar text one click away. Changed my mind: 1 saves No answer instead.
+  await page.keyboard.press('3');
+  await expect(page.locator('#callback-day')).toBeFocused();
+  await expect(page.getByRole('button', { name: /^Copy #MP/ }).first()).toBeVisible();
+  await page.locator('#callback-day').blur();
+  await page.keyboard.press('1');
+  await expect(page.locator('.undo-bar')).toContainText('Dial: No answer');
   await expect(page.locator('.lead-name')).not.toHaveText(second);
   await expect(page.getByLabel('Queue')).toContainText('2 to call · 2 done');
-  await page.keyboard.press('ArrowUp');
-  await expect(page.getByLabel('History').getByText(/call back \w+ \d+, 2:00 PM/)).toBeVisible();
-  await page.keyboard.press('ArrowDown');
-  await expect(page.locator('.lead-name')).not.toHaveText(second);
   const current = await page.locator('.lead-name').innerText();
 
   // Refresh keeps the list and the selected lead.
@@ -155,7 +146,7 @@ test('dial counter, undo, remapped keys, QR dialing, scripts and lead edits', as
   await expect(counter).toContainText('2 dials');
   // No answer saves on its own key, without Enter.
   await page.keyboard.press('1');
-  await expect(page.locator('.undo-bar')).toContainText('No answer · 2 dials');
+  await expect(page.locator('.undo-bar')).toContainText('Dial: No answer · 2 dials');
   await expect(page.locator('.lead-name')).not.toHaveText(lead);
   await expect(page.locator('.topbar .stats')).toContainText('Dials 4');
 
@@ -234,7 +225,7 @@ test('dial counter, undo, remapped keys, QR dialing, scripts and lead edits', as
 
   await page.getByRole('button', { name: 'Today', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Today', exact: true })).toBeVisible();
-  await expect(page.getByText('Coming up (next two weeks)')).toBeVisible();
+  await expect(page.getByText('No callbacks set.')).toBeVisible();
   await expect(page.getByRole('heading', { name: /Appointments today/ })).toBeVisible();
 });
 
@@ -252,7 +243,7 @@ test('clear worked leads, add more from Leads, and look up an incoming call with
 
   // Pick leads on the Leads page: everyone talked to before (no appointment), ticked and added to the bottom of the list.
   await page.getByRole('button', { name: 'Leads', exact: true }).click();
-  await page.getByRole('button', { name: 'Talked, no appt', exact: true }).click();
+  await page.getByRole('button', { name: 'Picked up, no appt', exact: true }).click();
   await page.getByLabel('Tick every lead shown').check();
   const add = page.getByRole('button', { name: /^Add \d+ ticked to call list$/ });
   const n = Number((await add.innerText()).match(/\d+/)![0]);
@@ -474,7 +465,7 @@ test('save the call list, save as, load it back, and replace it from Leads', asy
 
   // Replace it from Leads with every lead talked to before (no appointment). It's saved, so nothing to keep.
   await page.getByRole('button', { name: 'Leads', exact: true }).click();
-  await page.getByRole('button', { name: 'Talked, no appt', exact: true }).click();
+  await page.getByRole('button', { name: 'Picked up, no appt', exact: true }).click();
   await page.getByLabel(/Replace the call list/).check();
   await page.getByRole('button', { name: /^Replace with all \d+ matching$/ }).click();
   await expect(page.getByRole('alertdialog').getByText('saved as Old area')).toBeVisible();
@@ -526,11 +517,11 @@ test('Do not call is a tick beside the outcome, toggled with D', async ({ page }
   await expect(page.getByLabel('Do not call')).toBeChecked();
   await page.keyboard.press('d');
   await expect(page.getByLabel('Do not call')).not.toBeChecked();
-  // D, then 2 and Enter: Talked, no appt with the tick. The lead goes to the dead pile.
+  // D, then 2 and Enter: Dial: Picked up with the tick. The lead goes to the dead pile.
   await page.keyboard.press('d');
   await page.keyboard.press('2');
   await page.keyboard.press('Enter');
-  await expect(page.locator('.undo-bar')).toContainText('Talked, no appt, do not call');
+  await expect(page.locator('.undo-bar')).toContainText('Dial: Picked up, do not call');
   await expect(page.getByLabel('Do not call')).not.toBeChecked();
   await expect(page.locator('.lead-name')).not.toHaveText(lead);
   await page.keyboard.press('ArrowUp');
@@ -558,7 +549,7 @@ test('First call | Appointment: an appointment set opens on the Appointment side
   await expect(page.getByLabel('Current lead').locator('.appt-when')).toContainText('Tomorrow');
   await expect(page.getByLabel('Current lead').locator('.appt-when')).toContainText('not in Unitrust yet');
   const outcomes = page.getByRole('group', { name: 'Appointment outcome' });
-  await expect(outcomes.getByRole('button')).toHaveText([/No show/, /Sat, no sale/, /Prezi/, /Sale/, /Rescheduled/]);
+  await expect(outcomes.getByRole('button')).toHaveText([/Appt: No show/, /Appt: Picked up/, /Appt: Presentation/, /Appt: Sale/, /Appt: Rescheduled/]);
   // M flips the side, and back.
   await page.keyboard.press('m');
   await expect(tabs.getByRole('tab', { name: 'First call' })).toHaveAttribute('aria-selected', 'true');
@@ -566,12 +557,12 @@ test('First call | Appointment: an appointment set opens on the Appointment side
   await page.keyboard.press('m');
   await expect(outcomes).toBeVisible();
   await page.screenshot({ path: 'test-results/appointment-side.png', fullPage: true });
-  // 3, Enter: Prezi. She comes back to be called, tagged as a prezi, on the First call side.
+  // 3, Enter: Appt: Presentation. She comes back to be called, tagged as a prezi, on the First call side.
   await page.keyboard.press('3');
   await page.keyboard.press('Enter');
-  await expect(page.locator('.undo-bar')).toContainText('Prezi');
+  await expect(page.locator('.undo-bar')).toContainText('Appt: Presentation');
   await lookUp('Ann Lee');
-  await expect(page.getByLabel('Current lead').locator('.badge.appt-prezi')).toHaveText('Prezi, no sale');
+  await expect(page.getByLabel('Current lead').locator('.badge.appt-prezi')).toHaveText('Presentation, no sale');
   await expect(tabs.getByRole('tab', { name: 'First call' })).toHaveAttribute('aria-selected', 'true');
 });
 
@@ -682,6 +673,6 @@ test('on the spot: Run it now saves the Appt set and stays on the lead, on the A
   // When it's done: 4, Enter logs the sale and moves on.
   await page.keyboard.press('4');
   await page.keyboard.press('Enter');
-  await expect(page.locator('.undo-bar')).toContainText(`Saved for ${lead}: Sale`);
+  await expect(page.locator('.undo-bar')).toContainText(`Saved for ${lead}: Appt: Sale`);
   await expect(page.getByLabel('Current lead').locator('.badge.appt-sold')).toBeVisible();
 });

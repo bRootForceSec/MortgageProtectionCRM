@@ -47,7 +47,7 @@ export const LEAD_TABS: readonly LeadTab[] = [
   { key: 'all', label: 'All' },
   { key: 'new', label: 'Never called' },
   { key: 'no_answer', label: 'No answer', title: 'Called, but the last call didn\'t reach them' },
-  { key: 'talked', label: 'Talked, no appt' },
+  { key: 'talked', label: 'Picked up, no appt' },
   { key: 'callback', label: 'Callbacks' },
   { key: 'appointment_set', label: 'Appointment set', title: 'Booked, rescheduled or sold' },
   // How the latest appointment went, whatever the lead's status now.
