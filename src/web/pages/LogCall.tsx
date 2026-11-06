@@ -2,7 +2,8 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { describeCallback, differentZone, readCallback, toWall } from '../when';
 import { api, fmtPhone, newKey, type LeadDetail } from '../api';
 import { useApp } from '../App';
-import { CopyLeadLink, calendarTag, copyCalendarTag } from '../components/LeadDetails';
+import { CopyLeadLink, copyCalendarTag } from '../components/LeadDetails';
+import { calendarTag } from '../../shared/leadLink';
 import { isTyping, keyLabel, normKey, type KeyMap } from '../shortcuts';
 import { getStored, setStored } from '../storage';
 import type { CallMode } from '../../shared/appointments';

@@ -9,6 +9,7 @@ import { RoutinesCard } from './RoutinesCard';
 import { RulesCard } from './RulesCard';
 import { useTags } from '../tags';
 import { CustomFieldsCard } from './CustomFieldsCard';
+import { GoogleCalendarCard } from './GoogleCalendarCard';
 
 // Settings: which AI reads scanned lead pages, lead types and prices, the area codes each county is called under, and the app's version and updates.
 
@@ -40,6 +41,7 @@ export function SettingsPage() {
       <RulesCard />
       <ShortcutsCard />
       <UnitrustCard />
+      <GoogleCalendarCard />
       <ProductsCard />
       <AiCard />
       <LeadPagesCard />

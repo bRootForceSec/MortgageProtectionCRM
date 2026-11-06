@@ -26,6 +26,8 @@ import { registerNumberRoutes } from './numberRoutes.js';
 import { registerReportRoutes } from './reportRoutes.js';
 import { registerDataRoutes } from './dataRoutes.js';
 import { registerUnitrustRoutes } from './unitrustRoutes.js';
+import { registerGoogleRoutes } from './googleRoutes.js';
+import { GoogleCalendar } from '../domain/googleCalendar.js';
 import { productsNeedingRules } from '../domain/policies.js';
 import { KdeConnect } from '../dialer.js';
 
@@ -50,6 +52,8 @@ export interface AppDeps {
   pageChecker?: PageChecker;
   /** The desktop app: brings its window up on this lead, for lead links clicked in a browser. */
   openLead?: (leadId: string) => void;
+  /** Google Calendar. Defaults to one made here (not syncing on its own; server.ts starts it). */
+  calendar?: GoogleCalendar;
 }
 
 export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
@@ -89,12 +93,14 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   const bulk = deps.bulk ?? new BulkImporter(db, config.importsDir, drafts);
   const pageChecker = deps.pageChecker ?? new PageChecker(db, config.importsDir, () => makeReader(loadAiSettings(db), secrets));
   registerImportRoutes(app, { db, config, worker: drafts, bulk, secrets });
-  registerLeadRoutes(app, { db, config, pageChecker, openLead: deps.openLead });
+  const calendar = deps.calendar ?? new GoogleCalendar(db, secrets, `http://127.0.0.1:${config.port}`);
+  registerLeadRoutes(app, { db, config, pageChecker, openLead: deps.openLead, calendar });
   registerCallingRoutes(app, { db, kde: deps.kde });
   registerNumberRoutes(app, { db });
   registerReportRoutes(app, { db });
   registerDataRoutes(app, { db, config });
-  registerUnitrustRoutes(app, { db, secrets });
+  registerUnitrustRoutes(app, { db, secrets, calendar });
+  registerGoogleRoutes(app, { calendar });
 
   // ---------- version & updates ----------
   const updates = deps.updates ?? new Updates(null, { commit: 'dev', built_at: null });

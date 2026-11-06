@@ -282,3 +282,21 @@ test('a formula field: write it with a preview, see it on the lead, sort and fil
   await expect(edit.getByLabel('Mortgage payment')).toBeVisible();
   await expect(edit.getByLabel('Score')).toHaveCount(0);
 });
+
+test('Google Calendar in Settings: the steps, saving your key, then Connect', async ({ page }) => {
+  await page.goto(launchUrl);
+  await page.locator('.topbar nav').getByRole('button', { name: 'Settings', exact: true }).click();
+  const card = page.locator('#google-calendar');
+  await expect(card.getByText('Step 1: make your Google key')).toBeVisible();
+  await expect(card.getByRole('button', { name: 'Connect Google' })).toBeDisabled();
+  await card.getByLabel('Google Client ID').fill('not a key');
+  await card.getByLabel('Google Client secret').fill('GOCSPX-0123456789');
+  await card.getByRole('button', { name: 'Save key' }).click();
+  await expect(page.getByText('that Client ID should end in .apps.googleusercontent.com')).toBeVisible();
+  await card.getByLabel('Google Client ID').fill('1234-abc.apps.googleusercontent.com');
+  await card.getByRole('button', { name: 'Save key' }).click();
+  await expect(card.getByText('Key saved.')).toBeVisible();
+  await expect(card.getByRole('button', { name: 'Connect Google' })).toBeEnabled();
+  await card.scrollIntoViewIfNeeded();
+  await page.screenshot({ path: 'test-results/google-calendar-settings.png' });
+});

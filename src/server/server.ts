@@ -12,6 +12,7 @@ import { DraftWorker } from './domain/drafts.js';
 import { BulkImporter } from './domain/bulkImport.js';
 import { PageChecker } from './domain/pageTurnFix.js';
 import { RuleRunner } from './domain/rules.js';
+import { GoogleCalendar } from './domain/googleCalendar.js';
 import { makeReader } from './ai/readers.js';
 import { loadAiSettings } from './ai/settings.js';
 import { Secrets } from './ai/settings.js';
@@ -106,7 +107,8 @@ export async function startServer(opts: StartOptions = {}): Promise<RunningServe
   const drafts = new DraftWorker(db, secrets);
   const bulk = new BulkImporter(db, config.importsDir, drafts);
   const pageChecker = new PageChecker(db, config.importsDir, () => makeReader(loadAiSettings(db), secrets), (m) => app.log.warn(m));
-  const app = await buildApp({ db, config, token, webDir, logger: true, logStream: opts.logStream, updates, drafts, bulk, secrets, pageChecker, openLead: opts.openLead });
+  const calendar = new GoogleCalendar(db, secrets, `http://127.0.0.1:${config.port}`, undefined, (m) => app.log.warn(m));
+  const app = await buildApp({ db, config, token, webDir, logger: true, logStream: opts.logStream, updates, drafts, bulk, secrets, pageChecker, openLead: opts.openLead, calendar });
 
   const pidFile = path.join(config.dataDir, 'server.pid');
   fs.writeFileSync(pidFile, String(process.pid), { mode: 0o600 });
@@ -118,6 +120,8 @@ export async function startServer(opts: StartOptions = {}): Promise<RunningServe
   // Rules that run every day at a time (Settings → Rules).
   const rules = new RuleRunner(db, (m) => app.log.warn(m));
   rules.start();
+  // Appointments onto Google Calendar, every 15 minutes and soon after a call or a Unitrust read (Settings → Google Calendar).
+  calendar.start();
   // One time: turn upright the sideways or upside-down pages of leads imported before imports did it.
   const t0 = setTimeout(() => void pageChecker.start(false), 5_000);
   t0.unref();
@@ -150,6 +154,7 @@ export async function startServer(opts: StartOptions = {}): Promise<RunningServe
       clearTimeout(t0);
       pageChecker.stop();
       rules.stop();
+      calendar.stop();
       drafts.stop();
       bulk.stop();
       await app.close();

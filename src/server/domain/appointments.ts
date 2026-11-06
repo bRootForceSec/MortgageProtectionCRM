@@ -47,6 +47,16 @@ export const onTheSpotOn = (leadId: string, day: string) =>
      WHERE ots.lead_id = ${leadId} AND ots.on_the_spot = 1 AND ots.internal_status = 'scheduled' AND otc.voided_at IS NULL
        AND substr(ots.scheduled_for, 1, 10) = ${day})`;
 
+/**
+ * SQL over `appointment a LEFT JOIN call c ON c.id = a.set_on_call_id`: an appointment that still stands, from Unitrust
+ * or typed on Appt set (not undone), where a time you typed drops out once Unitrust sends one for that lead. The newest
+ * one per lead (by created_at) is the lead's appointment.
+ */
+export const STANDING_APPOINTMENT = `a.internal_status = 'scheduled' AND a.scheduled_for IS NOT NULL AND c.voided_at IS NULL
+  AND a.recorded_via IN ('unitrust', 'in_app_on_call')
+  AND NOT (a.recorded_via = 'in_app_on_call' AND EXISTS (
+    SELECT 1 FROM appointment u WHERE u.lead_id = a.lead_id AND u.recorded_via = 'unitrust' AND u.created_at >= a.created_at))`;
+
 export interface NextAppointment {
   scheduled_for: string;
   /** Typed on Appt set ('app'), or read from the Unitrust calendar. */
@@ -62,10 +72,7 @@ export function currentAppointment(db: DB, leadId: string): NextAppointment | nu
     .prepare(
       `SELECT a.scheduled_for, a.recorded_via FROM appointment a
        LEFT JOIN call c ON c.id = a.set_on_call_id
-       WHERE a.lead_id = ? AND a.internal_status = 'scheduled' AND a.scheduled_for IS NOT NULL AND c.voided_at IS NULL
-         AND a.recorded_via IN ('unitrust', 'in_app_on_call')
-         AND NOT (a.recorded_via = 'in_app_on_call' AND EXISTS (
-           SELECT 1 FROM appointment u WHERE u.lead_id = a.lead_id AND u.recorded_via = 'unitrust' AND u.created_at >= a.created_at))
+       WHERE a.lead_id = ? AND ${STANDING_APPOINTMENT}
        ORDER BY a.created_at DESC LIMIT 1`,
     )
     .get(leadId) as { scheduled_for: string; recorded_via: string } | undefined;

@@ -12,6 +12,7 @@ import { setLeadTypeForMatching } from '../domain/leadEdit.js';
 import { createCustomField, deleteCustomField, listCustomFields, moveCustomField, updateCustomField } from '../domain/customFields.js';
 import { CustomFieldInput } from '../../shared/customFields.js';
 import { previewFormula } from '../domain/formulas.js';
+import type { GoogleCalendar } from '../domain/googleCalendar.js';
 import { deleteTag, ensureTag, listTags, renameTag, setTagForMatching, setTagOnLeads, tagLead, leadTags } from '../domain/tags.js';
 import { batchPdf, turnPdfPages, normTurn } from '../domain/pageTurn.js';
 import type { PageChecker } from '../domain/pageTurnFix.js';
@@ -25,8 +26,11 @@ import { isLeadId } from '../../shared/leadLink.js';
 
 // Leads, the call list, logging calls, and call history.
 
-export function registerLeadRoutes(app: FastifyInstance, deps: { db: DB; config: Config; pageChecker: PageChecker; openLead?: (leadId: string) => void }) {
-  const { db, config, pageChecker } = deps;
+export function registerLeadRoutes(
+  app: FastifyInstance,
+  deps: { db: DB; config: Config; pageChecker: PageChecker; openLead?: (leadId: string) => void; calendar: GoogleCalendar },
+) {
+  const { db, config, pageChecker, calendar } = deps;
 
   // ---------- lead links ----------
   // A link pasted into an appointment (shared/leadLink.ts). It's clicked in any browser, so it needs no cookie, and
@@ -208,6 +212,8 @@ export function registerLeadRoutes(app: FastifyInstance, deps: { db: DB; config:
     const r = logManualCall(db, { ...b, lead_id: id });
     // Rules for this outcome run after the call is saved; one that fails is in the rules log, never the call's error.
     if (!r.duplicate) runCallRules(db, r.call_id);
+    // An appointment set (or undone) shows on Google Calendar soon.
+    calendar.kick();
     return r;
   });
 
@@ -223,6 +229,7 @@ export function registerLeadRoutes(app: FastifyInstance, deps: { db: DB; config:
     }).parse(req.body);
     const r = changeOutcome(db, id, b);
     runCallRules(db, id);
+    calendar.kick();
     return r;
   });
 
