@@ -15,7 +15,7 @@ export function exportRows(db: DB, table: ExportTable, opts: { includeHealth?: b
     leads: `SELECT l.*, (SELECT group_concat(trim(coalesce(p.label || ': ', '') || coalesce(p.e164, p.raw)), '; ')
                           FROM (SELECT * FROM lead_other_phone WHERE lead_id = l.id ORDER BY pos) p) other_phones,
             (SELECT group_concat(t.name, '; ') FROM lead_tag x JOIN tag t ON t.id = x.tag_id WHERE x.lead_id = l.id) tags,
-            (SELECT json_group_object(f.label, v.value) FROM lead_custom_value v JOIN custom_field f ON f.id = v.field_id WHERE v.lead_id = l.id) custom_fields,
+            (SELECT json_group_object(f.label, v.value) FROM lead_field_value v JOIN custom_field f ON f.id = v.field_id WHERE v.lead_id = l.id) custom_fields,
             b.name batch_name, s.status, s.attempts_total, s.last_call_at, s.last_outcome_code, s.next_due_at
             FROM lead l JOIN import_batch b ON b.id = l.batch_id LEFT JOIN lead_state s ON s.lead_id = l.id ORDER BY l.created_at`,
     calls: `SELECT c.*, (SELECT o.outcome_code FROM call_outcome o WHERE o.call_id = c.id

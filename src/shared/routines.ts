@@ -102,12 +102,22 @@ export function describeFilter(f: Partial<LeadQuery>, names: { tag?: (id: string
     f.lead_type ? (f.lead_type === 'none' ? 'No lead type' : `Lead type ${f.lead_type}`) : null,
     f.age ? (f.age === 'unknown' ? 'No call-in date' : `Age ${label(AGE_BANDS, f.age)}`) : null,
     f.tag ? (f.tag === 'none' ? 'No tags' : `Tagged "${names.tag?.(f.tag) ?? 'a deleted tag'}"`) : null,
-    f.field_id ? `${names.field?.(f.field_id) ?? 'A deleted field'} ${f.field_value ? `is "${f.field_value}"` : 'filled in'}` : null,
+    f.field_id ? `${names.field?.(f.field_id) ?? 'A deleted field'} ${fieldTest(f)}` : null,
     f.batch_id || f.bulk_id ? 'One import' : null,
     lists(f.counties, 'county', 'counties'),
     lists(f.area_codes, 'area code', 'area codes'),
     f.search ? `Search "${f.search}"` : null,
     f.not_on_list === '1' || f.not_on_list === true ? 'Not on the call list' : null,
     f.on_list === '1' || f.on_list === true ? 'Waiting on the call list' : null,
+    f.sort_field ? `Highest ${names.field?.(f.sort_field) ?? 'deleted field'} first` : null,
   ].filter(Boolean).join(' · ');
+}
+
+/** "is "Warm"", "50 or more", "from 10 to 20", or "filled in". */
+function fieldTest(f: Partial<LeadQuery>): string {
+  if (f.field_value) return `is "${f.field_value}"`;
+  if (f.field_min != null && f.field_max != null) return `from ${f.field_min} to ${f.field_max}`;
+  if (f.field_min != null) return `${f.field_min} or more`;
+  if (f.field_max != null) return `${f.field_max} or less`;
+  return 'filled in';
 }

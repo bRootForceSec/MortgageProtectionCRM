@@ -239,3 +239,46 @@ test('rules: a ready-made one, one made from the Leads filters, preview, run now
   await card.scrollIntoViewIfNeeded();
   await page.screenshot({ path: 'test-results/rules-settings.png' });
 });
+
+test('a formula field: write it with a preview, see it on the lead, sort and filter Leads by it', async ({ page }) => {
+  page.on('dialog', (d) => void d.accept());
+  await page.goto(launchUrl);
+  const nav = (name: string) => page.locator('.topbar nav').getByRole('button', { name, exact: true }).click();
+
+  await nav('Settings');
+  const card = page.locator('#custom-fields');
+  await card.getByLabel('New field name').fill('Score');
+  await card.getByLabel('New field kind').selectOption('formula');
+  const formula = card.getByLabel('New field formula');
+  await formula.fill('[Mortgage payment] / 10 +');
+  await expect(card.getByRole('status', { name: 'Check of New field' })).toContainText('the formula stops too soon');
+  await formula.fill('[Mortgage payment] / 10');
+  await expect(card.getByRole('status', { name: 'Check of New field' })).toContainText(/Works out to a number for 1 of \d+ leads · from 185 to 185/);
+  await card.getByText('What you can use').click();
+  await card.getByRole('button', { name: 'attempts', exact: true }).click();
+  await expect(formula).toHaveValue('[Mortgage payment] / 10attempts');
+  await formula.fill('ifblank([Mortgage payment], 0) / 10');
+  await card.getByRole('button', { name: 'Add field' }).click();
+  await expect(card.getByLabel('Field Score formula')).toHaveValue('ifblank([Mortgage payment], 0) / 10');
+  await card.scrollIntoViewIfNeeded();
+  await page.screenshot({ path: 'test-results/formula-field-settings.png' });
+
+  // Leads: highest score first, with the score shown; then only scores of 100 or more.
+  await nav('Leads');
+  await page.getByLabel('Order').selectOption({ label: 'Highest Score first' });
+  await expect(page.locator('table.grid thead')).toContainText('Score');
+  const first = page.locator('table.grid tbody tr').first();
+  await expect(first.locator('td').nth(2)).toHaveText('185');
+  await page.getByLabel('Your field').selectOption({ label: 'Score' });
+  await page.getByLabel('Score at least').fill('100');
+  await expect(page.getByText('1 lead', { exact: true })).toBeVisible();
+
+  // On the lead it's a fact, not something to type in.
+  await first.click();
+  const viewer = page.getByRole('dialog', { name: 'Lead' });
+  await expect(viewer.locator('.facts')).toContainText('Score185');
+  await viewer.getByRole('button', { name: /^Edit/ }).first().click();
+  const edit = page.getByRole('dialog', { name: 'Edit lead' });
+  await expect(edit.getByLabel('Mortgage payment')).toBeVisible();
+  await expect(edit.getByLabel('Score')).toHaveCount(0);
+});

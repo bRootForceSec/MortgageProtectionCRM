@@ -430,3 +430,10 @@ th button.sort { background: none; border: 0; padding: 0; font: inherit; font-we
 .rule-result { margin-top: 6px; padding: 6px 8px; border-left: 3px solid var(--accent); background: var(--panel); font-size: 13px; }
 .rule-editor fieldset { border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; margin: 8px 0; }
 .rule-editor legend { font-weight: 600; padding: 0 4px; }
+
+/* Settings → Your fields: the formula box */
+.formula textarea { width: 100%; font-family: ui-monospace, monospace; font-size: 13px; }
+.formula-check { margin: 4px 0; font-size: 13px; }
+.formula details summary { cursor: pointer; font-size: 13px; color: var(--accent); }
+.formula-help { display: flex; flex-wrap: wrap; gap: 4px; }
+.formula-help .chip { cursor: pointer; background: none; padding: 1px 8px; font-family: ui-monospace, monospace; }

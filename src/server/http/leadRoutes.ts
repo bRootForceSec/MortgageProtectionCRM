@@ -11,6 +11,7 @@ import { parseList } from '../domain/groupFilter.js';
 import { setLeadTypeForMatching } from '../domain/leadEdit.js';
 import { createCustomField, deleteCustomField, listCustomFields, moveCustomField, updateCustomField } from '../domain/customFields.js';
 import { CustomFieldInput } from '../../shared/customFields.js';
+import { previewFormula } from '../domain/formulas.js';
 import { deleteTag, ensureTag, listTags, renameTag, setTagForMatching, setTagOnLeads, tagLead, leadTags } from '../domain/tags.js';
 import { batchPdf, turnPdfPages, normTurn } from '../domain/pageTurn.js';
 import type { PageChecker } from '../domain/pageTurnFix.js';
@@ -88,6 +89,10 @@ export function registerLeadRoutes(app: FastifyInstance, deps: { db: DB; config:
     return moveCustomField(db, fieldId.parse(req.params).id, by);
   });
   app.delete('/api/custom-fields/:id', async (req) => deleteCustomField(db, fieldId.parse(req.params).id));
+  app.post('/api/custom-fields/formula-preview', async (req) => {
+    const b = z.object({ formula: z.string().max(2000), field_id: z.string().max(64).nullish() }).parse(req.body);
+    return previewFormula(db, b.formula, b.field_id ?? null);
+  });
 
   // ---------- the call list ----------
   const savedName = z.string().trim().max(120);

@@ -40,8 +40,10 @@ export interface LeadFilter {
   not_within_min?: number;
   /** Only leads with this tag (its id), or '' for leads with no tags. */
   tag?: string;
-  /** Only leads with a value in this custom field: any value, or `value` (any case). */
-  custom?: { field_id: string; value?: string };
+  /** Only leads with a value in this custom field: any value, `value` (any case), or a number from min to max. */
+  custom?: { field_id: string; value?: string; min?: number; max?: number };
+  /** Highest value in this number, money or formula field first (Leads, and adding to the call list). */
+  sort_field?: string;
   /** Only leads with an appointment this many days ago. */
   appt_days_ago?: number;
   /** Only leads waiting on the call list. */
@@ -69,7 +71,8 @@ export function toLeadFilter(q: LeadQuery, now = new Date()): LeadFilter {
     appt_days: (q.appt_days || undefined) as ApptDays | undefined,
     not_within_min: q.not_within_min || undefined,
     tag: !q.tag ? undefined : q.tag === 'none' ? '' : q.tag,
-    custom: q.field_id ? { field_id: q.field_id, value: q.field_value || undefined } : undefined,
+    custom: q.field_id ? { field_id: q.field_id, value: q.field_value || undefined, min: q.field_min ?? undefined, max: q.field_max ?? undefined } : undefined,
+    sort_field: q.sort_field || undefined,
     appt_days_ago: q.appt_days_ago ?? undefined,
     on_list: q.on_list === true || q.on_list === '1' || q.on_list === 'true',
   };
@@ -174,7 +177,8 @@ export function leadFilterWhere(f: LeadFilter): { sql: string; params: Record<st
     f.not_within_min ? '(s.last_call_at IS NULL OR s.last_call_at < @lf_gap)' : '1',
     f.tag === undefined ? '1' : f.tag === '' ? 'l.id NOT IN (SELECT lead_id FROM lead_tag)' : 'l.id IN (SELECT lead_id FROM lead_tag WHERE tag_id = @lf_tag)',
     f.custom
-      ? `l.id IN (SELECT v.lead_id FROM lead_custom_value v WHERE v.field_id = @lf_field${f.custom.value ? ' AND lower(v.value) = lower(@lf_fval)' : ''})`
+      ? `l.id IN (SELECT v.lead_id FROM lead_field_value v WHERE v.field_id = @lf_field${f.custom.value ? ' AND lower(v.value) = lower(@lf_fval)' : ''}${
+          f.custom.min != null ? ' AND CAST(v.value AS REAL) >= @lf_fmin' : ''}${f.custom.max != null ? ' AND CAST(v.value AS REAL) <= @lf_fmax' : ''})`
       : '1',
     f.not_on_list ? `l.id NOT IN (SELECT i.lead_id FROM call_list_item i WHERE NOT ${WORKED})` : '1',
     group.sql,
@@ -182,7 +186,7 @@ export function leadFilterWhere(f: LeadFilter): { sql: string; params: Record<st
   ];
   return {
     sql: parts.join(' AND '),
-    params: { lf_status: status, ...(appt ? { lf_appt: appt } : {}), lf_batch: f.batch_id ?? null, lf_type: f.lead_type ?? null, ...(f.bulk_id ? { lf_bulk: f.bulk_id } : {}), lf_before: f.tried_before ?? null, lf_after: f.tried_after ?? null, ...(f.tag ? { lf_tag: f.tag } : {}), ...(f.only_lead ? { lf_only: f.only_lead } : {}), ...(f.custom ? { lf_field: f.custom.field_id, ...(f.custom.value ? { lf_fval: f.custom.value } : {}) } : {}), ...(f.not_within_min ? { lf_gap: new Date(Date.now() - f.not_within_min * 60_000).toISOString() } : {}), ...group.params, ...search.params },
+    params: { lf_status: status, ...(appt ? { lf_appt: appt } : {}), lf_batch: f.batch_id ?? null, lf_type: f.lead_type ?? null, ...(f.bulk_id ? { lf_bulk: f.bulk_id } : {}), lf_before: f.tried_before ?? null, lf_after: f.tried_after ?? null, ...(f.tag ? { lf_tag: f.tag } : {}), ...(f.only_lead ? { lf_only: f.only_lead } : {}), ...(f.custom ? { lf_field: f.custom.field_id, ...(f.custom.value ? { lf_fval: f.custom.value } : {}), ...(f.custom.min != null ? { lf_fmin: f.custom.min } : {}), ...(f.custom.max != null ? { lf_fmax: f.custom.max } : {}) } : {}), ...(f.not_within_min ? { lf_gap: new Date(Date.now() - f.not_within_min * 60_000).toISOString() } : {}), ...group.params, ...search.params },
   };
 }
 
@@ -292,17 +296,23 @@ export function addToCallList(db: DB, leadIds: string[], now = nowIso()): AddRes
   return res;
 }
 
-/** Adds every lead matching the Leads page filters, in import order (newest batch last, file order). */
-/** Every lead matching the Leads page filters, in import order. */
+/** ORDER BY terms for a sort field (highest first, no value last), before the usual order; '' without one. */
+export function sortFieldOrder(f: LeadFilter): { sql: string; params: Record<string, unknown> } {
+  if (!f.sort_field) return { sql: '', params: {} };
+  return { sql: '(SELECT CAST(sv.value AS REAL) FROM lead_field_value sv WHERE sv.lead_id = l.id AND sv.field_id = @lf_sort) DESC NULLS LAST, ', params: { lf_sort: f.sort_field } };
+}
+
+/** Every lead matching the Leads page filters, in import order (newest batch last, file order), or by its sort field. */
 export function matchingLeadIds(db: DB, f: LeadFilter): string[] {
   const w = leadFilterWhere(f);
+  const o = sortFieldOrder(f);
   return db
     .prepare(
       `SELECT l.id FROM lead l JOIN lead_state s ON s.lead_id = l.id JOIN import_batch b ON b.id = l.batch_id
        JOIN import_row r ON r.id = l.import_row_id
-       WHERE ${w.sql} ORDER BY b.imported_at, r.row_number`,
+       WHERE ${w.sql} ORDER BY ${o.sql}b.imported_at, r.row_number`,
     )
-    .all(w.params)
+    .all({ ...w.params, ...o.params })
     .map((r: any) => r.id as string);
 }
 

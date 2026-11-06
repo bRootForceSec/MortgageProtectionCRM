@@ -198,6 +198,8 @@ const emptyAction = (kind: RuleAction['kind'], firstField: string | undefined): 
 function RuleEditor(props: { rule: Rule; isNew: boolean; onSave: (r: Rule) => Promise<void>; onCancel: () => void }) {
   const { meta, toast } = useApp();
   const names = useNames();
+  // A formula field is worked out, so a rule can't set it.
+  const settable = names.fields.filter((f) => f.type !== 'formula');
   const [r, setR] = useState<Rule>(props.rule);
   const [preview, setPreview] = useState<RuleRun | null>(null);
   const [busy, setBusy] = useState(false);
@@ -336,8 +338,8 @@ function RuleEditor(props: { rule: Rule; isNew: boolean; onSave: (r: Rule) => Pr
             {r.actions.map((a, i) => (
               <div key={i} className="row" style={{ gap: 6, marginBottom: 4, flexWrap: 'wrap' }}>
                 <span className="muted">{i + 1}.</span>
-                <select value={a.kind} aria-label={`Action ${i + 1}`} onChange={(e) => setAction(i, emptyAction(e.target.value as RuleAction['kind'], names.fields[0]?.id))}>
-                  {(Object.keys(ACTION_LABELS) as RuleAction['kind'][]).filter((k) => k !== 'set_field' || names.fields.length).map((k) => <option key={k} value={k}>{ACTION_LABELS[k]}</option>)}
+                <select value={a.kind} aria-label={`Action ${i + 1}`} onChange={(e) => setAction(i, emptyAction(e.target.value as RuleAction['kind'], settable[0]?.id))}>
+                  {(Object.keys(ACTION_LABELS) as RuleAction['kind'][]).filter((k) => k !== 'set_field' || settable.length).map((k) => <option key={k} value={k}>{ACTION_LABELS[k]}</option>)}
                 </select>
                 {(a.kind === 'add_tag' || a.kind === 'remove_tag') && (
                   <>
@@ -346,12 +348,12 @@ function RuleEditor(props: { rule: Rule; isNew: boolean; onSave: (r: Rule) => Pr
                   </>
                 )}
                 {a.kind === 'set_field' && (() => {
-                  const f = names.fields.find((x) => x.id === a.field_id);
+                  const f = settable.find((x) => x.id === a.field_id);
                   return (
                     <>
                       <select value={a.field_id} aria-label={`Action ${i + 1} field`} onChange={(e) => setAction(i, { ...a, field_id: e.target.value, value: '' })}>
                         {!f && <option value={a.field_id}>A deleted field</option>}
-                        {names.fields.map((x) => <option key={x.id} value={x.id}>{x.label}</option>)}
+                        {settable.map((x) => <option key={x.id} value={x.id}>{x.label}</option>)}
                       </select>
                       to {f && <CustomFieldInput field={f} value={a.value} onChange={(v) => setAction(i, { ...a, value: v })} ariaLabel={`Action ${i + 1} value`} blank="(blank)" />}
                     </>

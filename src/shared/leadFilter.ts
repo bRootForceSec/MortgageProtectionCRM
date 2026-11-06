@@ -99,6 +99,11 @@ export const LeadQuery = z.object({
   /** A custom field id: only leads with a value in it, or with field_value, with that value (any case). */
   field_id: z.string().max(64).optional(),
   field_value: z.string().max(200).optional(),
+  /** With field_id, for a number, money or formula field: only values in this range (either end may be left open). */
+  field_min: z.coerce.number().optional(),
+  field_max: z.coerce.number().optional(),
+  /** A number, money or formula field to put leads in order by, highest first (leads with no value last). */
+  sort_field: z.string().max(64).optional(),
   /** Only leads with an appointment this many days ago (1 is yesterday). */
   appt_days_ago: z.coerce.number().int().min(0).max(60).optional(),
   /** Only leads waiting on the call list (called ones count as off it). The opposite of not_on_list. */

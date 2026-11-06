@@ -18,7 +18,7 @@ import { NewRuleFromFilters } from './RulesCard';
 import { useTags } from '../tags';
 import { useCustomFields } from '../customFields';
 import { CustomFieldInput } from '../components/CustomFieldInput';
-import { normalizeCustomValue } from '../../shared/customFields';
+import { isNumericField, normalizeCustomValue, showCustomValue } from '../../shared/customFields';
 
 // Where you pick who to call: filter the leads, tick the ones you want (or take every match),
 // and add them to the bottom of the call list on the Calling page, or put them in place of it.
@@ -66,17 +66,25 @@ export function LeadsPage() {
   /** A custom field to filter on ('' for none), and the value it must have ('' for any value). */
   const [fieldId, setFieldId] = useState('');
   const [fieldValue, setFieldValue] = useState('');
+  /** For a number field: the range (either end may be blank). */
+  const [fieldMin, setFieldMin] = useState('');
+  const [fieldMax, setFieldMax] = useState('');
+  /** A number field to put the highest first ('' for the usual order: latest activity first). */
+  const [sortField, setSortField] = useState('');
   const { fields } = useCustomFields();
   const field = fields.find((f) => f.id === fieldId);
+  const numeric = !!field && isNumericField(field);
+  const sortBy = fields.find((f) => f.id === sortField);
   const keptValue = useMemo(() => {
-    if (!field || !fieldValue.trim()) return undefined;
+    if (!field || numeric || !fieldValue.trim()) return undefined;
     try {
       return normalizeCustomValue(field, fieldValue) ?? undefined;
     } catch {
       // Not a value this field can hold (e.g. letters in a number): compare what was typed, which matches no one.
       return fieldValue.trim();
     }
-  }, [field, fieldValue]);
+  }, [field, numeric, fieldValue]);
+  const num = (v: string) => (v.trim() && Number.isFinite(Number(v.replace(/[$,\s]/g, ''))) ? String(Number(v.replace(/[$,\s]/g, ''))) : undefined);
   const [changingType, setChangingType] = useState(false);
   const [savingStep, setSavingStep] = useState(false);
   const [makingRule, setMakingRule] = useState(false);
@@ -111,8 +119,11 @@ export function LeadsPage() {
     tag: tag || undefined,
     field_id: fieldId || undefined,
     field_value: fieldId ? keptValue : undefined,
+    field_min: numeric ? num(fieldMin) : undefined,
+    field_max: numeric ? num(fieldMax) : undefined,
+    sort_field: sortField || undefined,
     ...groupParams,
-  }), [status, search, batch, tried, notOnList, leadType, age, imported, apptDays, gap, tag, fieldId, keptValue, groupParams.counties, groupParams.area_codes]); // eslint-disable-line react-hooks/exhaustive-deps
+  }), [status, search, batch, tried, notOnList, leadType, age, imported, apptDays, gap, tag, fieldId, keptValue, numeric, fieldMin, fieldMax, sortField, groupParams.counties, groupParams.area_codes]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const load = useCallback(
     () => api.get<{ rows: any[]; total: number }>('/leads', filters).then((r) => { setRows(r.rows); setTotal(r.total); }),
@@ -134,7 +145,7 @@ export function LeadsPage() {
     return n;
   });
 
-  const filtered = status !== 'all' || !!search || !!batch || !!tried || notOnList || !!leadType || !!age || !!imported || !!apptDays || !!gap || !!tag || !!fieldId;
+  const filtered = status !== 'all' || !!search || !!batch || !!tried || notOnList || !!leadType || !!age || !!imported || !!apptDays || !!gap || !!tag || !!fieldId || !!sortField;
   const clearFilters = () => {
     setStatus('all');
     setSearch('');
@@ -149,6 +160,9 @@ export function LeadsPage() {
     setTag('');
     setFieldId('');
     setFieldValue('');
+    setFieldMin('');
+    setFieldMax('');
+    setSortField('');
   };
   const typeLabel = (code: string | null) => (code ? types.find((t) => t.code === code)?.label ?? code : '');
 
@@ -214,12 +228,32 @@ export function LeadsPage() {
         </select>
         {fields.length > 0 && (
           <span className="row" style={{ gap: 4 }}>
-            <select value={fieldId} onChange={(e) => { setFieldId(e.target.value); setFieldValue(''); }} aria-label="Your field" title="Only leads with this field filled in, or with the value you pick">
+            <select value={fieldId} onChange={(e) => { setFieldId(e.target.value); setFieldValue(''); setFieldMin(''); setFieldMax(''); }} aria-label="Your field" title="Only leads with this field filled in, or with the value you pick">
               <option value="">Any of your fields</option>
               {fields.map((f) => <option key={f.id} value={f.id}>{f.label}</option>)}
             </select>
-            {field && <CustomFieldInput field={field} value={fieldValue} onChange={setFieldValue} ariaLabel={`${field.label} is`} blank="any value" />}
+            {field && numeric && (
+              <>
+                <input value={fieldMin} onChange={(e) => setFieldMin(e.target.value)} inputMode="decimal" placeholder="at least" aria-label={`${field.label} at least`} style={{ width: 80 }} />
+                <input value={fieldMax} onChange={(e) => setFieldMax(e.target.value)} inputMode="decimal" placeholder="at most" aria-label={`${field.label} at most`} style={{ width: 80 }} />
+              </>
+            )}
+            {field && !numeric && (
+              <CustomFieldInput
+                field={field.type === 'formula' ? { ...field, type: field.result === 'yes_no' ? 'yes_no' : 'text' } : field}
+                value={fieldValue}
+                onChange={setFieldValue}
+                ariaLabel={`${field.label} is`}
+                blank="any value"
+              />
+            )}
           </span>
+        )}
+        {fields.some(isNumericField) && (
+          <select value={sortField} onChange={(e) => setSortField(e.target.value)} aria-label="Order" title="Put the leads with the highest value first, e.g. your lead score. Adding them to the call list keeps this order.">
+            <option value="">Latest activity first</option>
+            {fields.filter(isNumericField).map((f) => <option key={f.id} value={f.id}>Highest {f.label} first</option>)}
+          </select>
         )}
         <select value={age} onChange={(e) => setAge(e.target.value)} aria-label="Lead age" title="Days since the lead called in (the call-in date on the lead page)">
           <option value="">Any lead age</option>
@@ -294,7 +328,7 @@ export function LeadsPage() {
                 onChange={() => setPicked(allPicked ? new Set() : new Set(pickable.map((r) => r.id)))}
               />
             </th>
-            <th>Name</th><th>Phone</th><th>County</th><th>Location</th><th>Type</th><th title="Days since the lead called in">Age</th><th>Batch</th><th>Status</th><th>Attempts</th><th>Last call</th><th>Last outcome</th>
+            <th>Name</th>{sortBy && <th>{sortBy.label}</th>}<th>Phone</th><th>County</th><th>Location</th><th>Type</th><th title="Days since the lead called in">Age</th><th>Batch</th><th>Status</th><th>Attempts</th><th>Last call</th><th>Last outcome</th>
           </tr>
         </thead>
         <tbody>
@@ -317,6 +351,7 @@ export function LeadsPage() {
                   )}
                 </td>
                 <td>{fullName(r)}{(r.tags as string[]).map((t) => <span key={t} className="tag-chip" style={{ marginLeft: 4, paddingRight: 8 }}>{t}</span>)}</td>
+                {sortBy && <td>{showCustomValue(sortBy, r.sort_value == null ? null : String(r.sort_value))}</td>}
                 <td>{fmtPhone(r.phone_e164)}</td><td>{r.county ?? ''}</td><td>{[r.city, r.state].filter(Boolean).join(', ')}</td>
                 <td title={typeLabel(r.lead_type)}>{r.lead_type ?? ''}</td><td className="nowrap">{fmtLeadAge(r.callin_at)}</td><td>{r.batch_name}</td><td><StatusBadge status={r.status} /><ApptBadge result={r.appt_result} />{r.on_list && <span className="badge" style={{ marginLeft: 4 }}>on call list</span>}</td>
                 <td>{r.attempts_total}</td><td>{fmtDateTime(r.last_call_at)}</td><td>{outcomeLabel(r.last_outcome_code)}</td>
