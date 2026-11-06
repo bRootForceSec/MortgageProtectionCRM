@@ -110,3 +110,12 @@ export const LeadQuery = z.object({
   on_list: z.union([z.boolean(), z.enum(['1', '0', 'true', 'false'])]).optional(),
 });
 export type LeadQuery = z.infer<typeof LeadQuery>;
+
+/** How many leads a page of the Leads list shows: your choice of these. */
+export const LEAD_PAGE_SIZES = [25, 50, 100, 250, 500] as const;
+
+/** Which page of the Leads list (from 1) and how many on a page. */
+export const LeadPaging = z.object({
+  page: z.coerce.number().int().min(1).max(100_000).optional(),
+  per_page: z.coerce.number().int().refine((n) => (LEAD_PAGE_SIZES as readonly number[]).includes(n), 'unknown page size').optional(),
+});

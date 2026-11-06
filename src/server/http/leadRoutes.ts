@@ -20,7 +20,7 @@ import {
   addMatchingToCallList, addToCallList, clearWorked, getCallList, moveToBottom,
   recentOutcomes, removeFromCallList, toLeadFilter, callListMeta, listSavedLists, clearCallList, loadSavedList, deleteSavedList, saveCallList, saveCallListAs, setCalledBack,
 } from '../domain/callList.js';
-import { LeadQuery } from '../../shared/leadFilter.js';
+import { LeadPaging, LeadQuery } from '../../shared/leadFilter.js';
 import { bestTimes } from '../domain/reports.js';
 import { isLeadId } from '../../shared/leadLink.js';
 
@@ -47,7 +47,7 @@ export function registerLeadRoutes(
   });
 
   // ---------- leads ----------
-  app.get('/api/leads', async (req) => listLeads(db, toLeadFilter(LeadQuery.parse(req.query))));
+  app.get('/api/leads', async (req) => listLeads(db, toLeadFilter(LeadQuery.parse(req.query)), LeadPaging.parse(req.query)));
   // Fixes the lead type after import: every lead matching the filters (e.g. one batch) gets the new type and its price.
   app.post('/api/leads/set-type', async (req) => {
     const body = (req.body ?? {}) as Record<string, unknown>;

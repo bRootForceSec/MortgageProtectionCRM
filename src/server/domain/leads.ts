@@ -3,6 +3,7 @@ import { nowIso } from '../ids.js';
 import { DomainError } from '../core/errors.js';
 import { audit } from '../core/audit.js';
 import { leadFilterWhere, onCallList, sortFieldOrder, type LeadFilter } from './callList.js';
+import { LEAD_PAGE_SIZES } from '../../shared/leadFilter.js';
 import { batchPdf } from './pageTurn.js';
 import { otherPhones } from './leadPhones.js';
 import { currentAppointment } from './appointments.js';
@@ -11,10 +12,16 @@ import { leadCustomValues } from './customFields.js';
 
 // Reading leads for the Leads page and the lead view, and resolving "same person?" links.
 
-/** The newest 500 leads matching the filter (most recently called first), the total, and which are on the call list. */
-export function listLeads(db: DB, f: LeadFilter) {
+/**
+ * One page of the leads matching the filter (most recently called first, or by the sort field), the total, and which
+ * are on the call list. `page` counts from 1; past the last page gives the last page.
+ */
+export function listLeads(db: DB, f: LeadFilter, paging: { page?: number; per_page?: number } = {}) {
   const w = leadFilterWhere(f);
   const o = sortFieldOrder(f);
+  const total = (db.prepare(`SELECT COUNT(*) n FROM lead l JOIN lead_state s ON s.lead_id = l.id WHERE ${w.sql}`).get(w.params) as { n: number }).n;
+  const perPage = paging.per_page ?? LEAD_PAGE_SIZES[LEAD_PAGE_SIZES.length - 1]!;
+  const page = Math.max(1, Math.min(paging.page ?? 1, Math.ceil(total / perPage) || 1));
   const rows = db
     .prepare(
       `SELECT l.id, l.first_name, l.last_name, l.phone_e164, l.state, l.city, l.county, l.lead_type, l.callin_at, b.name batch_name, s.status, s.attempts_total,
@@ -23,12 +30,11 @@ export function listLeads(db: DB, f: LeadFilter) {
               (SELECT json_group_array(t.name) FROM (SELECT t.name FROM lead_tag x JOIN tag t ON t.id = x.tag_id WHERE x.lead_id = l.id ORDER BY t.name COLLATE NOCASE) t) tags_json
        FROM lead l JOIN lead_state s ON s.lead_id = l.id JOIN import_batch b ON b.id = l.batch_id
        WHERE ${w.sql}
-       ORDER BY ${o.sql}coalesce(s.last_call_at, l.created_at) DESC LIMIT 500`,
+       ORDER BY ${o.sql}coalesce(s.last_call_at, l.created_at) DESC, l.id LIMIT @lp_limit OFFSET @lp_offset`,
     )
-    .all({ ...w.params, ...o.params }) as any[];
-  const total = (db.prepare(`SELECT COUNT(*) n FROM lead l JOIN lead_state s ON s.lead_id = l.id WHERE ${w.sql}`).get(w.params) as { n: number }).n;
+    .all({ ...w.params, ...o.params, lp_limit: perPage, lp_offset: (page - 1) * perPage }) as any[];
   const listed = onCallList(db, rows.map((r) => r.id));
-  return { rows: rows.map(({ tags_json, ...r }) => ({ ...r, tags: JSON.parse(tags_json) as string[], on_list: listed.has(r.id) })), total };
+  return { rows: rows.map(({ tags_json, ...r }) => ({ ...r, tags: JSON.parse(tags_json) as string[], on_list: listed.has(r.id) })), total, page, per_page: perPage };
 }
 
 /** Whether a lead with this id is in the CRM. */
