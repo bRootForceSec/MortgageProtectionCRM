@@ -8,6 +8,8 @@ import { logManualCall, changeOutcome, addLeadAction, addNote, callHistory, chan
 import { leadExists, listLeads, getLeadDetail, leadPdfPage, setLinkStatus } from '../domain/leads.js';
 import { parseList } from '../domain/groupFilter.js';
 import { setLeadTypeForMatching } from '../domain/leadEdit.js';
+import { createCustomField, deleteCustomField, listCustomFields, moveCustomField, updateCustomField } from '../domain/customFields.js';
+import { CustomFieldInput } from '../../shared/customFields.js';
 import { deleteTag, ensureTag, listTags, renameTag, setTagForMatching, setTagOnLeads, tagLead, leadTags } from '../domain/tags.js';
 import { batchPdf, turnPdfPages, normTurn } from '../domain/pageTurn.js';
 import type { PageChecker } from '../domain/pageTurnFix.js';
@@ -74,6 +76,17 @@ export function registerLeadRoutes(app: FastifyInstance, deps: { db: DB; config:
     const b = z.object({ tag_name: tagName, remove: z.boolean().optional() }).parse(body);
     return setTagForMatching(db, toLeadFilter(LeadQuery.parse(body)), b.tag_name, !b.remove);
   });
+
+  // ---------- custom fields (values are saved with the lead's other edits: PATCH /api/leads/:id) ----------
+  const fieldId = z.object({ id: z.string().max(64) });
+  app.get('/api/custom-fields', async () => listCustomFields(db));
+  app.post('/api/custom-fields', async (req) => createCustomField(db, CustomFieldInput.parse(req.body)));
+  app.put('/api/custom-fields/:id', async (req) => updateCustomField(db, fieldId.parse(req.params).id, CustomFieldInput.parse(req.body)));
+  app.post('/api/custom-fields/:id/move', async (req) => {
+    const { by } = z.object({ by: z.union([z.literal(-1), z.literal(1)]) }).parse(req.body);
+    return moveCustomField(db, fieldId.parse(req.params).id, by);
+  });
+  app.delete('/api/custom-fields/:id', async (req) => deleteCustomField(db, fieldId.parse(req.params).id));
 
   // ---------- the call list ----------
   const savedName = z.string().trim().max(120);

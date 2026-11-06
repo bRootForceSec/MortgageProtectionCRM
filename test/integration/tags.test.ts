@@ -75,8 +75,8 @@ describe('tags', () => {
   });
 
   it('routine steps describe a tag filter by name', () => {
-    expect(describeFilter({ status: 'all', tag: 't1' }, (id) => (id === 't1' ? 'Spanish' : undefined))).toBe('All leads · Tagged "Spanish"');
-    expect(describeFilter({ status: 'all', tag: 'gone' }, () => undefined)).toContain('a deleted tag');
+    expect(describeFilter({ status: 'all', tag: 't1' }, { tag: (id) => (id === 't1' ? 'Spanish' : undefined) })).toBe('All leads · Tagged "Spanish"');
+    expect(describeFilter({ status: 'all', tag: 'gone' }, { tag: () => undefined })).toContain('a deleted tag');
     expect(describeFilter({ status: 'all', tag: 'none' })).toContain('No tags');
   });
 

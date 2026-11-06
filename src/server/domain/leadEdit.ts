@@ -10,6 +10,7 @@ import { ageOn } from '../../shared/age.js';
 import type { OtherPhone } from '../../shared/phones.js';
 import { otherPhones, writeOtherPhones, describePhones } from './leadPhones.js';
 import { matchingLeadIds, type LeadFilter } from './callList.js';
+import { setCustomValues } from './customFields.js';
 
 // Editing a lead's details by hand. The lead row holds the current value; every change is also written to
 // lead_change (old and new value), so nothing you typed over is lost.
@@ -175,6 +176,8 @@ export function editLead(
     county?: string | null;
     details?: Partial<Record<EditableField, string | null>>;
     other_phones?: { number: string; label?: string | null }[];
+    /** Custom field id → value; blank clears it. */
+    custom?: Record<string, string | null>;
   },
 ) {
   const now = nowIso();
@@ -189,6 +192,7 @@ export function editLead(
       lead.state = (db.prepare('SELECT state FROM lead WHERE id = ?').get(id) as { state: string | null }).state;
     }
     if (b.other_phones) setOtherPhones(db, id, b.other_phones, now);
+    if (b.custom) setCustomValues(db, id, b.custom, now);
     if (b.lead_type !== undefined) setLeadType(db, [id], b.lead_type, now);
     if (b.county !== undefined) {
       if (b.county && !lead.state) throw new DomainError('this lead has no state, so the county can\'t be set');

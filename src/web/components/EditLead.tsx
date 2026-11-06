@@ -2,6 +2,8 @@ import { Fragment, useState } from 'react';
 import { api, fmtDateTime, fmtPhone, personAge, type LeadDetail } from '../api';
 import { useApp } from '../App';
 import { useLeadTypes } from '../leadTypes';
+import { CustomFieldInput } from './CustomFieldInput';
+import { normalizeCustomValue } from '../../shared/customFields';
 
 // Fix a lead's details by hand. Every change is kept with its old value (shown under "Earlier values").
 
@@ -79,6 +81,8 @@ export function EditLead({ d, onClose, onSaved }: { d: LeadDetail; onClose: () =
   const [county, setCounty] = useState<string>(d.lead.county ?? '');
   const [leadType, setLeadType] = useState<string>(d.lead.lead_type ?? '');
   const [busy, setBusy] = useState(false);
+  const startCustom = Object.fromEntries(d.custom.map((c) => [c.field_id, c.value ?? '']));
+  const [custom, setCustom] = useState<Record<string, string>>(startCustom);
 
   const save = async () => {
     const details: Record<string, string> = {};
@@ -90,6 +94,16 @@ export function EditLead({ d, onClose, onSaved }: { d: LeadDetail; onClose: () =
     }
     if (county.trim() !== (d.lead.county ?? '')) body.county = county.trim() || null;
     if (leadType !== (d.lead.lead_type ?? '')) body.lead_type = leadType || null;
+    const customChanged: Record<string, string | null> = {};
+    for (const f of d.custom) {
+      if ((custom[f.field_id] ?? '').trim() === (startCustom[f.field_id] ?? '').trim()) continue;
+      try {
+        customChanged[f.field_id] = normalizeCustomValue(f, custom[f.field_id]);
+      } catch (e) {
+        return toast((e as Error).message, 'error');
+      }
+    }
+    if (Object.keys(customChanged).length) body.custom = customChanged;
     if (!Object.keys(body).length) return onClose();
     setBusy(true);
     try {
@@ -134,6 +148,12 @@ export function EditLead({ d, onClose, onSaved }: { d: LeadDetail; onClose: () =
               {types.map((t) => <option key={t.code} value={t.code}>{t.label}</option>)}
             </select>
           </label>
+          {d.custom.map((f) => (
+            <label key={f.field_id} className="field">
+              <span>{f.label}</span>
+              <CustomFieldInput field={f} value={custom[f.field_id] ?? ''} onChange={(v) => setCustom({ ...custom, [f.field_id]: v })} />
+            </label>
+          ))}
           <div className="row wide">
             <button type="submit" className="btn primary" disabled={busy}>Save <kbd>Enter</kbd></button>
             <button type="button" className="btn" onClick={onClose}>Cancel</button>

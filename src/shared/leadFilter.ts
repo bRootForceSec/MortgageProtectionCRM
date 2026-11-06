@@ -96,5 +96,8 @@ export const LeadQuery = z.object({
   not_within_min: z.coerce.number().int().min(0).max(10_080).optional(),
   /** A tag id, or "none" for leads with no tags. */
   tag: z.string().max(64).optional(),
+  /** A custom field id: only leads with a value in it, or with field_value, with that value (any case). */
+  field_id: z.string().max(64).optional(),
+  field_value: z.string().max(200).optional(),
 });
 export type LeadQuery = z.infer<typeof LeadQuery>;
