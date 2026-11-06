@@ -12,7 +12,7 @@ import { ClearListDialog, LoadListDialog, SaveAsDialog, suggestListName } from '
 import { isAction, isTyping, keyLabel, type KeyMap } from '../shortcuts';
 import { getStored, getStoredJson, setStored, setStoredJson } from '../storage';
 import { LogCall, type Attempt, type FormValues, type Saved } from './LogCall';
-import { CallerLookup, ModeSwitch, Recent, ScriptPanel, UNDO_MS, UndoBar, otherNumber } from './CallingPanels';
+import { CallerLookup, ModeSwitch, Recent, UNDO_MS, UndoBar, otherNumber } from './CallingPanels';
 import { openingSide, type CallMode } from '../../shared/appointments';
 import { isCallable } from '../../shared/leadStatus';
 import { bestTimeFirst } from '../../shared/bestTime';
@@ -20,7 +20,6 @@ import { bestTimeFirst } from '../../shared/bestTime';
 const SELECTED_KEY = 'mpcrm.selectedLead';
 /** A lead opened outside the list (looked up for an incoming call, or from Today), and where to go back to. */
 export const OPENED_KEY = 'mpcrm.openedLead';
-const SCRIPT_KEY = 'mpcrm.script.open';
 /** The order the list is shown and worked in: as set (by hand, or as added), or best time first. */
 const ORDER_KEY = 'mpcrm.list.order';
 
@@ -56,7 +55,6 @@ export function CallingPage() {
   const [attempt, setAttempt] = useState<Attempt>(freshAttempt);
   const [restore, setRestore] = useState<{ leadId: string; values: FormValues; n: number } | null>(null);
   const [saved, setSaved] = useState<Saved | null>(null);
-  const [showScript, setShowScript] = useState(getStored(SCRIPT_KEY) === '1');
   const [editing, setEditing] = useState(false);
   const [qr, setQr] = useState<string | null>(null);
   const [listDialog, setListDialog] = useState<'clear' | 'load' | 'save_as' | null>(null);
@@ -438,7 +436,6 @@ export function CallingPage() {
       else if (act('called_back')) { if (ready && detail) { e.preventDefault(); void toggleCalledBack(detail, toast).then((at) => calledBack(detail.lead.id, at)); } }
       else if (act('copy_tag')) { if (detail) { e.preventDefault(); void copyCalendarTag(detail.lead, toast); } }
       else if (act('switch_mode')) { if (ready && detail) { e.preventDefault(); switchMode(mode === 'appointment' ? 'first_call' : 'appointment'); } }
-      else if (act('script')) { e.preventDefault(); setShowScript((v) => { setStored(SCRIPT_KEY, v ? '0' : '1'); return !v; }); }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -629,7 +626,7 @@ export function CallingPage() {
           <span className="help">
             <kbd>{k('list_up')}</kbd><kbd>{k('list_down')}</kbd> move <kbd>{k('skip')}</kbd> skip to the bottom <kbd>{k('dial')}</kbd> {dialLabel.toLowerCase()} <kbd>{k('dial_alt')}</kbd> other number{' '}
             <kbd>{k('dials_down')}</kbd><kbd>{k('dials_up')}</kbd> dials <kbd>Enter</kbd> save and next <kbd>{k('undo')}</kbd> undo <kbd>{k('note')}</kbd> note{' '}
-            <kbd>{k('edit')}</kbd> edit <kbd>{k('switch_mode')}</kbd> first call / appointment <kbd>{k('script')}</kbd> script <kbd>{k('lookup')}</kbd> look up a caller <kbd>{k('called_back')}</kbd> called me back <kbd>{k('copy_tag')}</kbd> copy for calendar
+            <kbd>{k('edit')}</kbd> edit <kbd>{k('switch_mode')}</kbd> first call / appointment <kbd>{k('lookup')}</kbd> look up a caller <kbd>{k('called_back')}</kbd> called me back <kbd>{k('copy_tag')}</kbd> copy for calendar
           </span>
         </header>
       </section>
@@ -654,7 +651,6 @@ export function CallingPage() {
             <>
               <LeadSummary d={detail} onDial={dial} dialLabel={dialLabel} dialKey={k('dial')} altKey={k('dial_alt')} onEdit={() => setEditing(true)} editKey={k('edit')}
                 calledBackKey={k('called_back')} tagKey={k('copy_tag')} onCalledBack={(at) => calledBack(detail.lead.id, at)} />
-              {showScript && <ScriptPanel d={detail} />}
               <LogCall
                 key={`${detail.lead.id}-${mode}-${restore?.leadId === detail.lead.id ? restore.n : 0}`}
                 d={detail}

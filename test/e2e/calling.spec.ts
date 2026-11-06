@@ -129,7 +129,7 @@ test('import a sheet, log calls by keyboard, and start an Appt set', async ({ pa
 
 });
 
-test('dial counter, undo, remapped keys, QR dialing, scripts and lead edits', async ({ page }) => {
+test('dial counter, undo, remapped keys, QR dialing and lead edits', async ({ page }) => {
   page.on('dialog', (d) => void d.accept());
   await page.goto(launchUrl);
   await page.getByRole('button', { name: 'Calling', exact: true }).click();
@@ -168,7 +168,7 @@ test('dial counter, undo, remapped keys, QR dialing, scripts and lead edits', as
   await expect(page.locator('.lead-name')).not.toHaveText(lead);
   const next = await page.locator('.lead-name').innerText();
 
-  // Settings: "next" moves to J, dialing shows a QR code, a script and a daily goal.
+  // Settings: "next" moves to J, dialing shows a QR code, and a daily goal. No scripts or recording any more.
   await page.getByRole('button', { name: 'Settings' }).click();
   const nextRow = page.locator('table.shortcuts tr', { hasText: 'Next lead' });
   await nextRow.locator('.keycap').first().click();
@@ -176,9 +176,15 @@ test('dial counter, undo, remapped keys, QR dialing, scripts and lead edits', as
   await page.keyboard.press('j');
   await expect(nextRow.locator('.keycap').first()).toHaveText('J');
   await page.getByText('Show a QR code').click();
-  await page.getByLabel('Your name, as you say it on calls').fill('Alex');
-  await page.getByLabel('Opener').fill('Hi {first_name}, this is {agent_name} about your {lender} mortgage.');
-  await page.getByRole('button', { name: 'Save scripts' }).click();
+  await expect(page.getByRole('heading', { name: 'Scripts' })).toHaveCount(0);
+  // Counties: the search box narrows the list.
+  const counties = page.locator('.card', { has: page.getByRole('heading', { name: 'Counties and their area codes' }) });
+  const firstCounty = (await counties.locator('tbody tr td').first().innerText()).split(',')[0]!;
+  await counties.getByLabel('Find a county').fill('zzzz');
+  await expect(counties.getByText('No county matches "zzzz".')).toBeVisible();
+  await counties.getByLabel('Find a county').fill(firstCounty.slice(0, 4));
+  await expect(counties.locator('tbody tr').first()).toContainText(firstCounty);
+  await counties.getByLabel('Find a county').fill('');
   await page.locator('.settings-grid').getByText('Dials').locator('input').fill('200');
   await page.locator('.settings-grid').getByText('Dials').locator('input').blur();
   await expect(page.locator('.topbar .stats')).toContainText('/ 200');
@@ -197,8 +203,6 @@ test('dial counter, undo, remapped keys, QR dialing, scripts and lead edits', as
   await page.keyboard.press('x');
   await expect(page.getByText('This lead has no other working number')).toBeVisible();
 
-  await page.keyboard.press('p');
-  await expect(page.locator('.card.script')).toContainText(`this is Alex about your`);
 
   // Edit the lead's name, and give it two more numbers.
   await page.keyboard.press('e');
@@ -216,7 +220,6 @@ test('dial counter, undo, remapped keys, QR dialing, scripts and lead edits', as
   await expect(page.locator('.lead-name')).toContainText('Zed');
   await expect(page.locator('.phones')).toContainText('Work');
   await expect(page.locator('.phones')).toContainText('(317) 555-0162');
-  await expect(page.locator('.card.script')).toContainText('Hi Zed,');
   await page.screenshot({ path: 'test-results/calling-refined.png', fullPage: true });
 
   // J is now "next": every other lead in this list has been worked, so it says so.

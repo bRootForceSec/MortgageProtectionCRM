@@ -10,6 +10,7 @@ import { commitImport } from '../../src/server/domain/importer.js';
 import { logManualCall, changeOutcome, currentOutcome, addLeadAction, voidCall, changeCallerId, callHistory } from '../../src/server/domain/calls.js';
 import { loadCallingSettings, saveCallingSettings } from '../../src/server/domain/callingSettings.js';
 import { DomainError } from '../../src/server/core/errors.js';
+import { setSetting } from '../../src/server/core/settings.js';
 import { activeObjectionCodes, objectionCounts } from '../../src/server/domain/objections.js';
 import { addToCallList } from '../../src/server/domain/callList.js';
 import { mapSheetStatus } from '../../src/server/domain/sheetHistory.js';
@@ -209,6 +210,13 @@ describe('manual call logging', () => {
     // A call entered for an earlier time doesn't say.
     const earlier = logManualCall(db, { lead_id: jane, idempotency_key: key(), outcome_code: 'no_answer', occurred_at: new Date(Date.now() - 3600_000).toISOString() });
     expect(version(earlier.call_id)).toBeNull();
+  });
+
+  it('drops saved keys for shortcut actions that no longer exist, so Settings still saves', () => {
+    setSetting(db, 'calling', { shortcuts: { actions: { script: ['p'], next: ['j'] }, outcomes: {} } });
+    const s = loadCallingSettings(db);
+    expect(s.shortcuts.actions).toEqual({ next: ['j'] });
+    expect(() => saveCallingSettings(db, s)).not.toThrow();
   });
 
   it('keeps when you pressed Dial and when you saved, for calls logged as they happen', () => {
