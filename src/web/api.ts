@@ -245,6 +245,10 @@ export interface Call {
   events: { id: string; source: string; event_type: string; occurred_at: string; received_at: string }[];
 }
 
+export interface TagRef { id: string; name: string }
+/** A tag and how many leads have it (Settings → Tags, and the pickers). */
+export interface Tag extends TagRef { leads: number }
+
 export interface LeadDetail {
   lead: Record<string, any> & { id: string; extra: Record<string, string>;
     /** Numbers besides the main one, in order. */
@@ -269,6 +273,8 @@ export interface LeadDetail {
   appointment: { scheduled_for: string; source: 'app' | 'unitrust' } | null;
   /** When you marked that this lead called you back (null if not). */
   called_back_at: string | null;
+  /** Your tags on this lead, by name. */
+  tags: TagRef[];
   calls: Call[];
   notes: { id: string; body: string; created_at: string; call_id: string | null }[];
   actions: { id: string; action: string; reason: string | null; created_at: string }[];

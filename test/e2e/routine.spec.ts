@@ -100,3 +100,54 @@ test('work the day by routine: imports, then a step saved from Leads', async ({ 
   await dialog.getByRole('button', { name: 'Start' }).click();
   await expect(page.getByLabel('Queue')).toContainText('4 to call · 0 done');
 });
+
+test('tags: tag a lead, tag all matching, filter by tag, a routine step by tag, and Settings', async ({ page }) => {
+  page.on('dialog', (d) => void d.accept());
+  await page.goto(launchUrl);
+  const nav = (name: string) => page.locator('.topbar nav').getByRole('button', { name, exact: true }).click();
+
+  // On a lead: + Tag, type a new name.
+  await nav('Leads');
+  await page.locator('table.grid tbody tr').first().click();
+  const viewer = page.getByRole('dialog', { name: 'Lead' });
+  const tags = viewer.getByLabel('Tags');
+  await tags.getByRole('button', { name: '+ Tag' }).click();
+  await tags.getByLabel('Tag name').fill('Spanish');
+  await tags.getByLabel('Tag name').press('Enter');
+  await expect(tags.locator('.tag-chip')).toHaveText(['Spanish×']);
+  await page.keyboard.press('Escape');
+  await expect(viewer).toHaveCount(0);
+
+  // Filter by it: one lead, showing its tag.
+  await page.getByLabel('Tag', { exact: true }).selectOption({ label: 'Tagged Spanish' });
+  await expect(page.getByText('1 lead', { exact: true })).toBeVisible();
+  await expect(page.locator('table.grid tbody .tag-chip')).toHaveText(['Spanish']);
+
+  // Tag every lead with no tags "Friday".
+  await page.getByLabel('Tag', { exact: true }).selectOption({ label: 'No tags' });
+  await expect(page.getByText('3 leads', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Tag all matching' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Tag all matching' });
+  await dialog.getByLabel('Tag name').fill('Friday');
+  await dialog.getByRole('button', { name: 'Tag 3 leads' }).click();
+  await expect(page.getByText('Tagged 3 leads "Friday"')).toBeVisible();
+  await expect(page.getByText('No leads here.')).toBeVisible();
+
+  // A routine step that filters by the tag says its name.
+  await page.getByLabel('Tag', { exact: true }).selectOption({ label: 'Tagged Friday' });
+  await expect(page.getByText('3 leads', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Save as routine step' }).click();
+  const save = page.getByRole('dialog', { name: 'Save as routine step' });
+  await expect(save).toContainText('Tagged "Friday"');
+  await save.getByRole('button', { name: 'Cancel' }).click();
+
+  // Settings: both tags with their counts; rename one.
+  await nav('Settings');
+  const card = page.locator('#tags');
+  await expect(card.locator('tbody tr')).toHaveCount(2);
+  await card.getByLabel('Name of tag Friday').fill('Friday list');
+  await card.getByRole('button', { name: 'Save' }).click();
+  await expect(card.getByLabel('Name of tag Friday list')).toBeVisible();
+  await card.scrollIntoViewIfNeeded();
+  await page.screenshot({ path: 'test-results/tags-settings.png' });
+});

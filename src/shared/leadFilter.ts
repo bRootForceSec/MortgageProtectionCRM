@@ -94,5 +94,7 @@ export const LeadQuery = z.object({
   imported: z.string().refine((v) => !v || isImportedWhen(v), 'unknown import day').optional(),
   appt_days: z.string().refine((v) => !v || isApptDays(v), 'unknown appointment day').optional(),
   not_within_min: z.coerce.number().int().min(0).max(10_080).optional(),
+  /** A tag id, or "none" for leads with no tags. */
+  tag: z.string().max(64).optional(),
 });
 export type LeadQuery = z.infer<typeof LeadQuery>;

@@ -8,6 +8,7 @@ import { logManualCall, changeOutcome, addLeadAction, addNote, callHistory, chan
 import { leadExists, listLeads, getLeadDetail, leadPdfPage, setLinkStatus } from '../domain/leads.js';
 import { parseList } from '../domain/groupFilter.js';
 import { setLeadTypeForMatching } from '../domain/leadEdit.js';
+import { deleteTag, ensureTag, listTags, renameTag, setTagForMatching, setTagOnLeads, tagLead, leadTags } from '../domain/tags.js';
 import { batchPdf, turnPdfPages, normTurn } from '../domain/pageTurn.js';
 import type { PageChecker } from '../domain/pageTurnFix.js';
 import {
@@ -44,6 +45,34 @@ export function registerLeadRoutes(app: FastifyInstance, deps: { db: DB; config:
     const body = (req.body ?? {}) as Record<string, unknown>;
     const { set_type } = z.object({ set_type: z.string().min(1).max(20).regex(/^[A-Za-z0-9-]+$/).nullable() }).parse(body);
     return setLeadTypeForMatching(db, toLeadFilter(LeadQuery.parse(body)), set_type);
+  });
+
+  // ---------- tags ----------
+  const tagName = z.string().max(80);
+  app.get('/api/tags', async () => listTags(db));
+  app.post('/api/tags', async (req) => ensureTag(db, z.object({ name: tagName }).parse(req.body).name));
+  app.put('/api/tags/:id', async (req) => {
+    const { id } = z.object({ id: z.string().max(64) }).parse(req.params);
+    return renameTag(db, id, z.object({ name: tagName }).parse(req.body).name);
+  });
+  app.delete('/api/tags/:id', async (req) => {
+    const { id } = z.object({ id: z.string().max(64) }).parse(req.params);
+    return deleteTag(db, id);
+  });
+  app.post('/api/leads/:id/tags', async (req) => {
+    const { id } = z.object({ id: z.string().max(64) }).parse(req.params);
+    return tagLead(db, id, z.object({ name: tagName }).parse(req.body).name);
+  });
+  app.delete('/api/leads/:id/tags/:tagId', async (req) => {
+    const { id, tagId } = z.object({ id: z.string().max(64), tagId: z.string().max(64) }).parse(req.params);
+    setTagOnLeads(db, [id], tagId, false);
+    return leadTags(db, id);
+  });
+  // Puts a tag on (or takes it off) every lead matching the filters.
+  app.post('/api/leads/tag-matching', async (req) => {
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const b = z.object({ tag_name: tagName, remove: z.boolean().optional() }).parse(body);
+    return setTagForMatching(db, toLeadFilter(LeadQuery.parse(body)), b.tag_name, !b.remove);
   });
 
   // ---------- the call list ----------

@@ -422,3 +422,6 @@ th button.sort { background: none; border: 0; padding: 0; font: inherit; font-we
 .arrange-card { outline: 1px dashed var(--border); border-radius: 8px; padding: 6px; margin-bottom: 8px; }
 .arrange-card.is-hidden { opacity: 0.6; }
 .card-controls { padding: 4px 6px 8px; flex-wrap: wrap; }
+.tag-row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-top: 4px; }
+.tag-chip { display: inline-flex; align-items: center; gap: 2px; padding: 1px 4px 1px 8px; border-radius: 10px; font-size: 12px; background: var(--panel-2); border: 1px solid var(--accent); color: var(--accent); white-space: nowrap; }
+.tag-chip button { border: 0; background: none; color: inherit; cursor: pointer; padding: 0 3px; font-size: 13px; line-height: 1; }

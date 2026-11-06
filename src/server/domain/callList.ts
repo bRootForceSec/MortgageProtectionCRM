@@ -38,6 +38,8 @@ export interface LeadFilter {
   appt_days?: ApptDays;
   /** Leave out leads dialed in the last this many minutes. */
   not_within_min?: number;
+  /** Only leads with this tag (its id), or '' for leads with no tags. */
+  tag?: string;
 }
 
 /** The Leads filters as the API (or a routine step) gives them, with relative choices worked out now. */
@@ -58,6 +60,7 @@ export function toLeadFilter(q: LeadQuery, now = new Date()): LeadFilter {
     imported: (q.imported || undefined) as ImportedWhen | undefined,
     appt_days: (q.appt_days || undefined) as ApptDays | undefined,
     not_within_min: q.not_within_min || undefined,
+    tag: !q.tag ? undefined : q.tag === 'none' ? '' : q.tag,
   };
 }
 
@@ -142,13 +145,14 @@ export function leadFilterWhere(f: LeadFilter): { sql: string; params: Record<st
     importedWhere(f.imported),
     apptDaysWhere(f.appt_days),
     f.not_within_min ? '(s.last_call_at IS NULL OR s.last_call_at < @lf_gap)' : '1',
+    f.tag === undefined ? '1' : f.tag === '' ? 'l.id NOT IN (SELECT lead_id FROM lead_tag)' : 'l.id IN (SELECT lead_id FROM lead_tag WHERE tag_id = @lf_tag)',
     f.not_on_list ? `l.id NOT IN (SELECT i.lead_id FROM call_list_item i WHERE NOT ${WORKED})` : '1',
     group.sql,
     search.sql,
   ];
   return {
     sql: parts.join(' AND '),
-    params: { lf_status: status, ...(appt ? { lf_appt: appt } : {}), lf_batch: f.batch_id ?? null, lf_type: f.lead_type ?? null, ...(f.bulk_id ? { lf_bulk: f.bulk_id } : {}), lf_before: f.tried_before ?? null, lf_after: f.tried_after ?? null, ...(f.not_within_min ? { lf_gap: new Date(Date.now() - f.not_within_min * 60_000).toISOString() } : {}), ...group.params, ...search.params },
+    params: { lf_status: status, ...(appt ? { lf_appt: appt } : {}), lf_batch: f.batch_id ?? null, lf_type: f.lead_type ?? null, ...(f.bulk_id ? { lf_bulk: f.bulk_id } : {}), lf_before: f.tried_before ?? null, lf_after: f.tried_after ?? null, ...(f.tag ? { lf_tag: f.tag } : {}), ...(f.not_within_min ? { lf_gap: new Date(Date.now() - f.not_within_min * 60_000).toISOString() } : {}), ...group.params, ...search.params },
   };
 }
 
