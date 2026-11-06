@@ -3,9 +3,9 @@ import { LEAD_NAME, CURRENT_OUTCOME } from '../db/sql.js';
 import { APPT_RESULTS, type ApptResult } from '../../shared/appointments.js';
 import { isCallable } from '../../shared/leadStatus.js';
 import { AGE_BANDS, type AgeBand } from '../../shared/leadAge.js';
-import type { ApptDays, ImportedWhen } from '../../shared/leadFilter.js';
+import { isLastCall, lastCallRange, type ApptDays, type ImportedWhen, type LeadQuery } from '../../shared/leadFilter.js';
 import { nowIso, uuidv7 } from '../ids.js';
-import { groupWhere, searchWhere } from './groupFilter.js';
+import { groupWhere, parseList, searchWhere } from './groupFilter.js';
 import { DomainError } from '../core/errors.js';
 import { loadCallingSettings } from './callingSettings.js';
 
@@ -38,6 +38,27 @@ export interface LeadFilter {
   appt_days?: ApptDays;
   /** Leave out leads dialed in the last this many minutes. */
   not_within_min?: number;
+}
+
+/** The Leads filters as the API (or a routine step) gives them, with relative choices worked out now. */
+export function toLeadFilter(q: LeadQuery, now = new Date()): LeadFilter {
+  const last = q.last_call && isLastCall(q.last_call) ? lastCallRange(q.last_call, now) : null;
+  return {
+    status: q.status,
+    search: q.search,
+    batch_id: q.batch_id || undefined,
+    bulk_id: q.bulk_id || undefined,
+    counties: parseList(q.counties),
+    areaCodes: parseList(q.area_codes),
+    tried_before: last ? last.before : q.tried_before || undefined,
+    tried_after: last ? last.after : q.tried_after || undefined,
+    not_on_list: q.not_on_list === true || q.not_on_list === '1' || q.not_on_list === 'true',
+    lead_type: !q.lead_type ? undefined : q.lead_type === 'none' ? '' : q.lead_type,
+    age: (q.age || undefined) as LeadFilter['age'],
+    imported: (q.imported || undefined) as ImportedWhen | undefined,
+    appt_days: (q.appt_days || undefined) as ApptDays | undefined,
+    not_within_min: q.not_within_min || undefined,
+  };
 }
 
 /** Today on this computer, as an SQL date expression. */
@@ -371,7 +392,8 @@ function setCallListMeta(db: DB, name: string | null, savedListId: string | null
   ).run(name, savedListId);
 }
 
-const WORKED = `EXISTS (SELECT 1 FROM call c WHERE c.lead_id = i.lead_id AND c.voided_at IS NULL AND c.requested_at >= i.added_at)`;
+/** In a query over `call_list_item i`: the lead was called (and not undone) since it went on the list. */
+export const WORKED = `EXISTS (SELECT 1 FROM call c WHERE c.lead_id = i.lead_id AND c.voided_at IS NULL AND c.requested_at >= i.added_at)`;
 
 export function listSavedLists(db: DB): SavedList[] {
   return db

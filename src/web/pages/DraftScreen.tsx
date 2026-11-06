@@ -5,8 +5,12 @@ import { ReviewWindow } from '../components/ReviewWindow';
 import type { DraftView, DraftRow, DraftSummary } from '../importTypes';
 import { showImportedLeads } from './LeadsPage';
 import { useLeadTypes } from '../leadTypes';
+import { getStored, setStored } from '../storage';
 // The draft of one import: progress while a PDF is read, the rows to check, lead types, and the import itself.
 // Then what was imported (Done).
+
+/** Whether to put the imported leads on the call list: your last choice, ticked the first time. */
+const TO_LIST_KEY = 'mpcrm.import.toList';
 
 const RESULT_TEXT: Record<string, string> = {
   accepted: 'Will import', rejected: 'Not importing', duplicate_in_file: 'Repeat in this file', already_imported: 'Already imported',
@@ -31,7 +35,12 @@ export function DraftScreen({ id, onLeave, onGone, onCommitted }: {
   const [range, setRange] = useState({ from: '', to: '' });
   const [batch, setBatch] = useState({ name: '', purchased_count: '', cost_total: '', notes: '' });
   /** New imports go straight onto the call list unless you untick this. */
-  const [toList, setToList] = useState(true);
+  // Remembers your last choice: with a routine that adds today's imports in its turn, you'll usually leave it off.
+  const [toList, setToListState] = useState(getStored(TO_LIST_KEY) !== '0');
+  const setToList = (v: boolean) => {
+    setToListState(v);
+    setStored(TO_LIST_KEY, v ? '1' : '0');
+  };
   const [busy, setBusy] = useState(false);
   const [problems, setProblems] = useState<string[]>([]);
   /** Rows drawn in the table; a big sheet shows more on request instead of freezing the page. */

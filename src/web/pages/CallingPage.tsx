@@ -7,6 +7,7 @@ import { EditLead } from '../components/EditLead';
 import { SourcePage } from '../components/SourcePage';
 import { DialQr } from '../components/DialQr';
 import { FunnelButton } from '../components/Funnel';
+import { RoutineStrip } from '../components/RoutineStrip';
 import { ClearListDialog, LoadListDialog, SaveAsDialog, suggestListName } from '../components/CallListDialogs';
 import { isAction, isTyping, keyLabel, type KeyMap } from '../shortcuts';
 import { getStored, getStoredJson, setStored, setStoredJson } from '../storage';
@@ -102,12 +103,12 @@ export function CallingPage() {
   };
 
   /** After the whole list changed (cleared or a saved list loaded): start again at the top. */
-  const afterSwap = async () => {
+  const afterSwap = async (o = order) => {
     setListDialog(null);
     setOpened(null);
     const l = await api.get<CallListResponse>('/call-list', { tz: Intl.DateTimeFormat().resolvedOptions().timeZone });
     setListState(l);
-    const ordered = order === 'best_time' ? bestTimeFirst(l.items, l.best_times) : l.items;
+    const ordered = o === 'best_time' ? bestTimeFirst(l.items, l.best_times) : l.items;
     select(ordered.find((i) => !i.done)?.lead_id ?? ordered[0]?.lead_id ?? null);
   };
 
@@ -488,6 +489,18 @@ export function CallingPage() {
       <FunnelButton />
       <section className="panel queue-panel" aria-label="Queue">
         <header>
+          <RoutineStrip
+            current={current}
+            defaultName={suggestListName(items, list?.name ?? null)}
+            listDone={!!list && left === 0}
+            refreshKey={`${items.length}-${left}`}
+            onStarted={async (o, how) => {
+              setOrder(o);
+              // A new list, or nothing left to call on the old one: start at the first lead to call, in the step's order.
+              if (how === 'replace' || left === 0) await afterSwap(o);
+              else await loadList();
+            }}
+          />
           <div className="row list-head">
             <span><b>{left}</b> to call · {items.length - left} done</span>
             {items.length - left > 0 && (

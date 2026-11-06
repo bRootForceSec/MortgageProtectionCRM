@@ -13,6 +13,7 @@ import type { LeadType } from '../importTypes';
 import { LEAD_TABS, isCallable } from '../../shared/leadStatus';
 import { APPT_DAYS, DIAL_GAPS, IMPORTED_WHEN, LAST_CALL, gapLabel } from '../../shared/leadFilter';
 import { UnmarkedAppointments } from '../components/UnmarkedAppointments';
+import { SaveStepDialog } from '../components/SaveStepDialog';
 
 // Where you pick who to call: filter the leads, tick the ones you want (or take every match),
 // and add them to the bottom of the call list on the Calling page, or put them in place of it.
@@ -54,6 +55,7 @@ export function LeadsPage() {
   const [gap, setGap] = useState(0);
   const { types } = useLeadTypes();
   const [changingType, setChangingType] = useState(false);
+  const [savingStep, setSavingStep] = useState(false);
   const [rows, setRows] = useState<any[]>([]);
   const [total, setTotal] = useState(0);
   const [picked, setPicked] = useState<Set<string>>(new Set());
@@ -223,6 +225,9 @@ export function LeadsPage() {
           <button className="btn" disabled={!total} onClick={() => setChangingType(true)} title="Fix the lead type on every lead matching these filters, e.g. one batch">
             Change lead type
           </button>
+          <button className="btn" onClick={() => setSavingStep(true)} title="Keep these filters as a step of your daily routine (Settings → Calling → Routines)">
+            Save as routine step
+          </button>
           <button className="btn" onClick={() => go('calling')}>Go to Calling</button>
         </div>
       </div>
@@ -280,6 +285,9 @@ export function LeadsPage() {
           onConfirm={(name) => (replacing === 'all' ? addAll({ save_current_as: name }) : addPicked({ save_current_as: name }))}
           onCancel={() => setReplacing(null)}
         />
+      )}
+      {savingStep && (
+        <SaveStepDialog filter={Object.fromEntries(Object.entries(filters).filter(([, v]) => v))} onClose={() => setSavingStep(false)} />
       )}
       {changingType && (
         <ChangeTypeDialog

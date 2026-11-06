@@ -1,3 +1,7 @@
+import * as z from 'zod/v4';
+import { LEAD_FILTERS } from './leadStatus.js';
+import { isAgeBand } from './leadAge.js';
+
 // Relative day choices for the Leads filters (and the routine steps built on them). They're kept as keys, not
 // dates, so a saved step means the same thing every day; the server works out the days in the computer's time.
 
@@ -66,3 +70,29 @@ export function lastCallRange(key: LastCall, now = new Date()): { after?: string
     case '7d': return { before: ago(168 * H) };
   }
 }
+
+/**
+ * The Leads filters as the API takes them (query strings), and as a routine step keeps them. Everything relative
+ * (last call, imported, appointment day) is a key, worked out when it's used.
+ */
+export const LeadQuery = z.object({
+  status: z.enum(LEAD_FILTERS).default('all'),
+  search: z.string().max(100).optional(),
+  batch_id: z.string().max(64).optional(),
+  bulk_id: z.string().max(64).optional(),
+  counties: z.string().max(4000).optional(),
+  area_codes: z.string().max(400).optional(),
+  tried_before: z.string().max(40).optional(),
+  tried_after: z.string().max(40).optional(),
+  /** A last-call choice, worked out now. Used instead of tried_before and tried_after. */
+  last_call: z.string().refine((v) => !v || isLastCall(v), 'unknown last call choice').optional(),
+  not_on_list: z.union([z.boolean(), z.enum(['1', '0', 'true', 'false'])]).optional(),
+  /** A lead type code, or "none" for leads with no type. */
+  lead_type: z.string().max(20).optional(),
+  /** A lead age band (leadAge.ts), or "unknown" for leads with no call-in date. */
+  age: z.string().refine((v) => !v || v === 'unknown' || isAgeBand(v), 'unknown lead age').optional(),
+  imported: z.string().refine((v) => !v || isImportedWhen(v), 'unknown import day').optional(),
+  appt_days: z.string().refine((v) => !v || isApptDays(v), 'unknown appointment day').optional(),
+  not_within_min: z.coerce.number().int().min(0).max(10_080).optional(),
+});
+export type LeadQuery = z.infer<typeof LeadQuery>;
