@@ -27,7 +27,7 @@ test.afterAll(() => {
   server?.kill('SIGTERM');
 });
 
-test('policies from Unitrust: set a new product\'s comp rules, then see the profit', async ({ page }) => {
+test('policies from Unitrust: set a new product\'s comp rules; Reports shows no profit for now', async ({ page }) => {
   await page.goto(launchUrl);
   const origin = `http://127.0.0.1:${PORT}`;
   const { key } = await (await page.request.post(`${origin}/api/unitrust/key`, { headers: { origin } })).json();
@@ -59,11 +59,8 @@ test('policies from Unitrust: set a new product\'s comp rules, then see the prof
 
   await page.getByRole('button', { name: 'Reports' }).click();
   await page.getByRole('button', { name: 'This month' }).click();
-  const profit = page.locator('.card', { has: page.getByRole('heading', { name: /^Profit/ }) });
-  // $663.48 × 60% × 75%
-  await expect(profit).toContainText('$298.57');
-  await expect(profit).toContainText('1 policy here aren\'t counted'.replace('aren\'t', 'isn\'t').slice(0, 0));
-  await expect(profit).toContainText("1 policy here isn't counted");
-  await expect(profit.getByRole('row', { name: /Chris Example/ })).toContainText('comp rules not set');
-  await profit.screenshot({ path: 'test-results/profit.png' });
+  // Profit is off Reports for now (lead cost isn't accurate yet); the commission math stays and is tested on the server.
+  await expect(page.getByRole('heading', { name: /^By lead type/ })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /^Profit/ })).toHaveCount(0);
+  await expect(page.getByRole('columnheader', { name: 'Net' })).toHaveCount(0);
 });

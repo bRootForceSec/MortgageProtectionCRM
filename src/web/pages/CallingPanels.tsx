@@ -1,11 +1,9 @@
 import { useEffect, useRef, useState, type RefObject } from 'react';
-import { api, personAge, fmtMoney, fmtPhone, fmtRelative, type LeadDetail, type RecentOutcome } from '../api';
+import { api, fmtPhone, fmtRelative, type LeadDetail, type RecentOutcome } from '../api';
 import { useApp } from '../App';
 import { StatusBadge } from '../components/LeadDetails';
-import { fillScript } from '../shortcuts';
 import type { Saved } from './LogCall';
 import type { CallMode } from '../../shared/appointments';
-import { needsAllPartyConsent } from '../../shared/recordingConsent';
 import { leadIdInText } from '../../shared/leadLink';
 
 // The smaller parts of the Calling screen: the incoming-call lookup, the First call | Appointment switch, the undo
@@ -140,38 +138,6 @@ export function UndoBar({ saved, undoKey, onUndo, onExpire }: { saved: Saved; un
       Saved for {saved.name}: <b>{saved.label}</b>{saved.dials > 1 ? ` · ${saved.dials} dials` : ''}
       <button className="btn small" onClick={onUndo}>Undo <kbd>{undoKey}</kbd></button>
       <span className="muted">{left}s</span>
-    </div>
-  );
-}
-
-/** Your opener and voicemail with this lead's details filled in. */
-export function ScriptPanel({ d }: { d: LeadDetail }) {
-  const { calling, go } = useApp();
-  const sc = calling?.settings.scripts;
-  const l = d.lead;
-  const values = {
-    first_name: l.first_name, last_name: l.last_name, full_name: [l.first_name, l.last_name].filter(Boolean).join(' '),
-    lender: l.lender, loan_amount: l.loan_amount_cents != null ? fmtMoney(l.loan_amount_cents) : l.loan_amount_raw,
-    address: l.address_line, city: l.city, state: l.state, county: l.county, age: personAge(l) != null ? String(personAge(l)) : null,
-    agent_name: sc?.agent_name,
-  };
-  if (!sc?.opener && !sc?.voicemail) {
-    return (
-      <div className="card script">
-        No script yet. <button className="btn small" onClick={() => go('settings')}>Write one in Settings</button>
-      </div>
-    );
-  }
-  return (
-    <div className="card script">
-      {sc.opener && (
-        <>
-          <b>Opener</b>
-          {calling?.settings.recording.on && needsAllPartyConsent(l.state) && <p className="warn"><b>{calling.settings.recording.disclosure}</b></p>}
-          <p>{fillScript(sc.opener, values)}</p>
-        </>
-      )}
-      {sc.voicemail && (<><b>Voicemail</b><p>{fillScript(sc.voicemail, values)}</p></>)}
     </div>
   );
 }

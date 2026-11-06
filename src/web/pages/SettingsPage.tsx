@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { api, fmtDateTime } from '../api';
 import { useApp } from '../App';
 import { useLeadTypes } from '../leadTypes';
-import { CallingCard, ShortcutsCard, ScriptsCard } from './CallingSettingsCards';
+import { CallingCard, ShortcutsCard } from './CallingSettingsCards';
 import { UpdatePanel } from '../components/UpdateBar';
 import { ProductsCard } from './ProductsCard';
 import { RoutinesCard } from './RoutinesCard';
@@ -34,7 +34,6 @@ export function SettingsPage() {
       <CallingCard />
       <RoutinesCard />
       <ShortcutsCard />
-      <ScriptsCard />
       <UnitrustCard />
       <ProductsCard />
       <AiCard />
@@ -318,6 +317,7 @@ function CountiesCard() {
   const { toast } = useApp();
   const [list, setList] = useState<County[] | null>(null);
   const [edit, setEdit] = useState<Record<string, string>>({});
+  const [find, setFind] = useState('');
   const load = useCallback(() => api.get<County[]>('/counties').then(setList).catch(() => setList([])), []);
   useEffect(() => void load(), [load]);
   const save = async (c: County, text: string) => {
@@ -344,10 +344,12 @@ function CountiesCard() {
       {!list?.length ? (
         <p className="muted">Counties appear here after you import leads.</p>
       ) : (
+        <>
+        <input type="search" value={find} onChange={(e) => setFind(e.target.value)} placeholder="Find a county, state or area code" aria-label="Find a county" style={{ width: 280, marginBottom: 8 }} />
         <table className="grid" style={{ maxWidth: 860 }}>
           <thead><tr><th>County</th><th>Leads</th><th>Area codes</th><th>Usual codes</th><th></th></tr></thead>
           <tbody>
-            {list.map((c) => {
+            {list.filter((c) => countyMatches(c, find)).map((c) => {
               const text = edit[c.county_key] ?? c.area_codes.join(', ');
               const dirty = edit[c.county_key] !== undefined;
               return (
@@ -370,7 +372,16 @@ function CountiesCard() {
             })}
           </tbody>
         </table>
+        {!list.some((c) => countyMatches(c, find)) && <p className="muted">No county matches "{find}".</p>}
+        </>
       )}
     </div>
   );
+}
+
+/** A county matches when its name or state contains what you typed, or one of its area codes starts with it. */
+function countyMatches(c: County, find: string): boolean {
+  const q = find.trim().toLowerCase();
+  if (!q) return true;
+  return `${c.name} ${c.state}`.toLowerCase().includes(q) || [...c.area_codes, ...c.built_in].some((code) => code.startsWith(q));
 }

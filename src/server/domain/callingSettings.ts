@@ -10,7 +10,10 @@ export function loadCallingSettings(db: DB): CallingSettings {
   const raw = getSetting<unknown>(db, 'calling') ?? {};
   const r = CallingSettings.safeParse(raw);
   // A bad stored value never blocks calling: fall back to defaults.
-  return r.success ? r.data : CallingSettings.parse({});
+  const s = r.success ? r.data : CallingSettings.parse({});
+  // Keys for an action that no longer exists (like the old script key) are dropped, so saving never trips on them.
+  s.shortcuts.actions = Object.fromEntries(Object.entries(s.shortcuts.actions).filter(([a]) => a in SHORTCUT_ACTIONS));
+  return s;
 }
 
 export function saveCallingSettings(db: DB, input: unknown): CallingSettings {

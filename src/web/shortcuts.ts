@@ -77,10 +77,3 @@ export function isTyping(e: KeyboardEvent) {
   return !!t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable);
 }
 
-/** Fills {first_name}-style placeholders in a script. Unknown or empty ones become a blank line marker. */
-export function fillScript(text: string, values: Record<string, string | null | undefined>): string {
-  return text.replace(/\{(\w+)\}/g, (m, k: string) => {
-    const v = values[k];
-    return v ? v : k in values ? '____' : m;
-  });
-}
