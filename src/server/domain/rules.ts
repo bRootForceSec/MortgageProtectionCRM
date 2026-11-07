@@ -9,7 +9,7 @@ import { Rules, TagShortcuts, shortcutRules, type ActionResult, type Rule, type 
 import { addToCallList, matchingLeadIds, removeFromCallList, toLeadFilter } from './callList.js';
 import { ensureTag, setTagOnLeads, tagByName } from './tags.js';
 import { listCustomFields, setCustomValues } from './customFields.js';
-import { addLeadAction } from './calls.js';
+import { addLeadAction, setComeback } from './calls.js';
 import { conditionSql, loadStatusDefs } from './formulas.js';
 
 // Rules (shared/rules.ts): stored as one setting, run by their trigger, every run written to rule_run.
@@ -138,6 +138,8 @@ function doAction(db: DB, rule: Rule, a: RuleAction, ids: string[], now: string)
       }
       return { action: a, changed, note: null };
     }
+    case 'come_back':
+      return { action: a, changed: setComeback(db, ids, a.steps, { rule_id: rule.id, rule_name: rule.name }, now), note: null };
   }
 }
 

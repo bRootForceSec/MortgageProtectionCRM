@@ -46,6 +46,8 @@ export interface LeadFacts {
   phones?: string[];
   /** Numbers ruled out on other leads that share them: marked bad there, or that lead is in the dead pile. */
   blocks?: PhoneBlock[];
+  /** The latest plan a rule set for the lead to come back (lead_comeback): its steps, and when it was set. */
+  comeback?: { at: string; steps: string[] } | null;
   /** How the lead's latest Unitrust appointment stands, and since when. */
   appt?: { result: ApptResult; at: string; /** The appointment's day, YYYY-MM-DD. */ day?: string } | null;
 }
@@ -181,19 +183,25 @@ export function deriveLeadState(f: LeadFacts, now: string, retryGap = RETRY_GAP_
     const dead = phones.some((p) => blocked.get(p)?.kind === 'dead');
     return { ...withPhones, status: dead ? 'dead' : 'invalid', next_due_at: null };
   }
-  // A no-show, sat-no-sale or prezi (here or in Unitrust) with a follow-up plan: each step is a callback, timed from
-  // the result or the last unanswered try. Any other outcome since then (an answer, a callback, a bad number) ends it.
-  const missedAt = missedResult ? missedResult.at : null;
-  if (missedResult && missedAt) {
-    const since = outcomes.filter((o) => o.entered_at > missedAt);
+  // A plan of steps, started at `at`: each step is a callback, timed from `at` or the last unanswered try. Any other
+  // outcome since then (an answer, a callback, a bad number) ends it. Undefined when it has ended or run out.
+  const planDue = (at: string, steps: readonly string[] | undefined): string | undefined => {
+    const since = outcomes.filter((o) => o.entered_at > at);
     const quiet = since.every((o) => !o.counts_as_human_contact && o.grp !== 'invalid' && !outcomeDef(o.outcome_code)?.callback
       && !outcomeDef(o.outcome_code)?.apptResult && !BOOKED_CODES.has(o.outcome_code));
-    const step = quiet ? followUps[missedResult.result as FollowUpResult]?.[since.length] : undefined;
-    if (step) {
-      const from = since.length ? (callTime.get(since.at(-1)!.call_id) ?? since.at(-1)!.entered_at) : missedAt;
-      return { ...withPhones, status: 'callback', next_due_at: afterStep(from, step), appt_missed: missed ? 1 : 0 };
-    }
-  }
+    const step = quiet ? steps?.[since.length] : undefined;
+    if (!step) return undefined;
+    const from = since.length ? (callTime.get(since.at(-1)!.call_id) ?? since.at(-1)!.entered_at) : at;
+    return afterStep(from, step);
+  };
+  // A rule made the lead come back (after a restore, and later than any missed result, which it replaces).
+  const missedAt = missedResult ? missedResult.at : null;
+  const comeback = f.comeback && f.comeback.at > lastRestore && f.comeback.at > (missedAt ?? '') ? f.comeback : null;
+  const comebackDue = comeback ? planDue(comeback.at, comeback.steps) : undefined;
+  if (comebackDue) return { ...withPhones, status: 'callback', next_due_at: comebackDue, appt_missed: missed ? 1 : 0 };
+  // A no-show, sat-no-sale or prezi (here or in Unitrust) with a follow-up plan, timed from the result.
+  const followUpDue = missedResult && missedAt && !comeback ? planDue(missedAt, followUps[missedResult.result as FollowUpResult]) : undefined;
+  if (followUpDue) return { ...withPhones, status: 'callback', next_due_at: followUpDue, appt_missed: missed ? 1 : 0 };
   // Without a plan (or once it has run out): due now, to set it up again.
   if (missed) return { ...withPhones, status: 'retry', next_due_at: null, appt_missed: 1 };
   // The last call found a bad number but there's another one to try: due now, on the other number.
@@ -239,7 +247,14 @@ export function loadLeadFacts(db: DB, leadId: string): LeadFacts {
       )
       .all(leadId) as LeadFacts['outcomes'],
     actions: stmt(db, 'SELECT action, created_at FROM lead_action WHERE lead_id = ?').all(leadId) as LeadFacts['actions'],
+    comeback: latestComeback(db, leadId),
   };
+}
+
+function latestComeback(db: DB, leadId: string): LeadFacts['comeback'] {
+  const r = stmt(db, 'SELECT set_at, steps_json FROM lead_comeback WHERE lead_id = ? ORDER BY set_at DESC, id DESC LIMIT 1').get(leadId) as
+    | { set_at: string; steps_json: string } | undefined;
+  return r ? { at: r.set_at, steps: JSON.parse(r.steps_json) as string[] } : null;
 }
 
 /** The lead's latest Unitrust appointment (by its day, leaving out ones replaced by a reschedule) and its newest result; blue (or cleared) is "not_set". */

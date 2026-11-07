@@ -1,6 +1,7 @@
 import * as z from 'zod/v4';
 import { LeadQuery } from './leadFilter.js';
 import { WEEKDAYS } from './routines.js';
+import { isStep } from './followUps.js';
 
 // Rules: "when this happens, for leads like these, do that". Set up in Settings → Rules, or from the Leads filters.
 // A rule has one trigger, a Leads filter (kept as its query, so "yesterday" means yesterday every day) and its actions.
@@ -43,6 +44,11 @@ export const RuleAction = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('mark_dead'), reason: z.string().max(200).optional() }),
   /** Changes a counter (one of your fields of the kind Counter): add a number (a negative one takes off), or set it (0 resets). */
   z.object({ kind: z.literal('counter'), field_id: z.string().min(1).max(64), op: z.enum(['add', 'set']), by: z.number().int().min(-1_000_000).max(1_000_000) }),
+  /**
+   * Makes the lead come back: each step ("15m", "2h", "3d", "1d@09:00") is a callback, timed from now and then from each
+   * try nobody answered. An answer, a callback or any other outcome ends it; a newer one replaces it.
+   */
+  z.object({ kind: z.literal('come_back'), steps: z.array(z.string().trim().toLowerCase().refine(isStep, 'write each step like 15m, 2h, 3d or 1d@09:00')).min(1, 'give it a step, like 1d@09:00').max(10) }),
 ]);
 export type RuleAction = z.infer<typeof RuleAction>;
 
@@ -75,6 +81,7 @@ export const ACTION_LABELS: Record<RuleAction['kind'], string> = {
   set_field: 'Set one of your fields',
   mark_dead: 'Put in the dead pile',
   counter: 'Change a counter',
+  come_back: 'Make it come back',
 };
 
 export const TRIGGER_LABELS: Record<RuleTrigger['kind'], string> = {
@@ -131,6 +138,7 @@ export function describeAction(a: RuleAction, fieldName: (id: string) => string 
       if (a.op === 'set') return a.by === 0 ? `Reset ${name} to 0` : `Set ${name} to ${a.by}`;
       return a.by < 0 ? `Take ${-a.by} off ${name}` : `Add ${a.by} to ${name}`;
     }
+    case 'come_back': return `Come back after ${a.steps.join(', then ')}`;
     default: return ACTION_LABELS[a.kind];
   }
 }
