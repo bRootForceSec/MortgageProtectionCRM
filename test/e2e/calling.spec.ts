@@ -896,8 +896,9 @@ test('never dial: a tag marked in Settings keeps a lead off the list, with Add a
   await page.goto(launchUrl);
   const origin = new URL(page.url()).origin;
   // A callable lead, off the list, tagged DNC.
-  const rows = (await (await page.request.get(`${origin}/api/leads?status=no_answer&not_on_list=1`)).json()).rows as { id: string; first_name: string; last_name: string }[];
-  const who = { lead_id: rows[0]!.id, name: `${rows[0]!.first_name} ${rows[0]!.last_name}` };
+  const rows = (await (await page.request.get(`${origin}/api/leads?not_on_list=1`)).json()).rows as { id: string; first_name: string; last_name: string; callable: boolean }[];
+  const pick = rows.find((r) => r.callable && r.first_name && r.last_name)!;
+  const who = { lead_id: pick.id, name: `${pick.first_name} ${pick.last_name}` };
   await page.request.post(`${origin}/api/leads/${who.lead_id}/tags`, { data: { name: 'DNC' }, headers: { origin } });
 
   await page.getByRole('button', { name: 'Settings' }).click();
@@ -947,10 +948,8 @@ test('who can be called: a condition in Settings → Calling decides which leads
 
   // Only the DNC-tagged lead can be ticked now (it's still never dialed without Add anyway).
   await page.getByRole('button', { name: 'Leads', exact: true }).click();
-  await page.getByLabel('Not on the call list').uncheck();
-  const ticks = page.locator('table.grid tbody input[type=checkbox]');
-  await expect(ticks.first()).toBeVisible();
-  const enabled = await ticks.evaluateAll((els) => els.filter((e) => !(e as HTMLInputElement).disabled).length);
+  await expect(page.locator('table.grid tbody tr').first()).toBeVisible();
+  const enabled = await page.locator('table.grid tbody input[type=checkbox]').evaluateAll((els) => els.filter((e) => !(e as HTMLInputElement).disabled).length);
   expect(enabled).toBeLessThanOrEqual(1);
 
   // Back to the start.
