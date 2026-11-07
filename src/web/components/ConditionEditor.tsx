@@ -7,6 +7,7 @@ import { useStatuses } from '../statuses';
 import { FORMULA_VALUES, FormulaError } from '../../shared/formula';
 import { CMP_OPS, emptyGroup, toForm, toPython, type CmpOp, type CondGroup, type CondItem, type CondTerm, type Literal } from '../../shared/condition';
 import { isNumericField } from '../../shared/customFields';
+import type { StatusInfo } from '../../shared/statuses';
 
 // A condition, edited two ways: as a form (groups of rows) or as Python. Both edit the same text, and you can switch
 // any time. Anything the rows don't cover shows as a Python row, so the form never loses part of a condition.
@@ -59,6 +60,21 @@ export function ConditionEditor({ value, onApply, onCancel }: { value: string; o
     }
   };
 
+  // Keeps the condition as a smart list, then uses it by name: in_list("Name").
+  const { toast } = useApp();
+  const saveAsList = async () => {
+    const name = window.prompt('Name the smart list (Automation → Smart lists), like "Needs rebook":')?.trim();
+    if (!name) return;
+    try {
+      const lists = await api.get<StatusInfo[]>('/statuses');
+      await api.put('/statuses', [...lists.map(({ leads: _l, error: _e, ...st }) => st), { id: crypto.randomUUID(), name, condition: python, color: 'gray', tab: false }]);
+      toast(`Saved as the smart list "${name}"`);
+      onApply(`in_list(${JSON.stringify(name)})`);
+    } catch (e) {
+      toast((e as Error).message, 'error');
+    }
+  };
+
   return (
     <div className="card condition-editor" role="group" aria-label="Condition">
       <div className="row" style={{ gap: 6, flexWrap: 'wrap' }}>
@@ -93,6 +109,10 @@ export function ConditionEditor({ value, onApply, onCancel }: { value: string; o
       )}
       <div className="row" style={{ gap: 6 }}>
         <button type="button" className="btn small primary" disabled={!!check?.error} onClick={() => onApply(python === 'True' ? '' : python)}>Use this condition</button>
+        <button type="button" className="btn small" disabled={!!check?.error || python === 'True'} onClick={() => void saveAsList()}
+          title="Keep this condition under a name in Automation → Smart lists, and use it by name here, so you can pick it anywhere instead of writing it again">
+          Save as a smart list…
+        </button>
         <button type="button" className="btn small" onClick={onCancel}>Cancel</button>
       </div>
     </div>

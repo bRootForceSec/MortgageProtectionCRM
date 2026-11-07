@@ -145,6 +145,7 @@ export function RulesCard() {
                 {!r.made_by && <button className="btn small" aria-label={`Move ${r.name} up`} title="Rules for when the call list runs out go in this order" disabled={i === 0 || !!rules[i - 1]?.made_by} onClick={() => void save(swap(rules, i, i - 1))}>↑</button>}
                 {!r.made_by && <button className="btn small" aria-label={`Move ${r.name} down`} title="Rules for when the call list runs out go in this order" disabled={!rules[i + 1] || !!rules[i + 1]?.made_by} onClick={() => void save(swap(rules, i, i + 1))}>↓</button>}
                 {!r.made_by && <button className="btn small" onClick={() => setEditing(r)}>Edit</button>}
+                <button className="btn small" title="Start a new rule from this one" onClick={() => setEditing({ ...r, made_by: undefined, id: newKey(), name: `${r.name} (copy)`.slice(0, 80) })}>Copy</button>
                 {!r.made_by && <button className="btn small" onClick={() => { if (window.confirm(`Delete the rule "${r.name}"? Its log stays.`)) void save(rules.filter((x) => x.id !== r.id)); }}>Delete</button>}
               </span>
             </div>

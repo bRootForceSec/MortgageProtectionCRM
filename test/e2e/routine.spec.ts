@@ -338,6 +338,22 @@ test('a condition on Leads: built in the form, read as Python, and back', async 
   await expect(page.getByLabel('Condition in use')).toHaveCount(0);
 });
 
+test('a condition saved as a smart list is used by name, and listed in Automation', async ({ page }) => {
+  page.on('dialog', (d) => void d.accept('Spanish speakers'));
+  await page.goto(launchUrl);
+  await page.locator('.topbar nav').getByRole('button', { name: 'Leads', exact: true }).click();
+  await page.getByRole('button', { name: 'Condition…' }).click();
+  const ed = page.getByRole('group', { name: 'Condition' });
+  await ed.getByRole('tab', { name: 'Python' }).click();
+  await ed.getByLabel('Condition in Python').fill('has("Spanish")');
+  await expect(ed.getByLabel('Condition matches')).toHaveText(/^Matches 1 of/);
+  await ed.getByRole('button', { name: 'Save as a smart list…' }).click();
+  await expect(page.getByLabel('Condition in use')).toHaveText('in_list("Spanish speakers")');
+  await expect(page.getByText('1 lead', { exact: true })).toBeVisible();
+  await page.locator('.topbar nav').getByRole('button', { name: 'Automation', exact: true }).click();
+  await expect(page.locator('#statuses').getByLabel('Name of smart list Spanish speakers')).toBeVisible();
+});
+
 test('a smart list: named in Automation from a condition, shown as a badge and a Leads tab', async ({ page }) => {
   await page.goto(launchUrl);
   const nav = (name: string) => page.locator('.topbar nav').getByRole('button', { name, exact: true }).click();
