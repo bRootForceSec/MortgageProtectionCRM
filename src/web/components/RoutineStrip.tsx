@@ -25,7 +25,7 @@ export function RoutineStrip(props: {
   refreshKey: string;
   onStarted: (order: StepOrder, mode: 'add' | 'replace') => Promise<void>;
 }) {
-  const { toast, go } = useApp();
+  const { toast, go, reportAdded } = useApp();
   const [today, setToday] = useState<RoutineToday | null>(null);
   const [starting, setStarting] = useState<StepToday | null>(null);
   const [viewing, setViewing] = useState<string | null>(null);
@@ -49,7 +49,7 @@ export function RoutineStrip(props: {
     try {
       const r = await api.post<AddResult & { order: StepOrder }>(`/routine/steps/${step.id}/start`, { mode, save_current_as: saveCurrentAs });
       setStored(MODE_KEY, mode);
-      toast(`${step.name}: ${r.added} lead${r.added === 1 ? '' : 's'} ${mode === 'replace' ? 'on the call list' : 'added to the call list'}${r.already ? `; ${r.already} already on it` : ''}`);
+      reportAdded(r, `${step.name}: ${r.added} lead${r.added === 1 ? '' : 's'} ${mode === 'replace' ? 'on the call list' : 'added to the call list'}`);
       setStarting(null);
       await props.onStarted(r.order, mode);
       await load();

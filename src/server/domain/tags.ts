@@ -14,12 +14,56 @@ export interface Tag {
   name: string;
   /** How many leads have it. */
   leads: number;
+  /** A lead with it is never dialed: left off the call list unless you add it anyway (Settings → Tags). */
+  never_dial: boolean;
 }
 
 export function listTags(db: DB): Tag[] {
-  return db
-    .prepare('SELECT t.id, t.name, (SELECT COUNT(*) FROM lead_tag x WHERE x.tag_id = t.id) leads FROM tag t ORDER BY t.name COLLATE NOCASE')
-    .all() as Tag[];
+  return (db
+    .prepare('SELECT t.id, t.name, t.never_dial, (SELECT COUNT(*) FROM lead_tag x WHERE x.tag_id = t.id) leads FROM tag t ORDER BY t.name COLLATE NOCASE')
+    .all() as (Omit<Tag, 'never_dial'> & { never_dial: number })[]).map((t) => ({ ...t, never_dial: t.never_dial === 1 }));
+}
+
+/** Marks a tag "never dial", or takes that off. */
+export function setNeverDial(db: DB, id: string, on: boolean): Tag {
+  return db.transaction(() => {
+    const old = tagById(db, id);
+    db.prepare('UPDATE tag SET never_dial = ? WHERE id = ?').run(on ? 1 : 0, id);
+    audit(db, 'tag', id, 'update', old, { never_dial: on });
+    return listTags(db).find((t) => t.id === id)!;
+  })();
+}
+
+/** Why a lead must not be dialed: its first never-dial tag (by name), when it was put on and what did it. */
+export interface NeverDial { tag: string; at: string | null; source: string | null; source_name: string | null }
+
+/** The never-dial tag on each of these leads that has one. */
+export function neverDialOf(db: DB, leadIds: string[]): Map<string, NeverDial> {
+  if (!leadIds.length) return new Map();
+  const rows = db.prepare(
+    `SELECT x.lead_id, t.name tag, e.at, e.source, e.source_name
+     FROM lead_tag x JOIN tag t ON t.id = x.tag_id AND t.never_dial = 1
+     LEFT JOIN lead_event e ON e.id = (SELECT e2.id FROM lead_event e2 WHERE e2.lead_id = x.lead_id AND e2.tag_id = x.tag_id AND e2.kind = 'tag_added' ORDER BY e2.at DESC, e2.id DESC LIMIT 1)
+     WHERE x.lead_id IN (SELECT value FROM json_each(?))
+     ORDER BY t.name COLLATE NOCASE`,
+  ).all(JSON.stringify(leadIds)) as ({ lead_id: string } & NeverDial)[];
+  const out = new Map<string, NeverDial>();
+  for (const { lead_id, ...r } of rows) if (!out.has(lead_id)) out.set(lead_id, r);
+  return out;
+}
+
+/** Notes on the lead that you dialed it past its never-dial tag. False when it has none (nothing to note). */
+export function dialedAnyway(db: DB, leadId: string, now = nowIso()): boolean {
+  const n = neverDialOf(db, [leadId]).get(leadId);
+  if (!n) return false;
+  logNeverDialOverride(db, leadId, n.tag, 'dialed anyway', now);
+  return true;
+}
+
+/** Logs that you went past a never-dial tag: added the lead to the call list anyway, or dialed it anyway. */
+export function logNeverDialOverride(db: DB, leadId: string, tag: string, what: 'added anyway' | 'dialed anyway', now = nowIso()) {
+  db.prepare('INSERT INTO lead_event (id, lead_id, at, kind, tag_name, source, source_name) VALUES (?,?,?,?,?,?,?)')
+    .run(uuidv7(), leadId, now, 'never_dial_override', tag, 'you', what);
 }
 
 function cleanName(name: string): string {

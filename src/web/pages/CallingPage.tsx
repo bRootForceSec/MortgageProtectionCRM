@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { callbackFields, fromWall } from '../when';
-import { api, fmtLeadAge, fmtPhone, fmtRelative, fmtDateTime, type LeadDetail, type CallListItem, type CallListResponse } from '../api';
+import { api, fmtDateTime, fmtLeadAge, fmtPhone, fmtRelative, type LeadDetail, type CallListItem, type CallListResponse } from '../api';
+import { describeBy } from '../../shared/leadEvents';
 import { useApp } from '../App';
 import { ApptBadge, LeadSummary, CallHistory, Notes, copyCalendarTag, toggleCalledBack } from '../components/LeadDetails';
 import { EditLead } from '../components/EditLead';
@@ -8,7 +9,7 @@ import { SourcePage } from '../components/SourcePage';
 import { DialQr } from '../components/DialQr';
 import { FunnelButton } from '../components/Funnel';
 import { RoutineStrip } from '../components/RoutineStrip';
-import { ClearListDialog, LoadListDialog, SaveAsDialog, suggestListName } from '../components/CallListDialogs';
+import { CALL_LIST_CHANGED, ClearListDialog, LoadListDialog, SaveAsDialog, suggestListName } from '../components/CallListDialogs';
 import { isAction, isTyping, keyLabel, type KeyMap } from '../shortcuts';
 import { getStored, getStoredJson, setStored, setStoredJson } from '../storage';
 import { LogCall, type Attempt, type FormValues, type Saved } from './LogCall';
@@ -89,6 +90,11 @@ export function CallingPage() {
     }
   }, [toast]);
   useEffect(() => void loadList(), [loadList]);
+  useEffect(() => {
+    const on = () => void loadList();
+    window.addEventListener(CALL_LIST_CHANGED, on);
+    return () => window.removeEventListener(CALL_LIST_CHANGED, on);
+  }, [loadList]);
 
   const clearWorked = async () => {
     try {
@@ -222,7 +228,8 @@ export function CallingPage() {
     if (!detail || autoSend.current !== detail.lead.id || detail.lead.id !== selected) return;
     autoSend.current = null;
     const phone = detail.state?.active_phone_e164 ?? detail.lead.phone_e164;
-    if (phone && isCallable(detail.state?.status ?? 'new')) void dial(phone);
+    // A never-dial lead is never sent on its own: you dial it yourself, after the question.
+    if (phone && isCallable(detail.state?.status ?? 'new') && !detail.never_dial) void dial(phone);
   }, [detail]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /** Shows a lead (looked up for an incoming call, or from Today) without touching your list. */
@@ -326,6 +333,13 @@ export function CallingPage() {
   const dial = useCallback(
     async (e164: string | null | undefined) => {
       if (!e164) return;
+      const never = detail?.never_dial;
+      if (never && detail) {
+        const who = [detail.lead.first_name, detail.lead.last_name].filter(Boolean).join(' ') || 'This lead';
+        if (!window.confirm(`${who} is tagged ${never.tag}, which is never dialed. Dial anyway?`)) return;
+        // Noted on the lead; the dial goes ahead either way.
+        api.post(`/leads/${detail.lead.id}/dialed-anyway`, {}).catch((e: Error) => toast(`Couldn't note the dial on the lead: ${e.message}`, 'error'));
+      }
       const method = settings?.dial_method ?? 'copy';
       setAttempt((a) => ({ ...a, to: e164, dialedAt: a.dialedAt ?? Date.now(), timerStart: a.timerStart ?? (settings?.use_timer === false ? null : Date.now()) }));
       const copy = async () => {
@@ -349,7 +363,7 @@ export function CallingPage() {
       }
       await copy();
     },
-    [settings, toast],
+    [settings, toast, detail],
   );
 
   /** Takes back the last saved call: back to that lead, outcome removed, your entries put back to fix. */
@@ -650,6 +664,12 @@ export function CallingPage() {
             <div className="empty">Select a lead from the list, or import leads first.</div>
           ) : (
             <>
+              {detail.never_dial && (
+                <div className="never-dial" role="alert">
+                  Do not call: tagged {detail.never_dial.tag}{detail.never_dial.at ? ` on ${fmtDateTime(detail.never_dial.at)}` : ''}
+                  {detail.never_dial.source ? ` ${describeBy(detail.never_dial.source, detail.never_dial.source_name)}` : ''}. Dialing asks first.
+                </div>
+              )}
               <LeadSummary d={detail} onDial={dial} dialLabel={dialLabel} dialKey={k('dial')} altKey={k('dial_alt')} onEdit={() => setEditing(true)} editKey={k('edit')}
                 calledBackKey={k('called_back')} tagKey={k('copy_tag')} onCalledBack={(at) => calledBack(detail.lead.id, at)} />
               <LogCall

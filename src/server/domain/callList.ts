@@ -11,6 +11,7 @@ import { loadCallingSettings } from './callingSettings.js';
 import { conditionSql } from './formulas.js';
 import { statusWhere } from './statuses.js';
 import { FormulaError } from '../../shared/formula.js';
+import { logNeverDialOverride, neverDialOf } from './tags.js';
 
 // The call list: the leads you chose to call, worked top to bottom. Leads get here only when you add them
 // (from Leads, or with an import); nothing is added, removed or moved on its own.
@@ -279,14 +280,18 @@ export interface AddResult {
   already: number;
   /** Booked, bad-number or dead leads, which can't be called. */
   not_callable: number;
+  /** Left off because of a never-dial tag (Settings → Tags), with why; `override` adds them anyway. */
+  skipped: { lead_id: string; name: string; why: string }[];
 }
 
 /**
  * Adds leads to the bottom of the list, in the order given. Leads an appointment put back go to the top instead, so the
  * rebook call comes first (Settings can turn that off). After that the list is yours: S still moves them down.
  */
-export function addToCallList(db: DB, leadIds: string[], now = nowIso()): AddResult {
-  const res: AddResult = { added: 0, already: 0, not_callable: 0 };
+export function addToCallList(db: DB, leadIds: string[], now = nowIso(), opts: { override?: boolean } = {}): AddResult {
+  const res: AddResult = { added: 0, already: 0, not_callable: 0, skipped: [] };
+  const never = neverDialOf(db, [...new Set(leadIds)]);
+  const name = db.prepare(`SELECT ${LEAD_NAME} name FROM lead l WHERE l.id = ?`);
   const missedFirst = loadCallingSettings(db).missed_appts_first;
   const status = db.prepare('SELECT status, appt_missed FROM lead_state WHERE lead_id = ?');
   const has = db.prepare(`SELECT ${WORKED} worked FROM call_list_item i WHERE i.lead_id = ?`);
@@ -301,7 +306,12 @@ export function addToCallList(db: DB, leadIds: string[], now = nowIso()): AddRes
       const on = has.get(id) as { worked: number } | undefined;
       if (on && !on.worked) res.already++;
       else if (!isCallable(s.status)) res.not_callable++;
-      else toAdd.push({ id, on: !!on, top: missedFirst && s.appt_missed === 1 });
+      else if (never.has(id) && !opts.override) {
+        res.skipped.push({ lead_id: id, name: (name.get(id) as { name: string | null }).name ?? 'A lead', why: `tagged ${never.get(id)!.tag}` });
+      } else {
+        if (never.has(id)) logNeverDialOverride(db, id, never.get(id)!.tag, 'added anyway', now);
+        toAdd.push({ id, on: !!on, top: missedFirst && s.appt_missed === 1 });
+      }
     }
     // The ones going to the top keep the order given, above everything already there.
     const tops = toAdd.filter((a) => a.top);

@@ -95,7 +95,7 @@ describe('manual call logging', () => {
     const r = logManualCall(db, { lead_id: jane, idempotency_key: key(), outcome_code: 'no_appt', do_not_call: true, from_number_id: num });
     expect((db.prepare('SELECT status FROM lead_state WHERE lead_id = ?').get(jane) as any).status).toBe('dead');
     expect(dueLeads(db).map((l) => l.id)).not.toContain(jane);
-    expect(addToCallList(db, [jane])).toEqual({ added: 0, already: 0, not_callable: 1 });
+    expect(addToCallList(db, [jane])).toEqual({ added: 0, already: 0, not_callable: 1, skipped: [] });
     const day = new Date(Date.now() - 86_400_000).toISOString();
     const rep = buildReport(db, { from: day, to: new Date(Date.now() + 86_400_000).toISOString(), tz: 'America/New_York' });
     expect(rep.activity).toMatchObject({ attempts: 1, contacts: 1, bad_numbers: 0 });

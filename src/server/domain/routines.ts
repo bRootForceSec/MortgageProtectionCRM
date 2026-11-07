@@ -135,7 +135,7 @@ export function startStep(
     let res: AddResult;
     if (mode === 'replace' && step.source.kind === 'saved_list') {
       loadSavedList(db, step.source.list_id, saveCurrentAs, at);
-      res = { added: ids.length, already: 0, not_callable: 0 };
+      res = { added: ids.length, already: 0, not_callable: 0, skipped: [] };
     } else {
       if (mode === 'replace') clearCallList(db, saveCurrentAs, at);
       res = addToCallList(db, ids, at);

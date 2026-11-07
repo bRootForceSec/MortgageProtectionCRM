@@ -42,8 +42,8 @@ describe('call list', () => {
 
   it('adds to the bottom, once, and refuses leads that cannot be called', () => {
     const jane = id('Jane');
-    expect(addToCallList(db, [jane])).toEqual({ added: 1, already: 0, not_callable: 0 });
-    expect(addToCallList(db, [jane])).toEqual({ added: 0, already: 1, not_callable: 0 });
+    expect(addToCallList(db, [jane])).toEqual({ added: 1, already: 0, not_callable: 0, skipped: [] });
+    expect(addToCallList(db, [jane])).toEqual({ added: 0, already: 1, not_callable: 0, skipped: [] });
     const other = getCallList(db).length;
     const dead = db.prepare("SELECT id FROM lead WHERE id <> ? LIMIT 1").get(jane) as any;
     addLeadAction(db, dead.id, 'mark_dead', 'test');
@@ -222,12 +222,12 @@ describe('clearing, replacing and saved lists', () => {
     // Both were called from the list, so they count as off it and can be added back.
     expect(match({ status: 'retry', not_on_list: true })).toHaveLength(2);
 
-    expect(addMatchingToCallList(db, { status: 'no_answer', tried_after: start })).toEqual({ added: 1, already: 0, not_callable: 0 });
+    expect(addMatchingToCallList(db, { status: 'no_answer', tried_after: start })).toEqual({ added: 1, already: 0, not_callable: 0, skipped: [] });
     const list = getCallList(db);
     expect(list.at(-1)).toMatchObject({ lead_id: jane, done: null });
     expect(list.find((i) => i.lead_id === other)!.done).not.toBeNull();
     // Now waiting to be called, so adding it again does nothing.
-    expect(addToCallList(db, [jane])).toEqual({ added: 0, already: 1, not_callable: 0 });
+    expect(addToCallList(db, [jane])).toEqual({ added: 0, already: 1, not_callable: 0, skipped: [] });
 
     const TOKEN = 'test-token-0123456789abcdef0123456789abcdef';
     const headers = { host: '127.0.0.1:5170', cookie: `mpcrm_session=${TOKEN}`, origin: 'http://127.0.0.1:5170' };
@@ -247,7 +247,7 @@ describe('clearing, replacing and saved lists', () => {
     const n = getCallList(db).length;
     const jane = id('Jane');
     const r1 = await post('/api/call-list', { lead_ids: [jane], replace: true, save_current_as: 'First list' });
-    expect(r1.json()).toEqual({ added: 1, already: 0, not_callable: 0 });
+    expect(r1.json()).toEqual({ added: 1, already: 0, not_callable: 0, skipped: [] });
     expect(getCallList(db).map((i) => i.lead_id)).toEqual([jane]);
 
     const r2 = await post('/api/call-list/add-matching', { status: 'new', replace: true });

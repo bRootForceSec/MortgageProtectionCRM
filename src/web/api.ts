@@ -210,7 +210,10 @@ export interface AddResult {
   added: number;
   already: number;
   not_callable: number;
+  /** Left off because of a never-dial tag, with why (Settings → Tags). */
+  skipped: SkippedLead[];
 }
+export interface SkippedLead { lead_id: string; name: string; why: string }
 
 export interface Outcome {
   id: string;
@@ -260,7 +263,7 @@ export interface Call {
 
 export interface TagRef { id: string; name: string }
 /** A tag and how many leads have it (Settings → Tags, and the pickers). */
-export interface Tag extends TagRef { leads: number }
+export interface Tag extends TagRef { leads: number; never_dial: boolean }
 
 export interface LeadDetail {
   lead: Record<string, any> & { id: string; extra: Record<string, string>;
@@ -288,6 +291,8 @@ export interface LeadDetail {
   called_back_at: string | null;
   /** Your tags on this lead, by name. */
   tags: TagRef[];
+  /** Its never-dial tag (Settings → Tags), when it has one: when it went on and what did it. */
+  never_dial: { tag: string; at: string | null; source: string | null; source_name: string | null } | null;
   /** Your statuses this lead is in, in your order. */
   statuses: StatusBadge[];
   /** Calling screen buttons whose show-when condition is false for this lead now. */
