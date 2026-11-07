@@ -32,7 +32,8 @@ test.afterAll(async () => {
   if (server && server.exitCode === null) {
     await new Promise((r) => { server.once('exit', r); server.kill('SIGTERM'); setTimeout(r, 5000); });
   }
-  if (dataDir) fs.rmSync(dataDir, { recursive: true, force: true });
+  // Best-effort: Windows won't delete a file a server that didn't stop in time still has open.
+  if (dataDir) fs.rmSync(dataDir, { recursive: true, force: true, maxRetries: 3 });
 });
 
 test('work the day by routine: imports, then a step saved from Leads', async ({ page }) => {

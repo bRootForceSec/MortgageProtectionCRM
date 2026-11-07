@@ -9,8 +9,16 @@ import { groupWhere } from '../src/server/domain/groupFilter.js';
 
 // Each test file's temp folders go once its tests are done, so runs don't fill the disk.
 const made: string[] = [];
+const opened: ReturnType<typeof openDatabase>[] = [];
 afterAll(() => {
-  for (const d of made.splice(0)) fs.rmSync(d, { recursive: true, force: true });
+  for (const db of opened.splice(0)) if (db.open) db.close();
+  for (const d of made.splice(0)) {
+    try {
+      fs.rmSync(d, { recursive: true, force: true });
+    } catch {
+      // Windows won't delete a file something still has open (a server a test left running): leave that one.
+    }
+  }
 });
 
 export function tempConfig(): Config {
@@ -32,7 +40,9 @@ export function tempConfig(): Config {
 
 export function tempDb() {
   const c = tempConfig();
-  return { c, db: openDatabase(c.dbFile) };
+  const db = openDatabase(c.dbFile);
+  opened.push(db);
+  return { c, db };
 }
 
 /** Header row + data rows, shaped like the Claude-extracted lead sheet. */
