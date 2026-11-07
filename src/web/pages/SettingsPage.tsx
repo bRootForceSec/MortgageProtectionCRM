@@ -7,6 +7,7 @@ import { ButtonsCard } from './ButtonsCard';
 import { UpdatePanel } from '../components/UpdateBar';
 import { ProductsCard } from './ProductsCard';
 import { RoutinesCard } from './RoutinesCard';
+import { FunnelStepsCard } from './FunnelStepsCard';
 import { RulesCard } from './RulesCard';
 import { useTags } from '../tags';
 import { CustomFieldsCard } from './CustomFieldsCard';
@@ -38,7 +39,7 @@ interface County {
 
 const SECTIONS: { id: string; title: string; help: string; cards: () => ReactNode }[] = [
   { id: 'settings-calling', title: 'Calling', help: 'How calling works, your buttons and keyboard keys.', cards: () => <><CallingCard /><ButtonsCard /><ShortcutsCard /></> },
-  { id: 'settings-day', title: 'Your day', help: 'The order you call in, and what happens on its own.', cards: () => <><RoutinesCard /><RulesCard /></> },
+  { id: 'settings-day', title: 'Your day', help: 'The order you call in, what happens on its own, and your funnel.', cards: () => <><RoutinesCard /><RulesCard /><FunnelStepsCard /></> },
   { id: 'settings-leads', title: 'Leads', help: 'Lead types and prices, tags, your statuses, your own fields and formulas, and counties.', cards: () => <><LeadTypesCard /><TagsCard /><StatusesCard /><CustomFieldsCard /><CountiesCard /></> },
   { id: 'settings-connected', title: 'Unitrust and Google', help: 'The Unitrust extension, products and comp, and Google Calendar.', cards: () => <><UnitrustCard /><ProductsCard /><GoogleCalendarCard /></> },
   { id: 'settings-imports', title: 'Imports', help: 'The AI that reads scanned lead pages, and how pages are kept.', cards: () => <><AiCard /><LeadPagesCard /></> },

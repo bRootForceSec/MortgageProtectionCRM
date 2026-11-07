@@ -7,6 +7,7 @@ import { buildReport, drill, DrillSpec, loadTargets, reportCalls, reportJson, re
 import { toCsv, toXlsx } from '../domain/exporter.js';
 import { unmarkedAppointments } from '../domain/unitrustAppointments.js';
 import { loadReportLayouts, saveReportLayouts } from '../domain/reportLayouts.js';
+import { loadFunnelSteps, saveFunnelSteps } from '../domain/funnel.js';
 import { isApptDays, type ApptDays } from '../../shared/leadFilter.js';
 
 const filterQuery = z.object({
@@ -79,6 +80,9 @@ export function registerReportRoutes(app: FastifyInstance, deps: { db: DB }) {
       throw e;
     }
   });
+
+  app.get('/api/funnel/steps', async () => loadFunnelSteps(db));
+  app.put('/api/funnel/steps', async (req) => saveFunnelSteps(db, req.body));
 
   app.get('/api/stats/today', async (req) => {
     const ymd = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);

@@ -1,3 +1,4 @@
+import { funnelFormulaCounts, loadFunnelSteps } from './funnel.js';
 import * as z from 'zod/v4';
 import type { DB } from '../db/connection.js';
 import { AGE_BANDS, ageBand, leadAgeDays } from '../../shared/leadAge.js';
@@ -879,5 +880,6 @@ export function todayStats(db: DB, from: string, to: string, day?: string, days?
   const funnel = inRange
     ? { on_the_day: inRange.appointments - inRange.rescheduled, sat: inRange.sat, prezis: inRange.prezis, sales: inRange.sold }
     : null;
-  return { ...row, goals: loadCallingSettings(db).goals, appts, funnel };
+  const steps = loadFunnelSteps(db);
+  return { ...row, goals: loadCallingSettings(db).goals, appts, funnel, steps, formula_counts: funnelFormulaCounts(db, from, to, steps) };
 }

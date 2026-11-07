@@ -31,8 +31,10 @@ const VALUE_SQL: Record<string, string> = {
 };
 
 /** The lead's log lines of `kind` for the tag named `name` (any case), in a query over `lead l`. */
-const TAG_LINES = (kind: 'tag_added' | 'tag_removed', name: string) =>
-  `FROM lead_event e WHERE e.lead_id = l.id AND e.kind = '${kind}' AND e.tag_id = (SELECT tt.id FROM tag tt WHERE tt.name = ${name})`;
+const TAG_LINES = (kind: 'tag_added' | 'tag_removed', name: string, period: boolean) =>
+  `FROM lead_event e WHERE e.lead_id = l.id AND e.kind = '${kind}' AND e.tag_id = (SELECT tt.id FROM tag tt WHERE tt.name = ${name})${period ? ` AND ${IN_PERIOD('e.at')}` : ''}`;
+/** In a funnel step, the log is only the period being counted: @fw_from (inclusive) to @fw_to, ISO times. */
+const IN_PERIOD = (col: string) => `${col} >= @fw_from AND ${col} < @fw_to`;
 /** "since N days ago", as a condition on an ISO time column. */
 const WITHIN_DAYS = (col: string, days: string) => `${col} >= strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '-' || (${days}) || ' days')`;
 
@@ -45,8 +47,8 @@ const KIND_WORD: Record<FormulaKind, string> = { number: 'a number', text: 'text
  */
 type StatusMap = Map<string, { name: string; condition: string }> | null;
 
-function compile(n: FormulaNode, fields: Map<string, FieldDef>, using: string[], statuses: StatusMap = null): Compiled {
-  const c = (x: FormulaNode) => compile(x, fields, using, statuses);
+function compile(n: FormulaNode, fields: Map<string, FieldDef>, using: string[], statuses: StatusMap = null, period = false): Compiled {
+  const c = (x: FormulaNode) => compile(x, fields, using, statuses, period);
   const want = (x: Compiled, kind: FormulaKind, where: string) => {
     if (x.kind !== kind) throw new FormulaError(`${where} needs ${KIND_WORD[kind]}, not ${KIND_WORD[x.kind]}`);
     return x.sql;
@@ -74,7 +76,7 @@ function compile(n: FormulaNode, fields: Map<string, FieldDef>, using: string[],
         case 'formula': {
           if (using.includes(f.id)) throw new FormulaError(`[${f.label}] uses itself, through its own formula`);
           try {
-            return compile(parseFormula(f.formula ?? ''), fields, [...using, f.id], statuses);
+            return compile(parseFormula(f.formula ?? ''), fields, [...using, f.id], statuses, period);
           } catch (e) {
             throw e instanceof FormulaError && e.message.includes('uses itself') ? e : new FormulaError(`[${f.label}] has a mistake in its formula`);
           }
@@ -98,7 +100,7 @@ function compile(n: FormulaNode, fields: Map<string, FieldDef>, using: string[],
       return { sql: l.kind === 'text' ? `(lower(${l.sql}) ${op} lower(${r.sql}))` : `(${l.sql} ${op} ${r.sql})`, kind: 'yes_no' };
     }
     case 'call': {
-      if (n.name !== 'status') return call(n.name, n.args.map(c));
+      if (n.name !== 'status') return call(n.name, n.args.map(c), period);
       // status("Name"): that status's condition, worked out in place.
       const a = n.args[0];
       if (n.args.length !== 1 || a?.t !== 'str') throw new FormulaError('status() takes a status name in quotes, like status("Needs rebook")');
@@ -109,7 +111,7 @@ function compile(n: FormulaNode, fields: Map<string, FieldDef>, using: string[],
       if (using.includes(key)) throw new FormulaError(`status "${st.name}" uses itself, through its own condition`);
       let x: Compiled;
       try {
-        x = compile(parseFormula(st.condition), fields, [...using, key], statuses);
+        x = compile(parseFormula(st.condition), fields, [...using, key], statuses, period);
       } catch (e) {
         throw e instanceof FormulaError && e.message.includes('uses itself') ? e : new FormulaError(`status "${st.name}" has a mistake in its condition`);
       }
@@ -118,7 +120,7 @@ function compile(n: FormulaNode, fields: Map<string, FieldDef>, using: string[],
   }
 }
 
-function call(name: string, a: Compiled[]): Compiled {
+function call(name: string, a: Compiled[], period: boolean): Compiled {
   const count = (min: number, max: number) => {
     if (a.length < min || a.length > max) throw new FormulaError(`${name}() takes ${min === max ? min : max === Infinity ? `${min} or more` : `${min} or ${max}`} value${max === 1 ? '' : 's'}`);
   };
@@ -150,13 +152,13 @@ function call(name: string, a: Compiled[]): Compiled {
     // The log (lead_event): when a tag was last put on or taken off, in your time, and how often it was put on.
     case 'added': case 'removed':
       count(1, 1);
-      return { sql: `(SELECT datetime(max(e.at), 'localtime') ${TAG_LINES(name === 'added' ? 'tag_added' : 'tag_removed', want(a[0]!, 'text'))})`, kind: 'date' };
+      return { sql: `(SELECT datetime(max(e.at), 'localtime') ${TAG_LINES(name === 'added' ? 'tag_added' : 'tag_removed', want(a[0]!, 'text'), period)})`, kind: 'date' };
     case 'times':
       count(1, 2);
-      return { sql: `(SELECT COUNT(*) ${TAG_LINES('tag_added', want(a[0]!, 'text'))}${a[1] ? ` AND ${WITHIN_DAYS('e.at', want(a[1], 'number'))}` : ''})`, kind: 'number' };
+      return { sql: `(SELECT COUNT(*) ${TAG_LINES('tag_added', want(a[0]!, 'text'), period)}${a[1] ? ` AND ${WITHIN_DAYS('e.at', want(a[1], 'number'))}` : ''})`, kind: 'number' };
     case 'before': {
       count(2, 2);
-      const last = (x: Compiled) => `(SELECT max(e.at) ${TAG_LINES('tag_added', want(x, 'text'))})`;
+      const last = (x: Compiled) => `(SELECT max(e.at) ${TAG_LINES('tag_added', want(x, 'text'), period)})`;
       return { sql: `coalesce(${last(a[0]!)} < ${last(a[1]!)}, 0)`, kind: 'yes_no' };
     }
     // Calls saved with an outcome or a button (by its name or id; a button counts as its outcome too), not undone, optionally in the last N days.
@@ -166,7 +168,7 @@ function call(name: string, a: Compiled[]): Compiled {
       return {
         sql: `(SELECT COUNT(*) FROM call c JOIN call_outcome o ON o.call_id = c.id WHERE c.lead_id = l.id AND c.voided_at IS NULL AND ${CURRENT_OUTCOME}
           AND (o.outcome_code IN (SELECT oc.code FROM outcome_code oc WHERE oc.code = ${outcome} OR lower(oc.label) = lower(${outcome}))
-            OR o.button_id = ${outcome} OR lower(o.button_label) = lower(${outcome}))${a[1] ? ` AND ${WITHIN_DAYS('c.requested_at', want(a[1], 'number'))}` : ''})`,
+            OR o.button_id = ${outcome} OR lower(o.button_label) = lower(${outcome}))${period ? ` AND ${IN_PERIOD('c.requested_at')}` : ''}${a[1] ? ` AND ${WITHIN_DAYS('c.requested_at', want(a[1], 'number'))}` : ''})`,
         kind: 'number',
       };
     }
@@ -310,6 +312,17 @@ export function sortStepSql(db: DB, src: string, statuses: readonly Status[] = l
   if (x.kind === 'yes_no') return `coalesce(${x.sql}, 0)`;
   if (x.kind === 'number') return x.sql;
   throw new FormulaError(`a sort step has to be a number, like loan_amount, or yes or no, like has("Hot"); this gives ${KIND_WORD[x.kind]}`);
+}
+
+/**
+ * A funnel step's formula (src/shared/funnel.ts) as SQL over `lead l JOIN lead_state s`: a number for the lead, or 1/0
+ * for a yes/no, so the step is the sum over your leads. The log functions only see @fw_from to @fw_to. Throws FormulaError.
+ */
+export function funnelStepSql(db: DB, src: string, statuses: readonly Status[] = loadStatusDefs(db)): string {
+  const byLabel = new Map(fieldDefs(db).map((f) => [f.label.toLowerCase(), f]));
+  const x = compile(parseFormula(src), byLabel, [], new Map(statuses.map((st) => [st.name.toLowerCase(), st])), true);
+  if (x.kind === 'yes_no' || x.kind === 'number') return `coalesce(${x.sql}, 0)`;
+  throw new FormulaError(`a funnel step has to be a number, like times("Hot"), or yes or no, like pressed("Dial: Appt set") > 0; this gives ${KIND_WORD[x.kind]}`);
 }
 
 /** How many leads a condition matches now, or its mistake (the condition editor shows it as you type). */
