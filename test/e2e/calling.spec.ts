@@ -880,8 +880,11 @@ test('Reports: arrange the cards, show By hour as a table, save a layout and loa
   await page.getByRole('button', { name: 'Back to default' }).click();
   await page.getByRole('button', { name: 'Done arranging' }).click();
   await expect(page.getByRole('heading', { name: /^Activity/ })).toBeVisible();
+  // The reload must wait for the load to be saved, or it can cut the save off.
+  const savedLoad = page.waitForResponse((r) => r.url().endsWith('/api/reports/layouts') && r.request().method() === 'PUT');
   await page.getByLabel('Load a saved layout').selectOption('Friday');
   await expect(page.getByRole('heading', { name: /^Activity/ })).toHaveCount(0);
+  await savedLoad;
   await page.reload();
   await page.getByRole('button', { name: 'Reports' }).click();
   await expect(page.getByRole('heading', { name: /^By lead age/ })).toBeVisible();
