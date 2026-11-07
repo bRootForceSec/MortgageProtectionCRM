@@ -38,7 +38,9 @@ beforeEach(async () => {
 
 const at = new Date(Date.now() - 30 * 60_000).toISOString();
 const range = { from: new Date(Date.now() - 3600_000).toISOString(), to: new Date(Date.now() + 3600_000).toISOString() };
-const today = at.slice(0, 10);
+// The day on this computer, as the top bar counts it (not the UTC date, which is already tomorrow on a US evening).
+const atDate = new Date(at);
+const today = `${atDate.getFullYear()}-${String(atDate.getMonth() + 1).padStart(2, '0')}-${String(atDate.getDate()).padStart(2, '0')}`;
 
 function effects(code: string) {
   const active = (db.prepare('SELECT active FROM outcome_code WHERE code = ?').get(code) as { active: number }).active;
