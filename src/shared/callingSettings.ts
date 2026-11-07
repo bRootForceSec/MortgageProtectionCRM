@@ -1,5 +1,6 @@
 import * as z from 'zod/v4';
 import { isStep } from './followUps.js';
+import { STARTER_ORDER, SortStep } from './listOrder.js';
 
 // Calling screen settings, shared by the server (which validates and stores them) and the UI (which edits them).
 // You set every limit yourself; nothing here caps how much you call.
@@ -38,6 +39,8 @@ const plan = z.array(z.string().refine(isStep, 'not a follow-up step')).max(10).
 export const CallingSettings = z.object({
   /** A condition (Python syntax) for the leads that can be called; blank means every lead with a good number, not dead. */
   callable_when: z.string().trim().max(2000).default(STARTER_CALLABLE),
+  /** "Your order" on the call list: sort steps, first to last (see listOrder.ts). */
+  list_order: z.array(SortStep).max(10).default(STARTER_ORDER),
   /** Minutes before an unanswered lead comes back. 0 means right away. */
   retry_gap_minutes: z.number().int().min(0).max(60 * 24 * 60).default(240),
   /** When to try again after a no-show, sat-no-sale or prezi (see followUps.ts). An empty plan means due right away. */

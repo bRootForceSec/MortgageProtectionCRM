@@ -23,6 +23,7 @@ import {
 } from '../domain/callList.js';
 import { LeadPaging, LeadQuery } from '../../shared/leadFilter.js';
 import { bestTimes } from '../domain/reports.js';
+import { loadCallingSettings } from '../domain/callingSettings.js';
 import { isLeadId } from '../../shared/leadLink.js';
 
 // Leads, the call list, logging calls, and call history.
@@ -121,7 +122,7 @@ export function registerLeadRoutes(
     const { tz } = z.object({ tz: z.string().max(64).optional() }).parse(req.query);
     return {
       items: getCallList(db), recent: recentOutcomes(db), ...callListMeta(db), saved_lists: listSavedLists(db),
-      best_times: bestTimes(db, tz || Intl.DateTimeFormat().resolvedOptions().timeZone),
+      best_times: bestTimes(db, tz || Intl.DateTimeFormat().resolvedOptions().timeZone), list_order: loadCallingSettings(db).list_order,
     };
   });
   // `replace` empties the list first (kept as a saved list named `save_current_as`, if given).

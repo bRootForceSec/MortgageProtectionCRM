@@ -300,6 +300,18 @@ export function conditionSql(db: DB, src: string, statuses: readonly Status[] = 
   return `coalesce(${x.sql}, 0)`;
 }
 
+/**
+ * A call list sort step (listOrder.ts) as SQL over `lead l JOIN lead_state s`: a number, or a yes/no as 1 or 0.
+ * Statuses work here as in conditions. Throws FormulaError.
+ */
+export function sortStepSql(db: DB, src: string, statuses: readonly Status[] = loadStatusDefs(db)): string {
+  const byLabel = new Map(fieldDefs(db).map((f) => [f.label.toLowerCase(), f]));
+  const x = compile(parseFormula(src), byLabel, [], new Map(statuses.map((st) => [st.name.toLowerCase(), st])));
+  if (x.kind === 'yes_no') return `coalesce(${x.sql}, 0)`;
+  if (x.kind === 'number') return x.sql;
+  throw new FormulaError(`a sort step has to be a number, like loan_amount, or yes or no, like has("Hot"); this gives ${KIND_WORD[x.kind]}`);
+}
+
 /** How many leads a condition matches now, or its mistake (the condition editor shows it as you type). */
 export function checkCondition(db: DB, src: string): { error: string | null; at: number | null; matched: number; total: number } {
   const total = (db.prepare('SELECT COUNT(*) n FROM lead').get() as { n: number }).n;

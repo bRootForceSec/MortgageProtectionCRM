@@ -7,7 +7,7 @@ import { AGE_BANDS } from './leadAge.js';
 // (kept as its query, so "today" means today every day) or a saved call list. The Calling screen offers each step in
 // turn; you choose each time whether its leads go under the list or replace it.
 
-export const STEP_ORDERS = { set: 'As set', best_time: 'Best time first' } as const;
+export const STEP_ORDERS = { set: 'As set', best_time: 'Best time first', yours: 'Your order' } as const;
 export type StepOrder = keyof typeof STEP_ORDERS;
 
 export const StepSource = z.discriminatedUnion('kind', [
@@ -19,7 +19,7 @@ export type StepSource = z.infer<typeof StepSource>;
 export const RoutineStep = z.object({
   id: z.string().min(1).max(64),
   name: z.string().trim().min(1, 'give the step a name').max(60),
-  order: z.enum(['set', 'best_time']).default('set'),
+  order: z.enum(['set', 'best_time', 'yours']).default('set'),
   source: StepSource,
 });
 export type RoutineStep = z.infer<typeof RoutineStep>;

@@ -16,12 +16,21 @@ import { LogCall, type Attempt, type FormValues, type Saved } from './LogCall';
 import { CallerLookup, ModeSwitch, Recent, UNDO_MS, UndoBar, otherNumber } from './CallingPanels';
 import { openingSide, type CallMode } from '../../shared/appointments';
 import { bestTimeFirst } from '../../shared/bestTime';
+import { describeSortStep, yourOrder } from '../../shared/listOrder';
+import { STEP_ORDERS, type StepOrder } from '../../shared/routines';
 
 const SELECTED_KEY = 'mpcrm.selectedLead';
 /** A lead opened outside the list (looked up for an incoming call, or from Today), and where to go back to. */
 export const OPENED_KEY = 'mpcrm.openedLead';
-/** The order the list is shown and worked in: as set (by hand, or as added), or best time first. */
+/** The order the list is shown and worked in: as set (by hand, or as added), best time first, or your sort steps. */
 const ORDER_KEY = 'mpcrm.list.order';
+
+/** The list in the order it's shown and worked in. */
+function inOrder(l: CallListResponse, o: StepOrder): CallListItem[] {
+  if (o === 'best_time') return bestTimeFirst(l.items, l.best_times);
+  if (o === 'yours') return yourOrder(l.items, l.list_order, l.best_times);
+  return l.items;
+}
 
 const freshAttempt = (): Attempt => ({ dials: 1, timerStart: null, dialedAt: null, to: null, shownAt: Date.now() });
 
@@ -58,8 +67,11 @@ export function CallingPage() {
   const [editing, setEditing] = useState(false);
   const [qr, setQr] = useState<string | null>(null);
   const [listDialog, setListDialog] = useState<'clear' | 'load' | 'save_as' | null>(null);
-  const [order, setOrderState] = useState<'set' | 'best_time'>(getStored(ORDER_KEY) === 'best_time' ? 'best_time' : 'set');
-  const setOrder = (o: 'set' | 'best_time') => {
+  const [order, setOrderState] = useState<StepOrder>(() => {
+    const o = getStored(ORDER_KEY);
+    return o && Object.hasOwn(STEP_ORDERS, o) ? (o as StepOrder) : 'set';
+  });
+  const setOrder = (o: StepOrder) => {
     setOrderState(o);
     setStored(ORDER_KEY, o);
   };
@@ -111,7 +123,7 @@ export function CallingPage() {
     setOpened(null);
     const l = await api.get<CallListResponse>('/call-list', { tz: Intl.DateTimeFormat().resolvedOptions().timeZone });
     setListState(l);
-    const ordered = o === 'best_time' ? bestTimeFirst(l.items, l.best_times) : l.items;
+    const ordered = inOrder(l, o);
     select(ordered.find((i) => !i.done)?.lead_id ?? ordered[0]?.lead_id ?? null);
   };
 
@@ -252,8 +264,8 @@ export function CallingPage() {
     return () => window.removeEventListener('mpcrm:open-lead', f);
   }, [openOutside]);
 
-  // Best time first is worked in that order too: "next" and the start of the list follow it.
-  const items = useMemo(() => (list && order === 'best_time' ? bestTimeFirst(list.items, list.best_times) : list?.items ?? []), [list, order]);
+  // Best time first and your order are worked in that order too: "next" and the start of the list follow it.
+  const items = useMemo(() => (list ? inOrder(list, order) : []), [list, order]);
   const idx = items.findIndex((i) => i.lead_id === selected);
   /** The lead on screen was opened on purpose outside the list (or is a looked-up lead that is also in it). */
   const outside = !!selected && opened?.leadId === selected;
@@ -557,6 +569,10 @@ export function CallingPage() {
               <button className={`btn small ${order === 'best_time' ? 'primary' : ''}`} aria-pressed={order === 'best_time'} onClick={() => setOrder('best_time')}
                 title="Leads it's the best time to call right now first, by your pickup rate at that hour in their time (evenings, until you have your own numbers). Before 8 AM or from 9 PM their time goes last.">
                 Best time first
+              </button>
+              <button className={`btn small ${order === 'yours' ? 'primary' : ''}`} aria-pressed={order === 'yours'} onClick={() => setOrder('yours')}
+                title={`Your sort steps (Settings → Calling, "Call list order"): ${list?.list_order.map(describeSortStep).join(', then ') || 'none yet, so as set'}`}>
+                Your order
               </button>
             </span>
           </div>

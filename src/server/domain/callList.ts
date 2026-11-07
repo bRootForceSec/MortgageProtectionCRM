@@ -7,7 +7,8 @@ import { nowIso, uuidv7 } from '../ids.js';
 import { groupWhere, parseList, searchWhere } from './groupFilter.js';
 import { DomainError } from '../core/errors.js';
 import { loadCallingSettings } from './callingSettings.js';
-import { conditionSql } from './formulas.js';
+import { conditionSql, sortStepSql } from './formulas.js';
+import type { SortStep } from '../../shared/listOrder.js';
 import { statusWhere } from './statuses.js';
 import { FormulaError } from '../../shared/formula.js';
 import { logNeverDialOverride, neverDialOf } from './tags.js';
@@ -234,14 +235,29 @@ export interface CallListItem {
   callin_at: string | null;
   /** The lead's time zone, for "Best time first". */
   time_zone: string | null;
+  /** What each of your sort steps gives this lead (`list_order`; null for best time, or no value), for "Your order". */
+  sort_keys: (number | null)[];
+}
+
+/** A sort step's SQL; one with a mistake (a field it names has gone) sorts nothing. */
+function sortKey(db: DB, step: SortStep): string {
+  if (step.by !== 'formula') return 'NULL';
+  try {
+    return sortStepSql(db, step.formula);
+  } catch (e) {
+    if (e instanceof FormulaError) return 'NULL';
+    throw e;
+  }
 }
 
 export function getCallList(db: DB): CallListItem[] {
+  const steps = loadCallingSettings(db).list_order;
+  const keys = steps.map((st, n) => `, ${sortKey(db, st)} sk${n}`).join('');
   const rows = db
     .prepare(
       `SELECT i.lead_id, i.added_at, ${LEAD_NAME} name,
               coalesce(s.active_phone_e164, l.phone_e164) phone_e164, l.state, l.county, l.callin_at, l.time_zone, s.status, s.attempts_total, s.last_call_at, s.appt_result,
-              CASE WHEN s.status = 'callback' THEN s.next_due_at END callback_due_at, cb.at called_back_at,
+              CASE WHEN s.status = 'callback' THEN s.next_due_at END callback_due_at, cb.at called_back_at${keys},
               w.id call_id, w.requested_at worked_at, w.dial_count,
               (SELECT oc.label FROM call_outcome o JOIN outcome_code oc ON oc.code = o.outcome_code
                 WHERE o.call_id = w.id AND ${CURRENT_OUTCOME}
@@ -271,6 +287,7 @@ export function getCallList(db: DB): CallListItem[] {
     appt_result: r.appt_result ?? null,
     callin_at: r.callin_at ?? null,
     time_zone: r.time_zone ?? null,
+    sort_keys: steps.map((_, n) => (r[`sk${n}`] == null ? null : Number(r[`sk${n}`]))),
     done: r.call_id ? { label: r.label ?? 'Called', dials: r.dial_count ?? 1, call_id: r.call_id, at: r.worked_at } : null,
   }));
 }

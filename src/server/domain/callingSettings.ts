@@ -5,7 +5,7 @@ import { CallingSettings, SHORTCUT_ACTIONS } from '../../shared/callingSettings.
 import type { FollowUpPlans } from '../../shared/followUps.js';
 import { OUTCOMES, OutcomeOverrides, outcomeDef } from '../../shared/outcomes.js';
 import { loadOutcomeOverrides, syncOutcomeCodes } from '../db/outcomeCodes.js';
-import { conditionSql } from './formulas.js';
+import { conditionSql, sortStepSql } from './formulas.js';
 import { FormulaError } from '../../shared/formula.js';
 
 // Loads and saves the Calling screen settings (the schema is in src/shared/callingSettings.ts).
@@ -30,6 +30,15 @@ export function saveCallingSettings(db: DB, input: unknown): CallingSettings {
       throw e;
     }
   }
+  s.list_order.forEach((step, n) => {
+    if (step.by !== 'formula') return;
+    try {
+      sortStepSql(db, step.formula);
+    } catch (e) {
+      if (e instanceof FormulaError) throw new DomainError(`Call list order, step ${n + 1}: ${e.message}`);
+      throw e;
+    }
+  });
   for (const a of Object.keys(s.shortcuts.actions)) {
     if (!(a in SHORTCUT_ACTIONS)) throw new DomainError(`unknown shortcut action "${a}"`);
   }
