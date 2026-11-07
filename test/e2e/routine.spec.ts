@@ -364,19 +364,19 @@ test('a condition on Leads: built in the form, read as Python, and back', async 
   await expect(page.getByLabel('Condition in use')).toHaveCount(0);
 });
 
-test('a status: named in Settings from a condition, shown as a badge and a Leads tab', async ({ page }) => {
+test('a smart list: named in Automation from a condition, shown as a badge and a Leads tab', async ({ page }) => {
   await page.goto(launchUrl);
   const nav = (name: string) => page.locator('.topbar nav').getByRole('button', { name, exact: true }).click();
   await nav('Automation');
   const card = page.locator('#statuses');
-  await card.getByRole('button', { name: '+ Status' }).click();
-  await card.getByLabel('New status name').fill('Speaks Spanish');
+  await card.getByRole('button', { name: '+ Smart list' }).click();
+  await card.getByLabel('New smart list name').fill('Speaks Spanish');
   const ed = card.getByRole('group', { name: 'Condition' });
   await ed.getByRole('tab', { name: 'Python' }).click();
   await ed.getByLabel('Condition in Python').fill('has("Spanish")');
   await expect(ed.getByLabel('Condition matches')).toHaveText(/^Matches 1 of/);
   await ed.getByRole('button', { name: 'Use this condition' }).click();
-  await expect(card.getByLabel('Name of status Speaks Spanish')).toBeVisible();
+  await expect(card.getByLabel('Name of smart list Speaks Spanish')).toBeVisible();
   await card.getByLabel('Speaks Spanish as a Leads tab').check();
   await expect(card.getByLabel('Speaks Spanish as a Leads tab')).toBeChecked();
   await card.screenshot({ path: 'test-results/statuses-card.png' });

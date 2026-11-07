@@ -45,10 +45,10 @@ export function saveStatuses(db: DB, input: unknown): StatusInfo[] {
   const names = new Set<string>();
   for (const st of statuses) {
     const key = st.name.toLowerCase();
-    if (names.has(key)) throw new DomainError(`two statuses are called "${st.name}"`);
+    if (names.has(key)) throw new DomainError(`two smart lists are called "${st.name}"`);
     names.add(key);
   }
-  if (new Set(statuses.map((st) => st.id)).size !== statuses.length) throw new DomainError('two statuses have the same id');
+  if (new Set(statuses.map((st) => st.id)).size !== statuses.length) throw new DomainError('two smart lists have the same id');
   for (const st of statuses) {
     try {
       conditionSql(db, st.condition, statuses, [`status:${st.name.toLowerCase()}`]);
@@ -99,5 +99,5 @@ export function statusWhere(db: DB, id: string): string {
 
 /** The condition with status("Old") (any case, either quotes) using the new name. */
 export function renameStatusIn(src: string, from: string, to: string): string {
-  return src.replace(/\bstatus\(\s*(["'])(.*?)\1\s*\)/gi, (m, q: string, name: string) => (name.trim().toLowerCase() === from.toLowerCase() ? `status(${q}${to}${q})` : m));
+  return src.replace(/\b(status|in_list)\(\s*(["'])(.*?)\2\s*\)/gi, (m, fn: string, q: string, name: string) => (name.trim().toLowerCase() === from.toLowerCase() ? `${fn}(${q}${to}${q})` : m));
 }

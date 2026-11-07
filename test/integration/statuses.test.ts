@@ -45,6 +45,7 @@ describe('statuses', () => {
     // The Leads tab, and status() in any condition.
     expect(matchingLeadIds(db, toLeadFilter(LeadQuery.parse({ in_status: 'b' })))).toEqual([jane]);
     expect(checkCondition(db, 'not status("hot rebook")')).toMatchObject({ error: null, matched: total - 1 });
+    expect(checkCondition(db, 'not in_list("hot rebook")')).toMatchObject({ error: null, matched: total - 1 });
     // A tag coming off moves the lead out by itself.
     tagLead(db, jane, 'Appt set');
     expect(listStatuses(db).map((x) => x.leads)).toEqual([0, 0, total]);
@@ -52,14 +53,17 @@ describe('statuses', () => {
 
   it('refuses a loop, a missing status, a repeated name and a mistake; a rename follows into other conditions', () => {
     expect(() => saveStatuses(db, [st('a', 'A', 'status("B")'), st('b', 'B', 'status("A")')])).toThrow(/uses itself/);
-    expect(() => saveStatuses(db, [st('a', 'A', 'status("Nope")')])).toThrow(/A: there is no status called "Nope"/);
-    expect(() => saveStatuses(db, [st('a', 'A', 'True'), st('b', 'a', 'True')])).toThrow(/two statuses are called/);
+    expect(() => saveStatuses(db, [st('a', 'A', 'status("Nope")')])).toThrow(/A: there is no smart list called "Nope"/);
+    expect(() => saveStatuses(db, [st('a', 'A', 'True'), st('b', 'a', 'True')])).toThrow(/two smart lists are called/);
     expect(() => saveStatuses(db, [st('a', 'A', 'attempts +')])).toThrow(/A: /);
     expect(() => saveStatuses(db, [st('a', 'A', 'attempts')])).toThrow(/yes or no/);
     saveStatuses(db, [st('a', 'Needs rebook', 'has("No show")'), st('b', 'Hot', "status('needs rebook') and has(\"Hot\")")]);
     const after = saveStatuses(db, [st('a', 'Rebook', 'has("No show")'), st('b', 'Hot', "status('needs rebook') and has(\"Hot\")")]);
     expect(after[1]!.condition).toBe("status('Rebook') and has(\"Hot\")");
     expect(after[1]!.error).toBeNull();
+    // in_list() follows a rename too.
+    const again = saveStatuses(db, [st('a', 'No-show rebook', 'has("No show")'), st('b', 'Hot', 'in_list("Rebook") and has("Hot")')]);
+    expect(again[1]!.condition).toBe('in_list("No-show rebook") and has("Hot")');
   });
 
   it('status() is for conditions, not formula fields', () => {

@@ -100,20 +100,20 @@ function compile(n: FormulaNode, fields: Map<string, FieldDef>, using: string[],
       return { sql: l.kind === 'text' ? `(lower(${l.sql}) ${op} lower(${r.sql}))` : `(${l.sql} ${op} ${r.sql})`, kind: 'yes_no' };
     }
     case 'call': {
-      if (n.name !== 'status') return call(n.name, n.args.map(c), period);
-      // status("Name"): that status's condition, worked out in place.
+      if (n.name !== 'status' && n.name !== 'in_list') return call(n.name, n.args.map(c), period);
+      // in_list("Name") (or the older status("Name")): that smart list's condition, worked out in place.
       const a = n.args[0];
-      if (n.args.length !== 1 || a?.t !== 'str') throw new FormulaError('status() takes a status name in quotes, like status("Needs rebook")');
-      if (!statuses) throw new FormulaError('status() works in conditions and statuses, not in formula fields');
+      if (n.args.length !== 1 || a?.t !== 'str') throw new FormulaError(`${n.name}() takes a smart list's name in quotes, like in_list("Needs rebook")`);
+      if (!statuses) throw new FormulaError(`${n.name}() works in conditions and smart lists, not in formula fields`);
       const st = statuses.get(a.v.trim().toLowerCase());
-      if (!st) throw new FormulaError(`there is no status called "${a.v}"`);
+      if (!st) throw new FormulaError(`there is no smart list called "${a.v}"`);
       const key = `status:${st.name.toLowerCase()}`;
-      if (using.includes(key)) throw new FormulaError(`status "${st.name}" uses itself, through its own condition`);
+      if (using.includes(key)) throw new FormulaError(`smart list "${st.name}" uses itself, through its own condition`);
       let x: Compiled;
       try {
         x = compile(parseFormula(st.condition), fields, [...using, key], statuses, period);
       } catch (e) {
-        throw e instanceof FormulaError && e.message.includes('uses itself') ? e : new FormulaError(`status "${st.name}" has a mistake in its condition`);
+        throw e instanceof FormulaError && e.message.includes('uses itself') ? e : new FormulaError(`smart list "${st.name}" has a mistake in its condition`);
       }
       return { sql: `coalesce(${x.sql}, 0)`, kind: 'yes_no' };
     }

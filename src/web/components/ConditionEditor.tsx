@@ -141,7 +141,7 @@ function GroupEditor({ g, onChange, onRemove, top }: { g: CondGroup; onChange: (
 
 const TERM_KINDS: { kind: CondTerm['kind']; label: string }[] = [
   { kind: 'has', label: 'Has tag' },
-  { kind: 'status', label: 'In a status' },
+  { kind: 'status', label: 'In a smart list' },
   { kind: 'times', label: 'Times a tag was put on' },
   { kind: 'since', label: 'Time since a tag was put on or taken off' },
   { kind: 'before', label: 'One tag put on before another' },
@@ -205,10 +205,10 @@ function TermEditor({ t, onChange, onRemove }: { t: CondTerm; onChange: (t: Cond
       body = (
         <>
           <select value={t.negate ? 'not' : 'in'} onChange={(e) => onChange({ ...t, negate: e.target.value === 'not' })} aria-label="In or not">
-            <option value="in">is in status</option>
-            <option value="not">isn't in status</option>
+            <option value="in">is in smart list</option>
+            <option value="not">isn't in smart list</option>
           </select>
-          <Pick value={t.name} options={statusNames} onChange={(name) => onChange({ ...t, name })} label="Status" placeholder="status" />
+          <Pick value={t.name} options={statusNames} onChange={(name) => onChange({ ...t, name })} label="Smart list" placeholder="smart list" />
         </>
       );
       break;

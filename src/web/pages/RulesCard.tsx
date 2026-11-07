@@ -408,11 +408,11 @@ function RuleEditor(props: { rule: Rule; isNew: boolean; onSave: (r: Rule) => Pr
                     <option value="enters">comes into</option>
                     <option value="leaves">leaves</option>
                   </select>
-                  <select value={t.status_id} aria-label="Status" onChange={(e) => setTrigger({ ...t, status_id: e.target.value })}>
-                    {!names.statuses.some((st) => st.id === t.status_id) && <option value={t.status_id}>{t.status_id ? 'A deleted status' : 'Pick a status'}</option>}
+                  <select value={t.status_id} aria-label="Smart list" onChange={(e) => setTrigger({ ...t, status_id: e.target.value })}>
+                    {!names.statuses.some((st) => st.id === t.status_id) && <option value={t.status_id}>{t.status_id ? 'A deleted smart list' : 'Pick a smart list'}</option>}
                     {names.statuses.map((st) => <option key={st.id} value={st.id}>{st.name}</option>)}
                   </select>
-                  {!names.statuses.length && <span className="help" style={{ margin: 0 }}>Make a status first, in Automation → Smart lists.</span>}
+                  {!names.statuses.length && <span className="help" style={{ margin: 0 }}>Make a smart list first, in Automation → Smart lists.</span>}
                 </div>
               );
             })()}

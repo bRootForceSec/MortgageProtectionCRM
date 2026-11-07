@@ -240,7 +240,7 @@ export function LeadsPage() {
             <button key={s.key} className={!inStatus && status === s.key ? 'active' : ''} title={s.title} onClick={() => { setStatus(s.key); setInStatus(''); }}>{s.label}</button>
           ))}
           {statuses.filter((st) => st.tab).map((st) => (
-            <button key={st.id} className={inStatus === st.id ? 'active' : ''} title={`Your status: ${st.condition}`} onClick={() => { setStatus('all'); setInStatus(st.id); }}>{st.name}</button>
+            <button key={st.id} className={inStatus === st.id ? 'active' : ''} title={`Your smart list: ${st.condition}`} onClick={() => { setStatus('all'); setInStatus(st.id); }}>{st.name}</button>
           ))}
         </div>
       </div>

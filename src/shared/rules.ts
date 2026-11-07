@@ -90,7 +90,7 @@ export const TRIGGER_LABELS: Record<RuleTrigger['kind'], string> = {
   manual: 'Only when I press Run now',
   tag_added: 'When a tag is put on',
   tag_removed: 'When a tag is taken off',
-  status: 'When a lead enters or leaves a status',
+  status: 'When a lead comes into or leaves a smart list',
   becomes_true: 'When a condition turns true',
 };
 
@@ -119,7 +119,7 @@ export function describeTrigger(
     case 'tag_removed': return `When tag "${t.tag}" is taken off a lead`;
     case 'status': {
       const name = statusName(t.status_id);
-      return name ? `When a lead ${t.when === 'enters' ? 'comes into' : 'leaves'} the status "${name}"` : 'When a lead enters or leaves a status that was deleted';
+      return name ? `When a lead ${t.when === 'enters' ? 'comes into' : 'leaves'} the smart list "${name}"` : 'When a lead comes into or leaves a smart list that was deleted';
     }
     case 'becomes_true': return `When this turns true for a lead: ${t.condition}`;
     case 'manual': return 'Only when you press Run now';
