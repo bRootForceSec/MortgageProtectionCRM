@@ -6,7 +6,7 @@ import { CUSTOM_FIELD_TYPES, isTypedField, type CustomField, type CustomFieldTyp
 import { ConditionEditor } from '../components/ConditionEditor';
 import { FORMULA_FUNCTIONS, FORMULA_VALUES, type FormulaPreview } from '../../shared/formula';
 
-// Settings → Your fields: the fields you add to every lead. Values are typed on the lead (Edit), shown with its
+// Automation → Fields: the fields you add to every lead. Values are typed on the lead (Edit), shown with its
 // details, and the Leads page and routine steps can filter on them. A formula field is worked out from the lead (a
 // lead score): you write the formula here and see what it gives your leads as you type.
 

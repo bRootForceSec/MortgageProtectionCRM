@@ -1,7 +1,7 @@
 import { call, pyString, readCall, RuleTextError, str, tokens, type Value } from './ruleText.js';
 import { BUTTON_BORDERS, BUTTON_COLORS, BUTTON_FILLS, ButtonDef } from './buttons.js';
 
-// A Calling screen button as Python (Settings → Buttons, the Python tab), and back, in the same style as rules:
+// A Calling screen button as Python (Automation → Calling screen, the Python tab), and back, in the same style as rules:
 //
 //   @button(counts_as="Dial: No answer", shows_when='not has("Voicemail")', asks=["Best time"], color="red", border="dotted")
 //   def button():

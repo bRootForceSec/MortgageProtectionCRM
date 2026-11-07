@@ -85,7 +85,7 @@ test('work the day by routine: imports, then a step saved from Leads', async ({ 
   await expect(save).toHaveCount(0);
 
   // Settings: the step is at the end; move it up one.
-  await nav('Settings');
+  await nav('Automation');
   const card = page.getByLabel('Routine Every day');
   await expect(card.getByLabel('Step name')).toHaveCount(4);
   await expect(card.getByLabel('Step name').nth(3)).toHaveValue('Quick no-answers');
@@ -147,7 +147,7 @@ test('tags: tag a lead, tag all matching, filter by tag, a routine step by tag, 
   await save.getByRole('button', { name: 'Cancel' }).click();
 
   // Settings: both tags with their counts; rename one.
-  await nav('Settings');
+  await nav('Automation');
   const card = page.locator('#tags');
   await expect(card.locator('tbody tr')).toHaveCount(2);
   await card.getByLabel('Name of tag Friday').fill('Friday list');
@@ -162,7 +162,7 @@ test('your fields: define them in Settings, fill one in on a lead, filter Leads 
   await page.goto(launchUrl);
   const nav = (name: string) => page.locator('.topbar nav').getByRole('button', { name, exact: true }).click();
 
-  await nav('Settings');
+  await nav('Automation');
   const card = page.locator('#custom-fields');
   await card.getByLabel('New field name').fill('Mortgage payment');
   await card.getByLabel('New field kind').selectOption('money');
@@ -225,7 +225,7 @@ test('rules: a ready-made one, one made from the Leads filters, preview, run now
   await expect(editor).toHaveCount(0);
 
   // Settings: add the ready-made no-show rule, switched off.
-  await nav('Settings');
+  await nav('Automation');
   const card = page.locator('#rules');
   await card.getByLabel('Add a ready-made rule').selectOption({ label: "Yesterday's no-shows onto the call list" });
   const starter = page.getByRole('dialog', { name: 'New rule' });
@@ -251,7 +251,7 @@ test('a formula field: write it with a preview, see it on the lead, sort and fil
   await page.goto(launchUrl);
   const nav = (name: string) => page.locator('.topbar nav').getByRole('button', { name, exact: true }).click();
 
-  await nav('Settings');
+  await nav('Automation');
   const card = page.locator('#custom-fields');
   await card.getByLabel('New field name').fill('Score');
   await card.getByLabel('New field kind').selectOption('formula');
@@ -307,19 +307,23 @@ test('Google Calendar in Settings: the steps, saving your key, then Connect', as
   await page.screenshot({ path: 'test-results/google-calendar-settings.png' });
 });
 
-test('Settings in sections with a menu; Leads shows which leads and how many on a page', async ({ page }) => {
+test('Settings and Automation in sections with a menu; Leads shows which leads and how many on a page', async ({ page }) => {
   await page.goto(launchUrl);
   const nav = (name: string) => page.locator('.topbar nav').getByRole('button', { name, exact: true }).click();
   await nav('Settings');
   const menu = page.getByRole('navigation', { name: 'Settings sections' });
-  await expect(menu.getByRole('button')).toHaveText(['Calling', 'Your day', 'Leads', 'Unitrust and Google', 'Imports', 'App']);
+  await expect(menu.getByRole('button')).toHaveText(['Calling', 'Leads', 'Unitrust and Google', 'Imports', 'Backups', 'App']);
   // The cards above load on their own and can grow after the jump on a slow computer, so jump again until it's there.
   await expect(async () => {
     await menu.getByRole('button', { name: 'Unitrust and Google settings' }).click();
     await expect(page.getByRole('region', { name: 'Unitrust and Google' }).locator('#google-calendar')).toBeInViewport({ timeout: 1000 });
   }).toPass({ timeout: 15_000 });
-  await expect(page.getByRole('region', { name: 'Leads' }).locator('#custom-fields')).toHaveCount(1);
+  await expect(page.getByRole('region', { name: 'Leads' }).locator('#counties')).toHaveCount(1);
   await page.screenshot({ path: 'test-results/settings-sections.png' });
+  // Automation has the rest, in its own sections.
+  await nav('Automation');
+  await expect(page.getByRole('navigation', { name: 'Automation sections' }).getByRole('button')).toHaveText(['Tags', 'Smart lists', 'Rules', 'Calling screen', 'Fields', 'Funnel']);
+  await expect(page.getByRole('region', { name: 'Fields' }).locator('#custom-fields')).toHaveCount(1);
 
   await nav('Leads');
   const shown = page.getByLabel('Leads shown').first();
@@ -363,7 +367,7 @@ test('a condition on Leads: built in the form, read as Python, and back', async 
 test('a status: named in Settings from a condition, shown as a badge and a Leads tab', async ({ page }) => {
   await page.goto(launchUrl);
   const nav = (name: string) => page.locator('.topbar nav').getByRole('button', { name, exact: true }).click();
-  await nav('Settings');
+  await nav('Automation');
   const card = page.locator('#statuses');
   await card.getByRole('button', { name: '+ Status' }).click();
   await card.getByLabel('New status name').fill('Speaks Spanish');
@@ -387,7 +391,7 @@ test('a status: named in Settings from a condition, shown as a badge and a Leads
 test('a rule on a tag, with a counter: tagging a lead sets it off at once', async ({ page }) => {
   await page.goto(launchUrl);
   const nav = (name: string) => page.locator('.topbar nav').getByRole('button', { name, exact: true }).click();
-  await nav('Settings');
+  await nav('Automation');
   // A counter field.
   const fields = page.locator('#custom-fields');
   await fields.getByLabel('New field name').fill('VIP count');
@@ -429,7 +433,7 @@ test('tag shortcuts: a tag that comes off at the end of the day, and only one of
   page.on('dialog', (d) => void d.accept());
   await page.goto(launchUrl);
   const nav = (name: string) => page.locator('.topbar nav').getByRole('button', { name, exact: true }).click();
-  await nav('Settings');
+  await nav('Automation');
   const card = page.locator('#tags');
   await card.getByLabel('When Call today comes off by itself').selectOption('day');
   await expect(card.getByLabel('When Call today comes off by itself')).toHaveValue('day');
@@ -445,17 +449,17 @@ test('tag shortcuts: a tag that comes off at the end of the day, and only one of
   await card.scrollIntoViewIfNeeded();
   await page.screenshot({ path: 'test-results/tag-shortcuts.png' });
 
-  // Settings → Rules lists the rules they wrote, to preview and run but not edit.
+  // Automation → Rules lists the rules they wrote, to preview and run but not edit.
   const rules = page.locator('#rules');
   const expiry = rules.getByLabel('Rule Take "Call today" off at the end of the day it was put on');
-  await expect(expiry).toContainText('change it in Settings → Tags');
+  await expect(expiry).toContainText('change it in Automation → Tags');
   await expect(expiry.getByRole('button', { name: 'Edit' })).toHaveCount(0);
   await expect(rules.getByLabel('Rule Temperature: "Hot" takes the others off')).toContainText('Take tag "VIP" off');
 });
 
 test('a rule as Python: read it, change it there, and see the change in the form', async ({ page }) => {
   await page.goto(launchUrl);
-  await page.locator('.topbar nav').getByRole('button', { name: 'Settings', exact: true }).click();
+  await page.locator('.topbar nav').getByRole('button', { name: 'Automation', exact: true }).click();
   const card = page.locator('#rules');
   await card.getByLabel('Rule VIPs today').getByRole('button', { name: 'Edit' }).click();
   const editor = page.getByRole('dialog', { name: 'Edit rule' });
@@ -482,7 +486,7 @@ test('a rule as Python: read it, change it there, and see the change in the form
 
 test('a rule that makes a lead come back: steps in the form, read back in words and in Python', async ({ page }) => {
   await page.goto(launchUrl);
-  await page.locator('.topbar nav').getByRole('button', { name: 'Settings', exact: true }).click();
+  await page.locator('.topbar nav').getByRole('button', { name: 'Automation', exact: true }).click();
   const card = page.locator('#rules');
   await card.getByRole('button', { name: '+ New rule' }).click();
   const editor = page.getByRole('dialog', { name: 'New rule' });

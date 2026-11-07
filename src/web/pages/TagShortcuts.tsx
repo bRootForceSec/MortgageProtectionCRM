@@ -3,12 +3,12 @@ import { api, newKey, type Tag } from '../api';
 import { useApp } from '../App';
 import { type Rule, type TagGroup, type TagShortcuts } from '../../shared/rules';
 
-// Tag shortcuts in Settings → Tags. Each is only a way to write rules: the rules show here, under the shortcut, and in
-// Settings → Rules, where they can be previewed and run but changed only here.
+// Tag shortcuts in Automation → Tags. Each is only a way to write rules: the rules show here, under the shortcut, and in
+// Automation → Rules, where they can be previewed and run but changed only here.
 
 const NONE: TagShortcuts = { expiry: [], groups: [] };
 
-/** Sent when shortcuts change the rules, so Settings → Rules, on the same screen, loads them again. */
+/** Sent when shortcuts change the rules, so Automation → Rules, on the same screen, loads them again. */
 export const RULES_CHANGED = 'mpcrm:rules-changed';
 
 /** Your tag shortcuts and the rules they write, with a save that keeps both up to date. */
@@ -81,7 +81,7 @@ export function TagGroups({ tags, sc }: { tags: Tag[]; sc: ReturnType<typeof use
       <h3 style={{ margin: '0 0 4px' }}>Only one at a time</h3>
       <p className="help">
         A group of tags a lead can have only one of, like No show, Sat, Presentation and Sold. Putting one on takes the others off. Each group writes one
-        rule per tag, shown under it and in Settings → Rules.
+        rule per tag, shown under it and in Automation → Rules.
       </p>
       {sc.shortcuts.groups.map((g) => (
         <div key={g.id} className="rule" aria-label={`Group ${g.name}`} style={{ marginBottom: 6 }}>
@@ -128,9 +128,9 @@ function GroupEditor(props: { group: TagGroup; tags: Tag[]; onSave: (g: TagGroup
   );
 }
 
-/** Shown on a rule a shortcut wrote, in Settings → Rules. */
+/** Shown on a rule a shortcut wrote, in Automation → Rules. */
 export function madeByText(r: Rule): string | null {
   if (!r.made_by) return null;
-  return r.made_by.kind === 'expiry' ? 'Written by a tag that comes off by itself: change it in Settings → Tags.' : `Written by the group "${r.made_by.name}": change it in Settings → Tags.`;
+  return r.made_by.kind === 'expiry' ? 'Written by a tag that comes off by itself: change it in Automation → Tags.' : `Written by the group "${r.made_by.name}": change it in Automation → Tags.`;
 }
 

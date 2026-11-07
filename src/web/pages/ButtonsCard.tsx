@@ -13,7 +13,7 @@ import {
 import { buttonToPython, pythonToButton, type ButtonNames } from '../../shared/buttonText';
 import { RuleTextError } from '../../shared/ruleText';
 
-// Settings → Buttons: the buttons on the Calling screen. Each counts as an outcome (what Reports and the funnel see),
+// Automation → Calling screen: the buttons on the Calling screen. Each counts as an outcome (what Reports and the funnel see),
 // can show only when a condition is true, has a look, and can add or take off tags. Every outcome has its own button,
 // which you can rename or hide; you can add more that count as any outcome.
 

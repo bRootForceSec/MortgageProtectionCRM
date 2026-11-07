@@ -110,7 +110,7 @@ export function LogCall({
   const [note, setNote] = useState(restore?.note ?? '');
   const [doNotCall, setDoNotCall] = useState(!!restore?.doNotCall);
   const [objections, setObjections] = useState<string[]>(restore?.objections ?? []);
-  // Your fields the picked button asks for (Settings → Buttons), as typed.
+  // Your fields the picked button asks for (Automation → Calling screen), as typed.
   const [asked, setAsked] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
   const [key, setKey] = useState(newKey());
@@ -120,7 +120,7 @@ export function LogCall({
     if (!numberId && defaultNumber.id) setNumberId(defaultNumber.id);
   }, [defaultNumber.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // The buttons on this side that show for this lead now (Settings → Buttons: shown, and its show-when is true).
+  // The buttons on this side that show for this lead now (Automation → Calling screen: shown, and its show-when is true).
   const buttons = useMemo(() => (meta?.buttons ?? []).filter((b) => b.side === mode && !b.hidden && !d.hidden_buttons?.includes(b.id)), [meta, mode, d.hidden_buttons]);
   const buttonOf = useCallback((id: string | null) => (id ? (meta?.buttons ?? []).find((b) => b.id === id) ?? null : null), [meta]);
   const picked = buttonOf(button);

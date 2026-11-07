@@ -14,7 +14,7 @@ export interface Tag {
   name: string;
   /** How many leads have it. */
   leads: number;
-  /** A lead with it is never dialed: left off the call list unless you add it anyway (Settings → Tags). */
+  /** A lead with it is never dialed: left off the call list unless you add it anyway (Automation → Tags). */
   never_dial: boolean;
 }
 

@@ -685,9 +685,9 @@ test('on the spot: Run it now saves the Appt set and stays on the lead, on the A
   await expect(page.getByLabel('Current lead').locator('.badge.appt-sold')).toBeVisible();
 });
 
-test('Settings → Buttons: rename a button, hide one, show Callback, then reset', async ({ page }) => {
+test('Automation → Calling screen: rename a button, hide one, show Callback, then reset', async ({ page }) => {
   await page.goto(launchUrl);
-  await page.getByRole('button', { name: 'Settings' }).click();
+  await page.getByRole('button', { name: 'Automation' }).click();
   const card = page.locator('#outcomes');
   await card.getByLabel('Name for Dial: Bad number').fill('Dial: Wrong #');
   await card.getByLabel('Show a button for Dial: Picked up').uncheck();
@@ -718,7 +718,7 @@ test('a button of your own: counts as No answer, red and dotted, adds a tag, and
   await page.goto(launchUrl);
   const origin = new URL(page.url()).origin;
   await page.request.post(`${origin}/api/tags`, { data: { name: 'Voicemail' }, headers: { origin } });
-  await page.getByRole('button', { name: 'Settings' }).click();
+  await page.getByRole('button', { name: 'Automation' }).click();
   const card = page.locator('#outcomes');
   await card.getByRole('button', { name: '+ Add a button' }).first().click();
   await card.getByLabel('Name for New button').fill('Left voicemail');
@@ -762,7 +762,7 @@ test('a button of your own: counts as No answer, red and dotted, adds a tag, and
 
 test('a button as Python: read it, change it there, and see the change in the form', async ({ page }) => {
   await page.goto(launchUrl);
-  await page.getByRole('button', { name: 'Settings' }).click();
+  await page.getByRole('button', { name: 'Automation' }).click();
   const card = page.locator('#outcomes');
   await card.getByRole('row').filter({ has: page.getByLabel('Name for Left voicemail') }).getByRole('button', { name: 'More' }).click();
   await card.getByRole('tab', { name: 'Python' }).click();
@@ -793,7 +793,7 @@ test('a field that shows by condition, needed while another is true, filled in b
   await page.goto(launchUrl);
   const origin = new URL(page.url()).origin;
   await page.request.post(`${origin}/api/custom-fields`, { data: { label: 'Best time', type: 'text' }, headers: { origin } });
-  await page.getByRole('button', { name: 'Settings' }).click();
+  await page.getByRole('button', { name: 'Automation' }).click();
   const fields = page.locator('#custom-fields');
   const when = async (button: string, python: string) => {
     await fields.getByRole('button', { name: button }).click();
@@ -904,7 +904,7 @@ test('never dial: a tag marked in Settings keeps a lead off the list, with Add a
   const who = { lead_id: pick.id, name: `${pick.first_name} ${pick.last_name}` };
   await page.request.post(`${origin}/api/leads/${who.lead_id}/tags`, { data: { name: 'DNC' }, headers: { origin } });
 
-  await page.getByRole('button', { name: 'Settings' }).click();
+  await page.getByRole('button', { name: 'Automation' }).click();
   const mark = page.locator('#tags').getByLabel('DNC: never dial');
   await mark.click();
   await expect(mark).toBeChecked();
@@ -1021,7 +1021,7 @@ test('your funnel: rename a step and add one of your own; the top bar and the fu
   const lead = ((await (await page.request.get(`${origin}/api/leads`)).json()).rows as { id: string }[])[0]!;
   await page.request.post(`${origin}/api/leads/${lead.id}/tags`, { data: { name: 'Hot' }, headers: { origin } });
 
-  await page.getByRole('button', { name: 'Settings' }).click();
+  await page.getByRole('button', { name: 'Automation' }).click();
   const steps = page.getByRole('list', { name: 'Funnel steps' });
   await expect(steps.getByRole('listitem')).toHaveCount(7);
   const card = page.locator('#funnel-steps');
@@ -1066,7 +1066,7 @@ test('your funnel: rename a step and add one of your own; the top bar and the fu
   await report.screenshot({ path: 'test-results/reports-funnel.png' });
 
   // Back as it was.
-  await page.getByRole('button', { name: 'Settings' }).click();
+  await page.getByRole('button', { name: 'Automation' }).click();
   await page.locator('#funnel-steps').getByRole('button', { name: 'Back to the start' }).click();
   await expect(steps.getByRole('listitem')).toHaveCount(7);
   await expect(page.locator('.topbar .stats')).not.toContainText('Rings');

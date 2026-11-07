@@ -112,7 +112,7 @@ a { color: var(--accent); }
 .outcomes button kbd { margin-right: 6px; }
 .outcomes button.active { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
 .outcomes button.dead { border-color: var(--bad); }
-/* A button's look from Settings → Buttons: a color (outlined or filled) and a border style. */
+/* A button's look from Automation → Calling screen: a color (outlined or filled) and a border style. */
 .outcomes button.c-gray { --btn: #5f6368; } .outcomes button.c-blue { --btn: #1a5fb4; } .outcomes button.c-green { --btn: #26722b; }
 .outcomes button.c-yellow { --btn: #8a6100; } .outcomes button.c-orange { --btn: #a8461b; } .outcomes button.c-red { --btn: #b3261e; }
 .outcomes button.c-purple { --btn: #5b3fc4; }
@@ -446,7 +446,7 @@ th button.sort { background: none; border: 0; padding: 0; font: inherit; font-we
 .rule-editor fieldset { border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; margin: 8px 0; }
 .rule-editor legend { font-weight: 600; padding: 0 4px; }
 
-/* Settings → Your fields: the formula box */
+/* Automation → Fields: the formula box */
 .formula textarea { width: 100%; font-family: ui-monospace, monospace; font-size: 13px; }
 .formula-check { margin: 4px 0; font-size: 13px; }
 .formula details summary { cursor: pointer; font-size: 13px; color: var(--accent); }

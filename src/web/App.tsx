@@ -7,6 +7,7 @@ import { LeadsPage } from './pages/LeadsPage';
 import { CallsPage } from './pages/CallsPage';
 import { NumbersPage } from './pages/NumbersPage';
 import { DataPage } from './pages/DataPage';
+import { AutomationPage } from './pages/AutomationPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { TodayPage } from './pages/TodayPage';
 import { ReportsPage } from './pages/ReportsPage';
@@ -18,7 +19,7 @@ import { todayRange, ymd } from './when';
 import type { FunnelStep, FunnelStepDef } from '../shared/funnel';
 import { leadIdInText } from '../shared/leadLink';
 
-export type Page = 'calling' | 'today' | 'reports' | 'import' | 'leads' | 'calls' | 'numbers' | 'data' | 'settings';
+export type Page = 'calling' | 'today' | 'reports' | 'import' | 'leads' | 'calls' | 'numbers' | 'data' | 'automation' | 'settings';
 const PAGES: { key: Page; label: string }[] = [
   { key: 'calling', label: 'Calling' },
   { key: 'today', label: 'Today' },
@@ -27,7 +28,8 @@ const PAGES: { key: Page; label: string }[] = [
   { key: 'calls', label: 'Call history' },
   { key: 'import', label: 'Import' },
   { key: 'numbers', label: 'Numbers' },
-  { key: 'data', label: 'Export & backup' },
+  { key: 'data', label: 'Export' },
+  { key: 'automation', label: 'Automation' },
   { key: 'settings', label: 'Settings' },
 ];
 
@@ -162,6 +164,7 @@ export function App() {
           {page === 'calls' && <CallsPage />}
           {page === 'numbers' && <NumbersPage />}
           {page === 'data' && <DataPage />}
+          {page === 'automation' && <AutomationPage />}
           {page === 'settings' && <SettingsPage />}
         </div>
         <CallbackAlerts />
@@ -228,7 +231,7 @@ function TodayStats() {
   };
   const onAppts = (st: FunnelStepDef) => st.count.by === 'measure' && APPT_MEASURES.has(st.count.measure);
   return (
-    <div className="stats" title="Today, from your logged calls: your funnel steps (Settings → Your day). Set daily goals in Settings → Calling.">
+    <div className="stats" title="Today, from your logged calls: your funnel steps (Automation → Funnel). Set daily goals in Settings → Calling.">
       {/* The same steps as the funnel on the Calling screen. */}
       {s.steps.filter((st) => !onAppts(st)).map(show)}
       {/* Only on days with appointments, so it takes no room on a short screen otherwise. */}

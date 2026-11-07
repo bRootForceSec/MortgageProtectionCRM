@@ -5,7 +5,7 @@ import { useStatuses } from '../statuses';
 import { ConditionEditor } from '../components/ConditionEditor';
 import { STATUS_COLORS, type Status, type StatusBadge, type StatusInfo } from '../../shared/statuses';
 
-// Settings → Statuses: your statuses are names for conditions. A lead is in every status whose condition is true for
+// Automation → Smart lists: your statuses are names for conditions. A lead is in every status whose condition is true for
 // it, so it can be in many at once. Each shows as a badge in your order; tick "Leads tab" to filter Leads by it.
 
 const strip = ({ leads: _l, error: _e, ...st }: StatusInfo): Status => st;

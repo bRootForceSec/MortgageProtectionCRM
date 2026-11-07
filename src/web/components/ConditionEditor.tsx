@@ -86,7 +86,7 @@ export function ConditionEditor({ value, onApply, onCancel }: { value: string; o
           />
           <p className="help">
             Python: <code>and</code>, <code>or</code>, <code>not</code>, <code>==</code>, <code>x if test else y</code>, <code>field("Name")</code>, and the
-            formula values and functions (Settings → Your fields lists them). <code>has("Tag")</code>, <code>added("Tag")</code>, <code>times("Tag", days=7)</code>,{' '}
+            formula values and functions (Automation → Fields lists them). <code>has("Tag")</code>, <code>added("Tag")</code>, <code>times("Tag", days=7)</code>,{' '}
             <code>before("A", "B")</code> and <code>pressed("Outcome")</code> read each lead's history.
           </p>
         </>

@@ -117,7 +117,7 @@ export async function startServer(opts: StartOptions = {}): Promise<RunningServe
   // Carry on reading any PDF import that was in progress when the app stopped.
   drafts.resumeAll();
   bulk.resume();
-  // Rules that run every day at a time (Settings → Rules).
+  // Rules that run every day at a time (Automation → Rules).
   const rules = new RuleRunner(db, (m) => app.log.warn(m));
   rules.start();
   // Appointments onto Google Calendar, every 15 minutes and soon after a call or a Unitrust read (Settings → Google Calendar).

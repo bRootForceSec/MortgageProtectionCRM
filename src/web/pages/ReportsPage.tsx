@@ -716,7 +716,7 @@ function DrillModal({ params, drill, onClose, onOpen }: { params: Record<string,
 }
 
 /** Why leads said no on calls in these dates, by lead type: each count, and its share of the calls that offered the chips. */
-/** Your funnel steps (Settings → Your day) for these dates, with the share of the step above that made it to each. */
+/** Your funnel steps (Automation) for these dates, with the share of the step above that made it to each. */
 function FunnelCard({ steps }: { steps: { id: string; name: string; formula: string | null; value: number }[] }) {
   return (
     <div className="card">
@@ -734,7 +734,7 @@ function FunnelCard({ steps }: { steps: { id: string; name: string; formula: str
         </tbody>
       </table>
       <p className="help">
-        Your funnel steps (Settings → Your day), the same numbers as the funnel button on the Calling screen: first calls in these dates, appointments on
+        Your funnel steps (Automation), the same numbers as the funnel button on the Calling screen: first calls in these dates, appointments on
         these days, and your own steps over the log in these dates.
       </p>
     </div>

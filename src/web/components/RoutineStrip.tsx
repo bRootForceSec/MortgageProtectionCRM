@@ -81,7 +81,7 @@ export function RoutineStrip(props: {
             <button
               key={s.id}
               className={`routine-step ${done ? 'done' : s.started_at ? 'started' : ''} ${next?.id === s.id ? 'next' : ''}`}
-              onClick={() => (s.count == null ? go('settings') : setStarting(s))}
+              onClick={() => (s.count == null ? go('automation') : setStarting(s))}
               title={s.count == null ? 'The saved list for this step is gone. Pick another in Settings → Calling.' : s.started_at ? 'Started today. Click to add any new matches.' : 'Start this step'}
             >
               {done ? '✓' : `${i + 1}.`} {s.name} <span className="muted">{label}</span>

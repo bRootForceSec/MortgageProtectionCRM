@@ -27,7 +27,7 @@ export interface ManualCallInput {
   /** When you pressed Dial on the Calling page, if you did. Kept with the save time, to match a recording to its call later. */
   dialed_at?: string | null;
   outcome_code: string;
-  /** The button pressed (Settings → Buttons). It must save this outcome; its tags go on the lead with the call. */
+  /** The button pressed (Automation → Calling screen). It must save this outcome; its tags go on the lead with the call. */
   button_id?: string | null;
   /** The values of your fields the button asked for (field id → value). */
   fields?: Record<string, string | null> | null;

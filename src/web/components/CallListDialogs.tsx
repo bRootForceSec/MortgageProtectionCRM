@@ -304,7 +304,7 @@ export function SkippedDialog(props: { leads: SkippedLead[]; onClose: () => void
   });
   return (
     <Modal title="Skipped: never dial" onClose={props.onClose} closeButton>
-      <p className="help" style={{ marginTop: 0 }}>These leads have a tag marked "never dial" (Settings → Tags), so they were left off the call list. Adding one anyway is noted on the lead.</p>
+      <p className="help" style={{ marginTop: 0 }}>These leads have a tag marked "never dial" (Automation → Tags), so they were left off the call list. Adding one anyway is noted on the lead.</p>
       {left.length > 0 && (
         <table className="grid">
           <tbody>

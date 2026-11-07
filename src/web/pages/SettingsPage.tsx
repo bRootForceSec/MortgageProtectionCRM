@@ -1,22 +1,17 @@
-import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { api, fmtDateTime } from '../api';
 import { useApp } from '../App';
 import { useLeadTypes } from '../leadTypes';
 import { CallingCard, ShortcutsCard } from './CallingSettingsCards';
-import { ButtonsCard } from './ButtonsCard';
 import { UpdatePanel } from '../components/UpdateBar';
 import { ProductsCard } from './ProductsCard';
-import { RoutinesCard } from './RoutinesCard';
-import { FunnelStepsCard } from './FunnelStepsCard';
-import { RulesCard } from './RulesCard';
-import { useTags } from '../tags';
-import { CustomFieldsCard } from './CustomFieldsCard';
 import { GoogleCalendarCard } from './GoogleCalendarCard';
-import { StatusesCard } from './StatusesCard';
-import { ExpiryPicker, TagGroups, useTagShortcuts } from './TagShortcuts';
+import { BackupsCard } from './BackupsCard';
+import { SectionedPage, type Section } from '../components/Sections';
 
-// Settings, in sections with a menu at the top to jump between them: calling, your day (routines and rules), leads
-// (types, tags, your fields, counties), Unitrust and Google, imports (AI and lead pages), and the app's version.
+// Settings: what you set once and leave. In sections with a menu at the top: calling, leads (types and counties),
+// Unitrust and Google, imports, backups and the app's version. Tags, smart lists, rules, buttons, fields and the funnel
+// are on the Automation page.
 
 interface AiSettings {
   provider: 'claude_code' | 'anthropic_api' | 'openai_compatible' | 'off';
@@ -37,32 +32,17 @@ interface County {
   built_in: string[];
 }
 
-const SECTIONS: { id: string; title: string; help: string; cards: () => ReactNode }[] = [
-  { id: 'settings-calling', title: 'Calling', help: 'How calling works, your buttons and keyboard keys.', cards: () => <><CallingCard /><ButtonsCard /><ShortcutsCard /></> },
-  { id: 'settings-day', title: 'Your day', help: 'The order you call in, what happens on its own, and your funnel.', cards: () => <><RoutinesCard /><RulesCard /><FunnelStepsCard /></> },
-  { id: 'settings-leads', title: 'Leads', help: 'Lead types and prices, tags, your statuses, your own fields and formulas, and counties.', cards: () => <><LeadTypesCard /><TagsCard /><StatusesCard /><CustomFieldsCard /><CountiesCard /></> },
+const SECTIONS: Section[] = [
+  { id: 'settings-calling', title: 'Calling', help: 'How dialing works, who can be called, the call list order and your keyboard keys.', cards: () => <><CallingCard /><ShortcutsCard /></> },
+  { id: 'settings-leads', title: 'Leads', help: 'Lead types and prices, and counties.', cards: () => <><LeadTypesCard /><CountiesCard /></> },
   { id: 'settings-connected', title: 'Unitrust and Google', help: 'The Unitrust extension, products and comp, and Google Calendar.', cards: () => <><UnitrustCard /><ProductsCard /><GoogleCalendarCard /></> },
   { id: 'settings-imports', title: 'Imports', help: 'The AI that reads scanned lead pages, and how pages are kept.', cards: () => <><AiCard /><LeadPagesCard /></> },
+  { id: 'settings-backups', title: 'Backups', help: 'Back up now, and check a backup restores.', cards: () => <BackupsCard /> },
   { id: 'settings-app', title: 'App', help: 'Version and updates.', cards: () => <UpdatePanel /> },
 ];
 
 export function SettingsPage() {
-  return (
-    <>
-      <nav className="settings-nav" aria-label="Settings sections">
-        {SECTIONS.map((s) => (
-          <button key={s.id} className="btn small" title={s.help} aria-label={`${s.title} settings`} onClick={() => document.getElementById(s.id)?.scrollIntoView({ block: 'start' })}>{s.title}</button>
-        ))}
-      </nav>
-      {SECTIONS.map((s) => (
-        <section key={s.id} id={s.id} className="settings-section" aria-labelledby={`${s.id}-title`}>
-          <h1 id={`${s.id}-title`}>{s.title}</h1>
-          <p className="help">{s.help}</p>
-          {s.cards()}
-        </section>
-      ))}
-    </>
-  );
+  return <SectionedPage label="Settings" sections={SECTIONS} />;
 }
 
 interface UnitrustView {
@@ -333,76 +313,6 @@ function LeadTypesCard() {
   );
 }
 
-/** Your tags: rename or delete them, and their shortcuts. You add them on a lead, or to many at once from Leads. */
-function TagsCard() {
-  const { toast } = useApp();
-  const { tags, reload: reloadTags } = useTags();
-  const sc = useTagShortcuts();
-  // A rename or delete changes the rules the shortcuts write.
-  const reload = async () => { await Promise.all([reloadTags(), sc.load()]); };
-  const [edit, setEdit] = useState<Record<string, string>>({});
-  const rename = async (id: string) => {
-    try {
-      await api.put(`/tags/${id}`, { name: edit[id] });
-      setEdit((e) => { const n = { ...e }; delete n[id]; return n; });
-      await reload();
-      toast('Tag renamed');
-    } catch (e: any) {
-      toast(e.message, 'error');
-    }
-  };
-  const neverDial = async (id: string, name: string, on: boolean) => {
-    try {
-      await api.put(`/tags/${id}/never-dial`, { on });
-      await reloadTags();
-      toast(on ? `Leads tagged ${name} are never dialed` : `${name} no longer stops dialing`);
-    } catch (e: any) {
-      toast(e.message, 'error');
-    }
-  };
-  const remove = async (id: string, name: string, leads: number) => {
-    if (!window.confirm(`Delete the tag "${name}"?${leads ? ` It comes off ${leads} lead${leads === 1 ? '' : 's'}.` : ''} Routine steps that filter by it will match no one.`)) return;
-    try {
-      await api.del(`/tags/${id}`);
-      await reload();
-      toast(`Deleted "${name}"`);
-    } catch (e: any) {
-      toast(e.message, 'error');
-    }
-  };
-  return (
-    <div className="card" id="tags">
-      <h2>Tags</h2>
-      <p className="help">
-        Your own labels on leads. Add one on a lead (the + Tag button under its name), or to every lead matching your filters with Leads → Tag all matching.
-        Filter by tag on Leads and in routine steps. A tag can come off by itself, at the end of the day or after some hours: that writes a rule, shown in
-        Settings → Rules. Mark a tag <b>Never dial</b> (like DNC) and a lead with it is left off the call list, whatever adds it (you can still add it
-        anyway), and the Calling screen shows a red banner and asks before dialing it.
-      </p>
-      {tags.length === 0 ? <p className="muted">No tags yet.</p> : (
-        <table className="grid" style={{ maxWidth: 760 }}>
-          <thead><tr><th>Name</th><th>Leads</th><th>Comes off</th><th title="A lead with this tag is left off the call list, and the Calling screen asks before dialing it">Never dial</th><th></th></tr></thead>
-          <tbody>
-            {tags.map((t) => (
-              <tr key={t.id}>
-                <td><input value={edit[t.id] ?? t.name} maxLength={40} aria-label={`Name of tag ${t.name}`} onChange={(e) => setEdit({ ...edit, [t.id]: e.target.value })} style={{ width: '100%' }} /></td>
-                <td>{t.leads}</td>
-                <td><ExpiryPicker tag={t} sc={sc} /></td>
-                <td><input type="checkbox" checked={t.never_dial} aria-label={`${t.name}: never dial`} onChange={(e) => void neverDial(t.id, t.name, e.target.checked)} /></td>
-                <td className="nowrap">
-                  {edit[t.id] != null && edit[t.id] !== t.name && <button className="btn small primary" onClick={() => void rename(t.id)}>Save</button>}{' '}
-                  <button className="btn small" onClick={() => void remove(t.id, t.name, t.leads)}>Delete</button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
-      <TagGroups tags={tags} sc={sc} />
-    </div>
-  );
-}
-
 function CountiesCard() {
   const { toast } = useApp();
   const [list, setList] = useState<County[] | null>(null);
@@ -424,7 +334,7 @@ function CountiesCard() {
     }
   };
   return (
-    <div className="card">
+    <div className="card" id="counties">
       <h2>Counties and their area codes</h2>
       <p className="help">
         Leads are grouped by the county you bought them for, never by the lead's own phone number. Link each county to the area code(s) you call it under;

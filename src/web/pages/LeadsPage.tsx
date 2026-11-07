@@ -351,10 +351,10 @@ export function LeadsPage() {
           <button className="btn" disabled={!total} onClick={() => setTagging(true)} title="Put a tag on (or take it off) every lead matching these filters">
             Tag all matching
           </button>
-          <button className="btn" onClick={() => setSavingStep(true)} title="Keep these filters as a step of your daily routine (Settings → Calling → Routines)">
+          <button className="btn" onClick={() => setSavingStep(true)} title="Keep these filters as a step of your daily routine (Automation → Rules → Routines)">
             Save as routine step
           </button>
-          <button className="btn" onClick={() => setMakingRule(true)} title="Do something to the leads matching these filters every day, or when you save a call (Settings → Rules)">
+          <button className="btn" onClick={() => setMakingRule(true)} title="Do something to the leads matching these filters every day, or when you save a call (Automation → Rules)">
             Make a rule
           </button>
           <button className="btn" onClick={() => go('calling')}>Go to Calling</button>
@@ -569,7 +569,7 @@ function TagMatchingDialog(props: {
           <label className="row" style={{ gap: 4 }}>
             <input type="checkbox" checked={remove} onChange={(e) => setRemove(e.target.checked)} /> Take this tag off instead
           </label>
-          <p className="help">{isNew && !remove ? `"${name.trim()}" is a new tag. ` : ''}You can rename or delete tags in Settings → Tags.</p>
+          <p className="help">{isNew && !remove ? `"${name.trim()}" is a new tag. ` : ''}You can rename or delete tags in Automation → Tags.</p>
           <div className="row">
             <button className="btn primary" type="submit" disabled={busy || !name.trim() || (remove && isNew)}>{remove ? `Take it off ${n}` : `Tag ${n}`}</button>
             <button className="btn" type="button" onClick={props.onCancel}>Cancel</button>

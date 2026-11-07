@@ -17,7 +17,7 @@ import {
   type ActionResult, type Rule, type RuleAction, type RuleRun, type RuleTrigger,
 } from '../../shared/rules';
 
-// Settings → Rules: "when this happens, for leads like these, do that". Each rule shows what it does in words, with
+// Automation → Rules: "when this happens, for leads like these, do that". Each rule shows what it does in words, with
 // Preview (what it would do now, changing nothing), Run now, and the log of what it did.
 
 type Filter = Partial<LeadQuery>;
@@ -202,7 +202,7 @@ export function NewRuleFromFilters({ filter, onClose }: { filter: Filter; onClos
         try {
           const { rules } = await api.get<{ rules: Rule[] }>('/rules');
           await api.put('/rules', { rules: [...rules, r] });
-          toast(`Saved "${r.name}". See it in Settings → Rules.`);
+          toast(`Saved "${r.name}". See it in Automation → Rules.`);
           onClose();
         } catch (e: any) {
           toast(e.message, 'error');
@@ -412,7 +412,7 @@ function RuleEditor(props: { rule: Rule; isNew: boolean; onSave: (r: Rule) => Pr
                     {!names.statuses.some((st) => st.id === t.status_id) && <option value={t.status_id}>{t.status_id ? 'A deleted status' : 'Pick a status'}</option>}
                     {names.statuses.map((st) => <option key={st.id} value={st.id}>{st.name}</option>)}
                   </select>
-                  {!names.statuses.length && <span className="help" style={{ margin: 0 }}>Make a status first, in Settings → Statuses.</span>}
+                  {!names.statuses.length && <span className="help" style={{ margin: 0 }}>Make a status first, in Automation → Smart lists.</span>}
                 </div>
               );
             })()}

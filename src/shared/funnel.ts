@@ -5,7 +5,7 @@ import { outcomeDef } from './outcomes.js';
 // The funnel, top to bottom. These seven are the counts the CRM keeps itself: dials, leads called, pickups and
 // appointments set count first calls; sat, prezis and sales count appointments, on their day.
 //
-// Your funnel (Settings → Your day, "Funnel"; the setting `funnel_steps`) is a list of steps, each one of these counts
+// Your funnel (Automation, "Funnel"; the setting `funnel_steps`) is a list of steps, each one of these counts
 // or a formula of your own over the log: a number added up over your leads (like times("Hot")) or a yes/no that
 // counts the leads it's true for. In a funnel step, the log functions (times, pressed, added, removed, before) only
 // see the period being counted. The top bar and the funnel graphic show your steps in your order.

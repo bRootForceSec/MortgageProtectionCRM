@@ -297,7 +297,7 @@ export interface AddResult {
   already: number;
   /** Leads that can't be called: dead, no good number, or not allowed by your "Can be called when". */
   not_callable: number;
-  /** Left off because of a never-dial tag (Settings → Tags), with why; `override` adds them anyway. */
+  /** Left off because of a never-dial tag (Automation → Tags), with why; `override` adds them anyway. */
   skipped: { lead_id: string; name: string; why: string }[];
 }
 

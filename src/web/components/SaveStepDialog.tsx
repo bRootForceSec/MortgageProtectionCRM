@@ -70,7 +70,7 @@ export function SaveStepDialog(props: { filter: Partial<LeadQuery>; onClose: () 
               {Object.entries(STEP_ORDERS).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
             </select>
           </label>
-          <p className="help">It goes at the end of the routine. Move it in Settings → Calling → Routines.</p>
+          <p className="help">It goes at the end of the routine. Move it in Automation → Rules → Routines.</p>
           <div className="row">
             <button className="btn primary" type="submit" disabled={busy || !routines || !name.trim()}>Save step</button>
             <button className="btn" type="button" onClick={props.onClose}>Cancel</button>

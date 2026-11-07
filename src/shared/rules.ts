@@ -3,7 +3,7 @@ import { LeadQuery } from './leadFilter.js';
 import { WEEKDAYS } from './routines.js';
 import { isStep, SUGGESTED_FOLLOW_UPS } from './followUps.js';
 
-// Rules: "when this happens, for leads like these, do that". Set up in Settings → Rules, or from the Leads filters.
+// Rules: "when this happens, for leads like these, do that". Set up in Automation → Rules, or from the Leads filters.
 // A rule has one trigger, a Leads filter (kept as its query, so "yesterday" means yesterday every day) and its actions.
 // Every run is logged, and Preview shows what a run would do now without changing anything.
 
@@ -143,7 +143,7 @@ export function describeAction(a: RuleAction, fieldName: (id: string) => string 
   }
 }
 
-/** Ready-made rules: the no-show example you gave. They start switched off; switch them on in Settings → Rules. */
+/** Ready-made rules: the no-show example you gave. They start switched off; switch them on in Automation → Rules. */
 export const STARTER_RULES: readonly Omit<Rule, 'id'>[] = [
   {
     name: "Yesterday's no-shows onto the call list",
@@ -169,7 +169,7 @@ export const STARTER_RULES: readonly Omit<Rule, 'id'>[] = [
   })),
 ];
 
-// Tag shortcuts (Settings → Tags): each one is only a way to write rules, and shows the rules it writes.
+// Tag shortcuts (Automation → Tags): each one is only a way to write rules, and shows the rules it writes.
 // - Take a tag off by itself: after so many hours, or at the end of the day it was put on.
 // - Only one at a time: a group of tags where putting one on takes the others off.
 

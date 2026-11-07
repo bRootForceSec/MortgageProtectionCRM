@@ -3,7 +3,7 @@ import { api } from '../api';
 import { useApp } from '../App';
 import { FUNNEL_STEPS, STARTER_FUNNEL, type FunnelCount, type FunnelStep, type FunnelStepDef } from '../../shared/funnel';
 
-// Settings → Your day: your funnel steps, top to bottom. The top bar and the funnel graphic show them in this order.
+// Automation: your funnel steps, top to bottom. The top bar and the funnel graphic show them in this order.
 // Each counts one of the seven things the CRM keeps itself, or a formula of yours over the log in the period.
 
 /** A text box that saves when you leave it; blank puts the old text back. */

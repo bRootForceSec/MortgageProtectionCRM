@@ -71,7 +71,7 @@ export function saveOutcomeOverrides(db: DB, input: unknown, opts: { checkSides?
     };
     if (Object.keys(keep).length) out[code] = keep;
   }
-  // Settings → Buttons checks this itself, counting your own buttons too.
+  // Automation → Calling screen checks this itself, counting your own buttons too.
   for (const side of opts.checkSides === false ? [] : (['first_call', 'appointment'] as const)) {
     const shown = Object.entries(OUTCOMES).filter(([c, d]) => d.active && d.kind === side && (out[c]?.offered ?? d.offered));
     if (!shown.length) throw new DomainError(`keep at least one button on the ${side === 'appointment' ? 'Appointment' : 'First call'} side`);
