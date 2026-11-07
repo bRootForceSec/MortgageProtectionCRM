@@ -23,8 +23,11 @@ export const RuleTrigger = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('tag_removed'), tag: z.string().trim().min(1, 'name the tag').max(40) }),
   /** When a lead comes into one of your statuses, or leaves it. */
   z.object({ kind: z.literal('status'), status_id: z.string().min(1).max(64), when: z.enum(['enters', 'leaves']) }),
-  /** When this condition turns true for a lead (it's checked after each change and every minute). */
-  z.object({ kind: z.literal('becomes_true'), condition: z.string().trim().min(1, 'write the condition').max(2000) }),
+  /**
+   * When this condition turns true for a lead (it's checked after each change and every minute). With `already`, the
+   * leads it's already true for when the rule is saved count too.
+   */
+  z.object({ kind: z.literal('becomes_true'), condition: z.string().trim().min(1, 'write the condition').max(2000), already: z.boolean().optional() }),
 ]);
 export type RuleTrigger = z.infer<typeof RuleTrigger>;
 
@@ -43,8 +46,16 @@ export const RuleAction = z.discriminatedUnion('kind', [
 ]);
 export type RuleAction = z.infer<typeof RuleAction>;
 
+/** A rule a tag shortcut made (shortcuts below): shown with its shortcut, changed only by changing the shortcut. */
+export const MadeBy = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('expiry'), tag_id: z.string() }),
+  z.object({ kind: z.literal('group'), group_id: z.string(), name: z.string() }),
+]);
+export type MadeBy = z.infer<typeof MadeBy>;
+
 export const Rule = z.object({
-  id: z.string().min(1).max(64),
+  id: z.string().min(1).max(120),
+  made_by: MadeBy.optional(),
   name: z.string().trim().min(1, 'give the rule a name').max(80),
   enabled: z.boolean(),
   trigger: RuleTrigger,
@@ -141,6 +152,63 @@ export const STARTER_RULES: readonly Omit<Rule, 'id'>[] = [
     actions: [{ kind: 'remove_from_list' }],
   },
 ];
+
+// Tag shortcuts (Settings → Tags): each one is only a way to write rules, and shows the rules it writes.
+// - Take a tag off by itself: after so many hours, or at the end of the day it was put on.
+// - Only one at a time: a group of tags where putting one on takes the others off.
+
+export const TagExpiry = z.object({
+  tag_id: z.string().min(1).max(64),
+  /** Hours after it was put on; null takes it off at the end of that day. */
+  hours: z.number().int().min(1, 'at least 1 hour').max(24 * 365).nullable(),
+});
+export type TagExpiry = z.infer<typeof TagExpiry>;
+
+export const TagGroup = z.object({
+  id: z.string().min(1).max(64),
+  name: z.string().trim().min(1, 'name the group').max(60),
+  /** A rule has at most 10 actions, and putting one on takes off each of the others. */
+  tag_ids: z.array(z.string().min(1).max(64)).min(2, 'a group needs two tags or more').max(11, 'a group can have 11 tags at most'),
+});
+export type TagGroup = z.infer<typeof TagGroup>;
+
+export const TagShortcuts = z.object({ expiry: z.array(TagExpiry).max(500), groups: z.array(TagGroup).max(100) });
+export type TagShortcuts = z.infer<typeof TagShortcuts>;
+
+/** "after 24 hours" / "at the end of the day". */
+export function describeExpiry(hours: number | null): string {
+  if (hours == null) return 'at the end of the day it was put on';
+  if (hours % 24 === 0) return `${hours / 24} day${hours === 24 ? '' : 's'} after it was put on`;
+  return `${hours} hour${hours === 1 ? '' : 's'} after it was put on`;
+}
+
+/** Python text for a tag's name in a condition. */
+const pyName = (s: string) => JSON.stringify(s);
+
+/** The rules your shortcuts write, with your tags' names now. A shortcut on a deleted tag writes nothing. */
+export function shortcutRules(sc: TagShortcuts, tagName: (id: string) => string | undefined): Rule[] {
+  const out: Rule[] = [];
+  for (const x of sc.expiry) {
+    const name = tagName(x.tag_id);
+    if (!name) continue;
+    const since = x.hours == null ? `days_since(added(${pyName(name)})) >= 1` : `hours_since(added(${pyName(name)})) >= ${x.hours}`;
+    out.push({
+      id: `expiry:${x.tag_id}`, made_by: { kind: 'expiry', tag_id: x.tag_id }, name: `Take "${name}" off ${describeExpiry(x.hours)}`.slice(0, 80), enabled: true,
+      trigger: { kind: 'becomes_true', condition: `has(${pyName(name)}) and ${since}`, already: true }, filter: {}, actions: [{ kind: 'remove_tag', tag: name }],
+    });
+  }
+  for (const g of sc.groups) {
+    const names = g.tag_ids.map(tagName).filter((n): n is string => !!n);
+    if (names.length < 2) continue;
+    for (const name of names) {
+      out.push({
+        id: `group:${g.id}:${name.toLowerCase()}`, made_by: { kind: 'group', group_id: g.id, name: g.name }, name: `${g.name}: "${name}" takes the others off`.slice(0, 80), enabled: true,
+        trigger: { kind: 'tag_added', tag: name }, filter: {}, actions: names.filter((o) => o !== name).map((o) => ({ kind: 'remove_tag' as const, tag: o })),
+      });
+    }
+  }
+  return out;
+}
 
 /** What one action did (or would do) in a run. */
 export interface ActionResult {

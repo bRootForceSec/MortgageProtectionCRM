@@ -5,7 +5,7 @@ import { nowIso, uuidv7 } from '../ids.js';
 import { LEAD_NAME } from '../db/sql.js';
 import { LeadQuery } from '../../shared/leadFilter.js';
 import { normalizeCustomValue } from '../../shared/customFields.js';
-import { Rules, type ActionResult, type Rule, type RuleAction, type RuleRun, type RuleTrigger } from '../../shared/rules.js';
+import { Rules, TagShortcuts, shortcutRules, type ActionResult, type Rule, type RuleAction, type RuleRun, type RuleTrigger } from '../../shared/rules.js';
 import { addToCallList, matchingLeadIds, removeFromCallList, toLeadFilter } from './callList.js';
 import { ensureTag, setTagOnLeads, tagByName } from './tags.js';
 import { listCustomFields, setCustomValues } from './customFields.js';
@@ -21,14 +21,43 @@ import { conditionSql, loadStatusDefs } from './formulas.js';
 
 const RULES = 'rules';
 
+/** Your rules, then the ones your tag shortcuts write (made fresh each time, with your tags' names now). */
 export function loadRules(db: DB): Rule[] {
   const r = Rules.safeParse(getSetting<unknown>(db, RULES) ?? []);
   // A bad stored value never blocks the app: no rules until they're saved again.
-  return r.success ? r.data : [];
+  return [...(r.success ? r.data.filter((x) => !x.made_by) : []), ...loadShortcutRules(db)];
 }
 
+const SHORTCUTS = 'tag_shortcuts';
+
+export function loadTagShortcuts(db: DB): TagShortcuts {
+  const r = TagShortcuts.safeParse(getSetting<unknown>(db, SHORTCUTS) ?? { expiry: [], groups: [] });
+  return r.success ? r.data : { expiry: [], groups: [] };
+}
+
+function loadShortcutRules(db: DB): Rule[] {
+  const names = new Map((db.prepare('SELECT id, name FROM tag').all() as { id: string; name: string }[]).map((t) => [t.id, t.name]));
+  return shortcutRules(loadTagShortcuts(db), (id) => names.get(id));
+}
+
+/** Saves your tag shortcuts; the rules they write change with them. */
+export function saveTagShortcuts(db: DB, input: unknown): { shortcuts: TagShortcuts; rules: Rule[] } {
+  const sc = TagShortcuts.parse(input);
+  const tags = new Set((db.prepare('SELECT id FROM tag').all() as { id: string }[]).map((t) => t.id));
+  for (const x of sc.expiry) if (!tags.has(x.tag_id)) throw new DomainError('that tag is gone');
+  if (new Set(sc.expiry.map((x) => x.tag_id)).size !== sc.expiry.length) throw new DomainError('a tag can only be taken off one way');
+  if (new Set(sc.groups.map((g) => g.id)).size !== sc.groups.length) throw new DomainError('two groups have the same id');
+  for (const g of sc.groups) {
+    if (g.tag_ids.some((id) => !tags.has(id))) throw new DomainError(`${g.name}: one of its tags is gone`);
+    if (new Set(g.tag_ids).size !== g.tag_ids.length) throw new DomainError(`${g.name}: a tag is in it twice`);
+  }
+  setSetting(db, SHORTCUTS, sc);
+  return { shortcuts: sc, rules: loadShortcutRules(db) };
+}
+
+/** Saves your rules. Rules a tag shortcut wrote are left out: they change with their shortcut. */
 export function saveRules(db: DB, input: unknown): Rule[] {
-  const rules = Rules.parse(input);
+  const rules = Rules.parse(input).filter((r) => !r.made_by);
   if (new Set(rules.map((r) => r.id)).size !== rules.length) throw new DomainError('two rules have the same id');
   const fields = new Map(listCustomFields(db).map((f) => [f.id, f]));
   const outcomes = new Set((db.prepare('SELECT code FROM outcome_code').all() as { code: string }[]).map((o) => o.code));
@@ -72,7 +101,7 @@ export function saveRules(db: DB, input: unknown): Rule[] {
     }
   }
   setSetting(db, RULES, rules);
-  return rules;
+  return loadRules(db);
 }
 
 /** Does one action to these leads and says what changed. */
@@ -241,7 +270,7 @@ function watchedChange(db: DB, rule: Rule, now: Date): string[] {
     for (const id of went) del.run(rule.id, id);
     if (keys[rule.id] !== key) setSetting(db, WATCH_KEYS, { ...keys, [rule.id]: key });
   })();
-  if (keys[rule.id] !== key) return [];
+  if (keys[rule.id] !== key) return t.kind === 'becomes_true' && t.already ? inNow : [];
   if (t.kind === 'status' && t.when === 'leaves') {
     const live = db.prepare('SELECT 1 FROM lead WHERE id = ?');
     return went.filter((id) => live.get(id));
