@@ -11,6 +11,7 @@ import { savesInstantly } from '../../shared/outcomes';
 import { APPT_RESULT_LABEL } from '../../shared/appointments';
 import { ConditionEditor } from '../components/ConditionEditor';
 import { STARTER_ORDER, type SortStep } from '../../shared/listOrder';
+import { SHEET_BLOCKS, sheetBlocks } from '../../shared/sheetLayout';
 
 // Settings for the Calling screen: retry gap, dialing, timer, goals, alerts, shortcuts and scripts.
 
@@ -365,6 +366,56 @@ export function ShortcutsCard() {
       <button className="btn small" onClick={() => window.confirm('Put every shortcut back to how it came?') && save({ ...s, shortcuts: { actions: {}, outcomes: {} } })}>
         Reset to defaults
       </button>
+    </div>
+  );
+}
+
+/** The lead sheet on the Calling screen as blocks: show or hide each one and put them in order. */
+export function SheetCard() {
+  const { calling } = useApp();
+  const save = useSave();
+  const s = calling?.settings;
+  if (!s) return null;
+  const blocks = sheetBlocks(s.sheet);
+  const put = (next: typeof blocks) => void save({ ...s, sheet: { ...s.sheet, blocks: next } });
+  const move = (i: number, j: number) => {
+    const next = [...blocks];
+    [next[i], next[j]] = [next[j]!, next[i]!];
+    put(next);
+  };
+  return (
+    <div className="card" id="lead-sheet">
+      <h2>Lead sheet</h2>
+      <p className="help">
+        The middle of the Calling screen, top to bottom. Tick a block to show it, and move it with the arrows. The never-dial warning always comes first
+        when a lead has a never-dial tag, and the outcome buttons always show because they save the call. Tags right under Lead info sit beside its buttons,
+        and Calls just above Notes share a row.
+      </p>
+      <ol className="sheet-blocks">
+        {blocks.map((b, i) => {
+          const def = SHEET_BLOCKS.find((x) => x.id === b.id)!;
+          return (
+            <li key={b.id}>
+              <label className="choice-inline" title={def.help}>
+                <input type="checkbox" checked={b.shown} disabled={b.id === 'outcome'} aria-label={`Show ${def.label}`}
+                  onChange={() => put(blocks.map((x) => (x.id === b.id ? { ...x, shown: !x.shown } : x)))} />
+                {def.label}
+              </label>
+              <span className="help"> {def.help}</span>
+              <button className="btn small" aria-label={`Move ${def.label} up`} disabled={i === 0} onClick={() => move(i, i - 1)}>↑</button>
+              <button className="btn small" aria-label={`Move ${def.label} down`} disabled={i === blocks.length - 1} onClick={() => move(i, i + 1)}>↓</button>
+            </li>
+          );
+        })}
+      </ol>
+      <label className="choice-inline">
+        <input type="checkbox" checked={s.sheet.dial_counter} onChange={() => void save({ ...s, sheet: { ...s.sheet, dial_counter: !s.sheet.dial_counter } })} />
+        Show the dial counter and timer above the buttons
+      </label>
+      <label className="choice-inline">
+        <input type="checkbox" checked={s.sheet.caller_id} onChange={() => void save({ ...s, sheet: { ...s.sheet, caller_id: !s.sheet.caller_id } })} />
+        Show which of your numbers you called from (hidden, the call still records the number it would have picked)
+      </label>
     </div>
   );
 }

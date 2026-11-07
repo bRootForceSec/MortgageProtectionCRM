@@ -301,6 +301,10 @@ table.grid tr.selected { background: var(--selected); }
 .calls-notes > div { min-width: 0; }
 .calls-notes h3 { margin-bottom: 4px; }
 .calls-notes .history li { padding: 5px 0; }
+.sheet-tags { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 6px 0; }
+.sheet-blocks { list-style: none; padding: 0; margin: 8px 0; }
+.sheet-blocks li { display: flex; gap: 8px; align-items: center; padding: 3px 0; }
+.sheet-blocks li .help { flex: 1; }
 .lead-page { overflow: hidden; }
 .lead-page .page-tools { gap: 6px; }
 .lead-page .page-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }

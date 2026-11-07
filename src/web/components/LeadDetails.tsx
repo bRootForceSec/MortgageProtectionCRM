@@ -71,9 +71,11 @@ export async function toggleCalledBack(d: LeadDetail, toast: (m: string, kind?: 
 
 /** Header + key facts used on the calling screen and the lead modal. */
 export function LeadSummary({
-  d, onDial, dialLabel = 'Copy number', dialKey, altKey, onEdit, editKey, onCalledBack, calledBackKey, tagKey,
+  d, onDial, dialLabel = 'Copy number', dialKey, altKey, onEdit, editKey, onCalledBack, calledBackKey, tagKey, showTags = true,
 }: {
   d: LeadDetail;
+  /** Smart list badges and tags beside the buttons; off when the Calling screen shows them as their own block. */
+  showTags?: boolean;
   /** On the Calling screen: dial (or copy, or show a QR code, per Settings) and start the attempt. */
   onDial?: (e164: string) => void;
   dialLabel?: string;
@@ -140,8 +142,8 @@ export function LeadSummary({
               Called me back {calledBackKey && <kbd>{calledBackKey}</kbd>}
             </label>
             {/* With the buttons, so tags take no extra height above the outcome buttons. */}
-            <StatusChips statuses={d.statuses} />
-            <LeadTags leadId={l.id} initial={d.tags} />
+            {showTags && <StatusChips statuses={d.statuses} />}
+            {showTags && <LeadTags leadId={l.id} initial={d.tags} />}
           </h2>
           <div className="where">
             {age != null && <><b>Age {age}</b> · </>}

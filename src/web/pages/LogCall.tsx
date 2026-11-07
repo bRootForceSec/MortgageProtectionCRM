@@ -75,9 +75,13 @@ function Timer({ start, onReset }: { start: number; onReset: () => void }) {
  * Phase 2 replaces "log" with "call" but keeps this outcome panel.
  */
 export function LogCall({
-  d, showAll, attempt, setDials, resetTimer, restore, active, onSaved, onRefresh,
+  d, showAll, attempt, setDials, resetTimer, restore, active, onSaved, onRefresh, dialCounter = true, callerId = true,
 }: {
   d: LeadDetail;
+  /** Show the dial counter and timer (Automation → Calling screen). */
+  dialCounter?: boolean;
+  /** Show which of your numbers you called from; hidden, the call keeps the number it would have picked. */
+  callerId?: boolean;
   /** Every button, not only the ones whose condition is true for this lead. */
   showAll: boolean;
   attempt: Attempt;
@@ -280,15 +284,15 @@ export function LogCall({
   return (
     <div className={`log-box${apptOnly ? ' appointment' : ''}`}>
       <div className="row">
-        <div className="dial-counter" aria-label="Dials this attempt">
+        {dialCounter && <div className="dial-counter" aria-label="Dials this attempt">
           <button className="btn small" onClick={() => setDials(attempt.dials - 1)} disabled={attempt.dials <= 1} aria-label="One less dial">− <kbd>{k('dials_down')}</kbd></button>
           <b>{attempt.dials}</b> dial{attempt.dials === 1 ? '' : 's'}
           <button className="btn small" onClick={() => setDials(attempt.dials + 1)} aria-label="One more dial">+ <kbd>{k('dials_up')}</kbd></button>
-        </div>
-        {attempt.timerStart && <Timer start={attempt.timerStart} onReset={resetTimer} />}
+        </div>}
+        {dialCounter && attempt.timerStart && <Timer start={attempt.timerStart} onReset={resetTimer} />}
         {attempt.to && attempt.to !== d.lead.phone_e164 && <span className="warn">Dialing {fmtPhone(attempt.to)}</span>}
       </div>
-      <div className="row">
+      {callerId && <div className="row">
         <label className="field">
           <span>Caller ID used {defaultNumber.why && !changed && <em>({defaultNumber.why})</em>}</span>
           <select value={numberId} onChange={(e) => setNumberId(e.target.value)} style={changed && defaultNumber.known ? { borderColor: 'var(--warn)' } : undefined}>
@@ -328,7 +332,7 @@ export function LogCall({
           );
         })()}
         {activeNumbers.length === 0 && <span className="help">Add your numbers on the Numbers page to record which one you used.</span>}
-      </div>
+      </div>}
       {apptOnly && <div className="mode-label">How the appointment went</div>}
       <div className="outcomes" role="group" aria-label={apptOnly ? 'Appointment outcome' : 'Outcome'}>
         {buttons.map((b) => (

@@ -713,6 +713,22 @@ test('Automation → Calling screen: rename a button, hide one, show Callback, t
   expect(await buttons()).toEqual(['Dial: No answer', 'Dial: Picked up', 'Dial: Appt set', 'Dial: Bad number']);
 });
 
+test('Automation → Calling screen: hide and move lead sheet blocks', async ({ page }) => {
+  await page.goto(launchUrl);
+  await page.getByRole('button', { name: 'Automation' }).click();
+  const card = page.locator('#lead-sheet');
+  const sheet = async () => (await (await page.request.get(new URL('/api/settings/calling', page.url()).href)).json()).settings.sheet;
+  await expect(card.getByLabel('Show Outcome buttons')).toBeDisabled();
+  await card.getByLabel('Show Notes').uncheck();
+  await expect.poll(async () => (await sheet()).blocks.find((b: any) => b.id === 'notes')?.shown).toBe(false);
+  await card.getByRole('button', { name: 'Move Calls up' }).click();
+  await expect.poll(async () => (await sheet()).blocks.map((b: any) => b.id)).toEqual(['lead', 'tags', 'calls', 'outcome', 'notes']);
+  // Put it back for the tests after this one.
+  await card.getByRole('button', { name: 'Move Calls down' }).click();
+  await card.getByLabel('Show Notes').check();
+  await expect.poll(async () => (await sheet()).blocks.every((b: any) => b.shown)).toBe(true);
+});
+
 test('a button of your own: counts as No answer, red and dotted, adds a tag, and shows only while the lead lacks it', async ({ page }) => {
   await page.goto(launchUrl);
   const origin = new URL(page.url()).origin;

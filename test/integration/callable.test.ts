@@ -79,3 +79,12 @@ describe('who can be called', () => {
     expect(loadCallingSettings(db).callable_when).toBe(STARTER_CALLABLE);
   });
 });
+
+describe('the lead sheet layout', () => {
+  it('is saved with the calling settings', async () => {
+    const sheet = { blocks: [{ id: 'outcome', shown: true }, { id: 'lead', shown: true }, { id: 'notes', shown: false }], dial_counter: false, caller_id: true };
+    const r = await app.inject({ method: 'PUT', url: '/api/settings/calling', headers: write, payload: { ...loadCallingSettings(db), sheet } });
+    expect(r.statusCode).toBe(200);
+    expect(loadCallingSettings(db).sheet).toEqual(sheet);
+  });
+});

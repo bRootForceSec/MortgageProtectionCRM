@@ -16,6 +16,9 @@ import { CallerLookup, EveryButton, Recent, UNDO_MS, UndoBar, otherNumber } from
 import { bestTimeFirst } from '../../shared/bestTime';
 import { describeSortStep, yourOrder } from '../../shared/listOrder';
 import { LIST_ORDERS, type ListOrder } from '../../shared/listOrder';
+import { sheetBlocks, type SheetBlockId } from '../../shared/sheetLayout';
+import { StatusChips } from './StatusesCard';
+import { LeadTags } from '../components/LeadDetails';
 
 const SELECTED_KEY = 'mpcrm.selectedLead';
 /** A lead opened outside the list (looked up for an incoming call, or from Today), and where to go back to. */
@@ -666,30 +669,53 @@ export function CallingPage() {
                   {detail.never_dial.source ? ` ${describeBy(detail.never_dial.source, detail.never_dial.source_name)}` : ''}. Dialing asks first.
                 </div>
               )}
-              <LeadSummary d={detail} onDial={dial} dialLabel={dialLabel} dialKey={k('dial')} altKey={k('dial_alt')} onEdit={() => setEditing(true)} editKey={k('edit')}
-                calledBackKey={k('called_back')} tagKey={k('copy_tag')} onCalledBack={(at) => calledBack(detail.lead.id, at)} />
-              <LogCall
-                key={`${detail.lead.id}-${restore?.leadId === detail.lead.id ? restore.n : 0}`}
-                d={detail}
-                showAll={showAll}
-                attempt={attempt}
-                setDials={(n) => setAttempt((a) => ({ ...a, dials: Math.max(1, n) }))}
-                resetTimer={() => setAttempt((a) => ({ ...a, timerStart: null }))}
-                restore={restore?.leadId === detail.lead.id ? restore.values : null}
-                active={ready}
-                onSaved={onSaved}
-                onRefresh={refreshDetail}
-              />
-              <section className="calls-notes" aria-label="History">
-                <div>
-                  <h3>Calls</h3>
-                  <CallHistory calls={detail.calls} onChange={refreshDetail} />
-                </div>
-                <div>
-                  <h3>Notes</h3>
-                  <Notes key={detail.lead.id} d={detail} onChange={refreshDetail} />
-                </div>
-              </section>
+              {(() => {
+                // The blocks in your order (Automation → Calling screen). Tags right after the lead sit beside its
+                // buttons, and calls next to notes share a row, as they always have.
+                const order = sheetBlocks(calling?.settings.sheet).filter((b) => b.shown).map((b) => b.id);
+                const after = (id: SheetBlockId) => order[order.indexOf(id) + 1];
+                const tagsInline = after('lead') === 'tags';
+                const sheet = calling?.settings.sheet;
+                const callsBox = <div><h3>Calls</h3><CallHistory calls={detail.calls} onChange={refreshDetail} /></div>;
+                const notesBox = <div><h3>Notes</h3><Notes key={detail.lead.id} d={detail} onChange={refreshDetail} /></div>;
+                return order.map((id) => {
+                  switch (id) {
+                    case 'lead':
+                      return <LeadSummary key={id} d={detail} onDial={dial} dialLabel={dialLabel} dialKey={k('dial')} altKey={k('dial_alt')} onEdit={() => setEditing(true)} editKey={k('edit')}
+                        calledBackKey={k('called_back')} tagKey={k('copy_tag')} onCalledBack={(at) => calledBack(detail.lead.id, at)} showTags={tagsInline} />;
+                    case 'tags':
+                      if (tagsInline) return null;
+                      return (
+                        <div key={id} className="sheet-tags" aria-label="Tags">
+                          <StatusChips statuses={detail.statuses} />
+                          <LeadTags leadId={detail.lead.id} initial={detail.tags} />
+                        </div>
+                      );
+                    case 'outcome':
+                      return (
+                        <LogCall
+                          key={`${detail.lead.id}-${restore?.leadId === detail.lead.id ? restore.n : 0}`}
+                          d={detail}
+                          showAll={showAll}
+                          attempt={attempt}
+                          setDials={(n) => setAttempt((a) => ({ ...a, dials: Math.max(1, n) }))}
+                          resetTimer={() => setAttempt((a) => ({ ...a, timerStart: null }))}
+                          restore={restore?.leadId === detail.lead.id ? restore.values : null}
+                          active={ready}
+                          onSaved={onSaved}
+                          onRefresh={refreshDetail}
+                          dialCounter={sheet?.dial_counter ?? true}
+                          callerId={sheet?.caller_id ?? true}
+                        />
+                      );
+                    case 'calls':
+                      return <section key={id} className="calls-notes" aria-label="History">{callsBox}{after('calls') === 'notes' && notesBox}</section>;
+                    case 'notes':
+                      if (order[order.indexOf('notes') - 1] === 'calls') return null;
+                      return <section key={id} className="calls-notes" aria-label="Notes">{notesBox}</section>;
+                  }
+                });
+              })()}
             </>
           )}
         </div>
