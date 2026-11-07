@@ -10,6 +10,7 @@ import { parsePlan, SUGGESTED_FOLLOW_UPS } from '../../shared/followUps';
 import { savesInstantly } from '../../shared/outcomes';
 import { APPT_RESULT_LABEL } from '../../shared/appointments';
 import { ConditionEditor } from '../components/ConditionEditor';
+import { STARTER_ORDER, type SortStep } from '../../shared/listOrder';
 
 // Settings for the Calling screen: retry gap, dialing, timer, goals, alerts, shortcuts and scripts.
 
@@ -54,6 +55,64 @@ function PlanField({ value, onSave }: { value: string[]; onSave: (steps: string[
     if (steps.join() !== value.join()) onSave(steps);
   };
   return <input value={v} placeholder="none: due right away" onChange={(e) => setV(e.target.value)} onBlur={commit} onKeyDown={(e) => e.key === 'Enter' && commit()} style={{ width: 200 }} />;
+}
+
+/** A formula typed into a sort step; saved when you leave it (the server says if it's a mistake). */
+function FormulaInput({ value, onSave }: { value: string; onSave: (f: string) => void }) {
+  const [v, setV] = useState(value);
+  useEffect(() => setV(value), [value]);
+  const commit = () => (v.trim() && v.trim() !== value ? onSave(v.trim()) : setV(value));
+  return <input aria-label="Sort by" value={v} onChange={(e) => setV(e.target.value)} onBlur={commit} onKeyDown={(e) => e.key === 'Enter' && commit()} style={{ flex: 1, minWidth: 200 }} />;
+}
+
+/** "Your order" on the call list: sort steps, first to last. */
+function ListOrderField({ steps, onSave }: { steps: SortStep[]; onSave: (steps: SortStep[]) => void }) {
+  const put = (i: number, st: SortStep) => onSave(steps.map((x, j) => (j === i ? st : x)));
+  const move = (i: number, by: number) => {
+    const next = [...steps];
+    [next[i], next[i + by]] = [next[i + by]!, next[i]!];
+    onSave(next);
+  };
+  const same = JSON.stringify(steps) === JSON.stringify(STARTER_ORDER);
+  return (
+    <span>
+      <ol aria-label="Call list order" style={{ margin: 0, paddingLeft: 20 }}>
+        {steps.map((st, i) => (
+          <li key={i}>
+            <span className="row" style={{ gap: 6 }}>
+              <select aria-label="Sort step" value={st.by} onChange={(e) => put(i, e.target.value === 'best_time' ? { by: 'best_time' } : { by: 'formula', formula: 'has("Hot")', lowest_first: false })}>
+                <option value="best_time">Best time to call now</option>
+                <option value="formula">A formula</option>
+              </select>
+              {st.by === 'formula' && (
+                <>
+                  <FormulaInput value={st.formula} onSave={(f) => put(i, { ...st, formula: f })} />
+                  <label className="choice-inline" title="Turns the step around: lowest number first, or for a yes/no, no first">
+                    <input type="checkbox" checked={st.lowest_first} onChange={(e) => put(i, { ...st, lowest_first: e.target.checked })} /> lowest first
+                  </label>
+                </>
+              )}
+              <button type="button" className="btn small" aria-label="Move up" disabled={i === 0} onClick={() => move(i, -1)}>↑</button>
+              <button type="button" className="btn small" aria-label="Move down" disabled={i === steps.length - 1} onClick={() => move(i, 1)}>↓</button>
+              <button type="button" className="btn small" aria-label="Remove step" onClick={() => onSave(steps.filter((_, j) => j !== i))}>✕</button>
+            </span>
+          </li>
+        ))}
+      </ol>
+      <span className="row" style={{ gap: 6 }}>
+        {steps.length < 10 && (
+          <button type="button" className="btn small" onClick={() => onSave([...steps, { by: 'formula', formula: 'has("Hot")', lowest_first: false }])}>Add a step</button>
+        )}
+        {!same && <button type="button" className="btn small" onClick={() => onSave(STARTER_ORDER)}>Back to the start</button>}
+      </span>
+      <span className="help">
+        "Your order" on the Calling screen sorts the leads still to call by these, first to last: the first step that tells two leads apart decides.
+        A yes/no formula, like <code>has("Hot")</code> or <code>status("Needs rebook")</code>, puts the leads it's true for first. A number, like{' '}
+        <code>loan_amount</code> or <code>attempts</code>, puts the highest first; leads without one go last. Lowest first turns a step around.
+        Leads every step ties stay as they are on the list.
+      </span>
+    </span>
+  );
 }
 
 export function CallingCard() {
@@ -158,6 +217,9 @@ export function CallingCard() {
         <span>
           <label className="choice-inline"><input type="checkbox" checked={s.missed_appts_first} onChange={(e) => set({ missed_appts_first: e.target.checked })} /> put a lead a no-show, appt picked up or presentation sent back at the top of the call list when I add it</label>
         </span>
+
+        <label>Call list order</label>
+        <ListOrderField steps={s.list_order} onSave={(list_order) => set({ list_order })} />
 
         <label>Follow-ups</label>
         <span>

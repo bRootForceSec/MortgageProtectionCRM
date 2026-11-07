@@ -5,6 +5,7 @@ import { leadAgeDays } from '../shared/leadAge';
 import type { OtherPhone } from '../shared/phones';
 import type { CallMode } from '../shared/appointments';
 import type { BestTimes } from '../shared/bestTime';
+import type { SortStep } from '../shared/listOrder';
 import type { ButtonInfo } from '../shared/buttons';
 
 // Thin client for the local API. All requests are same-origin; the access cookie is sent automatically.
@@ -173,6 +174,8 @@ export interface CallListItem {
   appt_result: string | null;
   callin_at: string | null;
   time_zone: string | null;
+  /** What each of your sort steps gives this lead, for "Your order" (null for best time, or no value). */
+  sort_keys: (number | null)[];
 }
 
 export interface RecentOutcome {
@@ -204,6 +207,8 @@ export interface CallListResponse {
   saved_lists: SavedList[];
   /** Pickups by the lead's local weekday and hour, for "Best time first". */
   best_times: BestTimes;
+  /** Your sort steps (Settings → Calling), for "Your order"; each item's `sort_keys` line up with them. */
+  list_order: SortStep[];
 }
 
 export interface AddResult {

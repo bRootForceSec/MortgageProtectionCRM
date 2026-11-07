@@ -960,3 +960,51 @@ test('who can be called: a condition in Settings → Calling decides which leads
   await page.getByRole('button', { name: 'Back to the start' }).click();
   await expect(page.getByLabel('Can be called when')).toHaveText('status != "appointment_set"');
 });
+
+test('your order: sort steps in Settings → Calling put a tagged lead first on the Calling screen', async ({ page }) => {
+  await page.goto(launchUrl);
+  const origin = new URL(page.url()).origin;
+  // Booked leads can be called for now, so the list has a few to call; the last one is tagged Top pick.
+  const calling = async (patch: Record<string, unknown>) => {
+    const { settings } = await (await page.request.get(`${origin}/api/settings/calling`)).json();
+    expect((await page.request.put(`${origin}/api/settings/calling`, { data: { ...settings, ...patch }, headers: { origin } })).ok()).toBe(true);
+  };
+  await calling({ callable_when: '' });
+  const all = (await (await page.request.get(`${origin}/api/leads`)).json()).rows as { id: string; callable: boolean }[];
+  await page.request.post(`${origin}/api/call-list`, { data: { lead_ids: all.filter((r) => r.callable).map((r) => r.id) }, headers: { origin } });
+  const todo = ((await (await page.request.get(`${origin}/api/call-list`)).json()).items as { lead_id: string; name: string; done: unknown }[]).filter((i) => !i.done);
+  expect(todo.length).toBeGreaterThanOrEqual(2);
+  const pick = todo[todo.length - 1]!;
+  await page.request.post(`${origin}/api/leads/${pick.lead_id}/tags`, { data: { name: 'Top pick' }, headers: { origin } });
+
+  await page.getByRole('button', { name: 'Calling', exact: true }).click();
+  const rows = page.getByLabel('Queue').locator('.queue-list li:not(.done)');
+  await expect(rows.first()).not.toContainText(pick.name);
+
+  // A first step that puts Top pick leads first.
+  await page.getByRole('button', { name: 'Settings' }).click();
+  const steps = page.getByRole('list', { name: 'Call list order' });
+  await expect(steps.getByRole('listitem')).toHaveCount(2);
+  await page.getByRole('button', { name: 'Add a step' }).click();
+  await expect(steps.getByRole('listitem')).toHaveCount(3);
+  const added = steps.getByRole('listitem').nth(2);
+  await added.getByLabel('Sort by').fill('has("Top pick")');
+  await added.getByLabel('Sort by').press('Enter');
+  await expect(added.getByLabel('Sort by')).toHaveValue('has("Top pick")');
+  await added.getByRole('button', { name: 'Move up' }).click();
+  await steps.getByRole('listitem').nth(1).getByRole('button', { name: 'Move up' }).click();
+  await expect(steps.getByRole('listitem').first().getByLabel('Sort by')).toHaveValue('has("Top pick")');
+  await page.screenshot({ path: 'test-results/call-list-order.png' });
+
+  await page.getByRole('button', { name: 'Calling', exact: true }).click();
+  await page.getByRole('group', { name: 'Order' }).getByRole('button', { name: 'Your order' }).click();
+  await expect(rows.first()).toContainText(pick.name);
+  await page.screenshot({ path: 'test-results/your-order.png' });
+
+  // Back as it was.
+  await page.getByRole('group', { name: 'Order' }).getByRole('button', { name: 'As set' }).click();
+  await page.getByRole('button', { name: 'Settings' }).click();
+  await page.getByRole('list', { name: 'Call list order' }).locator('..').getByRole('button', { name: 'Back to the start' }).click();
+  await expect(steps.getByRole('listitem')).toHaveCount(2);
+  await calling({ callable_when: 'status != "appointment_set"' });
+});
