@@ -207,6 +207,7 @@ export function ReportsPage() {
     ),
     by_batch: () => r && <ByBatch rows={r.by_batch} N={N} />,
     objections: () => r?.objections && <Objections o={r.objections} />,
+    funnel: () => r?.funnel && <FunnelCard steps={r.funnel} />,
     benchmarks: () => r && <Benchmarks r={r} N={N} onSaved={load} />,
     weekly: () => r?.weekly && <Weekly w={r.weekly} targets={r.targets} />,
     by_age: () => r?.by_age?.length > 0 && <ByAge rows={r.by_age} />,
@@ -715,6 +716,31 @@ function DrillModal({ params, drill, onClose, onOpen }: { params: Record<string,
 }
 
 /** Why leads said no on calls in these dates, by lead type: each count, and its share of the calls that offered the chips. */
+/** Your funnel steps (Settings → Your day) for these dates, with the share of the step above that made it to each. */
+function FunnelCard({ steps }: { steps: { id: string; name: string; formula: string | null; value: number }[] }) {
+  return (
+    <div className="card">
+      <h3>Funnel</h3>
+      <table className="grid">
+        <thead><tr><th>Step</th><th>Number</th><th>Of the step above</th></tr></thead>
+        <tbody>
+          {steps.map((s, i) => (
+            <tr key={s.id}>
+              <td title={s.formula ?? undefined}>{s.name}</td>
+              <td>{s.value}</td>
+              <td>{i === 0 ? '' : steps[i - 1]!.value ? pct(s.value / steps[i - 1]!.value) : '–'}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <p className="help">
+        Your funnel steps (Settings → Your day), the same numbers as the funnel button on the Calling screen: first calls in these dates, appointments on
+        these days, and your own steps over the log in these dates.
+      </p>
+    </div>
+  );
+}
+
 function Objections({ o }: { o: any }) {
   const share = (n: number, of: number) => (of ? <span className="muted small"> {pct(n / of)}</span> : null);
   return (

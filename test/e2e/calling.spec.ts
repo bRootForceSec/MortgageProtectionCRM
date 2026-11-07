@@ -1046,6 +1046,13 @@ test('your funnel: rename a step and add one of your own; the top bar and the fu
   await dialog.screenshot({ path: 'test-results/funnel-yours.png' });
   await page.keyboard.press('Escape');
 
+  // Reports has them too, for its dates.
+  await page.getByRole('button', { name: 'Reports', exact: true }).click();
+  const report = page.locator('.card', { has: page.getByRole('heading', { name: 'Funnel', exact: true }) });
+  await expect(report.getByRole('row', { name: /^Rings \d+/ })).toBeVisible();
+  await expect(report.getByRole('row', { name: /^Hot today 1/ })).toBeVisible();
+  await report.screenshot({ path: 'test-results/reports-funnel.png' });
+
   // Back as it was.
   await page.getByRole('button', { name: 'Settings' }).click();
   await page.locator('#funnel-steps').getByRole('button', { name: 'Back to the start' }).click();
