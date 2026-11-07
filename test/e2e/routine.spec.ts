@@ -172,7 +172,8 @@ test('your fields: define them in Settings, fill one in on a lead, filter Leads 
   await card.getByLabel('New field kind').selectOption('choice');
   await card.getByLabel('New field choices').fill('Husband, Wife, Both');
   await card.getByRole('button', { name: 'Add field' }).click();
-  await expect(card.locator('tbody tr')).toHaveCount(3);
+  // Two fields now (each has its row and its "shows when" row). Counting every row raced the second save.
+  await expect(card.locator('tbody tr.field-when')).toHaveCount(2);
   await card.scrollIntoViewIfNeeded();
   await page.screenshot({ path: 'test-results/custom-fields-settings.png' });
 
