@@ -183,3 +183,42 @@ describe('follow-up plans after a missed appointment', () => {
       .toMatchObject({ status: 'callback', next_due_at: '2026-10-17T12:15:00.000Z', appt_missed: 1 });
   });
 });
+
+describe('a rule made the lead come back', () => {
+  const setAt = '2026-10-17T13:00:00.000Z';
+  const tried: LeadFacts = { ...empty, calls: [call('c1', '2026-10-17T12:00:00.000Z')], outcomes: [out('c1', 'no_answer', '2026-10-17T12:00:00.000Z')] };
+  const withPlan = (f: LeadFacts, at = setAt): LeadFacts => ({ ...f, comeback: { at, steps: ['15m', '2h'] } });
+  const tryAgain = (f: LeadFacts, id: string, at: string, code = 'no_answer', extra = {}): LeadFacts =>
+    ({ ...f, calls: [...f.calls, call(id, at)], outcomes: [...f.outcomes, out(id, code, at, extra)] });
+
+  it('each step is a callback, timed from when it was set, then from each try nobody answered, then the usual retry', () => {
+    expect(deriveLeadState(withPlan(tried), NOW)).toMatchObject({ status: 'callback', next_due_at: '2026-10-17T13:15:00.000Z' });
+    const one = tryAgain(withPlan(tried), 'c2', '2026-10-17T13:20:00.000Z');
+    expect(deriveLeadState(one, NOW)).toMatchObject({ status: 'callback', next_due_at: '2026-10-17T15:20:00.000Z' });
+    const two = tryAgain(one, 'c3', '2026-10-17T16:00:00.000Z');
+    expect(deriveLeadState(two, NOW)).toMatchObject({ status: 'retry' });
+  });
+
+  it('an answer ends it; so does a restore after it; a later missed appointment plan wins over an older one', () => {
+    const answered = tryAgain(withPlan(tried), 'c2', '2026-10-17T13:20:00.000Z', 'not_interested', { grp: 'contact', counts_as_human_contact: 1 });
+    expect(deriveLeadState(answered, NOW).status).not.toBe('callback');
+    const restored: LeadFacts = { ...withPlan(tried), actions: [{ action: 'restore', created_at: '2026-10-17T13:30:00.000Z' }] };
+    expect(deriveLeadState(restored, NOW).status).toBe('retry');
+    // Booked, then a no-show after the plan was set: the follow-up plan for the no-show runs instead.
+    const contact = { grp: 'contact', counts_as_human_contact: 1 };
+    const noShow: LeadFacts = {
+      ...withPlan(empty, '2026-10-16T09:00:00.000Z'),
+      calls: [call('c1', '2026-10-16T10:00:00.000Z'), call('c2', setAt)],
+      outcomes: [out('c1', 'appointment', '2026-10-16T10:01:00.000Z', contact), out('c2', 'appt_no_show', setAt)],
+    };
+    expect(deriveLeadState(noShow, NOW, undefined, { no_show: ['1h'] })).toMatchObject({ status: 'callback', next_due_at: '2026-10-17T14:00:00.000Z', appt_missed: 1 });
+  });
+
+  it("doesn't bring back a booked or dead lead", () => {
+    const contact = { grp: 'contact', counts_as_human_contact: 1 };
+    const booked: LeadFacts = { ...empty, calls: [call('c1', '2026-10-16T10:00:00.000Z')], outcomes: [out('c1', 'appointment', '2026-10-16T10:01:00.000Z', contact)] };
+    expect(deriveLeadState(withPlan(booked), NOW).status).toBe('appointment_set');
+    const dead: LeadFacts = { ...withPlan(tried), actions: [{ action: 'mark_dead', created_at: '2026-10-17T12:30:00.000Z' }] };
+    expect(deriveLeadState(dead, NOW).status).toBe('dead');
+  });
+});

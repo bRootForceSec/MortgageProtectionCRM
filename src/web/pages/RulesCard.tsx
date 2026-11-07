@@ -11,6 +11,7 @@ import { pythonToRule, ruleToPython, RuleTextError, type RuleNames } from '../..
 import { describeFilter, WEEKDAYS } from '../../shared/routines';
 import { APPT_DAYS, LAST_CALL, type LeadQuery } from '../../shared/leadFilter';
 import { LEAD_TABS } from '../../shared/leadStatus';
+import { parsePlan } from '../../shared/followUps';
 import {
   ACTION_LABELS, STARTER_RULES, TRIGGER_LABELS, describeAction, describeTrigger,
   type ActionResult, type Rule, type RuleAction, type RuleRun, type RuleTrigger,
@@ -211,6 +212,21 @@ export function NewRuleFromFilters({ filter, onClose }: { filter: Filter; onClos
   );
 }
 
+/** A come-back plan typed as "15m, 1d@09:00, 3d": kept as you type, used once every step is understood. */
+function StepsInput({ steps, label, onChange }: { steps: string[]; label: string; onChange: (steps: string[]) => void }) {
+  const [text, setText] = useState(steps.join(', '));
+  const ok = parsePlan(text);
+  return (
+    <span className="row" style={{ gap: 4 }}>
+      after
+      <input value={text} aria-label={label} placeholder="15m, 1d@09:00, 3d" style={{ width: 200 }}
+        onChange={(e) => { setText(e.target.value); const p = parsePlan(e.target.value); if (p?.length) onChange(p); }} />
+      {(!ok || !ok.length) && <span className="error">write each step like 15m, 2h, 3d or 1d@09:00</span>}
+      <span className="help">each step from then, or from the last try nobody answered</span>
+    </span>
+  );
+}
+
 const emptyAction = (kind: RuleAction['kind'], firstField: string | undefined, firstCounter: string | undefined): RuleAction => {
   switch (kind) {
     case 'add_tag':
@@ -218,6 +234,7 @@ const emptyAction = (kind: RuleAction['kind'], firstField: string | undefined, f
     case 'set_field': return { kind, field_id: firstField ?? '', value: '' };
     case 'mark_dead': return { kind, reason: '' };
     case 'counter': return { kind, field_id: firstCounter ?? '', op: 'add', by: 1 };
+    case 'come_back': return { kind, steps: ['1d@09:00'] };
     default: return { kind };
   }
 };
@@ -330,7 +347,7 @@ function RuleEditor(props: { rule: Rule; isNew: boolean; onSave: (r: Rule) => Pr
               <span className="help" style={{ margin: 0 }}>
                 The same rule as Python: <code>@when(...)</code> says when it runs, <code>@leads(...)</code> which leads, the docstring is its name, an{' '}
                 <code>if</code> is its condition, and each line under it is an action: <code>add_tag</code>, <code>remove_tag</code>, <code>add_to_list</code>,{' '}
-                <code>remove_from_list</code>, <code>set_field</code>, <code>counter</code>, <code>mark_dead</code>. Add <code>@off</code> to save it switched off.
+                <code>remove_from_list</code>, <code>set_field</code>, <code>counter</code>, <code>mark_dead</code>, <code>come_back("15m", "1d@09:00")</code>. Add <code>@off</code> to save it switched off.
               </span>
               <textarea value={text.src} rows={Math.max(8, text.src.split('\n').length + 2)} spellCheck={false} style={{ width: '100%', fontFamily: 'var(--mono, monospace)' }} aria-label="Rule in Python" onChange={(e) => readText(e.target.value)} />
             </label>
@@ -495,6 +512,7 @@ function RuleEditor(props: { rule: Rule; isNew: boolean; onSave: (r: Rule) => Pr
                     </>
                   );
                 })()}
+                {a.kind === 'come_back' && <StepsInput steps={a.steps} label={`Action ${i + 1} steps`} onChange={(steps) => setAction(i, { ...a, steps })} />}
                 {a.kind === 'mark_dead' && (
                   <input value={a.reason ?? ''} maxLength={200} placeholder={`Reason (default: Rule: ${r.name || 'its name'})`} aria-label={`Action ${i + 1} reason`} onChange={(e) => setAction(i, { ...a, reason: e.target.value })} style={{ minWidth: 240 }} />
                 )}

@@ -1,4 +1,5 @@
 import { WEEKDAYS } from './routines.js';
+import { isStep } from './followUps.js';
 import type { LeadQuery } from './leadFilter.js';
 import type { Rule, RuleAction, RuleTrigger } from './rules.js';
 
@@ -82,6 +83,7 @@ function actionText(a: RuleAction, n: RuleNames): string {
     case 'set_field': return call('set_field', [n.field(a.field_id) ?? a.field_id, a.value]);
     case 'counter': return call('counter', [n.field(a.field_id) ?? a.field_id], [[a.op, a.by]]);
     case 'mark_dead': return a.reason ? call('mark_dead', [a.reason]) : call('mark_dead');
+    case 'come_back': return call('come_back', a.steps);
   }
 }
 
@@ -292,8 +294,16 @@ function readAction(c: Call, n: RuleNames, line: number): RuleAction {
       noKw();
       if (c.args.length > 1) throw new RuleTextError('mark_dead() takes a reason, or nothing', line);
       return c.args.length ? { kind: 'mark_dead', reason: str(c.args[0], 'the reason', line) } : { kind: 'mark_dead' };
+    case 'come_back': {
+      noKw();
+      if (!c.args.length) throw new RuleTextError('come_back() takes its steps, like come_back("15m", "1d@09:00", "3d")', line);
+      const steps = c.args.map((v) => str(v, 'a step', line).trim().toLowerCase());
+      const bad = steps.find((x) => !isStep(x));
+      if (bad !== undefined) throw new RuleTextError(`"${bad}" isn't a step: write each like 15m, 2h, 3d or 1d@09:00`, line);
+      return { kind: 'come_back', steps };
+    }
   }
-  throw new RuleTextError(`there is no action ${c.name}(): use add_tag, remove_tag, add_to_list, remove_from_list, set_field, counter or mark_dead`, line);
+  throw new RuleTextError(`there is no action ${c.name}(): use add_tag, remove_tag, add_to_list, remove_from_list, set_field, counter, mark_dead or come_back`, line);
 }
 
 /** Whether a condition has a # comment (outside quotes). */

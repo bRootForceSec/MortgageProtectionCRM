@@ -475,3 +475,27 @@ test('a rule as Python: read it, change it there, and see the change in the form
   await expect(card.getByLabel('Rule VIPs today')).toContainText('Add 2 to VIP count');
   await expect(card.getByLabel('Rule VIPs today')).toContainText('Where age >= 50');
 });
+
+test('a rule that makes a lead come back: steps in the form, read back in words and in Python', async ({ page }) => {
+  await page.goto(launchUrl);
+  await page.locator('.topbar nav').getByRole('button', { name: 'Settings', exact: true }).click();
+  const card = page.locator('#rules');
+  await card.getByRole('button', { name: '+ New rule' }).click();
+  const editor = page.getByRole('dialog', { name: 'New rule' });
+  await editor.getByLabel('Rule name').fill('Ghosted: come back');
+  await editor.getByLabel('When', { exact: true }).selectOption('manual');
+  await editor.getByLabel('Action 1', { exact: true }).selectOption('come_back');
+  const steps = editor.getByLabel('Action 1 steps');
+  await expect(steps).toHaveValue('1d@09:00');
+  await steps.fill('15m, soon');
+  await expect(editor.getByText('write each step like 15m, 2h, 3d or 1d@09:00')).toBeVisible();
+  await steps.fill('15m, 1d@09:00, 3d');
+  await expect(editor.getByText('write each step like 15m, 2h, 3d or 1d@09:00')).toHaveCount(0);
+  await editor.getByRole('tab', { name: 'Python' }).click();
+  await expect(editor.getByLabel('Rule in Python')).toHaveValue(/come_back\("15m", "1d@09:00", "3d"\)/);
+  await editor.getByRole('tab', { name: 'Form' }).click();
+  await editor.getByRole('button', { name: 'Save rule' }).click();
+  await expect(card.getByLabel('Rule Ghosted: come back')).toContainText('Come back after 15m, then 1d@09:00, then 3d');
+  await card.scrollIntoViewIfNeeded();
+  await page.screenshot({ path: 'test-results/rule-come-back.png' });
+});

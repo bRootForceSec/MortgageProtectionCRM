@@ -260,6 +260,20 @@ export function addLeadAction(db: DB, leadId: string, action: 'skip' | 'mark_dea
   })();
 }
 
+/**
+ * Makes these leads come back on a plan of steps (a rule's "Make it come back"): the newest plan replaces any before it.
+ * Each step is a callback, timed from now and then from each try nobody answered (lead_state works it out).
+ */
+export function setComeback(db: DB, leadIds: string[], steps: string[], by: { rule_id: string; rule_name: string }, now = nowIso()): number {
+  if (!leadIds.length) return 0;
+  return db.transaction(() => {
+    const ins = db.prepare('INSERT INTO lead_comeback (id, lead_id, set_at, steps_json, rule_id, rule_name) VALUES (?,?,?,?,?,?)');
+    for (const id of leadIds) ins.run(uuidv7(), id, now, JSON.stringify(steps), by.rule_id, by.rule_name);
+    rebuildLeadState(db, leadIds, now);
+    return leadIds.length;
+  })();
+}
+
 export function addNote(db: DB, leadId: string, body: string, callId?: string | null) {
   const text = body?.trim();
   if (!text) throw new DomainError('note is empty');
