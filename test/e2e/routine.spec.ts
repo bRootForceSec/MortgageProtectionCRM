@@ -318,3 +318,35 @@ test('Settings in sections with a menu; Leads shows which leads and how many on 
   await page.getByLabel('Leads per page').first().selectOption('25');
   await expect(page.getByLabel('Leads per page').first()).toHaveValue('25');
 });
+
+test('a condition on Leads: built in the form, read as Python, and back', async ({ page }) => {
+  await page.goto(launchUrl);
+  await page.locator('.topbar nav').getByRole('button', { name: 'Leads', exact: true }).click();
+  await page.getByRole('button', { name: 'Condition…' }).click();
+  const ed = page.getByRole('group', { name: 'Condition' });
+  // Form: has tag Spanish (tagged earlier in these tests).
+  await ed.getByRole('button', { name: '+ Row' }).click();
+  await ed.getByLabel('Tag', { exact: true }).fill('Spanish');
+  await expect(ed.getByLabel('Condition matches')).toHaveText(/^Matches 1 of \d+ leads$/);
+  // The same condition as Python; add to it there.
+  await ed.getByRole('tab', { name: 'Python' }).click();
+  const py = ed.getByLabel('Condition in Python');
+  await expect(py).toHaveValue('has("Spanish")');
+  await py.fill('has("Spanish") or times("Spanish", days=7) >= 1 or attempts >= 0');
+  await expect(ed.getByLabel('Condition matches')).toHaveText(/^Matches 4 of \d+ leads$/);
+  await py.fill('has("Spanish") or');
+  await expect(ed.getByLabel('Condition matches')).toHaveText(/stops too soon/);
+  await expect(ed.getByRole('button', { name: 'Use this condition' })).toBeDisabled();
+  await py.fill('has("Spanish") or times("Spanish", days=7) >= 1 or attempts >= 0');
+  // Back to the form: an "Any of these" group with its three rows.
+  await ed.getByRole('tab', { name: 'Form' }).click();
+  await expect(ed.getByLabel('Match', { exact: true })).toHaveValue('any');
+  await expect(ed.getByLabel('Row kind')).toHaveCount(3);
+  await expect(ed.getByLabel('Condition matches')).toHaveText(/^Matches 4 of/);
+  await page.screenshot({ path: 'test-results/condition-editor.png' });
+  await ed.getByRole('button', { name: 'Use this condition' }).click();
+  await expect(page.getByLabel('Condition in use')).toHaveText('has("Spanish") or times("Spanish", days=7) >= 1 or attempts >= 0');
+  await expect(page.getByText('4 leads', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Remove the condition' }).click();
+  await expect(page.getByLabel('Condition in use')).toHaveCount(0);
+});

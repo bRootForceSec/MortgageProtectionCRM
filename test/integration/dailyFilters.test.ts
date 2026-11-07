@@ -27,7 +27,7 @@ const day = (back: number) => {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 };
 const match = (f: LeadFilter) => {
-  const w = leadFilterWhere(f);
+  const w = leadFilterWhere(db, f);
   return (db.prepare(`SELECT l.first_name f FROM lead l JOIN lead_state s ON s.lead_id = l.id WHERE ${w.sql}`).all(w.params) as { f: string }[]).map((r) => r.f);
 };
 const ev = (color: UnitrustEvent['color'], date: string): UnitrustEvent => ({ title: 'OH - ROCKET MORTG - ROBERT RAY- (614) 555-0102 RAY', date, time: '10:00', color });

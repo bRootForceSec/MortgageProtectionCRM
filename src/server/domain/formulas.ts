@@ -249,3 +249,28 @@ export function previewFormula(db: DB, formula: string, fieldId: string | null =
     low: num ? stats.low : null, high: num ? stats.high : null, average: num && stats.average != null ? Math.round(stats.average * 100) / 100 : null,
   };
 }
+
+/**
+ * A condition (a yes/no formula, in Python syntax or the formula's own) as SQL over `lead l JOIN lead_state s`: the
+ * Leads `where` filter, and so rules and routine steps too. Throws FormulaError.
+ */
+export function conditionSql(db: DB, src: string): string {
+  const byLabel = new Map(fieldDefs(db).map((f) => [f.label.toLowerCase(), f]));
+  const x = compile(parseFormula(src), byLabel, []);
+  if (x.kind !== 'yes_no') throw new FormulaError(`a condition has to be yes or no, like has("Hot") or attempts >= 3; this gives ${KIND_WORD[x.kind]}`);
+  return `coalesce(${x.sql}, 0)`;
+}
+
+/** How many leads a condition matches now, or its mistake (the condition editor shows it as you type). */
+export function checkCondition(db: DB, src: string): { error: string | null; at: number | null; matched: number; total: number } {
+  const total = (db.prepare('SELECT COUNT(*) n FROM lead').get() as { n: number }).n;
+  let sql: string;
+  try {
+    sql = conditionSql(db, src);
+  } catch (e) {
+    if (e instanceof FormulaError) return { error: e.message, at: e.at, matched: 0, total };
+    throw e;
+  }
+  const matched = (db.prepare(`SELECT COUNT(*) n FROM lead l JOIN lead_state s ON s.lead_id = l.id WHERE ${sql}`).get() as { n: number }).n;
+  return { error: null, at: null, matched, total };
+}

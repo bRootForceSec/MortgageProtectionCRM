@@ -452,3 +452,10 @@ th button.sort { background: none; border: 0; padding: 0; font: inherit; font-we
 .settings-section { scroll-margin-top: 56px; margin-bottom: 24px; }
 .settings-section > h1 { font-size: 20px; margin: 16px 0 2px; }
 .settings-section > .help { margin: 0 0 8px; }
+
+/* The condition editor (form and Python views). */
+.condition-editor { display: flex; flex-direction: column; gap: 8px; margin: 0 0 8px; }
+.cond-group { display: flex; flex-direction: column; gap: 6px; }
+.cond-group.nested { border-left: 3px solid var(--border); padding-left: 10px; margin-left: 4px; }
+.cond-row { align-items: center; }
+.condition-editor select, .condition-editor input:not([type='checkbox']) { width: auto; flex: none; }

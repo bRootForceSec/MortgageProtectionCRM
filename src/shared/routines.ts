@@ -110,6 +110,7 @@ export function describeFilter(f: Partial<LeadQuery>, names: { tag?: (id: string
     f.not_on_list === '1' || f.not_on_list === true ? 'Not on the call list' : null,
     f.on_list === '1' || f.on_list === true ? 'Waiting on the call list' : null,
     f.sort_field ? `Highest ${names.field?.(f.sort_field) ?? 'deleted field'} first` : null,
+    f.where ? `Where ${f.where.length > 80 ? `${f.where.slice(0, 77)}…` : f.where}` : null,
   ].filter(Boolean).join(' · ');
 }
 
