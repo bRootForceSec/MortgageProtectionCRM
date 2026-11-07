@@ -57,7 +57,8 @@ function effects(code: string) {
   }
   const s = db.prepare('SELECT status, appt_result, appt_missed, next_due_at IS NOT NULL due FROM lead_state WHERE lead_id = ?').get(lead) as Record<string, unknown>;
   const t = todayStats(db, range.from, range.to, undefined, { from: today, to: today });
-  const r = buildReport(db, { ...range, tz: 'UTC' });
+  // Reports in this computer's time zone, like the app (appointment days are this computer's days).
+  const r = buildReport(db, { ...range, tz: Intl.DateTimeFormat().resolvedOptions().timeZone });
   const n = numberStats(db, range.from);
   expect(verifyLeadState(db)).toEqual([]);
   return {
