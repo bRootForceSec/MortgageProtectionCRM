@@ -985,7 +985,7 @@ test('your order: sort steps in Settings → Calling put a tagged lead first on 
   await page.getByRole('button', { name: 'Settings' }).click();
   const steps = page.getByRole('list', { name: 'Call list order' });
   await expect(steps.getByRole('listitem')).toHaveCount(2);
-  await page.getByRole('button', { name: 'Add a step' }).click();
+  await steps.locator('..').getByRole('button', { name: 'Add a step' }).click();
   await expect(steps.getByRole('listitem')).toHaveCount(3);
   const added = steps.getByRole('listitem').nth(2);
   await added.getByLabel('Sort by').fill('has("Top pick")');
@@ -1007,4 +1007,48 @@ test('your order: sort steps in Settings → Calling put a tagged lead first on 
   await page.getByRole('list', { name: 'Call list order' }).locator('..').getByRole('button', { name: 'Back to the start' }).click();
   await expect(steps.getByRole('listitem')).toHaveCount(2);
   await calling({ callable_when: 'status != "appointment_set"' });
+});
+
+test('your funnel: rename a step and add one of your own; the top bar and the funnel graphic follow', async ({ page }) => {
+  await page.goto(launchUrl);
+  const origin = new URL(page.url()).origin;
+  const lead = ((await (await page.request.get(`${origin}/api/leads`)).json()).rows as { id: string }[])[0]!;
+  await page.request.post(`${origin}/api/leads/${lead.id}/tags`, { data: { name: 'Hot' }, headers: { origin } });
+
+  await page.getByRole('button', { name: 'Settings' }).click();
+  const steps = page.getByRole('list', { name: 'Funnel steps' });
+  await expect(steps.getByRole('listitem')).toHaveCount(7);
+  const card = page.locator('#funnel-steps');
+  const first = steps.getByRole('listitem').first().getByLabel('Step name');
+  await first.fill('Rings');
+  await first.press('Enter');
+  await card.getByRole('button', { name: 'Add a step' }).click();
+  await expect(steps.getByRole('listitem')).toHaveCount(8);
+  const added = steps.getByRole('listitem').last();
+  await added.getByLabel('Step name').fill('Hot today');
+  await added.getByLabel('Step name').press('Enter');
+  await expect(added.getByLabel('Formula')).toHaveValue('times("Hot")');
+  await expect(page.locator('.topbar .stats')).toContainText('Rings');
+  await expect(page.locator('.topbar .stats')).toContainText('Hot today 1');
+  await page.locator('#funnel-steps').screenshot({ path: 'test-results/funnel-steps.png' });
+
+  // A formula that isn't a number or yes/no is refused, and the step keeps its formula.
+  await added.getByLabel('Formula').fill('state');
+  await added.getByLabel('Formula').press('Enter');
+  await expect(page.getByText(/Funnel step "Hot today": a funnel step has to be a number/)).toBeVisible();
+  await expect(added.getByLabel('Formula')).toHaveValue('times("Hot")');
+
+  await page.getByRole('button', { name: 'Calling', exact: true }).click();
+  await page.getByRole('button', { name: 'Show my funnel' }).click();
+  const dialog = page.getByRole('dialog', { name: 'My funnel' });
+  await expect(dialog.getByRole('img', { name: /Funnel: Rings \d+, .*Hot today 1/ })).toBeVisible();
+  await page.waitForTimeout(1800);
+  await dialog.screenshot({ path: 'test-results/funnel-yours.png' });
+  await page.keyboard.press('Escape');
+
+  // Back as it was.
+  await page.getByRole('button', { name: 'Settings' }).click();
+  await page.locator('#funnel-steps').getByRole('button', { name: 'Back to the start' }).click();
+  await expect(steps.getByRole('listitem')).toHaveCount(7);
+  await expect(page.locator('.topbar .stats')).not.toContainText('Rings');
 });

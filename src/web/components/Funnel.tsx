@@ -3,10 +3,11 @@ import { api } from '../api';
 import { useApp } from '../App';
 import { addDays, startOfDay, ymd } from '../when';
 import { getStored, setStored } from '../storage';
-import { FUNNEL_STEPS, type FunnelStep } from '../../shared/funnel';
+import type { FunnelStep, FunnelStepDef } from '../../shared/funnel';
 
-// Your conversion funnel as an animated 3D graphic sized for an Instagram story (9:16): dials, leads called,
-// pickups and appointments set (first calls), then sat, prezis and sales (appointments), with sales at the bottom.
+// Your conversion funnel as an animated 3D graphic sized for an Instagram story (9:16): your funnel steps (Settings →
+// Your day), top to bottom. They start as dials, leads called, pickups and appointments set (first calls), then sat,
+// prezis and sales (appointments), with sales at the bottom.
 // Opened from the funnel button in the corner of the Calling screen.
 // A dial is one ring of a phone; a lead is one person, so several dials can go to the same lead.
 // "Only appts on these days" swaps appointments set for the appointments that were on those days (from the Unitrust
@@ -19,6 +20,9 @@ interface Stats {
   appointments: number;
   /** Appointments on the days in the range: picked up (sat), presented (prezi or sale), and sales. */
   funnel: { on_the_day: number; sat: number; prezis: number; sales: number } | null;
+  /** Your funnel steps, and what your formula steps counted in the range (by step id). */
+  steps: FunnelStepDef[];
+  formula_counts: Record<string, number>;
 }
 
 const RANGES = [
@@ -36,7 +40,7 @@ function rangeOf(k: RangeKey): { from: string; to: string; from_day: string; to_
   return { from: from.toISOString(), to: addDays(today, 1).toISOString(), from_day: ymd(from), to_day: ymd(today) };
 }
 
-/** Each step's number and its glow. The steps and their names come from src/shared/funnel.ts. */
+/** Each count's number and its glow. Your steps and their names come from Settings (src/shared/funnel.ts). */
 const LOOK: Record<FunnelStep, { value: (s: Stats) => number; colors: readonly [string, string] }> = {
   dials: { value: (s) => s.dials, colors: ['#22d3ee', '#0891b2'] },
   leads_called: { value: (s) => s.unique_leads, colors: ['#818cf8', '#4f46e5'] },
@@ -46,12 +50,23 @@ const LOOK: Record<FunnelStep, { value: (s: Stats) => number; colors: readonly [
   prezis: { value: (s) => s.funnel?.prezis ?? 0, colors: ['#f472b6', '#be185d'] },
   sales: { value: (s) => s.funnel?.sales ?? 0, colors: ['#4ade80', '#15803d'] },
 };
-/** The funnel's steps, top to bottom. */
-const STEPS = FUNNEL_STEPS.map((s) => ({ label: s.label, ...LOOK[s.key] }));
-const N = STEPS.length;
-const APPTS_SET = FUNNEL_STEPS.findIndex((s) => s.key === 'appts_set');
+/** Glows for your formula steps, in turn. */
+const MORE_COLORS: readonly (readonly [string, string])[] = [['#a3e635', '#4d7c0f'], ['#2dd4bf', '#0f766e'], ['#f87171', '#b91c1c'], ['#c084fc', '#7e22ce'], ['#facc15', '#a16207']];
 const ON_THE_DAY_KEY = 'funnel.onTheDay';
-const LAST = N - 1;
+
+/** A step as the graphic draws it. */
+interface Shown { label: string; colors: readonly [string, string]; value: number; apptsSet: boolean }
+
+/** Your steps with their numbers for the range; with `onTheDay`, appointments set becomes the appointments on those days. */
+function shownSteps(st: Stats, onTheDay: boolean): Shown[] {
+  let more = 0;
+  return st.steps.map((x) => {
+    if (x.count.by === 'formula') return { label: x.name, colors: MORE_COLORS[more++ % MORE_COLORS.length]!, value: st.formula_counts[x.id] ?? 0, apptsSet: false };
+    const m = x.count.measure;
+    const onDay = onTheDay && m === 'appts_set';
+    return { label: onDay ? 'Appts on the day' : x.name, colors: LOOK[m].colors, value: onDay ? st.funnel?.on_the_day ?? 0 : LOOK[m].value(st), apptsSet: m === 'appts_set' };
+  });
+}
 
 /** The button in the corner of the Calling screen: a small funnel that opens the graphic. */
 export function FunnelButton() {
@@ -81,9 +96,7 @@ export function FunnelShowcase({ onClose }: { onClose: () => void }) {
   useEffect(() => {
     api.get<Stats>('/stats/today', rangeOf(range)).then(setStats).catch((e: Error) => toast(`Couldn't load your numbers: ${e.message}`, 'error'));
   }, [range, toast]);
-  const values = stats
-    ? STEPS.map((s, i) => (onTheDay && i === APPTS_SET ? stats.funnel?.on_the_day ?? 0 : s.value(stats)))
-    : null;
+  const steps = stats ? shownSteps(stats, onTheDay) : null;
   const title = RANGES.find(([k]) => k === range)![1];
   return (
     <div
@@ -106,7 +119,7 @@ export function FunnelShowcase({ onClose }: { onClose: () => void }) {
           </label>
           <button className="btn small" onClick={onClose} aria-label="Close" autoFocus>✕</button>
         </div>
-        <FunnelCanvas values={values} title={title} apptsLabel={onTheDay ? 'Appts on the day' : null} />
+        <FunnelCanvas steps={steps} title={title} />
       </div>
     </div>
   );
@@ -117,13 +130,16 @@ const pctOf = (a: number, b: number) => (b > 0 ? `${Math.round((a / b) * 100)}%`
 
 interface Particle { x: number; y: number; v: number; hue: string; dies: number; size: number }
 
-/** The animated funnel: seven glowing 3D rings that turn slowly, with sparks falling through them. */
-function FunnelCanvas({ values, title, apptsLabel }: { values: number[] | null; title: string; apptsLabel: string | null }) {
+/** Before the numbers come: the seven rings, empty. */
+const WAITING: Shown[] = Array.from({ length: 7 }, (_, i) => ({ label: '', colors: Object.values(LOOK)[i]!.colors, value: 0, apptsSet: false }));
+
+/** The animated funnel: a glowing 3D ring per step that turns slowly, with sparks falling through them. */
+function FunnelCanvas({ steps, title }: { steps: Shown[] | null; title: string }) {
   const ref = useRef<HTMLCanvasElement>(null);
-  const data = useRef({ values, title, apptsLabel, shownAt: performance.now() });
+  const data = useRef({ steps, title, shownAt: performance.now() });
   useEffect(() => {
-    data.current = { values, title, apptsLabel, shownAt: performance.now() };
-  }, [values, title, apptsLabel]);
+    data.current = { steps, title, shownAt: performance.now() };
+  }, [steps, title]);
 
   useEffect(() => {
     const canvas = ref.current;
@@ -136,9 +152,17 @@ function FunnelCanvas({ values, title, apptsLabel }: { values: number[] | null; 
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
     const cx = W / 2;
-    const top = 232, tierH = 70, gap = 12;
-    const radii = [215, 180, 148, 120, 96, 75, 57, 42]; // ring edges, top to bottom
+    const top = 232, height = 574, gap = 12;
     const tilt = 0.26; // how flat the ellipses are
+    // The rings for however many steps there are (7 to start: 70 high, 215 wide narrowing to 42); set each frame.
+    let STEPS: Shown[] = WAITING, N = 7, LAST = 6, tierH = 70, radii: number[] = [];
+    const shape = (n: number) => {
+      N = n;
+      LAST = n - 1;
+      tierH = height / n - gap;
+      radii = Array.from({ length: n + 1 }, (_, i) => 215 * Math.pow(42 / 215, i / n)); // ring edges, top to bottom
+    };
+    shape(7);
     const yOf = (i: number) => top + i * (tierH + gap);
     const stars = Array.from({ length: 70 }, () => ({ x: Math.random() * W, y: Math.random() * H, r: Math.random() * 1.4 + 0.3, p: Math.random() * 6 }));
     const parts: Particle[] = [];
@@ -220,7 +244,13 @@ function FunnelCanvas({ values, title, apptsLabel }: { values: number[] | null; 
     };
 
     const draw = (t: number) => {
-      const { values: v, title: ttl, apptsLabel: apptsName, shownAt } = data.current;
+      const { steps: shown, title: ttl, shownAt } = data.current;
+      if ((shown ?? WAITING).length !== N) {
+        shape((shown ?? WAITING).length);
+        parts.length = 0;
+      }
+      STEPS = shown ?? WAITING;
+      const v = shown ? shown.map((x) => x.value) : null;
       const grow = Math.min(1, (t - shownAt) / 1400);
       const ease = 1 - Math.pow(1 - grow, 3);
 
@@ -303,11 +333,13 @@ function FunnelCanvas({ values, title, apptsLabel }: { values: number[] | null; 
         ctx.fillStyle = '#ffffff';
         ctx.shadowColor = 'rgba(0,0,0,.6)';
         ctx.shadowBlur = 8;
-        ctx.font = `800 ${i === LAST ? 38 : 32}px system-ui, -apple-system, Segoe UI, sans-serif`;
+        // Smaller type when there are more steps than the seven it was drawn for.
+        const big = Math.min(i === LAST ? 38 : 32, Math.round(tierH * 0.46));
+        ctx.font = `800 ${big}px system-ui, -apple-system, Segoe UI, sans-serif`;
         ctx.fillText(v ? fmt(n) : '…', cx, yMid);
-        ctx.font = '600 13px system-ui, -apple-system, Segoe UI, sans-serif';
+        ctx.font = `600 ${Math.min(13, Math.round(tierH * 0.2))}px system-ui, -apple-system, Segoe UI, sans-serif`;
         ctx.fillStyle = 'rgba(255,255,255,.85)';
-        ctx.fillText((i === APPTS_SET && apptsName ? apptsName : STEPS[i]!.label).toUpperCase(), cx, yMid + 18);
+        ctx.fillText(STEPS[i]!.label.toUpperCase(), cx, yMid + Math.min(18, tierH * 0.28));
         ctx.shadowBlur = 0;
         if (i > 0 && v) {
           const y = yOf(i) + bob - gap / 2 + 6;
@@ -318,15 +350,19 @@ function FunnelCanvas({ values, title, apptsLabel }: { values: number[] | null; 
         }
       }
 
-      // The bottom line: sales out of dials, and out of appointments set.
-      if (v) {
+      // The bottom line: the last step out of the first, and out of appointments set (when that's a step in between).
+      if (v && N > 1) {
+        const word = (i: number) => STEPS[i]!.label.toLowerCase();
         ctx.textAlign = 'center';
         ctx.font = '600 20px system-ui, -apple-system, Segoe UI, sans-serif';
         ctx.fillStyle = '#bbf7d0';
-        ctx.fillText(`${pctOf(v[LAST]!, v[0]!)} of dials became sales`, cx, H - 84);
-        ctx.font = '600 16px system-ui, -apple-system, Segoe UI, sans-serif';
-        ctx.fillStyle = 'rgba(255,255,255,.75)';
-        ctx.fillText(`${pctOf(v[LAST]!, v[APPTS_SET]!)} of ${apptsName ? 'appointments on the day' : 'appointments set'} became sales`, cx, H - 56);
+        ctx.fillText(`${pctOf(v[LAST]!, v[0]!)} of ${word(0)} became ${word(LAST)}`, cx, H - 84);
+        const appts = STEPS.findIndex((x) => x.apptsSet);
+        if (appts > 0 && appts < LAST) {
+          ctx.font = '600 16px system-ui, -apple-system, Segoe UI, sans-serif';
+          ctx.fillStyle = 'rgba(255,255,255,.75)';
+          ctx.fillText(`${pctOf(v[LAST]!, v[appts]!)} of ${word(appts)} became ${word(LAST)}`, cx, H - 56);
+        }
       }
       raf = requestAnimationFrame(draw);
     };
@@ -334,5 +370,5 @@ function FunnelCanvas({ values, title, apptsLabel }: { values: number[] | null; 
     return () => cancelAnimationFrame(raf);
   }, []);
 
-  return <canvas ref={ref} className="funnel-canvas" aria-label="Funnel: dials, leads called, pickups, appointments set, sat, prezis and sales" role="img" />;
+  return <canvas ref={ref} className="funnel-canvas" aria-label={`Funnel: ${(steps ?? []).map((x) => `${x.label} ${fmt(x.value)}`).join(', ')}`} role="img" />;
 }

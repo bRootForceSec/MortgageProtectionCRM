@@ -15,7 +15,7 @@ import { CallbackAlerts } from './components/CallbackAlerts';
 import { buildKeyMap, type CallingSettingsResponse, type KeyMap } from './shortcuts';
 import { getStored, getStoredJson, setStored, setStoredJson } from './storage';
 import { todayRange, ymd } from './when';
-import { FUNNEL_LABEL } from '../shared/funnel';
+import type { FunnelStep, FunnelStepDef } from '../shared/funnel';
 import { leadIdInText } from '../shared/leadLink';
 
 export type Page = 'calling' | 'today' | 'reports' | 'import' | 'leads' | 'calls' | 'numbers' | 'data' | 'settings';
@@ -187,7 +187,13 @@ interface Stats {
   goals: { dials: number | null; contacts: number | null; appointments: number | null };
   /** How today's Unitrust appointments went (null until the extension has sent any). */
   appts: { appointments: number; sat: number; prezis: number; sold: number; no_show: number; rescheduled: number; pending: number } | null;
+  /** Your funnel steps, in your order, and what your formula steps counted today (by step id). */
+  steps: FunnelStepDef[];
+  formula_counts: Record<string, number>;
 }
+
+/** The counts on appointments (on their day), shown only on days that have some. */
+const APPT_MEASURES: ReadonlySet<FunnelStep> = new Set(['sat', 'prezis', 'sales']);
 
 function TodayStats() {
   const { statsVersion, calling } = useApp();
@@ -206,23 +212,33 @@ function TodayStats() {
       {label} <b>{n}</b>{goal ? <span className="muted"> / {goal}</span> : null}
     </span>
   );
+  const a = s.appts;
+  /** One step's number today, with its daily goal when it has one. */
+  const show = (st: FunnelStepDef) => {
+    if (st.count.by === 'formula') return <span key={st.id} title={`Today: ${st.count.formula}`}>{st.name} <b>{s.formula_counts[st.id] ?? 0}</b></span>;
+    switch (st.count.measure) {
+      case 'dials': return <Goal key={st.id} label={st.name} n={s.dials} goal={g.dials} />;
+      case 'leads_called': return <span key={st.id} title="People called (one lead can get several dials)">{st.name} <b>{s.unique_leads}</b></span>;
+      case 'pickups': return <Goal key={st.id} label={st.name} n={s.human_contacts} goal={g.contacts} />;
+      case 'appts_set': return <Goal key={st.id} label={st.name} n={s.appointments} goal={g.appointments} />;
+      case 'sat': return <span key={st.id}>{st.name} <b>{a?.sat ?? 0}</b></span>;
+      case 'prezis': return <span key={st.id}>{st.name} <b>{a?.prezis ?? 0}</b></span>;
+      case 'sales': return <span key={st.id}>{st.name} <b>{a?.sold ?? 0}</b></span>;
+    }
+  };
+  const onAppts = (st: FunnelStepDef) => st.count.by === 'measure' && APPT_MEASURES.has(st.count.measure);
   return (
-    <div className="stats" title="Today: dials, leads called, pickups and appointments set, from your logged calls. Set daily goals in Settings.">
-      {/* The same four steps as the funnel on the Calling screen. */}
-      <Goal label={FUNNEL_LABEL.dials} n={s.dials} goal={g.dials} />
-      <span title="People called (one lead can get several dials)">{FUNNEL_LABEL.leads_called} <b>{s.unique_leads}</b></span>
-      <Goal label={FUNNEL_LABEL.pickups} n={s.human_contacts} goal={g.contacts} />
-      <Goal label={FUNNEL_LABEL.appts_set} n={s.appointments} goal={g.appointments} />
+    <div className="stats" title="Today, from your logged calls: your funnel steps (Settings → Your day). Set daily goals in Settings → Calling.">
+      {/* The same steps as the funnel on the Calling screen. */}
+      {s.steps.filter((st) => !onAppts(st)).map(show)}
       {/* Only on days with appointments, so it takes no room on a short screen otherwise. */}
-      {s.appts && s.appts.appointments > 0 && (
+      {a && a.appointments > 0 && (
         <span
           className="appt-stats"
-          title={`Today's appointments (${s.appts.appointments}): from what you log on the Appointment side, or the Unitrust calendar when the extension sees a change.${s.appts.pending ? ` ${s.appts.pending} not updated yet.` : ''}${s.appts.rescheduled ? ` ${s.appts.rescheduled} rescheduled.` : ''}`}
+          title={`Today's appointments (${a.appointments}): from what you log on the Appointment side, or the Unitrust calendar when the extension sees a change.${a.pending ? ` ${a.pending} not updated yet.` : ''}${a.rescheduled ? ` ${a.rescheduled} rescheduled.` : ''}`}
         >
-          <span>{FUNNEL_LABEL.sat} <b>{s.appts.sat}</b></span>
-          <span>{FUNNEL_LABEL.prezis} <b>{s.appts.prezis}</b></span>
-          <span>{FUNNEL_LABEL.sales} <b>{s.appts.sold}</b></span>
-          <span>No-shows <b>{s.appts.no_show}</b></span>
+          {s.steps.filter(onAppts).map(show)}
+          <span>No-shows <b>{a.no_show}</b></span>
         </span>
       )}
     </div>
