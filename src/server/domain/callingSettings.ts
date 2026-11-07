@@ -40,7 +40,7 @@ export function followUpPlans(db: DB): FollowUpPlans {
  * outcomes can be changed. A name or button that matches the default is not stored, so later default changes still
  * reach it. Each side of the Calling screen keeps at least one button.
  */
-export function saveOutcomeOverrides(db: DB, input: unknown): OutcomeOverrides {
+export function saveOutcomeOverrides(db: DB, input: unknown, opts: { checkSides?: boolean } = {}): OutcomeOverrides {
   const parsed = OutcomeOverrides.parse(input);
   const out: OutcomeOverrides = {};
   for (const [code, o] of Object.entries(parsed)) {
@@ -52,7 +52,8 @@ export function saveOutcomeOverrides(db: DB, input: unknown): OutcomeOverrides {
     };
     if (Object.keys(keep).length) out[code] = keep;
   }
-  for (const side of ['first_call', 'appointment'] as const) {
+  // Settings → Buttons checks this itself, counting your own buttons too.
+  for (const side of opts.checkSides === false ? [] : (['first_call', 'appointment'] as const)) {
     const shown = Object.entries(OUTCOMES).filter(([c, d]) => d.active && d.kind === side && (out[c]?.offered ?? d.offered));
     if (!shown.length) throw new DomainError(`keep at least one button on the ${side === 'appointment' ? 'Appointment' : 'First call'} side`);
   }

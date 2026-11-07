@@ -94,7 +94,7 @@ export function setTagOnLeads(db: DB, leadIds: string[], tagId: string, on: bool
   const del = db.prepare('DELETE FROM lead_tag WHERE lead_id = ? AND tag_id = ?');
   const exists = db.prepare('SELECT 1 FROM lead WHERE id = ?');
   const log = db.prepare(
-    'INSERT INTO lead_event (id, lead_id, at, kind, tag_id, tag_name, source, source_id, source_name) VALUES (?,?,?,?,?,?,?,?,?)',
+    'INSERT INTO lead_event (id, lead_id, at, kind, tag_id, tag_name, source, source_id, source_name, call_id) VALUES (?,?,?,?,?,?,?,?,?,?)',
   );
   return db.transaction(() => {
     let changed = 0;
@@ -102,7 +102,7 @@ export function setTagOnLeads(db: DB, leadIds: string[], tagId: string, on: bool
       if (!exists.get(id)) throw new DomainError('lead not found', 404);
       const n = on ? add.run(id, tagId, now).changes : del.run(id, tagId).changes;
       if (!n) continue;
-      log.run(uuidv7(), id, now, on ? 'tag_added' : 'tag_removed', tagId, t.name, by.source, by.id ?? null, by.name ?? null);
+      log.run(uuidv7(), id, now, on ? 'tag_added' : 'tag_removed', tagId, t.name, by.source, by.id ?? null, by.name ?? null, by.call_id ?? null);
       changed++;
     }
     return changed;

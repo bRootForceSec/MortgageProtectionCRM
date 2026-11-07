@@ -680,15 +680,15 @@ test('on the spot: Run it now saves the Appt set and stays on the lead, on the A
   await expect(page.getByLabel('Current lead').locator('.badge.appt-sold')).toBeVisible();
 });
 
-test('Settings → Outcomes: rename a button, hide one, show Callback, then reset', async ({ page }) => {
+test('Settings → Buttons: rename a button, hide one, show Callback, then reset', async ({ page }) => {
   await page.goto(launchUrl);
   await page.getByRole('button', { name: 'Settings' }).click();
   const card = page.locator('#outcomes');
   await card.getByLabel('Name for Dial: Bad number').fill('Dial: Wrong #');
   await card.getByLabel('Show a button for Dial: Picked up').uncheck();
   await card.getByLabel('Show a button for Callback').check();
-  await card.getByRole('button', { name: 'Save outcomes' }).click();
-  await expect(page.getByText('Outcomes saved')).toBeVisible();
+  await card.getByRole('button', { name: 'Save buttons' }).click();
+  await expect(page.getByText('Buttons saved')).toBeVisible();
   await page.screenshot({ path: 'test-results/outcomes-settings.png', fullPage: true });
 
   // The buttons the Calling screen gets (the lead showing now is in the dead pile, so it has none to click).
@@ -703,10 +703,56 @@ test('Settings → Outcomes: rename a button, hide one, show Callback, then rese
   await expect(resets).toHaveCount(3);
   for (let i = 0; i < 3; i++) await resets.first().click();
   await expect(resets).toHaveCount(0);
-  await card.getByRole('button', { name: 'Save outcomes' }).click();
-  await expect(page.getByText('Outcomes saved')).toHaveCount(1);
+  await card.getByRole('button', { name: 'Save buttons' }).click();
+  await expect(page.getByText('Buttons saved')).toHaveCount(1);
   await expect(card.getByLabel('Name for Dial: Bad number')).toHaveValue('Dial: Bad number');
   expect(await buttons()).toEqual(['Dial: No answer', 'Dial: Picked up', 'Dial: Appt set', 'Dial: Bad number']);
+});
+
+test('a button of your own: counts as No answer, red and dotted, adds a tag, and shows only while the lead lacks it', async ({ page }) => {
+  await page.goto(launchUrl);
+  const origin = new URL(page.url()).origin;
+  await page.request.post(`${origin}/api/tags`, { data: { name: 'Voicemail' }, headers: { origin } });
+  await page.getByRole('button', { name: 'Settings' }).click();
+  const card = page.locator('#outcomes');
+  await card.getByRole('button', { name: '+ Add a button' }).first().click();
+  await card.getByLabel('Name for New button').fill('Left voicemail');
+  await expect(card.getByLabel('Left voicemail: counts as')).toHaveValue('no_answer');
+  await card.getByLabel('Left voicemail: color').selectOption('red');
+  await card.getByLabel('Left voicemail: border').selectOption('dotted');
+  await card.getByLabel('Left voicemail: adds').selectOption({ label: 'Voicemail' });
+  await card.getByRole('button', { name: 'Only when…' }).click();
+  const ed = card.getByRole('group', { name: 'Condition' });
+  await ed.getByRole('tab', { name: 'Python' }).click();
+  await ed.getByLabel('Condition in Python').fill('not has("Voicemail")');
+  await ed.getByRole('button', { name: 'Use this condition' }).click();
+  await expect(card.getByLabel('Left voicemail: show when')).toHaveText('not has("Voicemail")');
+  await card.screenshot({ path: 'test-results/buttons-settings.png' });
+  await card.getByRole('button', { name: 'Save buttons' }).click();
+  await expect(page.getByText('Buttons saved')).toBeVisible();
+
+  await page.getByRole('button', { name: 'Calling', exact: true }).click();
+  await expect(page.locator('.lead-panel')).toBeVisible();
+  const lookUp = async (who: string) => {
+    await page.keyboard.press('l');
+    await page.keyboard.type(who);
+    await expect(page.getByRole('option').first()).toBeVisible();
+    await page.keyboard.press('Enter');
+    await expect(page.locator('.lead-name')).toHaveText(who);
+  };
+  await lookUp('Ann Lee');
+  const outcomes = page.getByRole('group', { name: 'Outcome', exact: true });
+  const mine = outcomes.getByRole('button', { name: 'Left voicemail' });
+  await expect(mine).toHaveClass(/c-red/);
+  await expect(mine).toHaveClass(/b-dotted/);
+  await page.screenshot({ path: 'test-results/buttons-calling.png', fullPage: true });
+  // It counts as No answer, which saves straight away.
+  await mine.click();
+  await expect(page.locator('.undo-bar')).toContainText('Saved for Ann Lee: Left voicemail');
+  // She has the tag now, so the button is gone for her.
+  await lookUp('Ann Lee');
+  await expect(outcomes.getByRole('button', { name: 'Dial: No answer' })).toBeVisible();
+  await expect(outcomes.getByRole('button', { name: 'Left voicemail' })).toHaveCount(0);
 });
 
 test('Reports: arrange the cards, show By hour as a table, save a layout and load it back', async ({ page }) => {

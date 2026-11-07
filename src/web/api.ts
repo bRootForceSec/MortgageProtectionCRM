@@ -5,6 +5,7 @@ import { leadAgeDays } from '../shared/leadAge';
 import type { OtherPhone } from '../shared/phones';
 import type { CallMode } from '../shared/appointments';
 import type { BestTimes } from '../shared/bestTime';
+import type { ButtonInfo } from '../shared/buttons';
 
 // Thin client for the local API. All requests are same-origin; the access cookie is sent automatically.
 
@@ -98,6 +99,8 @@ export interface CallerNumber {
 
 export interface Meta {
   outcome_codes: OutcomeCode[];
+  /** Your Calling screen buttons, in order (Settings → Buttons). */
+  buttons: ButtonInfo[];
   /** Why a lead said no: offered as chips after an outcome that asks for them. */
   objection_codes: { code: string; label: string }[];
   lead_fields: { key: string; label: string }[];
@@ -222,6 +225,14 @@ export interface Outcome {
   /** 1 when you ticked "Do not call". */
   do_not_call?: number;
   note: string | null;
+  /** The button it was saved with, and its name then (null: the outcome's own button, or from before buttons). */
+  button_id?: string | null;
+  button_label?: string | null;
+}
+
+/** What a call's outcome reads as: the button it was saved with when that wasn't the outcome's own. */
+export function outcomeText(o: Pick<Outcome, 'label' | 'outcome_code' | 'button_id' | 'button_label'>): string {
+  return o.button_label && o.button_id !== o.outcome_code ? `${o.button_label} (${o.label})` : o.label;
 }
 
 export interface Call {
@@ -279,6 +290,8 @@ export interface LeadDetail {
   tags: TagRef[];
   /** Your statuses this lead is in, in your order. */
   statuses: StatusBadge[];
+  /** Calling screen buttons whose show-when condition is false for this lead now. */
+  hidden_buttons: string[];
   /** Every custom field, in order, with this lead's value (null for none). */
   custom: { field_id: string; label: string; type: CustomFieldType; options: string[]; value: string | null }[];
   calls: Call[];

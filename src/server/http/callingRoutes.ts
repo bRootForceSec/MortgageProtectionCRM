@@ -11,6 +11,7 @@ import { parseList } from '../domain/groupFilter.js';
 import { callbacksDue } from '../domain/callList.js';
 import { appointmentsOnDay } from '../domain/appointments.js';
 import { chooseRoutine, loadRoutines, routineToday, saveRoutines, startStep } from '../domain/routines.js';
+import { loadButtons, saveButtons } from '../domain/buttons.js';
 import { loadRules, loadTagShortcuts, previewRule, ruleRuns, runRuleById, saveRules, saveTagShortcuts } from '../domain/rules.js';
 
 const idParam = z.object({ id: z.string().max(64) });
@@ -39,6 +40,10 @@ export function registerCallingRoutes(app: FastifyInstance, deps: { db: DB; kde?
     const b = z.object({ overrides: z.unknown() }).parse(req.body);
     return { overrides: saveOutcomeOverrides(db, b.overrides) };
   });
+
+  // ---------- your Calling screen buttons (shared/buttons.ts) ----------
+  app.get('/api/buttons', async () => ({ buttons: loadButtons(db) }));
+  app.put('/api/buttons', async (req) => ({ buttons: saveButtons(db, z.object({ buttons: z.unknown() }).parse(req.body).buttons) }));
 
   // ---------- rules (shared/rules.ts) ----------
   app.get('/api/rules', async () => ({ rules: loadRules(db) }));

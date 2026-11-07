@@ -58,7 +58,7 @@ export function App() {
   const [toastMsg, setToast] = useState<{ msg: string; kind: 'ok' | 'error' } | null>(null);
   const [statsVersion, setStatsVersion] = useState(0);
   const [calling, setCalling] = useState<CallingSettingsResponse | null>(null);
-  const keys = useMemo(() => buildKeyMap(calling, meta?.outcome_codes ?? []), [calling, meta]);
+  const keys = useMemo(() => buildKeyMap(calling, meta?.buttons ?? []), [calling, meta]);
 
   const reloadMeta = useCallback(async () => {
     try {

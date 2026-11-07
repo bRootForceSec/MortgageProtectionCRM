@@ -7,8 +7,8 @@ import {
 } from '../shortcuts';
 import type { CallingSettings, ShortcutAction } from '../../shared/callingSettings';
 import { parsePlan, SUGGESTED_FOLLOW_UPS } from '../../shared/followUps';
+import { savesInstantly } from '../../shared/outcomes';
 import { APPT_RESULT_LABEL } from '../../shared/appointments';
-import { outcomeDef, savesInstantly, type OutcomeOverrides } from '../../shared/outcomes';
 
 // Settings for the Calling screen: retry gap, dialing, timer, goals, alerts, shortcuts and scripts.
 
@@ -199,7 +199,7 @@ export function ShortcutsCard() {
   const { calling, meta } = useApp();
   const save = useSave();
   const [capture, setCapture] = useState<{ kind: 'action'; id: ShortcutAction; index: number } | { kind: 'outcome'; id: string } | null>(null);
-  const km = useMemo(() => buildKeyMap(calling, meta?.outcome_codes ?? []), [calling, meta]);
+  const km = useMemo(() => buildKeyMap(calling, meta?.buttons ?? []), [calling, meta]);
   const clash = useMemo(() => conflicts(km), [km]);
   const s = calling?.settings;
 
@@ -227,7 +227,7 @@ export function ShortcutsCard() {
   if (!s || !calling) return null;
   const setAction = (a: ShortcutAction, keys: string[]) => save({ ...s, shortcuts: { ...s.shortcuts, actions: { ...s.shortcuts.actions, [a]: keys } } });
   const who = (k: string) =>
-    (clash.get(k) ?? []).map((w) => (w.startsWith('outcome:') ? meta?.outcome_codes.find((o) => `outcome:${o.code}` === w)?.label : calling.actions[w as ShortcutAction]?.label)).filter(Boolean);
+    (clash.get(k) ?? []).map((w) => (w.startsWith('outcome:') ? meta?.buttons.find((b) => `outcome:${b.id}` === w)?.label : calling.actions[w as ShortcutAction]?.label)).filter(Boolean);
   const Key = ({ k, onClick, onRemove, waiting }: { k: string; onClick: () => void; onRemove?: () => void; waiting: boolean }) => (
     <span className={`chip ${clash.has(k) ? 'clash' : ''}`} title={clash.has(k) ? `Also used by: ${who(k).join(', ')}` : 'Click to change'}>
       <button className="keycap" onClick={onClick}>{waiting ? 'press a key…' : keyLabel(k)}</button>
@@ -239,7 +239,7 @@ export function ShortcutsCard() {
     <div className="card">
       <h2>Keyboard shortcuts</h2>
       <p className="help">Click a key to change it, then press the new key (Esc to keep the old one). Shortcuts work when you're not typing in a box. Enter saves and Esc cancels; those can't be changed.</p>
-      {clash.size > 0 && <p className="warn">Some keys do two things (marked in orange). The action wins over the outcome.</p>}
+      {clash.size > 0 && <p className="warn">Some keys do two things (marked in orange). The action wins over a button, and of two buttons the first one showing wins.</p>}
       <table className="grid shortcuts">
         <tbody>
           {(Object.keys(calling.actions) as ShortcutAction[]).map((a) => {
@@ -262,18 +262,18 @@ export function ShortcutsCard() {
               </tr>
             );
           })}
-          {meta?.outcome_codes.filter((o) => o.offered).map((o) => {
-            const k = km.outcomeKey[o.code];
-            const waiting = capture?.kind === 'outcome' && capture.id === o.code;
+          {meta?.buttons.filter((b) => !b.hidden).map((b) => {
+            const k = km.outcomeKey[b.id];
+            const waiting = capture?.kind === 'outcome' && capture.id === b.id;
             return (
-              <tr key={o.code}>
-                <td>{o.kind === 'appointment' ? 'Appointment' : 'First call'} outcome: {o.label}</td>
+              <tr key={b.id}>
+                <td>{b.side === 'appointment' ? 'Appointment' : 'First call'} button: {b.label}</td>
                 <td>
                   {k || waiting ? (
-                    <Key k={k ?? ''} waiting={waiting} onClick={() => setCapture({ kind: 'outcome', id: o.code })}
-                      onRemove={k ? () => save({ ...s, shortcuts: { ...s.shortcuts, outcomes: { ...s.shortcuts.outcomes, [o.code]: null } } }) : undefined} />
+                    <Key k={k ?? ''} waiting={waiting} onClick={() => setCapture({ kind: 'outcome', id: b.id })}
+                      onRemove={k ? () => save({ ...s, shortcuts: { ...s.shortcuts, outcomes: { ...s.shortcuts.outcomes, [b.id]: null } } }) : undefined} />
                   ) : (
-                    <button className="btn small" onClick={() => setCapture({ kind: 'outcome', id: o.code })}>+ key</button>
+                    <button className="btn small" onClick={() => setCapture({ kind: 'outcome', id: b.id })}>+ key</button>
                   )}
                 </td>
               </tr>
@@ -284,79 +284,6 @@ export function ShortcutsCard() {
       <button className="btn small" onClick={() => window.confirm('Put every shortcut back to how it came?') && save({ ...s, shortcuts: { actions: {}, outcomes: {} } })}>
         Reset to defaults
       </button>
-    </div>
-  );
-}
-
-
-/** What an outcome counts as, in a few words, so a renamed one still says what it does. */
-function outcomeMeaning(code: string): string {
-  const d = outcomeDef(code);
-  if (!d) return '';
-  const parts = [
-    d.pickup && 'a pickup',
-    d.apptSet && 'an appt set',
-    d.callback && 'a callback (asks for a day)',
-    d.group === 'invalid' && 'a bad number',
-    d.marksDead && 'the dead pile',
-    d.apptResult && `appointment: ${APPT_RESULT_LABEL[d.apptResult].toLowerCase()}`,
-  ].filter(Boolean);
-  return parts.length ? `Counts as ${parts.join(', ')}` : 'Not reached';
-}
-
-/** Settings → Outcomes: rename the buttons and choose which ones show. What each one means stays the same. */
-export function OutcomesCard() {
-  const { meta, reloadMeta, toast } = useApp();
-  const rows = meta?.outcome_codes ?? [];
-  const [draft, setDraft] = useState<Record<string, { label: string; offered: boolean }>>({});
-  const value = (code: string, label: string, offered: boolean) => draft[code] ?? { label, offered };
-  const dirty = Object.keys(draft).length > 0;
-  const save = async () => {
-    const overrides: OutcomeOverrides = Object.fromEntries(rows.map((o) => [o.code, value(o.code, o.label, o.offered)]));
-    try {
-      await api.put('/settings/outcomes', { overrides });
-      await reloadMeta();
-      setDraft({});
-      toast('Outcomes saved');
-    } catch (e: any) {
-      toast(e.message, 'error');
-    }
-  };
-  return (
-    <div className="card" id="outcomes">
-      <h2>Outcomes</h2>
-      <p className="help">
-        Rename any outcome or hide its button. What it counts as (pickup, appt set, sale...) stays the same, so your numbers don't change.
-        Keys are under Keyboard shortcuts. Older calls show the new name too.
-      </p>
-      {(['first_call', 'appointment'] as const).map((side) => (
-        <div key={side}>
-          <h3>{side === 'appointment' ? 'Appointment side' : 'First call side'}</h3>
-          <table className="grid" style={{ maxWidth: 760 }}>
-            <thead><tr><th>Name</th><th>Button</th><th>What it does</th><th></th></tr></thead>
-            <tbody>
-              {rows.filter((o) => o.kind === side).map((o) => {
-                const v = value(o.code, o.label, o.offered);
-                const def = outcomeDef(o.code);
-                const set = (patch: Partial<typeof v>) => setDraft((d) => ({ ...d, [o.code]: { ...v, ...patch } }));
-                const isDefault = !!def && v.label === def.label && v.offered === def.offered;
-                return (
-                  <tr key={o.code}>
-                    <td><input value={v.label} maxLength={40} onChange={(e) => set({ label: e.target.value })} aria-label={`Name for ${def?.label ?? o.code}`} style={{ width: 220 }} /></td>
-                    <td><input type="checkbox" checked={v.offered} onChange={(e) => set({ offered: e.target.checked })} aria-label={`Show a button for ${v.label}`} /></td>
-                    <td className="muted small">{outcomeMeaning(o.code)}</td>
-                    <td>{def && !isDefault && <button className="btn small" onClick={() => set({ label: def.label, offered: def.offered })}>Reset</button>}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      ))}
-      <div className="row" style={{ marginTop: 8 }}>
-        <button className="btn primary" disabled={!dirty} onClick={() => void save()}>Save outcomes</button>
-        {dirty && <button className="btn" onClick={() => setDraft({})}>Cancel</button>}
-      </div>
     </div>
   );
 }

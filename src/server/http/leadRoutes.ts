@@ -209,6 +209,7 @@ export function registerLeadRoutes(
       lead_seconds: z.number().min(0).max(7 * 86400).nullish(),
       dialed_at: z.string().max(40).nullish(),
       outcome_code: z.string().max(40),
+      button_id: z.string().max(64).nullish(),
       callback_due_at: z.string().max(40).nullish(),
       callback_any_time: z.boolean().nullish(),
       do_not_call: z.boolean().nullish(),

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { api, fmtDateTime, fmtDob, fmtDuration, fmtMoney, fmtPhone, fullName, localTime, personAge, type LeadDetail, type Call, type TagRef } from '../api';
+import { api, fmtDateTime, fmtDob, fmtDuration, fmtMoney, fmtPhone, fullName, localTime, outcomeText, personAge, type LeadDetail, type Call, type TagRef } from '../api';
 import { useTags } from '../tags';
 import { StatusChips } from '../pages/StatusesCard';
 import { useApp } from '../App';
@@ -359,7 +359,7 @@ export function CallHistory({ calls, onChange }: { calls: Call[]; onChange: () =
           <div>
             {c.outcomes.map((o) => (
               <div key={o.id} className={o.superseded ? 'superseded' : ''}>
-                {o.label}
+                {outcomeText(o)}
                 {!!o.do_not_call && <span className="warn"> · do not call</span>}
                 {c.outcomes.length > 1 && <span className="muted"> · set {fmtDateTime(o.entered_at)}</span>}
                 {o.callback_due_at && <> · call back {o.callback_any_time ? `${fmtDay(o.callback_due_at)}, any time` : fmtDateTime(o.callback_due_at)}</>}
