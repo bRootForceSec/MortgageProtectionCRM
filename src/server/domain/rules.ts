@@ -58,10 +58,10 @@ function doAction(db: DB, rule: Rule, a: RuleAction, ids: string[], now: string)
     case 'remove_from_list':
       return { action: a, changed: ids.filter((id) => removeFromCallList(db, id)).length, note: null };
     case 'add_tag':
-      return { action: a, changed: setTagOnLeads(db, ids, ensureTag(db, a.tag, now).id, true, now), note: null };
+      return { action: a, changed: setTagOnLeads(db, ids, ensureTag(db, a.tag, now).id, true, now, { source: 'rule', id: rule.id, name: rule.name }), note: null };
     case 'remove_tag': {
       const t = tagByName(db, a.tag.trim());
-      return t ? { action: a, changed: setTagOnLeads(db, ids, t.id, false, now), note: null } : { action: a, changed: 0, note: `no tag called "${a.tag}"` };
+      return t ? { action: a, changed: setTagOnLeads(db, ids, t.id, false, now, { source: 'rule', id: rule.id, name: rule.name }), note: null } : { action: a, changed: 0, note: `no tag called "${a.tag}"` };
     }
     case 'set_field':
       return { action: a, changed: ids.filter((id) => setCustomValues(db, id, { [a.field_id]: a.value }, now) > 0).length, note: null };
