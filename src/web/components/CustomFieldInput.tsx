@@ -23,7 +23,7 @@ export function CustomFieldInput(props: {
   return (
     <input
       type={f.type === 'date' ? 'date' : 'text'}
-      inputMode={f.type === 'number' || f.type === 'money' ? 'decimal' : undefined}
+      inputMode={f.type === 'number' || f.type === 'money' ? 'decimal' : f.type === 'counter' ? 'numeric' : undefined}
       placeholder={f.type === 'money' ? '$' : props.blank}
       value={value}
       onChange={(e) => onChange(e.target.value)}

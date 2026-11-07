@@ -11,6 +11,7 @@ export const CUSTOM_FIELD_TYPES = [
   { key: 'yes_no', label: 'Yes / no' },
   { key: 'choice', label: 'Pick from a list' },
   { key: 'formula', label: 'Formula (worked out)' },
+  { key: 'counter', label: 'Counter (rules change it)' },
 ] as const;
 export type CustomFieldType = (typeof CUSTOM_FIELD_TYPES)[number]['key'];
 const TYPE_KEYS = CUSTOM_FIELD_TYPES.map((t) => t.key) as [CustomFieldType, ...CustomFieldType[]];
@@ -40,7 +41,7 @@ export interface CustomField {
 
 /** Whether a field holds numbers (so it can be filtered by a range and sorted by). */
 export function isNumericField(f: Pick<CustomField, 'type' | 'result'>): boolean {
-  return f.type === 'number' || f.type === 'money' || (f.type === 'formula' && f.result === 'number');
+  return f.type === 'number' || f.type === 'money' || f.type === 'counter' || (f.type === 'formula' && f.result === 'number');
 }
 
 /**
@@ -78,6 +79,11 @@ export function normalizeCustomValue(f: Pick<CustomField, 'label' | 'type' | 'op
     }
     case 'formula':
       throw bad('is worked out from its formula');
+    case 'counter': {
+      const n = Number(v);
+      if (!Number.isInteger(n)) throw bad('needs a whole number');
+      return String(n);
+    }
     case 'choice': {
       const hit = f.options.find((o) => o.toLowerCase() === v.toLowerCase());
       if (!hit) throw bad(`pick one of ${f.options.join(', ')}`);

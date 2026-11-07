@@ -30,6 +30,7 @@ import { registerGoogleRoutes } from './googleRoutes.js';
 import { GoogleCalendar } from '../domain/googleCalendar.js';
 import { productsNeedingRules } from '../domain/policies.js';
 import { KdeConnect } from '../dialer.js';
+import { runEventRules } from '../domain/rules.js';
 
 export interface AppDeps {
   db: DB;
@@ -87,6 +88,20 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     if (err.statusCode && err.statusCode < 500) return reply.code(err.statusCode).send({ error: err.message });
     req.log?.error({ err: { message: err.message, stack: err.stack } }, 'request failed');
     return reply.code(500).send({ error: 'Something went wrong. Details are in the app log.' });
+  });
+
+  // Rules on lead changes (a tag put on or taken off, a status entered or left, a condition turning true) run right
+  // after anything you change, before the answer goes back, so the screen shows what they did. Changes made in the
+  // background (imports) are picked up by RuleRunner's check every minute.
+  app.addHook('onSend', async (req, reply, payload) => {
+    if (req.method !== 'GET' && req.url.startsWith('/api/') && reply.statusCode < 400) {
+      try {
+        runEventRules(db);
+      } catch (e) {
+        req.log.warn({ err: { message: (e as Error).message } }, 'rules after a change failed');
+      }
+    }
+    return payload;
   });
 
   const drafts = deps.drafts ?? new DraftWorker(db, secrets);

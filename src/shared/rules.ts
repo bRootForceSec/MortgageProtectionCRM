@@ -17,6 +17,14 @@ export const RuleTrigger = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('call_saved'), outcomes: z.array(z.string().max(40)).max(40) }),
   /** Only when you press Run now. */
   z.object({ kind: z.literal('manual') }),
+  /** When this tag is put on a lead (by anything: you, a button, a rule, an import). Acts on that lead. */
+  z.object({ kind: z.literal('tag_added'), tag: z.string().trim().min(1, 'name the tag').max(40) }),
+  /** When this tag is taken off a lead. */
+  z.object({ kind: z.literal('tag_removed'), tag: z.string().trim().min(1, 'name the tag').max(40) }),
+  /** When a lead comes into one of your statuses, or leaves it. */
+  z.object({ kind: z.literal('status'), status_id: z.string().min(1).max(64), when: z.enum(['enters', 'leaves']) }),
+  /** When this condition turns true for a lead (it's checked after each change and every minute). */
+  z.object({ kind: z.literal('becomes_true'), condition: z.string().trim().min(1, 'write the condition').max(2000) }),
 ]);
 export type RuleTrigger = z.infer<typeof RuleTrigger>;
 
@@ -30,6 +38,8 @@ export const RuleAction = z.discriminatedUnion('kind', [
   /** Sets one of your fields; a blank value clears it. */
   z.object({ kind: z.literal('set_field'), field_id: z.string().min(1).max(64), value: z.string().max(2000) }),
   z.object({ kind: z.literal('mark_dead'), reason: z.string().max(200).optional() }),
+  /** Changes a counter (one of your fields of the kind Counter): add a number (a negative one takes off), or set it (0 resets). */
+  z.object({ kind: z.literal('counter'), field_id: z.string().min(1).max(64), op: z.enum(['add', 'set']), by: z.number().int().min(-1_000_000).max(1_000_000) }),
 ]);
 export type RuleAction = z.infer<typeof RuleAction>;
 
@@ -53,13 +63,21 @@ export const ACTION_LABELS: Record<RuleAction['kind'], string> = {
   remove_tag: 'Take a tag off',
   set_field: 'Set one of your fields',
   mark_dead: 'Put in the dead pile',
+  counter: 'Change a counter',
 };
 
 export const TRIGGER_LABELS: Record<RuleTrigger['kind'], string> = {
   daily: 'Every day at a time',
   call_saved: 'When a call is saved',
   manual: 'Only when I press Run now',
+  tag_added: 'When a tag is put on',
+  tag_removed: 'When a tag is taken off',
+  status: 'When a lead enters or leaves a status',
+  becomes_true: 'When a condition turns true',
 };
+
+/** Triggers that fire for a lead when something about it changes, so they act on that lead only. */
+export const LEAD_TRIGGERS: readonly RuleTrigger['kind'][] = ['call_saved', 'tag_added', 'tag_removed', 'status', 'becomes_true'];
 
 /** "Mon–Fri" style list of weekdays. */
 export function describeDays(days: readonly number[]): string {
@@ -70,11 +88,24 @@ export function describeDays(days: readonly number[]): string {
   return set.map((d) => WEEKDAYS[d]).join(', ');
 }
 
-/** The trigger in words. `outcomeLabel` turns an outcome code into its name. */
-export function describeTrigger(t: RuleTrigger, outcomeLabel: (code: string) => string = (c) => c): string {
-  if (t.kind === 'daily') return `At ${t.time} ${t.days.length < 7 ? `on ${describeDays(t.days)}` : 'every day'}`;
-  if (t.kind === 'call_saved') return t.outcomes.length ? `When a call is saved as ${t.outcomes.map(outcomeLabel).join(' or ')}` : 'When any call is saved';
-  return 'Only when you press Run now';
+/** The trigger in words. `outcomeLabel` turns an outcome code into its name, `statusName` a status id into its. */
+export function describeTrigger(
+  t: RuleTrigger,
+  outcomeLabel: (code: string) => string = (c) => c,
+  statusName: (id: string) => string | undefined = () => undefined,
+): string {
+  switch (t.kind) {
+    case 'daily': return `At ${t.time} ${t.days.length < 7 ? `on ${describeDays(t.days)}` : 'every day'}`;
+    case 'call_saved': return t.outcomes.length ? `When a call is saved as ${t.outcomes.map(outcomeLabel).join(' or ')}` : 'When any call is saved';
+    case 'tag_added': return `When tag "${t.tag}" is put on a lead`;
+    case 'tag_removed': return `When tag "${t.tag}" is taken off a lead`;
+    case 'status': {
+      const name = statusName(t.status_id);
+      return name ? `When a lead ${t.when === 'enters' ? 'comes into' : 'leaves'} the status "${name}"` : 'When a lead enters or leaves a status that was deleted';
+    }
+    case 'becomes_true': return `When this turns true for a lead: ${t.condition}`;
+    case 'manual': return 'Only when you press Run now';
+  }
 }
 
 /** An action in words. `fieldName` turns a field id into its name. */
@@ -84,6 +115,11 @@ export function describeAction(a: RuleAction, fieldName: (id: string) => string 
     case 'remove_tag': return `Take tag "${a.tag}" off`;
     case 'set_field': return a.value.trim() ? `Set ${fieldName(a.field_id) ?? 'a deleted field'} to "${a.value}"` : `Clear ${fieldName(a.field_id) ?? 'a deleted field'}`;
     case 'mark_dead': return `Put in the dead pile${a.reason ? ` ("${a.reason}")` : ''}`;
+    case 'counter': {
+      const name = fieldName(a.field_id) ?? 'a deleted counter';
+      if (a.op === 'set') return a.by === 0 ? `Reset ${name} to 0` : `Set ${name} to ${a.by}`;
+      return a.by < 0 ? `Take ${-a.by} off ${name}` : `Add ${a.by} to ${name}`;
+    }
     default: return ACTION_LABELS[a.kind];
   }
 }
@@ -120,7 +156,7 @@ export interface RuleRun {
   id: string;
   rule_id: string;
   rule_name: string;
-  trigger: 'daily' | 'call_saved' | 'manual';
+  trigger: RuleTrigger['kind'];
   at: string;
   dry_run: boolean;
   matched: number;

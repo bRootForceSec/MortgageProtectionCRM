@@ -51,8 +51,8 @@ export interface LeadFilter {
   appt_days_ago?: number;
   /** Only leads waiting on the call list. */
   on_list?: boolean;
-  /** Only this lead (a rule run for one lead's call). */
-  only_lead?: string;
+  /** Only these leads (a rule run for the leads a change happened to). */
+  only_leads?: string[];
   /** Only leads this condition (Python syntax, a yes/no formula) is true for. */
   where?: string;
   /** Only leads in this status of yours (its id). */
@@ -191,7 +191,7 @@ export function leadFilterWhere(db: DB, f: LeadFilter): { sql: string; params: R
     importedWhere(f.imported),
     apptDaysWhere(f.appt_days),
     apptDaysAgoWhere(f.appt_days_ago),
-    f.only_lead ? 'l.id = @lf_only' : '1',
+    f.only_leads ? 'l.id IN (SELECT value FROM json_each(@lf_only))' : '1',
     f.on_list ? `l.id IN (SELECT i.lead_id FROM call_list_item i WHERE NOT ${WORKED})` : '1',
     f.not_within_min ? '(s.last_call_at IS NULL OR s.last_call_at < @lf_gap)' : '1',
     f.tag === undefined ? '1' : f.tag === '' ? 'l.id NOT IN (SELECT lead_id FROM lead_tag)' : 'l.id IN (SELECT lead_id FROM lead_tag WHERE tag_id = @lf_tag)',
@@ -207,7 +207,7 @@ export function leadFilterWhere(db: DB, f: LeadFilter): { sql: string; params: R
   ];
   return {
     sql: parts.join(' AND '),
-    params: { lf_status: status, ...(appt ? { lf_appt: appt } : {}), lf_batch: f.batch_id ?? null, lf_type: f.lead_type ?? null, ...(f.bulk_id ? { lf_bulk: f.bulk_id } : {}), lf_before: f.tried_before ?? null, lf_after: f.tried_after ?? null, ...(f.tag ? { lf_tag: f.tag } : {}), ...(f.only_lead ? { lf_only: f.only_lead } : {}), ...(f.custom ? { lf_field: f.custom.field_id, ...(f.custom.value ? { lf_fval: f.custom.value } : {}), ...(f.custom.min != null ? { lf_fmin: f.custom.min } : {}), ...(f.custom.max != null ? { lf_fmax: f.custom.max } : {}) } : {}), ...(f.not_within_min ? { lf_gap: new Date(Date.now() - f.not_within_min * 60_000).toISOString() } : {}), ...group.params, ...search.params },
+    params: { lf_status: status, ...(appt ? { lf_appt: appt } : {}), lf_batch: f.batch_id ?? null, lf_type: f.lead_type ?? null, ...(f.bulk_id ? { lf_bulk: f.bulk_id } : {}), lf_before: f.tried_before ?? null, lf_after: f.tried_after ?? null, ...(f.tag ? { lf_tag: f.tag } : {}), ...(f.only_leads ? { lf_only: JSON.stringify(f.only_leads) } : {}), ...(f.custom ? { lf_field: f.custom.field_id, ...(f.custom.value ? { lf_fval: f.custom.value } : {}), ...(f.custom.min != null ? { lf_fmin: f.custom.min } : {}), ...(f.custom.max != null ? { lf_fmax: f.custom.max } : {}) } : {}), ...(f.not_within_min ? { lf_gap: new Date(Date.now() - f.not_within_min * 60_000).toISOString() } : {}), ...group.params, ...search.params },
   };
 }
 
