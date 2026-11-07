@@ -5,6 +5,7 @@ import { useTags } from '../tags';
 import { useStatuses } from '../statuses';
 import { useCustomFields } from '../customFields';
 import { CustomFieldInput } from '../components/CustomFieldInput';
+import { ConditionEditor } from '../components/ConditionEditor';
 import { describeFilter, WEEKDAYS } from '../../shared/routines';
 import { APPT_DAYS, LAST_CALL, type LeadQuery } from '../../shared/leadFilter';
 import { LEAD_TABS } from '../../shared/leadStatus';
@@ -22,11 +23,18 @@ type Filter = Partial<LeadQuery>;
 function useNames() {
   const { meta } = useApp();
   const { tags, tagName } = useTags();
-  const { fields, fieldName } = useCustomFields();
-  const { statusName } = useStatuses();
+  const { fields, fieldName, reload: reloadFields } = useCustomFields();
+  const { statuses, statusName, reload: reloadStatuses } = useStatuses();
   const outcomeLabel = useCallback((c: string) => meta?.outcome_codes.find((o) => o.code === c)?.label ?? c, [meta]);
-  return { tags, tagName, fields, fieldName, statusName, outcomeLabel };
+  // Fields and statuses made elsewhere in Settings since this screen opened: load them again when a rule is saved.
+  const reload = useCallback(() => void Promise.all([reloadFields(), reloadStatuses()]), [reloadFields, reloadStatuses]);
+  return { tags, tagName, fields, fieldName, statuses, statusName, outcomeLabel, reload };
 }
+
+/** What set a run off, for the log. */
+const RUN_TRIGGER: Record<RuleTrigger['kind'], string> = {
+  daily: 'daily', call_saved: 'call saved', manual: 'run by you', tag_added: 'tag put on', tag_removed: 'tag taken off', status: 'status', becomes_true: 'condition turned true',
+};
 
 function resultText(r: ActionResult, fieldName: (id: string) => string | undefined): string {
   return `${describeAction(r.action, fieldName)}: ${r.changed} lead${r.changed === 1 ? '' : 's'}${r.note ? ` (${r.note})` : ''}`;
@@ -34,6 +42,9 @@ function resultText(r: ActionResult, fieldName: (id: string) => string | undefin
 
 /** What a run did (or Preview would do), in a few lines. */
 export function RunSummary({ run, fieldName }: { run: RuleRun; fieldName: (id: string) => string | undefined }) {
+  if (run.error?.startsWith('stopped a loop')) {
+    return <div className="error">Stopped a loop for {run.leads.map((l) => l.name).join(', ')}: this rule's changes, or another rule's, set it off again, so it ran only once for {run.matched === 1 ? 'that lead' : 'them'}.</div>;
+  }
   if (run.error) return <div className="error">Didn't run: {run.error}. Nothing was changed.</div>;
   return (
     <div>
@@ -65,6 +76,7 @@ export function RulesCard() {
   const save = async (next: Rule[]): Promise<boolean> => {
     try {
       setRules((await api.put<{ rules: Rule[] }>('/rules', { rules: next })).rules);
+      names.reload();
       return true;
     } catch (e: any) {
       toast(e.message, 'error');
@@ -92,8 +104,10 @@ export function RulesCard() {
     <div className="card" id="rules">
       <h2>Rules</h2>
       <p className="help">
-        When something happens, do something to the leads it fits: every day at a time, or when you save a call. A rule acts on the leads matching its
-        filters (set them here, or on Leads with <b>Make a rule</b>). <b>Preview</b> shows what it would do now without changing anything; every run is in the log below.
+        When something happens, do something to the leads it fits: every day at a time, when you save a call, when a tag is put on or taken off, when a lead
+        enters or leaves a status, or when a condition turns true. A rule on a lead's change acts on just that lead, if it matches the rule's filters (set them
+        here, or on Leads with <b>Make a rule</b>). Rules can set off other rules; one set off again for the same lead stops there, and the log says so.{' '}
+        <b>Preview</b> and <b>Run now</b> act on every lead matching the filters; Preview changes nothing. Every run is in the log below.
       </p>
       {rules.length === 0 && <p className="muted">No rules yet.</p>}
       <ul className="rule-list">
@@ -112,7 +126,7 @@ export function RulesCard() {
               </span>
             </div>
             <div className="help" style={{ margin: '4px 0 0' }}>
-              <div><b>When:</b> {describeTrigger(r.trigger, names.outcomeLabel)}</div>
+              <div><b>When:</b> {describeTrigger(r.trigger, names.outcomeLabel, names.statusName)}</div>
               <div><b>Leads:</b> {describeFilter(r.filter, { tag: names.tagName, field: names.fieldName, status: names.statusName })}</div>
               <div><b>Do:</b> {r.actions.map((a) => describeAction(a, names.fieldName)).join(', then ')}</div>
             </div>
@@ -139,7 +153,7 @@ export function RulesCard() {
           <ul className="history" aria-label="Rules log">
             {runs.map((run) => (
               <li key={run.id}>
-                <span className="muted">{fmtDateTime(run.at)}</span> <b>{run.rule_name}</b> <span className="muted">({run.trigger === 'daily' ? 'daily' : run.trigger === 'call_saved' ? 'call saved' : 'run by you'})</span>
+                <span className="muted">{fmtDateTime(run.at)}</span> <b>{run.rule_name}</b> <span className="muted">({RUN_TRIGGER[run.trigger] ?? run.trigger})</span>
                 <RunSummary run={run} fieldName={names.fieldName} />
               </li>
             ))}
@@ -187,21 +201,37 @@ export function NewRuleFromFilters({ filter, onClose }: { filter: Filter; onClos
   );
 }
 
-const emptyAction = (kind: RuleAction['kind'], firstField: string | undefined): RuleAction => {
+const emptyAction = (kind: RuleAction['kind'], firstField: string | undefined, firstCounter: string | undefined): RuleAction => {
   switch (kind) {
     case 'add_tag':
     case 'remove_tag': return { kind, tag: '' };
     case 'set_field': return { kind, field_id: firstField ?? '', value: '' };
     case 'mark_dead': return { kind, reason: '' };
+    case 'counter': return { kind, field_id: firstCounter ?? '', op: 'add', by: 1 };
     default: return { kind };
+  }
+};
+
+const emptyTrigger = (kind: RuleTrigger['kind'], firstStatus: string | undefined): RuleTrigger => {
+  switch (kind) {
+    case 'daily': return { kind, time: '08:00', days: [0, 1, 2, 3, 4, 5, 6] };
+    case 'call_saved': return { kind, outcomes: [] };
+    case 'tag_added':
+    case 'tag_removed': return { kind, tag: '' };
+    case 'status': return { kind, status_id: firstStatus ?? '', when: 'enters' };
+    case 'becomes_true': return { kind, condition: '' };
+    case 'manual': return { kind };
   }
 };
 
 function RuleEditor(props: { rule: Rule; isNew: boolean; onSave: (r: Rule) => Promise<void>; onCancel: () => void }) {
   const { meta, toast } = useApp();
   const names = useNames();
-  // A formula field is worked out, so a rule can't set it.
-  const settable = names.fields.filter((f) => f.type !== 'formula');
+  // A formula field is worked out, so a rule can't set it; a counter has its own action.
+  const settable = names.fields.filter((f) => f.type !== 'formula' && f.type !== 'counter');
+  const counters = names.fields.filter((f) => f.type === 'counter');
+  /** Which condition is open in the editor: the trigger's, or the filters' "only if". */
+  const [conditionFor, setConditionFor] = useState<'trigger' | 'filter' | null>(null);
   const [r, setR] = useState<Rule>(props.rule);
   const [preview, setPreview] = useState<RuleRun | null>(null);
   const [busy, setBusy] = useState(false);
@@ -267,10 +297,7 @@ function RuleEditor(props: { rule: Rule; isNew: boolean; onSave: (r: Rule) => Pr
 
           <fieldset>
             <legend>When</legend>
-            <select value={r.trigger.kind} aria-label="When" onChange={(e) => {
-              const k = e.target.value as RuleTrigger['kind'];
-              setTrigger(k === 'daily' ? { kind: 'daily', time: '08:00', days: [0, 1, 2, 3, 4, 5, 6] } : k === 'call_saved' ? { kind: 'call_saved', outcomes: [] } : { kind: 'manual' });
-            }}>
+            <select value={r.trigger.kind} aria-label="When" onChange={(e) => setTrigger(emptyTrigger(e.target.value as RuleTrigger['kind'], names.statuses[0]?.id))}>
               {(Object.keys(TRIGGER_LABELS) as RuleTrigger['kind'][]).map((k) => <option key={k} value={k}>{TRIGGER_LABELS[k]}</option>)}
             </select>
             {r.trigger.kind === 'daily' && (() => {
@@ -302,6 +329,47 @@ function RuleEditor(props: { rule: Rule; isNew: boolean; onSave: (r: Rule) => Pr
                 </div>
               );
             })()}
+            {(r.trigger.kind === 'tag_added' || r.trigger.kind === 'tag_removed') && (() => {
+              const t = r.trigger;
+              return (
+                <div className="row" style={{ gap: 6, marginTop: 6, flexWrap: 'wrap' }}>
+                  <input list="rule-tag-names" value={t.tag} maxLength={40} placeholder="Tag name" aria-label="Trigger tag" onChange={(e) => setTrigger({ ...t, tag: e.target.value })} />
+                  <span className="help" style={{ margin: 0 }}>By anything: you, a rule, an import. It acts on that lead, if it fits the filters below.</span>
+                </div>
+              );
+            })()}
+            {r.trigger.kind === 'status' && (() => {
+              const t = r.trigger;
+              return (
+                <div className="row" style={{ gap: 6, marginTop: 6, flexWrap: 'wrap' }}>
+                  <select value={t.when} aria-label="Enters or leaves" onChange={(e) => setTrigger({ ...t, when: e.target.value as 'enters' | 'leaves' })}>
+                    <option value="enters">comes into</option>
+                    <option value="leaves">leaves</option>
+                  </select>
+                  <select value={t.status_id} aria-label="Status" onChange={(e) => setTrigger({ ...t, status_id: e.target.value })}>
+                    {!names.statuses.some((st) => st.id === t.status_id) && <option value={t.status_id}>{t.status_id ? 'A deleted status' : 'Pick a status'}</option>}
+                    {names.statuses.map((st) => <option key={st.id} value={st.id}>{st.name}</option>)}
+                  </select>
+                  {!names.statuses.length && <span className="help" style={{ margin: 0 }}>Make a status first, in Settings → Statuses.</span>}
+                </div>
+              );
+            })()}
+            {r.trigger.kind === 'becomes_true' && (() => {
+              const t = r.trigger;
+              return (
+                <div style={{ marginTop: 6 }}>
+                  <div className="row" style={{ gap: 6 }}>
+                    {t.condition ? <code aria-label="Trigger condition">{t.condition}</code> : <span className="muted">No condition yet.</span>}
+                    <button type="button" className="btn small" onClick={() => setConditionFor('trigger')}>{t.condition ? 'Edit' : 'Write it…'}</button>
+                  </div>
+                  <span className="help">Checked after each change and every minute. It fires when the condition goes from false to true for a lead; leads it's already true for when you save don't count.</span>
+                  {conditionFor === 'trigger' && (
+                    <ConditionEditor value={t.condition} onApply={(c) => { setTrigger({ ...t, condition: c }); setConditionFor(null); }} onCancel={() => setConditionFor(null)} />
+                  )}
+                </div>
+              );
+            })()}
+            <datalist id="rule-tag-names">{names.tags.map((t) => <option key={t.id} value={t.name} />)}</datalist>
           </fieldset>
 
           <fieldset>
@@ -329,7 +397,12 @@ function RuleEditor(props: { rule: Rule; isNew: boolean; onSave: (r: Rule) => Pr
                 {names.tags.map((t) => <option key={t.id} value={t.id}>Tagged {t.name}</option>)}
                 <option value="none">No tags</option>
               </select>
+              <button type="button" className="btn small" onClick={() => setConditionFor('filter')}>{r.filter.where ? 'Edit the condition' : 'Condition…'}</button>
+              {r.filter.where && <button type="button" className="btn small" aria-label="Remove the filter condition" onClick={() => setFilter('where', '')}>× condition</button>}
             </div>
+            {conditionFor === 'filter' && (
+              <ConditionEditor value={r.filter.where ?? ''} onApply={(c) => { setFilter('where', c); setConditionFor(null); }} onCancel={() => setConditionFor(null)} />
+            )}
             <p className="help" style={{ marginBottom: 0 }}>
               {describeFilter(r.filter, { tag: names.tagName, field: names.fieldName, status: names.statusName })}. For other filters (county, lead type, your fields…), set them on Leads and use <b>Make a rule</b>.
             </p>
@@ -340,13 +413,26 @@ function RuleEditor(props: { rule: Rule; isNew: boolean; onSave: (r: Rule) => Pr
             {r.actions.map((a, i) => (
               <div key={i} className="row" style={{ gap: 6, marginBottom: 4, flexWrap: 'wrap' }}>
                 <span className="muted">{i + 1}.</span>
-                <select value={a.kind} aria-label={`Action ${i + 1}`} onChange={(e) => setAction(i, emptyAction(e.target.value as RuleAction['kind'], settable[0]?.id))}>
-                  {(Object.keys(ACTION_LABELS) as RuleAction['kind'][]).filter((k) => k !== 'set_field' || settable.length).map((k) => <option key={k} value={k}>{ACTION_LABELS[k]}</option>)}
+                <select value={a.kind} aria-label={`Action ${i + 1}`} onChange={(e) => setAction(i, emptyAction(e.target.value as RuleAction['kind'], settable[0]?.id, counters[0]?.id))}>
+                  {(Object.keys(ACTION_LABELS) as RuleAction['kind'][])
+                    .filter((k) => (k !== 'set_field' || settable.length) && (k !== 'counter' || counters.length || a.kind === 'counter'))
+                    .map((k) => <option key={k} value={k}>{ACTION_LABELS[k]}</option>)}
                 </select>
                 {(a.kind === 'add_tag' || a.kind === 'remove_tag') && (
+                  <input list="rule-tag-names" value={a.tag} maxLength={40} placeholder="Tag name" aria-label={`Action ${i + 1} tag`} onChange={(e) => setAction(i, { ...a, tag: e.target.value })} />
+                )}
+                {a.kind === 'counter' && (
                   <>
-                    <input list="rule-tag-names" value={a.tag} maxLength={40} placeholder="Tag name" aria-label={`Action ${i + 1} tag`} onChange={(e) => setAction(i, { ...a, tag: e.target.value })} />
-                    <datalist id="rule-tag-names">{names.tags.map((t) => <option key={t.id} value={t.name} />)}</datalist>
+                    <select value={a.field_id} aria-label={`Action ${i + 1} counter`} onChange={(e) => setAction(i, { ...a, field_id: e.target.value })}>
+                      {!counters.some((x) => x.id === a.field_id) && <option value={a.field_id}>A deleted counter</option>}
+                      {counters.map((x) => <option key={x.id} value={x.id}>{x.label}</option>)}
+                    </select>
+                    <select value={a.op} aria-label={`Action ${i + 1} add or set`} onChange={(e) => setAction(i, { ...a, op: e.target.value as 'add' | 'set' })}>
+                      <option value="add">add</option>
+                      <option value="set">set to</option>
+                    </select>
+                    <input type="number" step={1} value={a.by} style={{ width: 80 }} aria-label={`Action ${i + 1} number`} onChange={(e) => setAction(i, { ...a, by: Math.trunc(Number(e.target.value) || 0) })} />
+                    <span className="help" style={{ margin: 0 }}>{a.op === 'add' ? 'A minus number takes off.' : 'Set to 0 to reset it.'}</span>
                   </>
                 )}
                 {a.kind === 'set_field' && (() => {

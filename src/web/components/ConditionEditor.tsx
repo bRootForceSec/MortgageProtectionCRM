@@ -6,6 +6,7 @@ import { useCustomFields } from '../customFields';
 import { useStatuses } from '../statuses';
 import { FORMULA_VALUES, FormulaError } from '../../shared/formula';
 import { CMP_OPS, emptyGroup, toForm, toPython, type CmpOp, type CondGroup, type CondItem, type CondTerm, type Literal } from '../../shared/condition';
+import { isNumericField } from '../../shared/customFields';
 
 // A condition, edited two ways: as a form (groups of rows) or as Python. Both edit the same text, and you can switch
 // any time. Anything the rows don't cover shows as a Python row, so the form never loses part of a condition.
@@ -62,8 +63,8 @@ export function ConditionEditor({ value, onApply, onCancel }: { value: string; o
     <div className="card condition-editor" role="group" aria-label="Condition">
       <div className="row" style={{ gap: 6, flexWrap: 'wrap' }}>
         <div className="tabs small" role="tablist" aria-label="Condition view">
-          <button role="tab" aria-selected={view === 'form'} className={view === 'form' ? 'active' : ''} onClick={() => view !== 'form' && toFormView()}>Form</button>
-          <button role="tab" aria-selected={view === 'python'} className={view === 'python' ? 'active' : ''} onClick={() => view !== 'python' && toPythonView()}>Python</button>
+          <button type="button" role="tab" aria-selected={view === 'form'} className={view === 'form' ? 'active' : ''} onClick={() => view !== 'form' && toFormView()}>Form</button>
+          <button type="button" role="tab" aria-selected={view === 'python'} className={view === 'python' ? 'active' : ''} onClick={() => view !== 'python' && toPythonView()}>Python</button>
         </div>
         <span className="muted" aria-label="Condition matches">
           {failed ? `Couldn't check it: ${failed}` : check?.error ? <span className="error">{check.error}</span> : check ? `Matches ${check.matched} of ${check.total} leads` : 'Checking…'}
@@ -91,8 +92,8 @@ export function ConditionEditor({ value, onApply, onCancel }: { value: string; o
         </>
       )}
       <div className="row" style={{ gap: 6 }}>
-        <button className="btn small primary" disabled={!!check?.error} onClick={() => onApply(python === 'True' ? '' : python)}>Use this condition</button>
-        <button className="btn small" onClick={onCancel}>Cancel</button>
+        <button type="button" className="btn small primary" disabled={!!check?.error} onClick={() => onApply(python === 'True' ? '' : python)}>Use this condition</button>
+        <button type="button" className="btn small" onClick={onCancel}>Cancel</button>
       </div>
     </div>
   );
@@ -122,7 +123,7 @@ function GroupEditor({ g, onChange, onRemove, top }: { g: CondGroup; onChange: (
         >
           {GROUP_MODES.map((m) => <option key={m.key} value={m.key}>{m.label}</option>)}
         </select>
-        {onRemove && <button className="btn small" onClick={onRemove} aria-label="Remove group">Remove group</button>}
+        {onRemove && <button type="button" className="btn small" onClick={onRemove} aria-label="Remove group">Remove group</button>}
       </div>
       {g.items.length === 0 && <p className="muted">No rows yet: every lead matches.</p>}
       {g.items.map((item, i) =>
@@ -131,8 +132,8 @@ function GroupEditor({ g, onChange, onRemove, top }: { g: CondGroup; onChange: (
           : <TermEditor key={i} t={item} onChange={(x) => set(i, x)} onRemove={() => remove(i)} />,
       )}
       <div className="row" style={{ gap: 6 }}>
-        <button className="btn small" onClick={() => onChange({ ...g, items: [...g.items, { kind: 'has', tag: '', negate: false }] })}>+ Row</button>
-        <button className="btn small" onClick={() => onChange({ ...g, items: [...g.items, { kind: 'group', mode: 'any', negate: false, items: [] }] })}>+ Group</button>
+        <button type="button" className="btn small" onClick={() => onChange({ ...g, items: [...g.items, { kind: 'has', tag: '', negate: false }] })}>+ Row</button>
+        <button type="button" className="btn small" onClick={() => onChange({ ...g, items: [...g.items, { kind: 'group', mode: 'any', negate: false, items: [] }] })}>+ Group</button>
       </div>
     </div>
   );
@@ -257,7 +258,7 @@ function TermEditor({ t, onChange, onRemove }: { t: CondTerm; onChange: (t: Cond
     }
     case 'field': {
       const f = fields.find((x) => x.label.toLowerCase() === t.label.toLowerCase());
-      const kind = !f ? 'text' : f.type === 'yes_no' || (f.type === 'formula' && f.result === 'yes_no') ? 'yes_no' : f.type === 'number' || f.type === 'money' || (f.type === 'formula' && f.result === 'number') ? 'number' : 'text';
+      const kind = !f ? 'text' : f.type === 'yes_no' || (f.type === 'formula' && f.result === 'yes_no') ? 'yes_no' : isNumericField(f) ? 'number' : 'text';
       body = (
         <>
           <select value={f?.label ?? t.label} onChange={(e) => onChange({ ...t, label: e.target.value })} aria-label="Field">
@@ -280,7 +281,7 @@ function TermEditor({ t, onChange, onRemove }: { t: CondTerm; onChange: (t: Cond
         {TERM_KINDS.map((k) => <option key={k.kind} value={k.kind}>{k.label}</option>)}
       </select>
       {body}
-      <button className="btn small" onClick={onRemove} aria-label="Remove row" title="Remove this row">×</button>
+      <button type="button" className="btn small" onClick={onRemove} aria-label="Remove row" title="Remove this row">×</button>
     </div>
   );
 }

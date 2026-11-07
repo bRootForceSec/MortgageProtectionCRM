@@ -66,6 +66,8 @@ function compile(n: FormulaNode, fields: Map<string, FieldDef>, using: string[],
       const value = `(SELECT cv.value FROM lead_custom_value cv WHERE cv.lead_id = l.id AND cv.field_id = ${lit(f.id)})`;
       switch (f.type) {
         case 'number': case 'money': return { sql: `CAST(${value} AS REAL)`, kind: 'number' };
+        // A counter no rule has changed yet is 0.
+        case 'counter': return { sql: `coalesce(CAST(${value} AS INTEGER), 0)`, kind: 'number' };
         case 'yes_no': return { sql: `(${value} = 'yes')`, kind: 'yes_no' };
         case 'date': return { sql: value, kind: 'date' };
         case 'text': case 'choice': return { sql: value, kind: 'text' };
@@ -231,11 +233,16 @@ export function formulaResults(fields: FieldDef[]): Map<string, 'number' | 'text
   return out;
 }
 
-/** Makes the lead_field_value view again from the fields there are now. Call after a formula field changes. */
+/** Makes the lead_field_value view again from the fields there are now. Call after a formula or counter field changes. */
 export function syncFieldValueView(db: DB): void {
   const fields = fieldDefs(db);
   const parts = ['SELECT lead_id, field_id, value FROM lead_custom_value'];
   for (const f of fields) {
+    // A counter is 0 on every lead until a rule changes it, so filters and sorting see the 0.
+    if (f.type === 'counter') {
+      parts.push(`SELECT l.id, ${lit(f.id)}, '0' FROM lead l WHERE NOT EXISTS (SELECT 1 FROM lead_custom_value cv WHERE cv.lead_id = l.id AND cv.field_id = ${lit(f.id)})`);
+      continue;
+    }
     if (f.type !== 'formula') continue;
     let sql: string;
     try {

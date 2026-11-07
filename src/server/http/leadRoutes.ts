@@ -5,7 +5,7 @@ import type { DB } from '../db/connection.js';
 import type { Config } from '../config.js';
 import { DomainError } from '../core/errors.js';
 import { logManualCall, changeOutcome, addLeadAction, addNote, callHistory, changeCallerId } from '../domain/calls.js';
-import { runCallRules } from '../domain/rules.js';
+import { runCallRules, runEventRules } from '../domain/rules.js';
 import { leadExists, listLeads, getLeadDetail, leadPdfPage, setLinkStatus } from '../domain/leads.js';
 import { parseList } from '../domain/groupFilter.js';
 import { setLeadTypeForMatching } from '../domain/leadEdit.js';
@@ -70,11 +70,15 @@ export function registerLeadRoutes(
   });
   app.post('/api/leads/:id/tags', async (req) => {
     const { id } = z.object({ id: z.string().max(64) }).parse(req.params);
-    return tagLead(db, id, z.object({ name: tagName }).parse(req.body).name);
+    tagLead(db, id, z.object({ name: tagName }).parse(req.body).name);
+    // Rules on that tag run first, so the lead's tags come back with what they did.
+    runEventRules(db);
+    return leadTags(db, id);
   });
   app.delete('/api/leads/:id/tags/:tagId', async (req) => {
     const { id, tagId } = z.object({ id: z.string().max(64), tagId: z.string().max(64) }).parse(req.params);
     setTagOnLeads(db, [id], tagId, false);
+    runEventRules(db);
     return leadTags(db, id);
   });
   // Puts a tag on (or takes it off) every lead matching the filters.

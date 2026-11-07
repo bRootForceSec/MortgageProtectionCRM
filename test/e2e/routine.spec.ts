@@ -374,3 +374,44 @@ test('a status: named in Settings from a condition, shown as a badge and a Leads
   await expect(page.locator('.status-chip', { hasText: 'Speaks Spanish' })).toHaveCount(1);
   await page.screenshot({ path: 'test-results/statuses-leads.png' });
 });
+
+test('a rule on a tag, with a counter: tagging a lead sets it off at once', async ({ page }) => {
+  await page.goto(launchUrl);
+  const nav = (name: string) => page.locator('.topbar nav').getByRole('button', { name, exact: true }).click();
+  await nav('Settings');
+  // A counter field.
+  const fields = page.locator('#custom-fields');
+  await fields.getByLabel('New field name').fill('VIP count');
+  await fields.getByLabel('New field kind').selectOption('counter');
+  await fields.getByRole('button', { name: 'Add field' }).click();
+  await expect(fields.getByLabel('New field name')).toHaveValue('');
+
+  // When "VIP" is put on: tag "Call today", add 1 to VIP count.
+  const card = page.locator('#rules');
+  await card.getByRole('button', { name: '+ New rule' }).click();
+  const editor = page.getByRole('dialog', { name: 'New rule' });
+  await editor.getByLabel('Rule name').fill('VIPs today');
+  await editor.getByLabel('When', { exact: true }).selectOption('tag_added');
+  await editor.getByLabel('Trigger tag').fill('VIP');
+  await editor.getByLabel('Action 1', { exact: true }).selectOption('add_tag');
+  await editor.getByLabel('Action 1 tag').fill('Call today');
+  await editor.getByRole('button', { name: '+ Another action' }).click();
+  await editor.getByLabel('Action 2', { exact: true }).selectOption('counter');
+  await expect(editor.getByLabel('Action 2 counter')).toHaveValue(/.+/);
+  await editor.screenshot({ path: 'test-results/rule-on-tag.png' });
+  await editor.getByRole('button', { name: 'Save rule' }).click();
+  await expect(editor).toHaveCount(0);
+  await expect(card.getByLabel('Rule VIPs today')).toContainText('When tag "VIP" is put on a lead');
+  await expect(card.getByLabel('Rule VIPs today')).toContainText('Add 1 to VIP count');
+
+  // Tag a lead VIP: the rule's tag shows straight away.
+  await nav('Leads');
+  await page.locator('table.grid tbody tr').first().click();
+  const viewer = page.getByRole('dialog', { name: 'Lead' });
+  const tags = viewer.getByLabel('Tags');
+  await tags.getByRole('button', { name: '+ Tag' }).click();
+  await tags.getByLabel('Tag name').fill('VIP');
+  await tags.getByLabel('Tag name').press('Enter');
+  await expect(tags.locator('.tag-chip', { hasText: 'Call today' })).toHaveCount(1);
+  await expect(tags.locator('.tag-chip', { hasText: 'VIP' })).toHaveCount(1);
+});

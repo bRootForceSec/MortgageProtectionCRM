@@ -74,7 +74,7 @@ export function createCustomField(db: DB, b: CustomFieldInput, now = nowIso()): 
       id, b.label, b.type, options, b.type === 'formula' ? b.formula!.trim() : null, order, now,
     );
     audit(db, 'custom_field', id, 'insert', null, b, now);
-    if (b.type === 'formula') syncFieldValueView(db);
+    if (b.type === 'formula' || b.type === 'counter') syncFieldValueView(db);
     return getField(db, id);
   })();
 }
@@ -97,7 +97,7 @@ export function updateCustomField(db: DB, id: string, b: CustomFieldInput): Cust
     const options = checkInput(db, { ...b, formula: formula ?? undefined }, id);
     db.prepare('UPDATE custom_field SET label = ?, type = ?, options_json = ?, formula = ? WHERE id = ?').run(b.label, b.type, options, formula, id);
     audit(db, 'custom_field', id, 'update', old, b);
-    if (b.type === 'formula' || old.type === 'formula' || users.length) syncFieldValueView(db);
+    if ([b.type, old.type].some((t) => t === 'formula' || t === 'counter') || users.length) syncFieldValueView(db);
     return getField(db, id);
   })();
 }
@@ -126,7 +126,7 @@ export function deleteCustomField(db: DB, id: string): { removed_from: number } 
     const n = db.prepare('DELETE FROM lead_custom_value WHERE field_id = ?').run(id).changes;
     db.prepare('DELETE FROM custom_field WHERE id = ?').run(id);
     audit(db, 'custom_field', id, 'delete', old, null);
-    if (old.type === 'formula') syncFieldValueView(db);
+    if (old.type === 'formula' || old.type === 'counter') syncFieldValueView(db);
     return { removed_from: n };
   })();
 }
@@ -137,8 +137,11 @@ export function leadCustomValues(db: DB, leadId: string): { field_id: string; la
   return listCustomFields(db).map((f) => ({ field_id: f.id, label: f.label, type: f.type, result: f.result, options: f.options, value: values.get(f.id) ?? null }));
 }
 
-/** Sets this lead's values (field id → typed value; blank clears it). Returns how many changed. Call inside a transaction. */
-export function setCustomValues(db: DB, leadId: string, values: Record<string, string | null>, now = nowIso()): number {
+/**
+ * Sets this lead's values (field id → typed value; blank clears it). Returns how many changed. Call inside a transaction.
+ * A counter is changed only by a rule (`counters: true`).
+ */
+export function setCustomValues(db: DB, leadId: string, values: Record<string, string | null>, now = nowIso(), opts: { counters?: boolean } = {}): number {
   const fields = new Map(listCustomFields(db).map((f) => [f.id, f]));
   const get = db.prepare('SELECT value FROM lead_custom_value WHERE lead_id = ? AND field_id = ?');
   const put = db.prepare('INSERT INTO lead_custom_value (lead_id, field_id, value, updated_at) VALUES (?,?,?,?) ON CONFLICT (lead_id, field_id) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at');
@@ -148,6 +151,7 @@ export function setCustomValues(db: DB, leadId: string, values: Record<string, s
   for (const [fieldId, raw] of Object.entries(values)) {
     const f = fields.get(fieldId);
     if (!f) throw new DomainError('that field is gone', 404);
+    if (f.type === 'counter' && !opts.counters) throw new DomainError(`${f.label} is a counter: only rules change it`);
     let v: string | null;
     try {
       v = normalizeCustomValue(f, raw);
