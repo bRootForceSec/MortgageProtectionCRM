@@ -10,6 +10,7 @@ import { addToCallList, matchingLeadIds, removeFromCallList, toLeadFilter } from
 import { ensureTag, setTagOnLeads, tagByName } from './tags.js';
 import { listCustomFields, setCustomValues } from './customFields.js';
 import { addLeadAction } from './calls.js';
+import { conditionSql } from './formulas.js';
 
 // Rules (shared/rules.ts): stored as one setting, run by their trigger, every run written to rule_run.
 // A run finds the leads matching the rule's filter now, then does each action to them in order, in one transaction:
@@ -30,6 +31,13 @@ export function saveRules(db: DB, input: unknown): Rule[] {
   const outcomes = new Set((db.prepare('SELECT code FROM outcome_code').all() as { code: string }[]).map((o) => o.code));
   for (const r of rules) {
     LeadQuery.parse(r.filter);
+    if (r.filter.where?.trim()) {
+      try {
+        conditionSql(db, r.filter.where);
+      } catch (e) {
+        throw new DomainError(`${r.name}: the condition: ${(e as Error).message}`);
+      }
+    }
     if (r.trigger.kind === 'call_saved') for (const o of r.trigger.outcomes) if (!outcomes.has(o)) throw new DomainError(`${r.name}: unknown outcome "${o}"`);
     for (const a of r.actions) {
       if (a.kind !== 'set_field') continue;

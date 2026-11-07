@@ -8,6 +8,8 @@ import { nowIso, uuidv7 } from '../ids.js';
 import { groupWhere, parseList, searchWhere } from './groupFilter.js';
 import { DomainError } from '../core/errors.js';
 import { loadCallingSettings } from './callingSettings.js';
+import { conditionSql } from './formulas.js';
+import { FormulaError } from '../../shared/formula.js';
 
 // The call list: the leads you chose to call, worked top to bottom. Leads get here only when you add them
 // (from Leads, or with an import); nothing is added, removed or moved on its own.
@@ -50,6 +52,8 @@ export interface LeadFilter {
   on_list?: boolean;
   /** Only this lead (a rule run for one lead's call). */
   only_lead?: string;
+  /** Only leads this condition (Python syntax, a yes/no formula) is true for. */
+  where?: string;
 }
 
 /** The Leads filters as the API (or a routine step) gives them, with relative choices worked out now. */
@@ -75,6 +79,7 @@ export function toLeadFilter(q: LeadQuery, now = new Date()): LeadFilter {
     sort_field: q.sort_field || undefined,
     appt_days_ago: q.appt_days_ago ?? undefined,
     on_list: q.on_list === true || q.on_list === '1' || q.on_list === 'true',
+    where: q.where?.trim() || undefined,
   };
 }
 
@@ -145,8 +150,18 @@ function ageWhere(age: LeadFilter['age']): string {
   return `(l.callin_at IS NOT NULL AND ${days} >= ${b.min}${b.max == null ? '' : ` AND ${days} <= ${b.max}`})`;
 }
 
+/** A condition as SQL, or a DomainError saying what's wrong with it. */
+function whereSql(db: DB, src: string): string {
+  try {
+    return conditionSql(db, src);
+  } catch (e) {
+    if (e instanceof FormulaError) throw new DomainError(`The condition: ${e.message}`);
+    throw e;
+  }
+}
+
 /** SQL condition over `lead l JOIN lead_state s` for the Leads page filters. */
-export function leadFilterWhere(f: LeadFilter): { sql: string; params: Record<string, unknown> } {
+export function leadFilterWhere(db: DB, f: LeadFilter): { sql: string; params: Record<string, unknown> } {
   const group = groupWhere('l.county_key', { counties: f.counties, areaCodes: f.areaCodes });
   const search = searchWhere(f.search);
   // "Tried" leads split by how the last call went: not reached (no answer) or talked with no appointment.
@@ -181,6 +196,7 @@ export function leadFilterWhere(f: LeadFilter): { sql: string; params: Record<st
           f.custom.min != null ? ' AND CAST(v.value AS REAL) >= @lf_fmin' : ''}${f.custom.max != null ? ' AND CAST(v.value AS REAL) <= @lf_fmax' : ''})`
       : '1',
     f.not_on_list ? `l.id NOT IN (SELECT i.lead_id FROM call_list_item i WHERE NOT ${WORKED})` : '1',
+    f.where ? whereSql(db, f.where) : '1',
     group.sql,
     search.sql,
   ];
@@ -304,7 +320,7 @@ export function sortFieldOrder(f: LeadFilter): { sql: string; params: Record<str
 
 /** Every lead matching the Leads page filters, in import order (newest batch last, file order), or by its sort field. */
 export function matchingLeadIds(db: DB, f: LeadFilter): string[] {
-  const w = leadFilterWhere(f);
+  const w = leadFilterWhere(db, f);
   const o = sortFieldOrder(f);
   return db
     .prepare(

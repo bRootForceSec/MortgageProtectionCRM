@@ -17,7 +17,7 @@ import { leadCustomValues } from './customFields.js';
  * are on the call list. `page` counts from 1; past the last page gives the last page.
  */
 export function listLeads(db: DB, f: LeadFilter, paging: { page?: number; per_page?: number } = {}) {
-  const w = leadFilterWhere(f);
+  const w = leadFilterWhere(db, f);
   const o = sortFieldOrder(f);
   const total = (db.prepare(`SELECT COUNT(*) n FROM lead l JOIN lead_state s ON s.lead_id = l.id WHERE ${w.sql}`).get(w.params) as { n: number }).n;
   const perPage = paging.per_page ?? LEAD_PAGE_SIZES[LEAD_PAGE_SIZES.length - 1]!;

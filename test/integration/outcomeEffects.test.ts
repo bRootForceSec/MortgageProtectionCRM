@@ -23,7 +23,7 @@ let numberId: string;
 const TABS = ['new', 'no_answer', 'talked', 'callback', 'appointment_set', 'appt_missed', 'appt_no_show', 'appt_sat_no_sale', 'appt_prezi', 'appt_sold', 'invalid', 'dead'];
 const tabsOf = (leadId: string) =>
   TABS.filter((status) => {
-    const w = leadFilterWhere({ status });
+    const w = leadFilterWhere(db, { status });
     return !!db.prepare(`SELECT 1 FROM lead l JOIN lead_state s ON s.lead_id = l.id WHERE l.id = @id AND ${w.sql}`).get({ ...w.params, id: leadId });
   });
 

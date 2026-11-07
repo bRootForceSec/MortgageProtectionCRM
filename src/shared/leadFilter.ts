@@ -108,6 +108,8 @@ export const LeadQuery = z.object({
   appt_days_ago: z.coerce.number().int().min(0).max(60).optional(),
   /** Only leads waiting on the call list (called ones count as off it). The opposite of not_on_list. */
   on_list: z.union([z.boolean(), z.enum(['1', '0', 'true', 'false'])]).optional(),
+  /** A condition in Python syntax (a yes/no formula), like `has("No show") and attempts >= 3`: only leads it's true for. */
+  where: z.string().max(2000).optional(),
 });
 export type LeadQuery = z.infer<typeof LeadQuery>;
 

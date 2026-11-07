@@ -214,7 +214,7 @@ describe('clearing, replacing and saved lists', () => {
     logManualCall(db, { lead_id: other, idempotency_key: key(), outcome_code: 'no_appt' });
     const start = new Date(Date.now() - 3600_000).toISOString();
     const match = (f: object) =>
-      db.prepare(`SELECT l.id FROM lead l JOIN lead_state s ON s.lead_id = l.id WHERE ${leadFilterWhere(f).sql}`).all(leadFilterWhere(f).params).map((r: any) => r.id);
+      db.prepare(`SELECT l.id FROM lead l JOIN lead_state s ON s.lead_id = l.id WHERE ${leadFilterWhere(db, f).sql}`).all(leadFilterWhere(db, f).params).map((r: any) => r.id);
     expect(match({ status: 'no_answer' })).toEqual([jane]);
     expect(match({ status: 'talked' })).toEqual([other]);
     expect(match({ status: 'retry' }).sort()).toEqual([jane, other].sort());

@@ -7,6 +7,9 @@
 // A yes/no formula is a condition, and can read the lead's log: has("No show") and days_since(added("No show")) <= 2.
 //
 // Numbers, "text", yes/no, [Your field name], the values below, + - * /, = != < <= > >=, and/or/not, ( ).
+//
+// Python syntax works too, and is what the condition editor writes: == for equals, True/False, field("Name"),
+// `x if test else y`, keyword arguments like times("No answer", days=7), and # comments.
 
 export type FormulaKind = 'number' | 'text' | 'yes_no' | 'date';
 
@@ -43,6 +46,13 @@ export const FORMULA_FUNCTIONS: readonly { name: string; usage: string; help: st
   { name: 'days_until', usage: 'days_until([A date field])', help: 'Whole days until that date' },
   { name: 'hours_since', usage: 'hours_since(added("Called"))', help: 'Hours since that time' },
 ];
+
+/** Each function's arguments by name, for Python keyword arguments: times("No answer", days=7). */
+export const FUNCTION_PARAMS: Readonly<Record<string, readonly string[]>> = {
+  has: ['tag'], has_tag: ['tag'], added: ['tag'], removed: ['tag'], times: ['tag', 'days'], before: ['first', 'second'],
+  pressed: ['outcome', 'days'], round: ['value', 'places'], ifblank: ['value', 'instead'], blank: ['value'], abs: ['value'],
+  contains: ['text', 'part'], days_since: ['date'], days_until: ['date'], hours_since: ['date'],
+};
 
 export type FormulaNode =
   | { t: 'num'; v: number }
@@ -87,6 +97,11 @@ function tokenize(src: string): Tok[] {
   while (i < src.length) {
     const c = src[i]!;
     if (/\s/.test(c)) { i++; continue; }
+    if (c === '#') {
+      // A Python comment, to the end of the line.
+      while (i < src.length && src[i] !== '\n') i++;
+      continue;
+    }
     const at = i;
     if (/[0-9.]/.test(c)) {
       const m = /^(\d+\.?\d*|\.\d+)/.exec(src.slice(i));
@@ -137,6 +152,16 @@ export function parseFormula(src: string): FormulaNode {
   };
   let depth = 0;
 
+  // Python's `x if test else y`, the loosest of all: it becomes if(test, x, y).
+  const ternary = (): FormulaNode => {
+    const x = or();
+    if (!isWord('if')) return x;
+    p++;
+    const test = or();
+    if (!isWord('else')) throw new FormulaError('expected "else" after "… if test"', peek()?.at ?? src.length);
+    p++;
+    return { t: 'call', name: 'if', args: [test, x, ternary()] };
+  };
   const or = (): FormulaNode => {
     let l = and();
     while (isWord('or')) { p++; l = { t: 'bin', op: 'or', l, r: and() }; }
@@ -182,7 +207,7 @@ export function parseFormula(src: string): FormulaNode {
       if (t.k === 'str') return { t: 'str', v: t.v };
       if (t.k === 'field') return { t: 'field', label: t.v };
       if (t.k === 'op' && t.v === '(') {
-        const e = or();
+        const e = ternary();
         expect(')', 'a )');
         return e;
       }
@@ -192,12 +217,40 @@ export function parseFormula(src: string): FormulaNode {
         if (isOp('(')) {
           p++;
           const args: FormulaNode[] = [];
+          const named = new Map<string, FormulaNode>();
+          const arg = () => {
+            // A keyword argument: name=value (Python). Plain = after a lone word.
+            const w = peek(), eq = toks[p + 1];
+            // Only names the function takes, so `if(state = "OH", …)` still compares.
+            if (w?.k === 'word' && eq?.k === 'op' && eq.v === '=' && src[eq.at + 1] !== '=' && FUNCTION_PARAMS[t.v]?.includes(w.v)) {
+              if (named.has(w.v)) throw new FormulaError(`"${w.v}" is given twice`, w.at);
+              p += 2;
+              named.set(w.v, ternary());
+              return;
+            }
+            if (named.size) throw new FormulaError('put plain values before name=value ones', w?.at ?? src.length);
+            args.push(ternary());
+          };
           if (!isOp(')')) {
-            args.push(or());
-            while (isOp(',')) { p++; args.push(or()); }
+            arg();
+            while (isOp(',')) { p++; if (isOp(')')) break; arg(); }
           }
           expect(')', `a ) to close ${t.v}(`);
-          return { t: 'call', name: t.v, args };
+          if (t.v === 'field') {
+            // field("Name") is Python for [Name].
+            const a = args[0];
+            if (args.length !== 1 || named.size || a?.t !== 'str' || !a.v.trim()) throw new FormulaError('field() takes the field\'s name in quotes, like field("Score")', t.at);
+            return { t: 'field', label: a.v.trim() };
+          }
+          const all: (FormulaNode | undefined)[] = [...args];
+          for (const [name, value] of named) {
+            const i = FUNCTION_PARAMS[t.v]!.indexOf(name);
+            if (all[i]) throw new FormulaError(`"${name}" is given twice`, t.at);
+            all[i] = value;
+          }
+          const full = Array.from(all, (a) => a);
+          if (full.some((a) => !a)) throw new FormulaError(`${t.v}() is missing a value before the named ones`, t.at);
+          return { t: 'call', name: t.v, args: full as FormulaNode[] };
         }
         return { t: 'value', name: t.v };
       }
@@ -207,7 +260,7 @@ export function parseFormula(src: string): FormulaNode {
     }
   };
 
-  const e = or();
+  const e = ternary();
   if (p < toks.length) throw new FormulaError(`didn't expect "${toks[p]!.v}" here`, toks[p]!.at);
   return e;
 }
@@ -223,7 +276,10 @@ export function formulaFieldLabels(n: FormulaNode): string[] {
   }
 }
 
-/** The formula with every [Old name] (any case) written as [New name]: a renamed field keeps working. */
+/** The formula with every [Old name] or field("Old name") (any case) using the new name: a renamed field keeps working. */
 export function renameFormulaField(src: string, from: string, to: string): string {
-  return src.replace(/\[([^\]]*)\]/g, (m, label: string) => (label.trim().toLowerCase() === from.toLowerCase() ? `[${to}]` : m));
+  const same = (label: string) => label.trim().toLowerCase() === from.toLowerCase();
+  return src
+    .replace(/\[([^\]]*)\]/g, (m, label: string) => (same(label) ? `[${to}]` : m))
+    .replace(/\bfield\(\s*(["'])(.*?)\1\s*\)/gi, (m, q: string, label: string) => (same(label) ? `field(${q}${to}${q})` : m));
 }

@@ -25,7 +25,7 @@ const state = (leadId: string) => db.prepare('SELECT status, appt_result, appt_m
 const ev = (color: UnitrustEvent['color'], title = 'OH - ROCKET MORTG - ROBERT RAY- (614) 555-0102 RAY', date = '2026-10-26'): UnitrustEvent => ({ title, date, time: '10:00', color });
 const later = (min: number) => new Date(Date.now() + min * 60_000).toISOString();
 const inTab = (status: string) => {
-  const w = leadFilterWhere({ status });
+  const w = leadFilterWhere(db, { status });
   return (db.prepare(`SELECT l.first_name f FROM lead l JOIN lead_state s ON s.lead_id = l.id WHERE ${w.sql}`).all(w.params) as { f: string }[]).map((r) => r.f);
 };
 

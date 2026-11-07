@@ -18,6 +18,7 @@ import { NewRuleFromFilters } from './RulesCard';
 import { useTags } from '../tags';
 import { useCustomFields } from '../customFields';
 import { CustomFieldInput } from '../components/CustomFieldInput';
+import { ConditionEditor } from '../components/ConditionEditor';
 import { isNumericField, normalizeCustomValue, showCustomValue } from '../../shared/customFields';
 
 // Where you pick who to call: filter the leads, tick the ones you want (or take every match),
@@ -71,6 +72,9 @@ export function LeadsPage() {
   const [fieldMax, setFieldMax] = useState('');
   /** A number field to put the highest first ('' for the usual order: latest activity first). */
   const [sortField, setSortField] = useState('');
+  /** A condition in Python syntax ('' for none), and whether its editor is open. */
+  const [where, setWhere] = useState('');
+  const [editingWhere, setEditingWhere] = useState(false);
   const { fields } = useCustomFields();
   const field = fields.find((f) => f.id === fieldId);
   const numeric = !!field && isNumericField(field);
@@ -128,13 +132,14 @@ export function LeadsPage() {
     field_min: numeric ? num(fieldMin) : undefined,
     field_max: numeric ? num(fieldMax) : undefined,
     sort_field: sortField || undefined,
+    where: where || undefined,
     ...groupParams,
-  }), [status, search, batch, tried, notOnList, leadType, age, imported, apptDays, gap, tag, fieldId, keptValue, numeric, fieldMin, fieldMax, sortField, groupParams.counties, groupParams.area_codes]); // eslint-disable-line react-hooks/exhaustive-deps
+  }), [status, search, batch, tried, notOnList, leadType, age, imported, apptDays, gap, tag, fieldId, keptValue, numeric, fieldMin, fieldMax, sortField, where, groupParams.counties, groupParams.area_codes]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const load = useCallback(
     () => api.get<{ rows: any[]; total: number; page: number }>('/leads', { ...filters, page: String(page), per_page: String(perPage) })
-      .then((r) => { setRows(r.rows); setTotal(r.total); if (r.page !== page) setPage(r.page); }),
-    [filters, page, perPage],
+      .then((r) => { setRows(r.rows); setTotal(r.total); if (r.page !== page) setPage(r.page); }, (e: Error) => toast(e.message, 'error')),
+    [filters, page, perPage, toast],
   );
   useEffect(() => {
     const t = setTimeout(() => void load(), 200);
@@ -164,7 +169,7 @@ export function LeadsPage() {
     return n;
   });
 
-  const filtered = status !== 'all' || !!search || !!batch || !!tried || notOnList || !!leadType || !!age || !!imported || !!apptDays || !!gap || !!tag || !!fieldId || !!sortField;
+  const filtered = status !== 'all' || !!search || !!batch || !!tried || notOnList || !!leadType || !!age || !!imported || !!apptDays || !!gap || !!tag || !!fieldId || !!sortField || !!where;
   const clearFilters = () => {
     setStatus('all');
     setSearch('');
@@ -182,6 +187,8 @@ export function LeadsPage() {
     setFieldMin('');
     setFieldMax('');
     setSortField('');
+    setWhere('');
+    setEditingWhere(false);
   };
   const typeLabel = (code: string | null) => (code ? types.find((t) => t.code === code)?.label ?? code : '');
 
@@ -298,8 +305,20 @@ export function LeadsPage() {
         <label className="row" style={{ gap: 4 }} title="Leaves out leads still waiting to be called on the list. Ones you already called from it can go back on.">
           <input type="checkbox" checked={notOnList} onChange={(e) => setNotOnList(e.target.checked)} /> Not on the call list
         </label>
+        <button className="btn small" onClick={() => setEditingWhere(true)} title="Only leads a condition is true for, built from tags, their history, calls and fields. Edit it as a form or as Python.">
+          {where ? 'Edit condition' : 'Condition…'}
+        </button>
         {filtered && <button className="btn small" onClick={clearFilters}>Clear filters</button>}
       </div>
+      {where && !editingWhere && (
+        <div className="leads-tools">
+          <span className="muted">Where</span> <code aria-label="Condition in use">{where}</code>
+          <button className="btn small" onClick={() => setWhere('')} aria-label="Remove the condition">×</button>
+        </div>
+      )}
+      {editingWhere && (
+        <ConditionEditor value={where} onApply={(w) => { setWhere(w); setEditingWhere(false); }} onCancel={() => setEditingWhere(false)} />
+      )}
       <div className="leads-tools">
         <span className="muted">{total} lead{total === 1 ? '' : 's'}</span>
         {pager}

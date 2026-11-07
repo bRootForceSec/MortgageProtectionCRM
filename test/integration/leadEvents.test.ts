@@ -136,3 +136,25 @@ describe('migration 031', () => {
     d.close();
   }, 90_000);
 });
+
+describe('conditions filter leads', () => {
+  it('a Python condition in the Leads filters, checked as you type, and kept by rules', async () => {
+    const { matchingLeadIds, toLeadFilter } = await import('../../src/server/domain/callList.js');
+    const { LeadQuery } = await import('../../src/shared/leadFilter.js');
+    const { checkCondition } = await import('../../src/server/domain/formulas.js');
+    const jane = lead('Jane');
+    tagLead(db, jane, 'No show');
+    const matching = (where: string) => matchingLeadIds(db, toLeadFilter(LeadQuery.parse({ where })));
+    expect(matching('has("No show") and hours_since(added("No show")) < 72')).toEqual([jane]);
+    expect(matching('not has("No show")')).not.toContain(jane);
+    expect(() => matching('attempts +')).toThrow(/The condition: the formula stops too soon/);
+    expect(() => matching('attempts + 1')).toThrow(/has to be yes or no/);
+    const total = (db.prepare('SELECT COUNT(*) n FROM lead').get() as { n: number }).n;
+    expect(checkCondition(db, 'has("No show")')).toEqual({ error: null, at: null, matched: 1, total });
+    expect(checkCondition(db, 'has("No show"')).toMatchObject({ error: expect.stringMatching(/\)/), matched: 0 });
+    expect(() => saveRules(db, [{ id: 'r', name: 'Bad', enabled: true, trigger: { kind: 'manual' }, filter: { where: 'has(' }, actions: [{ kind: 'add_tag', tag: 'X' }] }])).toThrow(/Bad: the condition/);
+    saveRules(db, [{ id: 'r', name: 'Rebook', enabled: true, trigger: { kind: 'manual' }, filter: { where: 'has("No show")' }, actions: [{ kind: 'add_tag', tag: 'Rebook' }] }]);
+    expect(runRuleById(db, 'r', false).matched).toBe(1);
+    expect(leadEvents(db, jane)[0]).toMatchObject({ kind: 'tag_added', tag_name: 'Rebook', source: 'rule', source_name: 'Rebook' });
+  });
+});
