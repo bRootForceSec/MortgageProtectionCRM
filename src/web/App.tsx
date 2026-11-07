@@ -238,7 +238,7 @@ function TodayStats() {
       {a && a.appointments > 0 && (
         <span
           className="appt-stats"
-          title={`Today's appointments (${a.appointments}): from what you log on the Appointment side, or the Unitrust calendar when the extension sees a change.${a.pending ? ` ${a.pending} not updated yet.` : ''}${a.rescheduled ? ` ${a.rescheduled} rescheduled.` : ''}`}
+          title={`Today's appointments (${a.appointments}): from the appointment buttons you press, or the Unitrust calendar when the extension sees a change.${a.pending ? ` ${a.pending} not updated yet.` : ''}${a.rescheduled ? ` ${a.rescheduled} rescheduled.` : ''}`}
         >
           {s.steps.filter(onAppts).map(show)}
           <span>No-shows <b>{a.no_show}</b></span>

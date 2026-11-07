@@ -2,7 +2,9 @@ import * as z from 'zod/v4';
 import type { DB } from '../db/connection.js';
 import { getSetting, setSetting } from '../core/settings.js';
 import { DomainError } from '../core/errors.js';
-import { conditionSql } from './formulas.js';
+import { conditionSql, loadStatusDefs } from './formulas.js';
+import { saveStatuses } from './statuses.js';
+import { uuidv7 } from '../ids.js';
 import { ensureTag, setTagOnLeads, tagByName } from './tags.js';
 import { CURRENT_OUTCOME } from '../db/sql.js';
 import { leadCustomValues, listCustomFields, setCustomValues } from './customFields.js';
@@ -88,13 +90,6 @@ export function saveButtons(db: DB, input: unknown): ButtonInfo[] {
       if (!isTypedField(f)) throw new DomainError(`${b.label}: ${f.label} is ${f.type === 'counter' ? 'a counter' : 'a formula'}, so a button can't ask for it`);
     }
   }
-  const all = loadButtons(db);
-  const merged = [...list, ...all.filter((b) => b.own && !ids.has(b.id))];
-  for (const side of ['first_call', 'appointment'] as const) {
-    if (!merged.some((b) => !b.hidden && buttonSide(b) === side)) {
-      throw new DomainError(`keep at least one button on the ${side === 'appointment' ? 'Appointment' : 'First call'} side`);
-    }
-  }
   const overrides: OutcomeOverrides = { ...loadOutcomeOverrides(db) };
   for (const b of list) if (isOwn(b)) overrides[b.id] = { label: b.label, offered: !b.hidden };
   db.transaction(() => {
@@ -102,6 +97,32 @@ export function saveButtons(db: DB, input: unknown): ButtonInfo[] {
     setSetting(db, 'buttons', list.map((b) => (isOwn(b) ? { ...b, label: undefined, hidden: undefined } : b)));
   })();
   return loadButtons(db);
+}
+
+/** The smart list that says a lead has an appointment to log, which the appointment buttons show for. */
+export const APPOINTMENT_LIST = 'Has an appointment';
+
+/**
+ * Once, after the update that took away the First call and Appointment sides: each button shows by a condition instead.
+ * A smart list "Has an appointment" (the rule the sides used: an appointment set that hasn't sold) is added if there
+ * isn't one; appointment buttons show for leads in it and the others for leads not in it, each joined to any show-when
+ * condition it had. You can change the smart list, or any button's condition, like anything else.
+ */
+export function sidesToConditions(db: DB): boolean {
+  if (getSetting<boolean>(db, 'sides_to_conditions_done')) return false;
+  db.transaction(() => {
+    const lists = loadStatusDefs(db);
+    if (!lists.some((st) => st.name.toLowerCase() === APPOINTMENT_LIST.toLowerCase())) {
+      saveStatuses(db, [...lists, { id: uuidv7(), name: APPOINTMENT_LIST, condition: 'status == "appointment_set" and ifblank(appt_result, "") != "sold"', color: 'blue', tab: false }]);
+    }
+    const cond = (b: ButtonInfo) => {
+      const side = buttonSide(b) === 'appointment' ? `in_list("${APPOINTMENT_LIST}")` : `not in_list("${APPOINTMENT_LIST}")`;
+      return b.show_when ? `${side} and (${b.show_when})` : side;
+    };
+    saveButtons(db, loadButtons(db).map((b) => ButtonDef.parse({ ...b, show_when: cond(b) })));
+    setSetting(db, 'sides_to_conditions_done', true);
+  })();
+  return true;
 }
 
 /** The buttons this lead doesn't get now, because their show-when condition is false for it. */

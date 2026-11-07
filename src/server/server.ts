@@ -7,7 +7,7 @@ import { loadConfig, ensureDirs, loadOrCreateToken, type Config } from './config
 import { openDatabase, type DB } from './db/connection.js';
 import { buildApp } from './http/app.js';
 import { rebuildLeadState } from './domain/leadState.js';
-import { tagLeadsWithLastButton } from './domain/buttons.js';
+import { sidesToConditions, tagLeadsWithLastButton } from './domain/buttons.js';
 import { Updates, readBuildInfo, type Runtime, type UpdateProvider } from './updates.js';
 import { DraftWorker } from './domain/drafts.js';
 import { BulkImporter } from './domain/bulkImport.js';
@@ -102,6 +102,8 @@ export async function startServer(opts: StartOptions = {}): Promise<RunningServe
   rebuildLeadState(db);
   // Once, after the update that made buttons tag leads: older leads get the tag of their last call's button.
   tagLeadsWithLastButton(db, new Date().toISOString());
+  // Once, after the update that took away the First call and Appointment sides: buttons show by conditions instead.
+  sidesToConditions(db);
   const token = loadOrCreateToken(config);
   const webDir = [path.resolve(here, '../web'), path.resolve(here, '../../dist/web')].find((d) => fs.existsSync(path.join(d, 'index.html'))) ?? null;
   const build = readBuildInfo(path.resolve(here, '../build-info.json'));

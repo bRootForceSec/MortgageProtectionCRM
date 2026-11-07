@@ -63,16 +63,8 @@ export function isApptResult(v: string | null | undefined): v is ApptResult {
   return !!v && Object.hasOwn(APPT_RESULTS, v);
 }
 
-/** The two sides of the Calling screen. */
+/** An outcome's kind: about a first call, or about an appointment. Buttons show by their own conditions, not by this. */
 export type CallMode = 'first_call' | 'appointment';
-
-/**
- * Which side of the Calling screen a lead opens on: Appointment when it has an appointment booked (or rescheduled)
- * with no result yet, from Appt set or from Unitrust; otherwise First call.
- */
-export function openingSide(state: { status: string; appt_result: string | null } | null | undefined): CallMode {
-  return state?.status === 'appointment_set' && state.appt_result !== 'sold' ? 'appointment' : 'first_call';
-}
 
 export interface UnitrustTitle {
   state: string;

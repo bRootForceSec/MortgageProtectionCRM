@@ -13,8 +13,7 @@ import { CALL_LIST_CHANGED, ClearListDialog, LoadListDialog, SaveAsDialog, sugge
 import { isAction, isTyping, keyLabel, type KeyMap } from '../shortcuts';
 import { getStored, getStoredJson, setStored, setStoredJson } from '../storage';
 import { LogCall, type Attempt, type FormValues, type Saved } from './LogCall';
-import { CallerLookup, ModeSwitch, Recent, UNDO_MS, UndoBar, otherNumber } from './CallingPanels';
-import { openingSide, type CallMode } from '../../shared/appointments';
+import { CallerLookup, EveryButton, Recent, UNDO_MS, UndoBar, otherNumber } from './CallingPanels';
 import { bestTimeFirst } from '../../shared/bestTime';
 import { describeSortStep, yourOrder } from '../../shared/listOrder';
 import { STEP_ORDERS, type StepOrder } from '../../shared/routines';
@@ -76,9 +75,10 @@ export function CallingPage() {
     setStored(ORDER_KEY, o);
   };
   /** The side you picked for a lead, when it isn't the one it opened on. */
-  const [modePick, setModePick] = useState<{ leadId: string; mode: CallMode } | null>(null);
-  const mode: CallMode = detail ? (modePick?.leadId === detail.lead.id ? modePick.mode : openingSide(detail.state)) : 'first_call';
-  const switchMode = (m: CallMode) => detail && setModePick({ leadId: detail.lead.id, mode: m });
+  // "Every button" for this lead: the ones whose condition is false for it show too.
+  const [allFor, setAllFor] = useState<string | null>(null);
+  const showAll = !!detail && allFor === detail.lead.id;
+  const toggleAll = () => detail && setAllFor(showAll ? null : detail.lead.id);
   const listRef = useRef<HTMLUListElement>(null);
   /** After a save or skip with KDE Connect: the next lead's number goes to your phone once that lead is shown. */
   const autoSend = useRef<string | null>(null);
@@ -392,14 +392,11 @@ export function CallingPage() {
       }>(`/calls/${s.callId}/void`, { reason: 'undo' });
       const appt = r.appointment_for ? fromWall(r.appointment_for) : null;
       const cb = appt ? callbackFields(appt.at.toISOString(), appt.anyTime, s.tz) : callbackFields(r.callback_due_at, r.callback_any_time, s.tz);
-      // Back on the side the call was saved from.
-      const button = r.button_id ?? r.outcome_code;
-      if (button) setModePick({ leadId: s.leadId, mode: keys.kinds[button] ?? 'first_call' });
       setRestore({
         leadId: s.leadId,
         n: Date.now(),
         values: {
-          button,
+          button: r.button_id ?? r.outcome_code,
           day: cb.day,
           time: cb.time,
           minutes: r.talk_seconds ? String(Math.round(r.talk_seconds / 60)) : '',
@@ -461,11 +458,11 @@ export function CallingPage() {
       else if (act('edit')) { if (detail) { e.preventDefault(); setEditing(true); } }
       else if (act('called_back')) { if (ready && detail) { e.preventDefault(); void toggleCalledBack(detail, toast).then((at) => calledBack(detail.lead.id, at)); } }
       else if (act('copy_tag')) { if (detail) { e.preventDefault(); void copyCalendarTag(detail.lead, toast); } }
-      else if (act('switch_mode')) { if (ready && detail) { e.preventDefault(); switchMode(mode === 'appointment' ? 'first_call' : 'appointment'); } }
+      else if (act('switch_mode')) { if (ready && detail) { e.preventDefault(); toggleAll(); } }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [keys, move, goNext, skip, dial, undo, detail, modalOpen, ready, phoneNow, otherPhone, toast, calledBack, mode]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [keys, move, goNext, skip, dial, undo, detail, modalOpen, ready, phoneNow, otherPhone, toast, calledBack, showAll]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const refreshDetail = async () => {
     await Promise.all([loadDetail(selected), loadList()]);
@@ -474,9 +471,8 @@ export function CallingPage() {
   // Enter saves and moves straight on; the undo bar (or Z) brings you back.
   const onSaved = async (s: Saved) => {
     setSaved(s);
-    // Run it now: same lead, Appointment side, timer started again for the presentation.
+    // Run it now: same lead (its appointment buttons show now it has one), timer started again for the presentation.
     if (s.onTheSpot) {
-      setModePick({ leadId: s.leadId, mode: 'appointment' });
       setRestore(null);
       setAttempt((a) => ({ ...freshAttempt(), to: a.to, timerStart: settings?.use_timer === false ? null : Date.now() }));
       bumpStats();
@@ -484,8 +480,7 @@ export function CallingPage() {
       await refreshDetail();
       return;
     }
-    // The next time this lead is on screen, its side is picked again from how it stands now.
-    setModePick(null);
+    setAllFor(null);
     setRestore(null);
     setAttempt(freshAttempt());
     bumpStats();
@@ -656,7 +651,7 @@ export function CallingPage() {
           <span className="help">
             <kbd>{k('list_up')}</kbd><kbd>{k('list_down')}</kbd> move <kbd>{k('skip')}</kbd> skip to the bottom <kbd>{k('dial')}</kbd> {dialLabel.toLowerCase()} <kbd>{k('dial_alt')}</kbd> other number{' '}
             <kbd>{k('dials_down')}</kbd><kbd>{k('dials_up')}</kbd> dials <kbd>Enter</kbd> save and next <kbd>{k('undo')}</kbd> undo <kbd>{k('note')}</kbd> note{' '}
-            <kbd>{k('edit')}</kbd> edit <kbd>{k('switch_mode')}</kbd> first call / appointment <kbd>{k('lookup')}</kbd> look up a caller <kbd>{k('called_back')}</kbd> called me back <kbd>{k('copy_tag')}</kbd> copy for calendar
+            <kbd>{k('edit')}</kbd> edit <kbd>{k('switch_mode')}</kbd> every button <kbd>{k('lookup')}</kbd> look up a caller <kbd>{k('called_back')}</kbd> called me back <kbd>{k('copy_tag')}</kbd> copy for calendar
           </span>
         </header>
       </section>
@@ -665,7 +660,7 @@ export function CallingPage() {
         <header>
           <CallerLookup inputRef={lookupRef} hotkey={k('lookup')} onOpen={openOutside} />
           {/* In the header, so it takes no room above the outcome buttons on a short screen. */}
-          {detail && <ModeSwitch mode={mode} onChange={switchMode} hotkey={k('switch_mode')} />}
+          {detail && <EveryButton on={showAll} onChange={toggleAll} hotkey={k('switch_mode')} />}
         </header>
         <div className="body">
           {saved && <UndoBar saved={saved} undoKey={k('undo')} onUndo={undo} onExpire={() => setSaved(null)} />}
@@ -688,9 +683,9 @@ export function CallingPage() {
               <LeadSummary d={detail} onDial={dial} dialLabel={dialLabel} dialKey={k('dial')} altKey={k('dial_alt')} onEdit={() => setEditing(true)} editKey={k('edit')}
                 calledBackKey={k('called_back')} tagKey={k('copy_tag')} onCalledBack={(at) => calledBack(detail.lead.id, at)} />
               <LogCall
-                key={`${detail.lead.id}-${mode}-${restore?.leadId === detail.lead.id ? restore.n : 0}`}
+                key={`${detail.lead.id}-${restore?.leadId === detail.lead.id ? restore.n : 0}`}
                 d={detail}
-                mode={mode}
+                showAll={showAll}
                 attempt={attempt}
                 setDials={(n) => setAttempt((a) => ({ ...a, dials: Math.max(1, n) }))}
                 resetTimer={() => setAttempt((a) => ({ ...a, timerStart: null }))}

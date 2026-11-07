@@ -157,7 +157,7 @@ export function ButtonsCard() {
         <label className="row" style={{ gap: 6 }}>
           Counts as
           <select value={b.outcome} aria-label={`${b.label}: counts as`} onChange={(e) => change(b.id, { outcome: e.target.value })}>
-            {outcomes.map((o) => <option key={o.code} value={o.code}>{o.kind === 'appointment' ? 'Appointment: ' : 'First call: '}{o.label}</option>)}
+            {outcomes.map((o) => <option key={o.code} value={o.code}>{o.label}</option>)}
           </select>
         </label>
       )}
@@ -212,7 +212,7 @@ export function ButtonsCard() {
       </p>
       {(['first_call', 'appointment'] as const).map((side) => (
         <div key={side}>
-          <h3>{side === 'appointment' ? 'Appointment side' : 'First call side'}</h3>
+          <h3>{side === 'appointment' ? 'Appointment outcomes' : 'Call outcomes'}</h3>
           <table className="grid" style={{ maxWidth: 900 }}>
             <thead><tr><th>Name</th><th>Button</th><th>What it does</th><th></th></tr></thead>
             <tbody>

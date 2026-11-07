@@ -281,7 +281,7 @@ export interface LeadDetail {
     /** The lead's numbers that are ruled out (JSON list). */
     blocked_phones_json: string | null;
     block_reason: string | null;
-    /** How the latest appointment went: logged on the Appointment side, or read from Unitrust by the extension. */
+    /** How the latest appointment went: logged with an appointment button, or read from Unitrust by the extension. */
     appt_result: string | null;
     /** 1 when a no-show, sat-no-sale or prezi put the lead back to be called. */
     appt_missed: number;

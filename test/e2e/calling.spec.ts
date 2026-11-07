@@ -109,7 +109,7 @@ test('import a sheet, log calls by keyboard, and start an Appt set', async ({ pa
   await page.keyboard.press('ArrowDown');
   await expect(page.locator('.lead-name')).toHaveText(second);
 
-  // Callback has no button any more, so 5 does nothing on the First call side.
+  // Callback has no button any more, so 5 does nothing for a lead with no appointment.
   const firstSide = page.getByRole('group', { name: 'Outcome' }).getByRole('button');
   await expect(firstSide).toHaveText([/Dial: No answer/, /Dial: Picked up/, /Dial: Appt set/, /Dial: Bad number/]);
   await page.keyboard.press('5');
@@ -538,11 +538,11 @@ test('Do not call is a tick beside the outcome, toggled with D', async ({ page }
   await expect(page.getByLabel('History').getByText('do not call')).toBeVisible();
 });
 
-test('First call | Appointment: an appointment set opens on the Appointment side; a prezi goes back to be called', async ({ page }) => {
+test('buttons by condition: a lead with an appointment gets the appointment buttons; a prezi goes back to be called', async ({ page }) => {
   await page.goto(launchUrl);
   await page.getByRole('button', { name: 'Calling', exact: true }).click();
   await expect(page.locator('.lead-panel')).toBeVisible();
-  const tabs = page.getByRole('tablist', { name: 'Kind of call' });
+  const callButtons = page.getByRole('group', { name: 'Outcome', exact: true });
   const lookUp = async (who: string) => {
     await page.keyboard.press('l');
     await page.keyboard.type(who);
@@ -550,28 +550,28 @@ test('First call | Appointment: an appointment set opens on the Appointment side
     await page.keyboard.press('Enter');
     await expect(page.locator('.lead-name')).toHaveText(who);
   };
-  // Ann Lee had an appointment set earlier: she opens on the Appointment side.
+  // Ann Lee had an appointment set earlier: she's in the smart list "Has an appointment", so she gets its buttons.
   await lookUp('Ann Lee');
-  await expect(tabs.getByRole('tab', { name: 'Appointment' })).toHaveAttribute('aria-selected', 'true');
   // The time typed on Appt set shows until Unitrust sends its own.
   await expect(page.getByLabel('Current lead').locator('.appt-when')).toContainText('Tomorrow');
   await expect(page.getByLabel('Current lead').locator('.appt-when')).toContainText('not in Unitrust yet');
   const outcomes = page.getByRole('group', { name: 'Appointment outcome' });
   await expect(outcomes.getByRole('button')).toHaveText([/Appt: No show/, /Appt: Picked up/, /Appt: Presentation/, /Appt: Sale/, /Appt: Rescheduled/]);
-  // M flips the side, and back.
+  // M shows every button, and back.
   await page.keyboard.press('m');
-  await expect(tabs.getByRole('tab', { name: 'First call' })).toHaveAttribute('aria-selected', 'true');
-  await expect(page.getByRole('group', { name: 'Outcome', exact: true })).toContainText('No answer');
+  await expect(page.getByLabel('Every button')).toBeChecked();
+  await expect(callButtons).toContainText('No answer');
+  await expect(callButtons).toContainText('Appt: Sale');
   await page.keyboard.press('m');
   await expect(outcomes).toBeVisible();
   await page.screenshot({ path: 'test-results/appointment-side.png', fullPage: true });
-  // 3, Enter: Appt: Presentation. She comes back to be called, tagged as a prezi, on the First call side.
+  // 3, Enter: Appt: Presentation. She comes back to be called, tagged as a prezi, with the call buttons.
   await page.keyboard.press('3');
   await page.keyboard.press('Enter');
   await expect(page.locator('.undo-bar')).toContainText('Appt: Presentation');
   await lookUp('Ann Lee');
   await expect(page.getByLabel('Current lead').locator('.badge.appt-prezi')).toHaveText('Presentation, no sale');
-  await expect(tabs.getByRole('tab', { name: 'First call' })).toHaveAttribute('aria-selected', 'true');
+  await expect(callButtons).toContainText('No answer');
 });
 
 test('call history: change the caller ID on ticked calls', async ({ page }) => {
@@ -662,20 +662,19 @@ test('an appointment about to start: an alert, and its prep card on Today', asyn
   await page.screenshot({ path: 'test-results/today-appointments.png', fullPage: true });
 });
 
-test('on the spot: Run it now saves the Appt set and stays on the lead, on the Appointment side', async ({ page }) => {
+test('on the spot: Run it now saves the Appt set and stays on the lead, with the appointment buttons', async ({ page }) => {
   await page.goto(launchUrl);
   await page.getByRole('button', { name: 'Calling', exact: true }).click();
   await expect(page.locator('.phone-big')).toBeVisible();
   const lead = await page.locator('.lead-name').innerText();
-  const tabs = page.getByRole('tablist', { name: 'Kind of call' });
-  await expect(tabs.getByRole('tab', { name: 'First call' })).toHaveAttribute('aria-selected', 'true');
+  await expect(page.getByRole('group', { name: 'Outcome', exact: true })).toBeVisible();
   // 3 picks Appt set; Shift+Enter runs it now.
   await page.keyboard.press('3');
   await expect(page.getByRole('button', { name: /Run it now/ })).toBeVisible();
   await page.keyboard.press('Shift+Enter');
   await expect(page.locator('.undo-bar')).toContainText('Appt set, running it now');
   await expect(page.locator('.lead-name')).toHaveText(lead);
-  await expect(tabs.getByRole('tab', { name: 'Appointment' })).toHaveAttribute('aria-selected', 'true');
+  await expect(page.getByRole('group', { name: 'Appointment outcome' })).toBeVisible();
   await expect(page.locator('.timer')).toBeVisible();
   await page.screenshot({ path: 'test-results/on-the-spot.png', fullPage: true });
   // When it's done: 4, Enter logs the sale and moves on.

@@ -7,10 +7,10 @@ import { suggestMapping } from '../../src/server/domain/mapping.js';
 import { commitImport } from '../../src/server/domain/importer.js';
 import { ensureTag, leadEvents, leadTags, tagLead } from '../../src/server/domain/tags.js';
 import { createCustomField, leadCustomValues, updateCustomField } from '../../src/server/domain/customFields.js';
-import { buttonsHiddenFor, loadButtons, saveButtons, tagLeadsWithLastButton } from '../../src/server/domain/buttons.js';
+import { buttonsHiddenFor, loadButtons, saveButtons, sidesToConditions, tagLeadsWithLastButton } from '../../src/server/domain/buttons.js';
 import { changeOutcome, logManualCall, voidCall } from '../../src/server/domain/calls.js';
 import { loadOutcomeOverrides } from '../../src/server/domain/callingSettings.js';
-import { checkCondition } from '../../src/server/domain/formulas.js';
+import { checkCondition, loadStatusDefs } from '../../src/server/domain/formulas.js';
 import { runEventRules, saveRules } from '../../src/server/domain/rules.js';
 import { buildReport } from '../../src/server/domain/reports.js';
 import { OUTCOMES } from '../../src/shared/outcomes.js';
@@ -146,6 +146,29 @@ describe('Calling screen buttons', () => {
     expect(tagLeadsWithLastButton(db, new Date().toISOString())).toBe(0);
   });
 
+  it('once, the First call and Appointment sides become conditions on a smart list, the same rule the sides used', () => {
+    const jane = lead('Jane');
+    const robert = lead('Robert');
+    saveButtons(db, [...current(), button({ label: 'Hot pickup', outcome: 'no_appt', show_when: 'has("Hot")' })]);
+    expect(sidesToConditions(db)).toBe(true);
+    expect(sidesToConditions(db)).toBe(false);
+    expect(loadStatusDefs(db).map((s) => s.name)).toEqual(['Has an appointment']);
+    const bs = loadButtons(db);
+    expect(bs.find((b) => b.id === 'appt_no_show')!.show_when).toBe('in_list("Has an appointment")');
+    expect(bs.find((b) => b.id === 'no_answer')!.show_when).toBe('not in_list("Has an appointment")');
+    expect(bs.find((b) => b.label === 'Hot pickup')!.show_when).toBe('not in_list("Has an appointment") and (has("Hot"))');
+    const side = (id: string) => {
+      const hidden = buttonsHiddenFor(db, id);
+      return hidden.includes('no_answer') && !hidden.includes('appt_no_show') ? 'appointment' : !hidden.includes('no_answer') && hidden.includes('appt_no_show') ? 'first_call' : 'both or neither';
+    };
+    expect(side(jane)).toBe('first_call');
+    call(jane, 'appointment');
+    expect(side(jane)).toBe('appointment');
+    call(jane, 'appt_sale');
+    expect(side(jane)).toBe('first_call');
+    expect(side(robert)).toBe('first_call');
+  });
+
   it('a button shows only for leads its condition is true for', () => {
     const jane = lead('Jane');
     const robert = lead('Robert');
@@ -199,9 +222,8 @@ describe('Calling screen buttons', () => {
     expect(err([...current(), button({ label: 'X', outcome: 'no_answer', add_tags: ['nope'] })])).toBe('X: one of its tags is gone');
     expect(err([...current(), button({ label: 'X', outcome: 'no_answer', add_tags: [vm.id], remove_tags: [vm.id] })])).toBe("X: it can't add and take off the same tag");
     expect(err([...current(), { ...button({ label: 'X', outcome: 'no_appt' }), id: 'no_answer' }])).toBe('two buttons have the same id');
-    expect(err(current().map((b) => (b.side === 'appointment' ? b : { ...b, hidden: true })))).toBe('keep at least one button on the First call side');
-    // With a button of your own on that side, the outcomes' own buttons can all be hidden.
-    expect(err([...current().map((b) => ({ ...b, hidden: buttonSideOf(b) === 'first_call' })), button({ label: 'Mine', outcome: 'no_answer' })])).toBeNull();
+    // There are no sides to keep a button on: any button can be hidden.
+    expect(err(current().map((b) => (b.side === 'appointment' ? b : { ...b, hidden: true })))).toBeNull();
   });
 
   it('a call with a button that saves another outcome is refused', () => {
@@ -225,10 +247,6 @@ describe('Calling screen buttons', () => {
     expect(bad.json().error).toBe('two buttons are called "Hot pickup"');
   });
 });
-
-function buttonSideOf(b: ButtonDef) {
-  return OUTCOMES[b.outcome as keyof typeof OUTCOMES].kind;
-}
 
 describe('fields that show by condition, and buttons that ask for them', () => {
   it('a field shows, and is needed, only while its conditions are true for the lead', () => {

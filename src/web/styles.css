@@ -100,7 +100,7 @@ a { color: var(--accent); }
 .log-box { border-top: 1px solid var(--border); margin-top: 8px; padding-top: 10px; }
 .log-box.appointment { border-top: 2px solid var(--good); }
 .log-box .mode-label { font-size: 11px; color: var(--good); text-transform: uppercase; letter-spacing: .04em; font-weight: 600; }
-/* First call | Appointment, at the top of the lead section on the Calling screen. */
+/* Every button, at the top of the lead section on the Calling screen. */
 .mode-switch { display: inline-flex; align-items: center; gap: 0; }
 .mode-switch button { border: 1px solid var(--border); background: var(--panel); padding: 4px 14px; cursor: pointer; font-size: 13px; }
 .mode-switch button:first-child { border-radius: 6px 0 0 6px; }

@@ -201,7 +201,7 @@ export function CallingCard() {
           <label className="choice-inline"><input type="checkbox" checked={s.instant_save} onChange={(e) => set({ instant_save: e.target.checked })} /> some outcomes save as soon as I press the key (no Enter). Undo still works.</label>
           {s.instant_save && (['first_call', 'appointment'] as const).map((side) => (
             <span key={side} className="row" style={{ marginTop: 4 }}>
-              <span className="help">{side === 'appointment' ? 'Appointment:' : 'First call:'}</span>
+              <span className="help">{side === 'appointment' ? 'Appointments:' : 'Calls:'}</span>
               {(meta?.outcome_codes ?? []).filter((o) => o.kind === side && !o.requires_callback_time && o.offered).map((o) => (
                 <label key={o.code} className="choice-inline">
                   <input type="checkbox" checked={savesInstantly(o, s.instant_outcomes)}
@@ -348,7 +348,7 @@ export function ShortcutsCard() {
             const waiting = capture?.kind === 'outcome' && capture.id === b.id;
             return (
               <tr key={b.id}>
-                <td>{b.side === 'appointment' ? 'Appointment' : 'First call'} button: {b.label}</td>
+                <td>Button: {b.label}</td>
                 <td>
                   {k || waiting ? (
                     <Key k={k ?? ''} waiting={waiting} onClick={() => setCapture({ kind: 'outcome', id: b.id })}

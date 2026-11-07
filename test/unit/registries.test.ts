@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { APPT_RESULT_LABEL, MISSED_RESULTS, openingSide, resultOfColor } from '../../src/shared/appointments.js';
+import { APPT_RESULT_LABEL, MISSED_RESULTS, resultOfColor } from '../../src/shared/appointments.js';
 import { CALLABLE_STATUSES, LEAD_FILTERS, LEAD_STATUSES, LEAD_TABS, isCallable, statusLabel } from '../../src/shared/leadStatus.js';
 import { FUNNEL_STEPS, funnelStepsOf } from '../../src/shared/funnel.js';
 import { OUTCOMES } from '../../src/shared/outcomes.js';
@@ -49,15 +49,6 @@ describe('appointment results', () => {
 
   it('Unitrust colors', () => {
     expect((['blue', 'green', 'red', 'yellow'] as const).map(resultOfColor)).toEqual(['not_set', 'sold', 'no_show', null]);
-  });
-
-  it('which side of the Calling screen a lead opens on', () => {
-    expect(openingSide(null)).toBe('first_call');
-    expect(openingSide({ status: 'appointment_set', appt_result: null })).toBe('appointment');
-    expect(openingSide({ status: 'appointment_set', appt_result: 'not_set' })).toBe('appointment');
-    expect(openingSide({ status: 'appointment_set', appt_result: 'rescheduled' })).toBe('appointment');
-    expect(openingSide({ status: 'appointment_set', appt_result: 'sold' })).toBe('first_call');
-    expect(openingSide({ status: 'retry', appt_result: 'no_show' })).toBe('first_call');
   });
 });
 

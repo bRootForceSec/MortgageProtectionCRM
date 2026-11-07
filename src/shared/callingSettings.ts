@@ -23,7 +23,7 @@ export const SHORTCUT_ACTIONS = {
   called_back: { label: 'Mark (or unmark) that this lead called you back', keys: ['b'] },
   copy_tag: { label: 'Copy "#MP Lead ID Last name" for your calendar', keys: ['i'] },
   do_not_call: { label: 'Tick (or untick) "Do not call" for this call', keys: ['d'] },
-  switch_mode: { label: 'Switch between First call and Appointment', keys: ['m'] },
+  switch_mode: { label: 'Show every button, not only the ones for this lead', keys: ['m'] },
 } as const;
 export type ShortcutAction = keyof typeof SHORTCUT_ACTIONS;
 
