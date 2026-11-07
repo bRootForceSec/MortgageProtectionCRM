@@ -8,6 +8,8 @@ import { outcomeDef } from '../../shared/outcomes';
 import {
   BUTTON_BORDERS, BUTTON_COLORS, BUTTON_FILLS, ButtonDef, buttonClass, buttonSide, describeButtonTags,
 } from '../../shared/buttons';
+import { buttonToPython, pythonToButton, type ButtonNames } from '../../shared/buttonText';
+import { RuleTextError } from '../../shared/ruleText';
 
 // Settings → Buttons: the buttons on the Calling screen. Each counts as an outcome (what Reports and the funnel see),
 // can show only when a condition is true, has a look, and can add or take off tags. Every outcome has its own button,
@@ -41,11 +43,30 @@ export function ButtonsCard() {
   const [draft, setDraft] = useState<ButtonDef[] | null>(null);
   const [editing, setEditing] = useState<string | null>(null);
   const [conditionFor, setConditionFor] = useState<string | null>(null);
+  // The Python view of the button being edited, and its mistake while it has one (the button keeps the last text that read right).
+  const [text, setText] = useState<{ id: string; src: string; error: { line: number; message: string } | null } | null>(null);
   const saved = meta?.buttons ?? [];
   const list: ButtonDef[] = draft ?? saved;
   const outcomes = meta?.outcome_codes ?? [];
   const outcomeLabel = (code: string) => outcomes.find((o) => o.code === code)?.label ?? outcomeDef(code)?.label ?? code;
   const own = (b: ButtonDef) => b.id === b.outcome;
+  const names: ButtonNames = {
+    tag: tagName,
+    tagId: (n) => tags.find((t) => t.name.toLowerCase() === n.toLowerCase())?.id,
+    outcome: (c) => outcomes.find((o) => o.code === c)?.label,
+    outcomeCode: (n) => outcomes.find((o) => o.code === n || o.label.toLowerCase() === n.toLowerCase())?.code,
+  };
+  const open = (id: string | null) => { setEditing(id); setText(null); setConditionFor(null); };
+  const readText = (b: ButtonDef, src: string) => {
+    try {
+      const next = pythonToButton(src, b, names);
+      setDraft(list.map((x) => (x.id === b.id ? next : x)));
+      setText({ id: b.id, src, error: null });
+    } catch (e) {
+      if (!(e instanceof RuleTextError)) throw e;
+      setText({ id: b.id, src, error: { line: e.line, message: e.message } });
+    }
+  };
 
   const change = (id: string, patch: Partial<ButtonDef>) => setDraft(list.map((b) => (b.id === id ? { ...b, ...patch } : b)));
   /** Moves a button up or down past the next one on its side. */
@@ -64,7 +85,7 @@ export function ButtonsCard() {
     if (!first) return;
     const id = `b-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
     setDraft([...list, ButtonDef.parse({ id, outcome: first.code, label: 'New button' })]);
-    setEditing(id);
+    open(id);
   };
   const reset = (b: ButtonDef) => {
     const def = outcomeDef(b.outcome)!;
@@ -76,7 +97,7 @@ export function ButtonsCard() {
       await api.put('/buttons', { buttons: list.map((b) => ButtonDef.parse(b)) });
       await reloadMeta();
       setDraft(null);
-      setEditing(null);
+      open(null);
       toast('Buttons saved');
     } catch (e: any) {
       toast(e.message, 'error');
@@ -98,8 +119,28 @@ export function ButtonsCard() {
     </div>
   );
 
-  const details = (b: ButtonDef) => (
+  const details = (b: ButtonDef) => {
+    const mine = text?.id === b.id ? text : null;
+    return (
     <div className="button-details">
+      <div className="row" style={{ gap: 8 }}>
+        <div className="tabs small" role="tablist" aria-label={`${b.label} view`}>
+          <button type="button" role="tab" aria-selected={!mine} className={!mine ? 'active' : ''} disabled={!!mine?.error} onClick={() => setText(null)}>Form</button>
+          <button type="button" role="tab" aria-selected={!!mine} className={mine ? 'active' : ''} onClick={() => setText({ id: b.id, src: buttonToPython(b, names), error: null })}>Python</button>
+        </div>
+        {mine?.error && <span className="error" role="alert" aria-label="Python mistake">Line {mine.error.line}: {mine.error.message}</span>}
+      </div>
+      {mine ? (
+        <label className="field">
+          <span className="help" style={{ margin: 0 }}>
+            The same button as Python: <code>@button(...)</code> says what it counts as (<code>counts_as</code>), when it shows (<code>shows_when</code>, a condition)
+            and how it looks (<code>color</code>, <code>fill</code>, <code>border</code>, <code>tooltip</code>, <code>confirm</code>). <code>@hidden</code> keeps it off
+            the Calling screen. The docstring is its name, and each line is <code>add_tag("...")</code> or <code>remove_tag("...")</code>.
+          </span>
+          <textarea value={mine.src} rows={Math.max(6, mine.src.split('\n').length + 2)} spellCheck={false} style={{ width: '100%', fontFamily: 'var(--mono, monospace)' }}
+            aria-label="Button in Python" onChange={(e) => readText(b, e.target.value)} />
+        </label>
+      ) : (<>
       {!own(b) && (
         <label className="row" style={{ gap: 6 }}>
           Counts as
@@ -138,8 +179,10 @@ export function ButtonsCard() {
       <TagList b={b} field="add_tags" what="Adds" />
       <TagList b={b} field="remove_tags" what="Takes off" />
       {!tags.length && <span className="help">Make tags under Tags to have a button add them.</span>}
+      </>)}
     </div>
-  );
+    );
+  };
 
   return (
     <div className="card" id="outcomes">
@@ -171,7 +214,7 @@ export function ButtonsCard() {
                     <td><div className="row" style={{ gap: 4, flexWrap: 'nowrap' }}>
                       <button type="button" className="btn small" aria-label={`Move ${b.label} up`} onClick={() => move(b.id, -1)}>↑</button>
                       <button type="button" className="btn small" aria-label={`Move ${b.label} down`} onClick={() => move(b.id, 1)}>↓</button>
-                      <button type="button" className="btn small" aria-expanded={editing === b.id} onClick={() => setEditing(editing === b.id ? null : b.id)}>{editing === b.id ? 'Close' : 'More'}</button>
+                      <button type="button" className="btn small" aria-expanded={editing === b.id} onClick={() => open(editing === b.id ? null : b.id)}>{editing === b.id ? 'Close' : 'More'}</button>
                       {own(b) && !isDefault && <button type="button" className="btn small" onClick={() => reset(b)}>Reset</button>}
                       {!own(b) && <button type="button" className="btn small" onClick={() => setDraft(list.filter((x) => x.id !== b.id))}>Delete</button>}
                     </div></td>
@@ -185,8 +228,8 @@ export function ButtonsCard() {
         </div>
       ))}
       <div className="row" style={{ marginTop: 8 }}>
-        <button className="btn primary" disabled={!draft} onClick={() => void save()}>Save buttons</button>
-        {draft && <button className="btn" onClick={() => { setDraft(null); setEditing(null); }}>Cancel</button>}
+        <button className="btn primary" disabled={!draft || !!text?.error} onClick={() => void save()}>Save buttons</button>
+        {draft && <button className="btn" onClick={() => { setDraft(null); open(null); }}>Cancel</button>}
       </div>
     </div>
   );

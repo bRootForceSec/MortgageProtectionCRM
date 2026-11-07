@@ -40,9 +40,10 @@ export function pyString(s: string): string {
   return q + s.replace(/\\/g, '\\\\').replace(new RegExp(q, 'g'), `\\${q}`).replace(/\n/g, '\\n') + q;
 }
 
-type Value = string | number | boolean | Value[];
+export type Value = string | number | boolean | Value[];
 const py = (v: Value): string => (typeof v === 'string' ? pyString(v) : typeof v === 'boolean' ? (v ? 'True' : 'False') : Array.isArray(v) ? `[${v.map(py).join(', ')}]` : String(v));
-const call = (name: string, args: Value[] = [], kw: [string, Value][] = []) => `${name}(${[...args.map(py), ...kw.map(([k, v]) => `${k}=${py(v)}`)].join(', ')})`;
+/** `name(args, key=value)` as Python. */
+export const call = (name: string, args: Value[] = [], kw: [string, Value][] = []) => `${name}(${[...args.map(py), ...kw.map(([k, v]) => `${k}=${py(v)}`)].join(', ')})`;
 
 function triggerText(t: RuleTrigger, n: RuleNames): string {
   switch (t.kind) {
@@ -104,7 +105,8 @@ export function ruleToPython(r: Rule, n: RuleNames): string {
 
 type Tok = { t: 'name' | 'str' | 'num' | 'p'; v: string };
 
-function tokens(src: string, line: number): Tok[] {
+/** One line's words, texts, numbers and punctuation (a # comment ends it). Buttons in Python (buttonText.ts) read with these too. */
+export function tokens(src: string, line: number): Tok[] {
   const out: Tok[] = [];
   let i = 0;
   while (i < src.length) {
@@ -135,10 +137,10 @@ function tokens(src: string, line: number): Tok[] {
   return out;
 }
 
-interface Call { name: string; args: Value[]; kw: Map<string, Value> }
+export interface Call { name: string; args: Value[]; kw: Map<string, Value> }
 
 /** Reads `name(args, key=value)` (or a bare `name`) from the tokens. */
-function readCall(ts: Tok[], line: number): Call {
+export function readCall(ts: Tok[], line: number): Call {
   let i = 0;
   const next = () => ts[i++];
   const want = (v: string) => { const t = next(); if (t?.t !== 'p' || t.v !== v) throw new RuleTextError(`expected "${v}"`, line); };
@@ -186,7 +188,7 @@ function readCall(ts: Tok[], line: number): Call {
   return c;
 }
 
-const str = (v: Value | undefined, what: string, line: number): string => {
+export const str = (v: Value | undefined, what: string, line: number): string => {
   if (typeof v !== 'string') throw new RuleTextError(`${what} needs text in quotes`, line);
   return v;
 };

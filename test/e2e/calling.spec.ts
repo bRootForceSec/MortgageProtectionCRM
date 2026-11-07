@@ -755,6 +755,35 @@ test('a button of your own: counts as No answer, red and dotted, adds a tag, and
   await expect(outcomes.getByRole('button', { name: 'Left voicemail' })).toHaveCount(0);
 });
 
+test('a button as Python: read it, change it there, and see the change in the form', async ({ page }) => {
+  await page.goto(launchUrl);
+  await page.getByRole('button', { name: 'Settings' }).click();
+  const card = page.locator('#outcomes');
+  await card.getByRole('row').filter({ has: page.getByLabel('Name for Left voicemail') }).getByRole('button', { name: 'More' }).click();
+  await card.getByRole('tab', { name: 'Python' }).click();
+  const py = card.getByLabel('Button in Python');
+  await expect(py).toHaveValue([
+    `@button(counts_as="Dial: No answer", shows_when='not has("Voicemail")', color="red", border="dotted")`,
+    'def button():',
+    '    "Left voicemail"',
+    '    add_tag("Voicemail")',
+  ].join('\n'));
+  // A mistake says where, and holds the form and Save until it's fixed.
+  await py.fill('@button(counts_as="Dial: No answer")\ndef button():\n    "Left voicemail"\n    add_tag("Nope")');
+  await expect(card.getByLabel('Python mistake')).toHaveText('Line 4: there is no tag called "Nope": make it under Tags first');
+  await expect(card.getByRole('button', { name: 'Save buttons' })).toBeDisabled();
+  await py.fill('@button(counts_as="Dial: No answer", color="purple", fill="filled", tooltip="Left a message")\ndef button():\n    "Left voicemail"\n    add_tag("Voicemail")');
+  await expect(card.getByLabel('Python mistake')).toHaveCount(0);
+  await card.screenshot({ path: 'test-results/button-python.png' });
+  await card.getByRole('tab', { name: 'Form' }).click();
+  await expect(card.getByLabel('Left voicemail: color')).toHaveValue('purple');
+  await expect(card.getByLabel('Left voicemail: tooltip')).toHaveValue('Left a message');
+  await card.getByRole('button', { name: 'Save buttons' }).click();
+  await expect(page.getByText('Buttons saved')).toBeVisible();
+  const meta = await (await page.request.get(new URL('/api/meta', page.url()).href)).json();
+  expect(meta.buttons.find((b: any) => b.label === 'Left voicemail')).toMatchObject({ color: 'purple', fill: 'filled', border: 'solid', show_when: '' });
+});
+
 test('Reports: arrange the cards, show By hour as a table, save a layout and load it back', async ({ page }) => {
   // The first layout save answers slowly, as on a busy computer: the later changes must still win.
   let slowed = false;
