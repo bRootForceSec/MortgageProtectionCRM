@@ -1,7 +1,7 @@
 import * as z from 'zod/v4';
 import { LeadQuery } from './leadFilter.js';
 import { WEEKDAYS } from './routines.js';
-import { isStep } from './followUps.js';
+import { isStep, SUGGESTED_FOLLOW_UPS } from './followUps.js';
 
 // Rules: "when this happens, for leads like these, do that". Set up in Settings → Rules, or from the Leads filters.
 // A rule has one trigger, a Leads filter (kept as its query, so "yesterday" means yesterday every day) and its actions.
@@ -159,6 +159,14 @@ export const STARTER_RULES: readonly Omit<Rule, 'id'>[] = [
     filter: { status: 'appt_no_show', appt_days_ago: 2, on_list: '1' },
     actions: [{ kind: 'remove_from_list' }],
   },
+  // The follow-up plans (Settings → Calling) as rules you can see and change: the same steps, set off by the result.
+  ...([['no_show', 'No-shows'], ['sat_no_sale', 'Picked up, no presentation'], ['prezi', 'Presentation, no sale']] as const).map(([result, who]) => ({
+    name: `${who}: come back ${SUGGESTED_FOLLOW_UPS[result].join(', then ')}`,
+    enabled: false,
+    trigger: { kind: 'becomes_true' as const, condition: `appt_result == "${result}"` },
+    filter: {},
+    actions: [{ kind: 'come_back' as const, steps: [...SUGGESTED_FOLLOW_UPS[result]] }],
+  })),
 ];
 
 // Tag shortcuts (Settings → Tags): each one is only a way to write rules, and shows the rules it writes.

@@ -173,7 +173,8 @@ export function CallingCard() {
           <span className="help">
             When to try again after that result: each step is a callback, timed from the result and then from each try nobody answered.
             15m, 2h and 3d are minutes, hours and days later; 1d@09:00 is the next day at 9 AM. When someone answers, or the steps run out,
-            the usual retry takes over. With no steps, the lead is due right away.
+            the usual retry takes over. With no steps, the lead is due right away. The same plans are ready-made rules too
+            (Settings → Rules, "Make it come back"), where you can change what sets them off.
           </span>
         </span>
 

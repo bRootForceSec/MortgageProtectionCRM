@@ -7,7 +7,7 @@ import { commitImport } from '../../src/server/domain/importer.js';
 import { logManualCall } from '../../src/server/domain/calls.js';
 import { tagLead } from '../../src/server/domain/tags.js';
 import { previewRule, runEventRules, saveRules } from '../../src/server/domain/rules.js';
-import { describeAction } from '../../src/shared/rules.js';
+import { describeAction, STARTER_RULES } from '../../src/shared/rules.js';
 import { uuidv7 } from '../../src/server/ids.js';
 
 let db: DB;
@@ -55,5 +55,20 @@ describe('a rule that makes a lead come back', () => {
 
   it('refuses a step it doesn\'t understand', () => {
     expect(() => saveRules(db, [{ id: 'r1', name: 'x', enabled: true, trigger: { kind: 'manual' }, filter: {}, actions: [{ kind: 'come_back', steps: ['soon'] }] }])).toThrow(/15m, 2h, 3d or 1d@09:00/);
+  });
+
+  it('the ready-made no-show rule: a no-show comes back in 15 minutes instead of right away', () => {
+    const starter = STARTER_RULES.find((r) => r.name.startsWith('No-shows: come back'))!;
+    expect(starter).toMatchObject({ enabled: false, trigger: { kind: 'becomes_true', condition: 'appt_result == "no_show"' }, actions: [{ kind: 'come_back', steps: ['15m', '1d@09:00', '3d'] }] });
+    saveRules(db, [{ ...starter, id: 'r1', enabled: true }]);
+    const jane = lead('Jane');
+    runEventRules(db); // the first look notes who is in already
+    logManualCall(db, { lead_id: jane, idempotency_key: uuidv7(), outcome_code: 'appointment' });
+    logManualCall(db, { lead_id: jane, idempotency_key: uuidv7(), outcome_code: 'appt_no_show' });
+    expect(state(jane)).toMatchObject({ status: 'retry', next_due_at: null });
+    const before = Date.now();
+    runEventRules(db);
+    expect(state(jane).status).toBe('callback');
+    expect(Date.parse(state(jane).next_due_at!)).toBeGreaterThanOrEqual(before + 15 * 60_000 - 1000);
   });
 });
