@@ -18,6 +18,7 @@ export type Literal = string | number | boolean;
 
 export type CondTerm =
   | { kind: 'has'; tag: string; negate: boolean }
+  | { kind: 'status'; name: string; negate: boolean }
   | { kind: 'times'; tag: string; days: number | null; op: CmpOp; n: number }
   | { kind: 'since'; tag: string; event: 'added' | 'removed'; unit: 'days' | 'hours'; op: CmpOp; n: number }
   | { kind: 'before'; first: string; second: string }
@@ -78,6 +79,7 @@ export function formulaToPython(n: FormulaNode, outer = 0): string {
 function termToPython(t: CondTerm): string {
   switch (t.kind) {
     case 'has': return `${t.negate ? 'not ' : ''}has(${pyStr(t.tag)})`;
+    case 'status': return `${t.negate ? 'not ' : ''}status(${pyStr(t.name)})`;
     case 'times': return `times(${pyStr(t.tag)}${t.days != null ? `, days=${t.days}` : ''}) ${t.op} ${t.n}`;
     case 'since': return `${t.unit}_since(${t.event}(${pyStr(t.tag)})) ${t.op} ${t.n}`;
     case 'before': return `before(${pyStr(t.first)}, ${pyStr(t.second)})`;
@@ -122,6 +124,8 @@ const isCall = (n: FormulaNode | undefined, ...names: string[]): n is Extract<Fo
 function toTerm(n: FormulaNode): CondTerm {
   if (isCall(n, 'has', 'has_tag') && n.args.length === 1 && str(n.args[0]) != null) return { kind: 'has', tag: str(n.args[0])!, negate: false };
   if (n.t === 'not' && isCall(n.e, 'has', 'has_tag') && n.e.args.length === 1 && str(n.e.args[0]) != null) return { kind: 'has', tag: str(n.e.args[0])!, negate: true };
+  if (isCall(n, 'status') && n.args.length === 1 && str(n.args[0]) != null) return { kind: 'status', name: str(n.args[0])!, negate: false };
+  if (n.t === 'not' && isCall(n.e, 'status') && n.e.args.length === 1 && str(n.e.args[0]) != null) return { kind: 'status', name: str(n.e.args[0])!, negate: true };
   if (isCall(n, 'before') && str(n.args[0]) != null && str(n.args[1]) != null) return { kind: 'before', first: str(n.args[0])!, second: str(n.args[1])! };
   if (n.t === 'bin' && CMP[n.op]) {
     const op = CMP[n.op]!;

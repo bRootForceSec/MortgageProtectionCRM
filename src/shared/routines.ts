@@ -86,7 +86,7 @@ export interface RoutineToday {
 
 /** A step's filter in words, e.g. "No answer · Last call today · Not dialed in the last 1 hour". */
 /** The filter in words. `names` turns tag and custom field ids into their names (a deleted one says so). */
-export function describeFilter(f: Partial<LeadQuery>, names: { tag?: (id: string) => string | undefined; field?: (id: string) => string | undefined } = {}): string {
+export function describeFilter(f: Partial<LeadQuery>, names: { tag?: (id: string) => string | undefined; field?: (id: string) => string | undefined; status?: (id: string) => string | undefined } = {}): string {
   const label = <T extends { key: string; label: string }>(list: readonly T[], key: string | undefined) => (key ? list.find((x) => x.key === key)?.label ?? key : null);
   const lists = (v: string | undefined, one: string, many: string) => {
     const n = v ? v.split(',').filter(Boolean).length : 0;
@@ -110,6 +110,7 @@ export function describeFilter(f: Partial<LeadQuery>, names: { tag?: (id: string
     f.not_on_list === '1' || f.not_on_list === true ? 'Not on the call list' : null,
     f.on_list === '1' || f.on_list === true ? 'Waiting on the call list' : null,
     f.sort_field ? `Highest ${names.field?.(f.sort_field) ?? 'deleted field'} first` : null,
+    f.in_status ? `In status "${names.status?.(f.in_status) ?? 'a deleted status'}"` : null,
     f.where ? `Where ${f.where.length > 80 ? `${f.where.slice(0, 77)}…` : f.where}` : null,
   ].filter(Boolean).join(' · ');
 }

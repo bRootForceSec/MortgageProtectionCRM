@@ -2,6 +2,8 @@ import type { DB } from '../db/connection.js';
 import { CURRENT_OUTCOME, LEAD_NAME } from '../db/sql.js';
 import { FORMULA_VALUES, FormulaError, parseFormula, type FormulaKind, type FormulaNode, type FormulaPreview } from '../../shared/formula.js';
 import type { CustomField } from '../../shared/customFields.js';
+import { Statuses, type Status } from '../../shared/statuses.js';
+import { getSetting } from '../core/settings.js';
 
 // Formula fields (shared/formula.ts) are worked out by SQLite: each formula becomes an SQL expression over
 // `lead l JOIN lead_state s`, and the view lead_field_value puts them next to the typed values. So filters, sorting,
@@ -37,8 +39,14 @@ const WITHIN_DAYS = (col: string, days: string) => `${col} >= strftime('%Y-%m-%d
 const KIND_WORD: Record<FormulaKind, string> = { number: 'a number', text: 'text', yes_no: 'a yes/no', date: 'a date' };
 
 /** Turns a formula into SQL, checking every name, field and kind. Throws FormulaError. */
-function compile(n: FormulaNode, fields: Map<string, FieldDef>, using: string[]): Compiled {
-  const c = (x: FormulaNode) => compile(x, fields, using);
+/**
+ * Your statuses by name (lowercase) -> condition, for status("Name") in conditions. Formula fields don't get them
+ * (their values are a view rebuilt only when a field changes), so they're null there.
+ */
+type StatusMap = Map<string, { name: string; condition: string }> | null;
+
+function compile(n: FormulaNode, fields: Map<string, FieldDef>, using: string[], statuses: StatusMap = null): Compiled {
+  const c = (x: FormulaNode) => compile(x, fields, using, statuses);
   const want = (x: Compiled, kind: FormulaKind, where: string) => {
     if (x.kind !== kind) throw new FormulaError(`${where} needs ${KIND_WORD[kind]}, not ${KIND_WORD[x.kind]}`);
     return x.sql;
@@ -64,7 +72,7 @@ function compile(n: FormulaNode, fields: Map<string, FieldDef>, using: string[])
         case 'formula': {
           if (using.includes(f.id)) throw new FormulaError(`[${f.label}] uses itself, through its own formula`);
           try {
-            return compile(parseFormula(f.formula ?? ''), fields, [...using, f.id]);
+            return compile(parseFormula(f.formula ?? ''), fields, [...using, f.id], statuses);
           } catch (e) {
             throw e instanceof FormulaError && e.message.includes('uses itself') ? e : new FormulaError(`[${f.label}] has a mistake in its formula`);
           }
@@ -87,7 +95,24 @@ function compile(n: FormulaNode, fields: Map<string, FieldDef>, using: string[])
       const op = n.op === '!=' ? '!=' : n.op;
       return { sql: l.kind === 'text' ? `(lower(${l.sql}) ${op} lower(${r.sql}))` : `(${l.sql} ${op} ${r.sql})`, kind: 'yes_no' };
     }
-    case 'call': return call(n.name, n.args.map(c));
+    case 'call': {
+      if (n.name !== 'status') return call(n.name, n.args.map(c));
+      // status("Name"): that status's condition, worked out in place.
+      const a = n.args[0];
+      if (n.args.length !== 1 || a?.t !== 'str') throw new FormulaError('status() takes a status name in quotes, like status("Needs rebook")');
+      if (!statuses) throw new FormulaError('status() works in conditions and statuses, not in formula fields');
+      const st = statuses.get(a.v.trim().toLowerCase());
+      if (!st) throw new FormulaError(`there is no status called "${a.v}"`);
+      const key = `status:${st.name.toLowerCase()}`;
+      if (using.includes(key)) throw new FormulaError(`status "${st.name}" uses itself, through its own condition`);
+      let x: Compiled;
+      try {
+        x = compile(parseFormula(st.condition), fields, [...using, key], statuses);
+      } catch (e) {
+        throw e instanceof FormulaError && e.message.includes('uses itself') ? e : new FormulaError(`status "${st.name}" has a mistake in its condition`);
+      }
+      return { sql: `coalesce(${x.sql}, 0)`, kind: 'yes_no' };
+    }
   }
 }
 
@@ -250,13 +275,19 @@ export function previewFormula(db: DB, formula: string, fieldId: string | null =
   };
 }
 
+/** Your statuses as stored (the `statuses` setting); a bad stored value counts as none. */
+export function loadStatusDefs(db: DB): Status[] {
+  const r = Statuses.safeParse(getSetting<unknown>(db, 'statuses') ?? []);
+  return r.success ? r.data : [];
+}
+
 /**
  * A condition (a yes/no formula, in Python syntax or the formula's own) as SQL over `lead l JOIN lead_state s`: the
  * Leads `where` filter, and so rules and routine steps too. Throws FormulaError.
  */
-export function conditionSql(db: DB, src: string): string {
+export function conditionSql(db: DB, src: string, statuses: readonly Status[] = loadStatusDefs(db), using: string[] = []): string {
   const byLabel = new Map(fieldDefs(db).map((f) => [f.label.toLowerCase(), f]));
-  const x = compile(parseFormula(src), byLabel, []);
+  const x = compile(parseFormula(src), byLabel, using, new Map(statuses.map((st) => [st.name.toLowerCase(), st])));
   if (x.kind !== 'yes_no') throw new FormulaError(`a condition has to be yes or no, like has("Hot") or attempts >= 3; this gives ${KIND_WORD[x.kind]}`);
   return `coalesce(${x.sql}, 0)`;
 }

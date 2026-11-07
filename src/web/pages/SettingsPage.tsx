@@ -10,6 +10,7 @@ import { RulesCard } from './RulesCard';
 import { useTags } from '../tags';
 import { CustomFieldsCard } from './CustomFieldsCard';
 import { GoogleCalendarCard } from './GoogleCalendarCard';
+import { StatusesCard } from './StatusesCard';
 
 // Settings, in sections with a menu at the top to jump between them: calling, your day (routines and rules), leads
 // (types, tags, your fields, counties), Unitrust and Google, imports (AI and lead pages), and the app's version.
@@ -36,7 +37,7 @@ interface County {
 const SECTIONS: { id: string; title: string; help: string; cards: () => ReactNode }[] = [
   { id: 'settings-calling', title: 'Calling', help: 'How calling works, your outcomes and keyboard keys.', cards: () => <><CallingCard /><OutcomesCard /><ShortcutsCard /></> },
   { id: 'settings-day', title: 'Your day', help: 'The order you call in, and what happens on its own.', cards: () => <><RoutinesCard /><RulesCard /></> },
-  { id: 'settings-leads', title: 'Leads', help: 'Lead types and prices, tags, your own fields and formulas, and counties.', cards: () => <><LeadTypesCard /><TagsCard /><CustomFieldsCard /><CountiesCard /></> },
+  { id: 'settings-leads', title: 'Leads', help: 'Lead types and prices, tags, your statuses, your own fields and formulas, and counties.', cards: () => <><LeadTypesCard /><TagsCard /><StatusesCard /><CustomFieldsCard /><CountiesCard /></> },
   { id: 'settings-connected', title: 'Unitrust and Google', help: 'The Unitrust extension, products and comp, and Google Calendar.', cards: () => <><UnitrustCard /><ProductsCard /><GoogleCalendarCard /></> },
   { id: 'settings-imports', title: 'Imports', help: 'The AI that reads scanned lead pages, and how pages are kept.', cards: () => <><AiCard /><LeadPagesCard /></> },
   { id: 'settings-app', title: 'App', help: 'Version and updates.', cards: () => <UpdatePanel /> },

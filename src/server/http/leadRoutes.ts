@@ -12,6 +12,7 @@ import { setLeadTypeForMatching } from '../domain/leadEdit.js';
 import { createCustomField, deleteCustomField, listCustomFields, moveCustomField, updateCustomField } from '../domain/customFields.js';
 import { CustomFieldInput } from '../../shared/customFields.js';
 import { checkCondition, previewFormula } from '../domain/formulas.js';
+import { listStatuses, saveStatuses } from '../domain/statuses.js';
 import type { GoogleCalendar } from '../domain/googleCalendar.js';
 import { deleteTag, ensureTag, listTags, renameTag, setTagForMatching, setTagOnLeads, tagLead, leadTags } from '../domain/tags.js';
 import { batchPdf, turnPdfPages, normTurn } from '../domain/pageTurn.js';
@@ -97,6 +98,8 @@ export function registerLeadRoutes(
     const b = z.object({ formula: z.string().max(2000), field_id: z.string().max(64).nullish() }).parse(req.body);
     return previewFormula(db, b.formula, b.field_id ?? null);
   });
+  app.get('/api/statuses', async () => listStatuses(db));
+  app.put('/api/statuses', async (req) => saveStatuses(db, req.body));
   app.post('/api/conditions/check', async (req) => checkCondition(db, z.object({ condition: z.string().max(2000) }).parse(req.body).condition));
 
   // ---------- the call list ----------

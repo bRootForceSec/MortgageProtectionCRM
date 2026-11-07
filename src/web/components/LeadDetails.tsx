@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api, fmtDateTime, fmtDob, fmtDuration, fmtMoney, fmtPhone, fullName, localTime, personAge, type LeadDetail, type Call, type TagRef } from '../api';
 import { useTags } from '../tags';
+import { StatusChips } from '../pages/StatusesCard';
 import { useApp } from '../App';
 import { describeCallback, fromWall, ymd } from '../when';
 import { APPT_RESULT_LABEL, type ApptResult } from '../../shared/appointments';
@@ -139,6 +140,7 @@ export function LeadSummary({
               Called me back {calledBackKey && <kbd>{calledBackKey}</kbd>}
             </label>
             {/* With the buttons, so tags take no extra height above the outcome buttons. */}
+            <StatusChips statuses={d.statuses} />
             <LeadTags leadId={l.id} initial={d.tags} />
           </h2>
           <div className="where">

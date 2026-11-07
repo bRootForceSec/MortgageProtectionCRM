@@ -110,6 +110,8 @@ export const LeadQuery = z.object({
   on_list: z.union([z.boolean(), z.enum(['1', '0', 'true', 'false'])]).optional(),
   /** A condition in Python syntax (a yes/no formula), like `has("No show") and attempts >= 3`: only leads it's true for. */
   where: z.string().max(2000).optional(),
+  /** One of your statuses (its id): only leads in it. */
+  in_status: z.string().max(64).optional(),
 });
 export type LeadQuery = z.infer<typeof LeadQuery>;
 

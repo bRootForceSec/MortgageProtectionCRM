@@ -8,6 +8,7 @@ import { batchPdf } from './pageTurn.js';
 import { otherPhones } from './leadPhones.js';
 import { currentAppointment } from './appointments.js';
 import { leadEvents, leadTags } from './tags.js';
+import { leadStatuses, statusFlags } from './statuses.js';
 import { leadCustomValues } from './customFields.js';
 
 // Reading leads for the Leads page and the lead view, and resolving "same person?" links.
@@ -22,10 +23,12 @@ export function listLeads(db: DB, f: LeadFilter, paging: { page?: number; per_pa
   const total = (db.prepare(`SELECT COUNT(*) n FROM lead l JOIN lead_state s ON s.lead_id = l.id WHERE ${w.sql}`).get(w.params) as { n: number }).n;
   const perPage = paging.per_page ?? LEAD_PAGE_SIZES[LEAD_PAGE_SIZES.length - 1]!;
   const page = Math.max(1, Math.min(paging.page ?? 1, Math.ceil(total / perPage) || 1));
+  const flags = statusFlags(db);
   const rows = db
     .prepare(
       `SELECT l.id, l.first_name, l.last_name, l.phone_e164, l.state, l.city, l.county, l.lead_type, l.callin_at, b.name batch_name, s.status, s.attempts_total,
               s.last_call_at, s.last_outcome_code, s.next_due_at, s.appt_result,
+              ${flags ? `${flags.sql} status_flags,` : ''}
               ${f.sort_field ? '(SELECT sv.value FROM lead_field_value sv WHERE sv.lead_id = l.id AND sv.field_id = @lf_sort) sort_value,' : ''}
               (SELECT json_group_array(t.name) FROM (SELECT t.name FROM lead_tag x JOIN tag t ON t.id = x.tag_id WHERE x.lead_id = l.id ORDER BY t.name COLLATE NOCASE) t) tags_json
        FROM lead l JOIN lead_state s ON s.lead_id = l.id JOIN import_batch b ON b.id = l.batch_id
@@ -34,7 +37,12 @@ export function listLeads(db: DB, f: LeadFilter, paging: { page?: number; per_pa
     )
     .all({ ...w.params, ...o.params, lp_limit: perPage, lp_offset: (page - 1) * perPage }) as any[];
   const listed = onCallList(db, rows.map((r) => r.id));
-  return { rows: rows.map(({ tags_json, ...r }) => ({ ...r, tags: JSON.parse(tags_json) as string[], on_list: listed.has(r.id) })), total, page, per_page: perPage };
+  return {
+    rows: rows.map(({ tags_json, status_flags, ...r }) => ({ ...r, tags: JSON.parse(tags_json) as string[], statuses: flags ? flags.badges(status_flags) : [], on_list: listed.has(r.id) })),
+    total,
+    page,
+    per_page: perPage,
+  };
 }
 
 /** Whether a lead with this id is in the CRM. */
@@ -88,6 +96,7 @@ export function getLeadDetail(db: DB, importsDir: string, id: string) {
     called_back_at: (db.prepare('SELECT at FROM lead_called_back WHERE lead_id = ?').get(id) as { at: string } | undefined)?.at ?? null,
     appointment: currentAppointment(db, id),
     tags: leadTags(db, id),
+    statuses: leadStatuses(db, id),
     custom: leadCustomValues(db, id),
     calls,
     // Notes saved with a call you undid are left out (the undo puts the note back in the form).
