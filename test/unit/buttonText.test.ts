@@ -35,6 +35,7 @@ describe('a button as Python', () => {
       b({}),
       b({ hidden: true, confirm: true, tooltip: "They're \"busy\"", fill: 'filled', color: 'blue', border: 'dashed' }),
       b({ show_when: '# who\nattempts >= 3' }),
+      b({ tag_self: false, add_tags: ['t1'] }),
       b({ asks: ['f2', 'f1'], add_tags: ['t1', 't2'] }),
       ButtonDef.parse({ id: 'appt_sale', outcome: 'appt_sale', label: 'Sold!', color: 'green', fill: 'filled' }),
     ];

@@ -3,7 +3,8 @@ import type { DB } from '../db/connection.js';
 import { getSetting, setSetting } from '../core/settings.js';
 import { DomainError } from '../core/errors.js';
 import { conditionSql } from './formulas.js';
-import { setTagOnLeads } from './tags.js';
+import { ensureTag, setTagOnLeads, tagByName } from './tags.js';
+import { CURRENT_OUTCOME } from '../db/sql.js';
 import { leadCustomValues, listCustomFields, setCustomValues } from './customFields.js';
 import { isTypedField } from '../../shared/customFields.js';
 import { loadOutcomeOverrides, saveOutcomeOverrides } from './callingSettings.js';
@@ -136,11 +137,65 @@ export function saveAskedFields(db: DB, b: ButtonInfo | null, leadId: string, va
   setCustomValues(db, leadId, values, now);
 }
 
-/** What pressing a button does to the lead's tags, logged with the button and the call (so undoing the call undoes it). */
+/**
+ * What pressing a button does to the lead's tags, logged with the button and the call (so undoing the call undoes it):
+ * its own tag (its name) replacing the last button's, then the tags it takes off and adds.
+ */
 export function pressButtonTags(db: DB, b: ButtonInfo, leadId: string, callId: string, now: string) {
   const by = { source: 'button', id: b.id, name: b.label, call_id: callId } as const;
+  if (b.tag_self) putOwnTag(db, b, leadId, callId, now);
   for (const t of b.remove_tags) setTagOnLeads(db, [leadId], t, false, now, by);
   for (const t of b.add_tags) setTagOnLeads(db, [leadId], t, true, now, by);
+}
+
+/** Puts the button's own tag on the lead, taking off any other button's own tag. */
+function putOwnTag(db: DB, b: ButtonInfo, leadId: string, callId: string, now: string) {
+  const by = { source: 'button', id: b.id, name: b.label, call_id: callId } as const;
+  const own = ensureTag(db, b.label, now);
+  for (const t of outcomeTagIds(db)) if (t !== own.id) setTagOnLeads(db, [leadId], t, false, now, by);
+  setTagOnLeads(db, [leadId], own.id, true, now, by);
+}
+
+/** A call's outcome was changed: when it's the lead's latest call, the lead gets the new outcome's own tag instead. */
+export function retagChangedOutcome(db: DB, callId: string, leadId: string, outcomeCode: string, now: string) {
+  const latest = db.prepare('SELECT id FROM call WHERE lead_id = ? AND voided_at IS NULL ORDER BY started_at DESC, id DESC LIMIT 1').get(leadId) as { id: string } | undefined;
+  if (latest?.id !== callId) return;
+  const b = loadButtons(db).find((x) => x.id === outcomeCode);
+  if (b?.tag_self) putOwnTag(db, b, leadId, callId, now);
+}
+
+/** The tags buttons put on with their own name (the ones that exist), which replace each other. */
+function outcomeTagIds(db: DB): string[] {
+  return loadButtons(db).filter((b) => b.tag_self).map((b) => tagByName(db, b.label)?.id).filter((t): t is string => !!t);
+}
+
+/**
+ * Once: every lead gets the tag of the button its latest call was saved with (the outcome's name for calls from before
+ * buttons), so smart lists built on those tags see your older leads too. Logged as by that button, "from past calls".
+ */
+export function tagLeadsWithLastButton(db: DB, now: string): number {
+  if (getSetting<boolean>(db, 'outcome_tags_done')) return 0;
+  const buttons = new Map(loadButtons(db).map((b) => [b.id, b]));
+  const rows = db
+    .prepare(
+      `SELECT c.lead_id, o.outcome_code, o.button_id FROM call c JOIN call_outcome o ON o.call_id = c.id
+       WHERE c.voided_at IS NULL AND c.lead_id IS NOT NULL AND ${CURRENT_OUTCOME}
+         AND c.started_at = (SELECT max(c2.started_at) FROM call c2 WHERE c2.lead_id = c.lead_id AND c2.voided_at IS NULL)`,
+    )
+    .all() as { lead_id: string; outcome_code: string; button_id: string | null }[];
+  let n = 0;
+  db.transaction(() => {
+    const done = new Set<string>();
+    for (const r of rows) {
+      if (done.has(r.lead_id)) continue;
+      done.add(r.lead_id);
+      const b = buttons.get(r.button_id ?? r.outcome_code) ?? buttons.get(r.outcome_code);
+      if (!b?.tag_self) continue;
+      n += setTagOnLeads(db, [r.lead_id], ensureTag(db, b.label, now).id, true, now, { source: 'button', id: b.id, name: `${b.label}, from past calls` });
+    }
+    setSetting(db, 'outcome_tags_done', true);
+  })();
+  return n;
 }
 
 /** Undoes what a call's button did to tags, newest first. A tag that was deleted since is left alone. */

@@ -33,6 +33,11 @@ export const ButtonDef = z.object({
   confirm: z.boolean().default(false),
   /** Shown when you hover over it. */
   tooltip: z.string().trim().max(200).default(''),
+  /**
+   * Tags the lead with the button's name when pressed, taking off the tag of the last button pressed that did the same,
+   * so has("Dial: No answer") means the last call went that way and times("Dial: No answer") counts every one.
+   */
+  tag_self: z.boolean().default(true),
   add_tags: tagIds,
   remove_tags: tagIds,
   /** Your fields it asks for before it saves (by id), filled in on the Calling screen and saved with the call. */

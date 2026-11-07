@@ -100,7 +100,8 @@ describe('rules', () => {
     const ann = id('Ann');
     const r = await app.inject({ method: 'POST', url: `/api/leads/${jane}/calls`, headers: write, payload: { idempotency_key: key(), outcome_code: 'no_appt' } });
     expect(r.statusCode).toBe(200);
-    expect(leadTags(db, jane).map((t) => t.name)).toEqual(['Talked']);
+    // The outcome's own tag, then the rule's.
+    expect(leadTags(db, jane).map((t) => t.name)).toEqual(['Dial: Picked up', 'Talked']);
     expect(leadCustomValues(db, jane)[0]!.value).toBe('Warm');
     expect(leadTags(db, ann)).toEqual([]);
     const other = logManualCall(db, { lead_id: ann, idempotency_key: key(), outcome_code: 'no_answer' });

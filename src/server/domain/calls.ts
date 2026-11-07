@@ -10,7 +10,7 @@ import { callObjections, recordObjections, type ObjectionInput } from './objecti
 import { appointmentTimeOfCall, cancelAppointmentsOfCall, recordAppointmentTime } from './appointments.js';
 import { currentOpenerVersion } from './scripts.js';
 import { loadOutcomeOverrides } from '../db/outcomeCodes.js';
-import { buttonById, pressButtonTags, saveAskedFields, undoButtonTags } from './buttons.js';
+import { buttonById, loadButtons, pressButtonTags, retagChangedOutcome, saveAskedFields, undoButtonTags } from './buttons.js';
 
 export interface ManualCallInput {
   lead_id: string;
@@ -133,7 +133,9 @@ export function logManualCall(db: DB, input: ManualCallInput) {
       button?.id ?? null, button?.label ?? null,
     );
     saveAskedFields(db, button, lead.id, input.fields ?? {}, now);
-    if (button) pressButtonTags(db, button, lead.id, callId, now);
+    // Saved without a button (an older screen, a test): the outcome's own button does what it does.
+    const pressed = button ?? loadButtons(db).find((x) => x.id === outcome.code);
+    if (pressed) pressButtonTags(db, pressed, lead.id, callId, now);
     if (input.note?.trim()) {
       db.prepare('INSERT INTO note (id, lead_id, call_id, body, created_at) VALUES (?,?,?,?,?)').run(
         uuidv7(), lead.id, callId, input.note.trim(), now,
@@ -243,6 +245,7 @@ export function changeOutcome(
     );
     // No longer an appointment set: the time typed for it goes too.
     if (!outcomeDef(o.code)?.apptSet) cancelAppointmentsOfCall(db, callId);
+    if (call.lead_id) retagChangedOutcome(db, callId, call.lead_id, o.code, nowIso());
     if (call.lead_id) rebuildLeadState(db, [call.lead_id]);
     return { outcome_id: id };
   })();

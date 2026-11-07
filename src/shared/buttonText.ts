@@ -9,7 +9,8 @@ import { BUTTON_BORDERS, BUTTON_COLORS, BUTTON_FILLS, ButtonDef } from './button
 //       add_tag("Voicemail")
 //       remove_tag("Hot")
 //
-// @button says what it counts as, when it shows, which of your fields it asks for and how it looks; @hidden keeps it off the Calling screen; the
+// @button says what it counts as, when it shows, which of your fields it asks for and how it looks (tags_lead=False: it
+// doesn't tag the lead with its own name); @hidden keeps it off the Calling screen; the
 // docstring is its name, and each line is what it does to tags. Tags and outcomes go by name.
 
 /** Turns ids into names and back, for tags, your fields and outcomes (an outcome reads by its name or its code). */
@@ -31,6 +32,7 @@ export function buttonToPython(b: ButtonDef, n: ButtonNames): string {
   if (b.asks.length) kw.push(['asks', b.asks.map((f) => n.field(f) ?? f)]);
   for (const k of ['color', 'fill', 'border', 'tooltip'] as const) if (b[k] !== DEFAULTS[k]) kw.push([k, b[k]]);
   if (b.confirm) kw.push(['confirm', true]);
+  if (!b.tag_self) kw.push(['tags_lead', false]);
   const lines = [`@${call('button', [], kw)}`];
   if (b.hidden) lines.push('@hidden');
   lines.push('def button():', `    ${pyString(b.label)}`);
@@ -99,7 +101,11 @@ export function pythonToButton(src: string, base: ButtonDef, n: ButtonNames): Bu
               if (typeof v !== 'boolean') throw new RuleTextError('confirm= is True or False', no);
               d.confirm = v;
               break;
-            default: throw new RuleTextError(`button() doesn't take ${k}=: use counts_as, shows_when, asks, color, fill, border, tooltip or confirm`, no);
+            case 'tags_lead':
+              if (typeof v !== 'boolean') throw new RuleTextError('tags_lead= is True or False', no);
+              d.tag_self = v;
+              break;
+            default: throw new RuleTextError(`button() doesn't take ${k}=: use counts_as, shows_when, asks, color, fill, border, tooltip, confirm or tags_lead`, no);
           }
         }
         if (!d.outcome) throw new RuleTextError('say what it counts as: @button(counts_as="Dial: No answer")', no);

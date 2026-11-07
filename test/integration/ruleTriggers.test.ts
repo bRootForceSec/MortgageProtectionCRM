@@ -165,7 +165,7 @@ describe('rules on lead changes', () => {
     expect(() => saveRules(db, [rule({ name: 'Gone', trigger: { kind: 'status', status_id: 'nope', when: 'enters' } })])).toThrow(/that status is gone/);
     expect(() => saveRules(db, [rule({ name: 'Bad', trigger: { kind: 'becomes_true', condition: 'has(' } })])).toThrow(/Bad: the condition/);
     expect(describeTrigger({ kind: 'tag_added', tag: 'Hot' })).toBe('When tag "Hot" is put on a lead');
-    expect(describeTrigger({ kind: 'status', status_id: 's', when: 'leaves' }, undefined, () => 'Needs rebook')).toBe('When a lead leaves the status "Needs rebook"');
+    expect(describeTrigger({ kind: 'status', status_id: 's', when: 'leaves' }, undefined, () => 'Needs rebook')).toBe('When a lead leaves the smart list "Needs rebook"');
     expect(describeAction({ kind: 'counter', field_id: 'f', op: 'add', by: -1 }, () => 'Streak')).toBe('Take 1 off Streak');
     expect(describeAction({ kind: 'counter', field_id: 'f', op: 'set', by: 0 }, () => 'Streak')).toBe('Reset Streak to 0');
   });
