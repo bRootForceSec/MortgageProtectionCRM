@@ -55,6 +55,7 @@ function triggerText(t: RuleTrigger, n: RuleNames): string {
     case 'status': return call('when', [], [[t.when, n.status(t.status_id) ?? t.status_id]]);
     case 'becomes_true': return call('when', [], [['becomes_true', t.condition], ...(t.already ? [['already', true] as [string, Value]] : [])]);
     case 'list_empty': return call('when', [], [['list_empty', true]]);
+    case 'imported': return call('when', [], [['imported', true]]);
   }
 }
 
@@ -224,6 +225,7 @@ function readTrigger(c: Call, n: RuleNames, line: number): RuleTrigger {
     }
     case 'manual': only('manual'); return { kind: 'manual' };
     case 'list_empty': only('list_empty'); return { kind: 'list_empty' };
+    case 'imported': only('imported'); return { kind: 'imported' };
     case 'tag_added': case 'tag_removed': only(k); return { kind: k, tag: str(v, `${k}=`, line) };
     case 'enters': case 'leaves': {
       only(k);
@@ -239,7 +241,7 @@ function readTrigger(c: Call, n: RuleNames, line: number): RuleTrigger {
       return { kind: 'becomes_true', condition: str(v, 'becomes_true=', line), ...(already ? { already: true } : {}) };
     }
   }
-  throw new RuleTextError(`when() doesn't take ${k}=: use daily, call_saved, manual, tag_added, tag_removed, enters, leaves, becomes_true or list_empty`, line);
+  throw new RuleTextError(`when() doesn't take ${k}=: use daily, call_saved, manual, tag_added, tag_removed, enters, leaves, becomes_true, list_empty or imported`, line);
 }
 
 const FILTER_KEYS = new Set([

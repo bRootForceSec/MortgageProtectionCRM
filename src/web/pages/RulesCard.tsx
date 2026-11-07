@@ -44,7 +44,7 @@ const swap = <T,>(list: T[], i: number, j: number): T[] => {
 
 /** What set a run off, for the log. */
 const RUN_TRIGGER: Record<RuleTrigger['kind'], string> = {
-  daily: 'daily', call_saved: 'call saved', manual: 'run by you', tag_added: 'tag put on', tag_removed: 'tag taken off', status: 'smart list', becomes_true: 'condition turned true', list_empty: 'call list ran out',
+  daily: 'daily', call_saved: 'call saved', manual: 'run by you', tag_added: 'tag put on', tag_removed: 'tag taken off', status: 'smart list', becomes_true: 'condition turned true', list_empty: 'call list ran out', imported: 'leads imported',
 };
 
 function resultText(r: ActionResult, fieldName: (id: string) => string | undefined): string {
@@ -262,6 +262,7 @@ const emptyTrigger = (kind: RuleTrigger['kind'], firstStatus: string | undefined
     case 'status': return { kind, status_id: firstStatus ?? '', when: 'enters' };
     case 'becomes_true': return { kind, condition: '' };
     case 'manual':
+    case 'imported':
     case 'list_empty': return { kind };
   }
 };

@@ -71,6 +71,8 @@ export function saveRules(db: DB, input: unknown): Rule[] {
         throw new DomainError(`${r.name}: the condition: ${(e as Error).message}`);
       }
     }
+    // A first "leads imported" rule starts from the leads there now, so the next import is the first it acts on.
+    if (r.trigger.kind === 'imported' && getSetting(db, IMPORT_CURSOR) == null) newLeads(db);
     if (r.trigger.kind === 'call_saved') for (const o of r.trigger.outcomes) if (!outcomes.has(o)) throw new DomainError(`${r.name}: unknown outcome "${o}"`);
     if (r.trigger.kind === 'status') {
       const id = r.trigger.status_id;
@@ -147,7 +149,7 @@ function doAction(db: DB, rule: Rule, a: RuleAction, ids: string[], now: string)
 const ROLLBACK = new Error('preview');
 
 /** Triggers that run from runEventRules. A run of one that matched no lead isn't logged (there'd be one per change). */
-const EVENT_TRIGGERS: readonly RuleTrigger['kind'][] = ['tag_added', 'tag_removed', 'status', 'becomes_true'];
+const EVENT_TRIGGERS: readonly RuleTrigger['kind'][] = ['tag_added', 'tag_removed', 'status', 'becomes_true', 'imported'];
 
 /**
  * Runs a rule now: for every lead matching its filter (or just those of `leadIds` that do, for a change to them), does
@@ -245,6 +247,18 @@ const WATCH_KEYS = 'rule_watch_keys';
 const MAX_ROUNDS = 25;
 
 /** The tag lines logged since the last look (none the first time: history doesn't set rules off). */
+const IMPORT_CURSOR = 'rule_import_cursor';
+
+/** Leads added since the last look (by rowid), for "when leads are imported". The first look only notes where it is. */
+function newLeads(db: DB): string[] {
+  const last = (db.prepare('SELECT max(rowid) n FROM lead').get() as { n: number | null }).n ?? 0;
+  const from = getSetting<number>(db, IMPORT_CURSOR);
+  if (from === last) return [];
+  setSetting(db, IMPORT_CURSOR, last);
+  if (from == null) return [];
+  return (db.prepare('SELECT id FROM lead WHERE rowid > ? AND rowid <= ? ORDER BY rowid').all(from, last) as { id: string }[]).map((r) => r.id);
+}
+
 function newTagEvents(db: DB): { lead_id: string; kind: string; tag_name: string }[] {
   const last = (db.prepare('SELECT max(rowid) n FROM lead_event').get() as { n: number | null }).n ?? 0;
   const from = getSetting<number>(db, CURSOR);
@@ -314,6 +328,7 @@ export function runEventRules(db: DB, now = new Date()): RuleRun[] {
   const ran = new Map<string, Set<string>>();
   for (let round = 0; round < MAX_ROUNDS; round++) {
     const events = newTagEvents(db);
+    const imported = newLeads(db);
     const due: [Rule, string[]][] = [];
     for (const r of rules) {
       const t = r.trigger;
@@ -321,6 +336,8 @@ export function runEventRules(db: DB, now = new Date()): RuleRun[] {
       if (t.kind === 'tag_added' || t.kind === 'tag_removed') {
         const tag = t.tag.toLowerCase();
         ids = [...new Set(events.filter((e) => e.kind === t.kind && e.tag_name?.toLowerCase() === tag).map((e) => e.lead_id))];
+      } else if (t.kind === 'imported') {
+        ids = imported;
       } else {
         try {
           ids = watchedChange(db, r, now);

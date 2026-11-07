@@ -35,6 +35,8 @@ export const RuleTrigger = z.discriminatedUnion('kind', [
    * first one that puts leads on the list ends it (the order you call in: imports, then no-shows, then no-answers).
    */
   z.object({ kind: z.literal('list_empty') }),
+  /** When leads are imported: each new lead, once the import is saved, so its details can tag it (the rule's leads pick which). */
+  z.object({ kind: z.literal('imported') }),
 ]);
 export type RuleTrigger = z.infer<typeof RuleTrigger>;
 
@@ -99,10 +101,11 @@ export const TRIGGER_LABELS: Record<RuleTrigger['kind'], string> = {
   status: 'When a lead comes into or leaves a smart list',
   becomes_true: 'When a condition turns true',
   list_empty: 'When the call list runs out',
+  imported: 'When leads are imported',
 };
 
 /** Triggers that fire for a lead when something about it changes, so they act on that lead only. */
-export const LEAD_TRIGGERS: readonly RuleTrigger['kind'][] = ['call_saved', 'tag_added', 'tag_removed', 'status', 'becomes_true'];
+export const LEAD_TRIGGERS: readonly RuleTrigger['kind'][] = ['call_saved', 'tag_added', 'tag_removed', 'status', 'becomes_true', 'imported'];
 
 /** "Mon–Fri" style list of weekdays. */
 export function describeDays(days: readonly number[]): string {
@@ -130,6 +133,7 @@ export function describeTrigger(
     }
     case 'becomes_true': return `When this turns true for a lead: ${t.condition}`;
     case 'list_empty': return 'When the call list runs out (the first of these rules that adds leads wins)';
+    case 'imported': return 'When a new lead is imported';
     case 'manual': return 'Only when you press Run now';
   }
 }

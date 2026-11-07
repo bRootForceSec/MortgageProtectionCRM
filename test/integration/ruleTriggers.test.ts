@@ -279,3 +279,25 @@ describe('tag shortcuts', () => {
     ]);
   });
 });
+
+describe('when leads are imported', () => {
+  it('tags each new lead by its details, once, and leaves leads already there alone', async () => {
+    saveRules(db, [rule({ name: 'Over 60', trigger: { kind: 'imported' }, filter: { where: 'age >= 60' }, actions: [{ kind: 'add_tag', tag: 'Over 60' }] })]);
+    expect(runEventRules(db)).toEqual([]); // Robert (61) was imported before the rule
+    expect(tags(lead('Robert'))).toEqual([]);
+
+    const rows = [
+      ['Mary Old', '(614) 555-0201', 'Chase', 150000, 70, '', '1 A St', 'Columbus', 'OH', '43215', '', '', '', '', '', ''],
+      ['Tom Young', '(614) 555-0202', 'Chase', 150000, 35, '', '2 B St', 'Columbus', 'OH', '43215', '', '', '', '', '', ''],
+    ];
+    const parsed = await parseSpreadsheet(sampleCsv(rows), 'b.csv');
+    commitImport(db, parsed, parsed.sheets[0]!, suggestMapping(parsed.sheets[0]!.headers), { name: 'b2' });
+    const runs = runEventRules(db);
+    expect(runs.map((r) => [r.rule_name, r.trigger, r.matched])).toEqual([['Over 60', 'imported', 1]]);
+    expect(tags(lead('Mary'))).toEqual(['Over 60']);
+    expect(tags(lead('Tom'))).toEqual([]);
+    expect(runEventRules(db)).toEqual([]);
+    expect(describeTrigger({ kind: 'imported' })).toBe('When a new lead is imported');
+  });
+});
+
