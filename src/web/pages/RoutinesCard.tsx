@@ -3,6 +3,7 @@ import { api, newKey as newId, type CallListResponse, type SavedList } from '../
 import { useApp } from '../App';
 import { STARTER_STEPS, STEP_ORDERS, WEEKDAYS, describeFilter, type Routine, type RoutineStep, type StepOrder } from '../../shared/routines';
 import { useTags } from '../tags';
+import { useStatuses } from '../statuses';
 import { useCustomFields } from '../customFields';
 
 // Settings → Routines: the order you call in each day. A routine runs on the days you tick (like an alarm), and its
@@ -21,6 +22,7 @@ export function RoutinesCard() {
   const [routines, setRoutines] = useState<Routine[] | null>(null);
   const [lists, setLists] = useState<SavedList[]>([]);
   const { tagName } = useTags();
+  const { statusName } = useStatuses();
   const { fieldName } = useCustomFields();
   const load = useCallback(async () => {
     try {
@@ -65,7 +67,7 @@ export function RoutinesCard() {
     if (step) void change(r.id, { steps: [...r.steps, step] });
   };
   const describe = (s: RoutineStep) =>
-    s.source.kind === 'filter' ? describeFilter(s.source.filter, { tag: tagName, field: fieldName }) : `Saved list "${lists.find((l) => l.id === (s.source as { list_id: string }).list_id)?.name ?? 'gone'}"`;
+    s.source.kind === 'filter' ? describeFilter(s.source.filter, { tag: tagName, field: fieldName, status: statusName }) : `Saved list "${lists.find((l) => l.id === (s.source as { list_id: string }).list_id)?.name ?? 'gone'}"`;
 
   return (
     <div className="card">

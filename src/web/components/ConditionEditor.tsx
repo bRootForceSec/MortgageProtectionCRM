@@ -3,6 +3,7 @@ import { api } from '../api';
 import { useApp } from '../App';
 import { useTags } from '../tags';
 import { useCustomFields } from '../customFields';
+import { useStatuses } from '../statuses';
 import { FORMULA_VALUES, FormulaError } from '../../shared/formula';
 import { CMP_OPS, emptyGroup, toForm, toPython, type CmpOp, type CondGroup, type CondItem, type CondTerm, type Literal } from '../../shared/condition';
 
@@ -139,6 +140,7 @@ function GroupEditor({ g, onChange, onRemove, top }: { g: CondGroup; onChange: (
 
 const TERM_KINDS: { kind: CondTerm['kind']; label: string }[] = [
   { kind: 'has', label: 'Has tag' },
+  { kind: 'status', label: 'In a status' },
   { kind: 'times', label: 'Times a tag was put on' },
   { kind: 'since', label: 'Time since a tag was put on or taken off' },
   { kind: 'before', label: 'One tag put on before another' },
@@ -151,6 +153,7 @@ const TERM_KINDS: { kind: CondTerm['kind']; label: string }[] = [
 function blankTerm(kind: CondTerm['kind']): CondTerm {
   switch (kind) {
     case 'has': return { kind, tag: '', negate: false };
+    case 'status': return { kind, name: '', negate: false };
     case 'times': return { kind, tag: '', days: null, op: '>=', n: 1 };
     case 'since': return { kind, tag: '', event: 'added', unit: 'days', op: '<=', n: 1 };
     case 'before': return { kind, first: '', second: '' };
@@ -167,6 +170,7 @@ function TermEditor({ t, onChange, onRemove }: { t: CondTerm; onChange: (t: Cond
   const { fields } = useCustomFields();
   const outcomes = useMemo(() => (meta?.outcome_codes ?? []).map((o) => o.label), [meta]);
   const tagNames = tags.map((x) => x.name);
+  const statusNames = useStatuses().statuses.map((x) => x.name);
   const tagPick = (v: string, set: (v: string) => void, label: string) => <Pick value={v} options={tagNames} onChange={set} label={label} placeholder="tag" />;
   const opPick = (op: CmpOp, set: (op: CmpOp) => void) => (
     <select value={op} onChange={(e) => set(e.target.value as CmpOp)} aria-label="Compare">
@@ -193,6 +197,17 @@ function TermEditor({ t, onChange, onRemove }: { t: CondTerm; onChange: (t: Cond
             <option value="not">doesn't have tag</option>
           </select>
           {tagPick(t.tag, (tag) => onChange({ ...t, tag }), 'Tag')}
+        </>
+      );
+      break;
+    case 'status':
+      body = (
+        <>
+          <select value={t.negate ? 'not' : 'in'} onChange={(e) => onChange({ ...t, negate: e.target.value === 'not' })} aria-label="In or not">
+            <option value="in">is in status</option>
+            <option value="not">isn't in status</option>
+          </select>
+          <Pick value={t.name} options={statusNames} onChange={(name) => onChange({ ...t, name })} label="Status" placeholder="status" />
         </>
       );
       break;

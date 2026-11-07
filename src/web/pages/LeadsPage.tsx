@@ -19,6 +19,8 @@ import { useTags } from '../tags';
 import { useCustomFields } from '../customFields';
 import { CustomFieldInput } from '../components/CustomFieldInput';
 import { ConditionEditor } from '../components/ConditionEditor';
+import { StatusChips } from './StatusesCard';
+import { useStatuses } from '../statuses';
 import { isNumericField, normalizeCustomValue, showCustomValue } from '../../shared/customFields';
 
 // Where you pick who to call: filter the leads, tick the ones you want (or take every match),
@@ -74,6 +76,9 @@ export function LeadsPage() {
   const [sortField, setSortField] = useState('');
   /** A condition in Python syntax ('' for none), and whether its editor is open. */
   const [where, setWhere] = useState('');
+  /** One of your statuses shown as a tab (its id), or '' for the usual tabs. */
+  const [inStatus, setInStatus] = useState('');
+  const { statuses } = useStatuses();
   const [editingWhere, setEditingWhere] = useState(false);
   const { fields } = useCustomFields();
   const field = fields.find((f) => f.id === fieldId);
@@ -133,8 +138,9 @@ export function LeadsPage() {
     field_max: numeric ? num(fieldMax) : undefined,
     sort_field: sortField || undefined,
     where: where || undefined,
+    in_status: inStatus || undefined,
     ...groupParams,
-  }), [status, search, batch, tried, notOnList, leadType, age, imported, apptDays, gap, tag, fieldId, keptValue, numeric, fieldMin, fieldMax, sortField, where, groupParams.counties, groupParams.area_codes]); // eslint-disable-line react-hooks/exhaustive-deps
+  }), [status, search, batch, tried, notOnList, leadType, age, imported, apptDays, gap, tag, fieldId, keptValue, numeric, fieldMin, fieldMax, sortField, where, inStatus, groupParams.counties, groupParams.area_codes]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const load = useCallback(
     () => api.get<{ rows: any[]; total: number; page: number }>('/leads', { ...filters, page: String(page), per_page: String(perPage) })
@@ -169,7 +175,7 @@ export function LeadsPage() {
     return n;
   });
 
-  const filtered = status !== 'all' || !!search || !!batch || !!tried || notOnList || !!leadType || !!age || !!imported || !!apptDays || !!gap || !!tag || !!fieldId || !!sortField || !!where;
+  const filtered = status !== 'all' || !!search || !!batch || !!tried || notOnList || !!leadType || !!age || !!imported || !!apptDays || !!gap || !!tag || !!fieldId || !!sortField || !!where || !!inStatus;
   const clearFilters = () => {
     setStatus('all');
     setSearch('');
@@ -189,6 +195,7 @@ export function LeadsPage() {
     setSortField('');
     setWhere('');
     setEditingWhere(false);
+    setInStatus('');
   };
   const typeLabel = (code: string | null) => (code ? types.find((t) => t.code === code)?.label ?? code : '');
 
@@ -234,7 +241,10 @@ export function LeadsPage() {
       <div className="leads-tools">
         <div className="tabs">
           {LEAD_TABS.map((s) => (
-            <button key={s.key} className={status === s.key ? 'active' : ''} title={s.title} onClick={() => setStatus(s.key)}>{s.label}</button>
+            <button key={s.key} className={!inStatus && status === s.key ? 'active' : ''} title={s.title} onClick={() => { setStatus(s.key); setInStatus(''); }}>{s.label}</button>
+          ))}
+          {statuses.filter((st) => st.tab).map((st) => (
+            <button key={st.id} className={inStatus === st.id ? 'active' : ''} title={`Your status: ${st.condition}`} onClick={() => { setStatus('all'); setInStatus(st.id); }}>{st.name}</button>
           ))}
         </div>
       </div>
@@ -389,7 +399,7 @@ export function LeadsPage() {
                     />
                   )}
                 </td>
-                <td>{fullName(r)}{(r.tags as string[]).map((t) => <span key={t} className="tag-chip" style={{ marginLeft: 4, paddingRight: 8 }}>{t}</span>)}</td>
+                <td>{fullName(r)}<StatusChips statuses={r.statuses} />{(r.tags as string[]).map((t) => <span key={t} className="tag-chip" style={{ marginLeft: 4, paddingRight: 8 }}>{t}</span>)}</td>
                 {sortBy && <td>{showCustomValue(sortBy, r.sort_value == null ? null : String(r.sort_value))}</td>}
                 <td>{fmtPhone(r.phone_e164)}</td><td>{r.county ?? ''}</td><td>{[r.city, r.state].filter(Boolean).join(', ')}</td>
                 <td title={typeLabel(r.lead_type)}>{r.lead_type ?? ''}</td><td className="nowrap">{fmtLeadAge(r.callin_at)}</td><td>{r.batch_name}</td><td><StatusBadge status={r.status} /><ApptBadge result={r.appt_result} />{r.on_list && <span className="badge" style={{ marginLeft: 4 }}>on call list</span>}</td>

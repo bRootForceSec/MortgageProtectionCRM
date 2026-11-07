@@ -9,6 +9,7 @@ import { groupWhere, parseList, searchWhere } from './groupFilter.js';
 import { DomainError } from '../core/errors.js';
 import { loadCallingSettings } from './callingSettings.js';
 import { conditionSql } from './formulas.js';
+import { statusWhere } from './statuses.js';
 import { FormulaError } from '../../shared/formula.js';
 
 // The call list: the leads you chose to call, worked top to bottom. Leads get here only when you add them
@@ -54,6 +55,8 @@ export interface LeadFilter {
   only_lead?: string;
   /** Only leads this condition (Python syntax, a yes/no formula) is true for. */
   where?: string;
+  /** Only leads in this status of yours (its id). */
+  in_status?: string;
 }
 
 /** The Leads filters as the API (or a routine step) gives them, with relative choices worked out now. */
@@ -80,6 +83,7 @@ export function toLeadFilter(q: LeadQuery, now = new Date()): LeadFilter {
     appt_days_ago: q.appt_days_ago ?? undefined,
     on_list: q.on_list === true || q.on_list === '1' || q.on_list === 'true',
     where: q.where?.trim() || undefined,
+    in_status: q.in_status || undefined,
   };
 }
 
@@ -197,6 +201,7 @@ export function leadFilterWhere(db: DB, f: LeadFilter): { sql: string; params: R
       : '1',
     f.not_on_list ? `l.id NOT IN (SELECT i.lead_id FROM call_list_item i WHERE NOT ${WORKED})` : '1',
     f.where ? whereSql(db, f.where) : '1',
+    f.in_status ? statusWhere(db, f.in_status) : '1',
     group.sql,
     search.sql,
   ];

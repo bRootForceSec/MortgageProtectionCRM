@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { api, fmtDateTime, newKey } from '../api';
 import { useApp } from '../App';
 import { useTags } from '../tags';
+import { useStatuses } from '../statuses';
 import { useCustomFields } from '../customFields';
 import { CustomFieldInput } from '../components/CustomFieldInput';
 import { describeFilter, WEEKDAYS } from '../../shared/routines';
@@ -22,8 +23,9 @@ function useNames() {
   const { meta } = useApp();
   const { tags, tagName } = useTags();
   const { fields, fieldName } = useCustomFields();
+  const { statusName } = useStatuses();
   const outcomeLabel = useCallback((c: string) => meta?.outcome_codes.find((o) => o.code === c)?.label ?? c, [meta]);
-  return { tags, tagName, fields, fieldName, outcomeLabel };
+  return { tags, tagName, fields, fieldName, statusName, outcomeLabel };
 }
 
 function resultText(r: ActionResult, fieldName: (id: string) => string | undefined): string {
@@ -111,7 +113,7 @@ export function RulesCard() {
             </div>
             <div className="help" style={{ margin: '4px 0 0' }}>
               <div><b>When:</b> {describeTrigger(r.trigger, names.outcomeLabel)}</div>
-              <div><b>Leads:</b> {describeFilter(r.filter, { tag: names.tagName, field: names.fieldName })}</div>
+              <div><b>Leads:</b> {describeFilter(r.filter, { tag: names.tagName, field: names.fieldName, status: names.statusName })}</div>
               <div><b>Do:</b> {r.actions.map((a) => describeAction(a, names.fieldName)).join(', then ')}</div>
             </div>
             {shown[r.id] && (
@@ -329,7 +331,7 @@ function RuleEditor(props: { rule: Rule; isNew: boolean; onSave: (r: Rule) => Pr
               </select>
             </div>
             <p className="help" style={{ marginBottom: 0 }}>
-              {describeFilter(r.filter, { tag: names.tagName, field: names.fieldName })}. For other filters (county, lead type, your fields…), set them on Leads and use <b>Make a rule</b>.
+              {describeFilter(r.filter, { tag: names.tagName, field: names.fieldName, status: names.statusName })}. For other filters (county, lead type, your fields…), set them on Leads and use <b>Make a rule</b>.
             </p>
           </fieldset>
 

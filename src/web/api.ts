@@ -1,3 +1,4 @@
+import type { StatusBadge } from '../shared/statuses';
 import type { CustomFieldType } from '../shared/customFields';
 import { ageOn } from '../shared/age';
 import { leadAgeDays } from '../shared/leadAge';
@@ -276,6 +277,8 @@ export interface LeadDetail {
   called_back_at: string | null;
   /** Your tags on this lead, by name. */
   tags: TagRef[];
+  /** Your statuses this lead is in, in your order. */
+  statuses: StatusBadge[];
   /** Every custom field, in order, with this lead's value (null for none). */
   custom: { field_id: string; label: string; type: CustomFieldType; options: string[]; value: string | null }[];
   calls: Call[];

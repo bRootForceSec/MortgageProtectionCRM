@@ -4,6 +4,7 @@ import { useApp } from '../App';
 import { STEP_ORDERS, describeFilter, type Routine, type StepOrder } from '../../shared/routines';
 import type { LeadQuery } from '../../shared/leadFilter';
 import { useTags } from '../tags';
+import { useStatuses } from '../statuses';
 import { useCustomFields } from '../customFields';
 
 // Leads → "Save as routine step": keeps the filters you set as a step at the end of a routine. Relative choices
@@ -18,6 +19,7 @@ export function SaveStepDialog(props: { filter: Partial<LeadQuery>; onClose: () 
   const [busy, setBusy] = useState(false);
   const { tagName } = useTags();
   const { fieldName } = useCustomFields();
+  const { statusName } = useStatuses();
   useEffect(() => {
     api.get<{ routines: Routine[] }>('/routines')
       .then((r) => {
@@ -50,7 +52,7 @@ export function SaveStepDialog(props: { filter: Partial<LeadQuery>; onClose: () 
       <form className="modal small-modal" role="dialog" aria-label="Save as routine step" onSubmit={(e) => (e.preventDefault(), void save())}>
         <header><b>Save as routine step</b></header>
         <div className="body">
-          <p className="help" style={{ marginTop: 0 }}>{describeFilter(props.filter, { tag: tagName, field: fieldName })}</p>
+          <p className="help" style={{ marginTop: 0 }}>{describeFilter(props.filter, { tag: tagName, field: fieldName, status: statusName })}</p>
           <label className="field">
             <span>Step name</span>
             <input aria-label="Step name" value={name} maxLength={60} onChange={(e) => setName(e.target.value)} autoFocus placeholder="e.g. Yesterday's sat no sale" />

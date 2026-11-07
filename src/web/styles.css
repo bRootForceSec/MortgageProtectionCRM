@@ -459,3 +459,14 @@ th button.sort { background: none; border: 0; padding: 0; font: inherit; font-we
 .cond-group.nested { border-left: 3px solid var(--border); padding-left: 10px; margin-left: 4px; }
 .cond-row { align-items: center; }
 .condition-editor select, .condition-editor input:not([type='checkbox']) { width: auto; flex: none; }
+
+/* Your statuses, as badges. */
+/* Statuses are filled, so they read apart from tags (outlined and round). */
+.status-chip { display: inline-block; margin-left: 4px; padding: 1px 8px; border-radius: 4px; font-size: 12px; font-weight: 600; white-space: nowrap; color: #fff; }
+.status-chip.c-gray { background: #5f6368; }
+.status-chip.c-blue { background: #1a5fb4; }
+.status-chip.c-green { background: #26722b; }
+.status-chip.c-yellow { background: #8a6100; }
+.status-chip.c-orange { background: #a8461b; }
+.status-chip.c-red { background: #b3261e; }
+.status-chip.c-purple { background: #5b3fc4; }

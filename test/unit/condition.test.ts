@@ -55,3 +55,11 @@ describe('the condition form', () => {
     expect(() => toForm('has(')).toThrow(FormulaError);
   });
 });
+
+describe('status rows', () => {
+  it('reads and writes status("Name") and not status("Name")', () => {
+    const g = toForm('status("Needs rebook") and not status("Client")');
+    expect(g.items).toEqual([{ kind: 'status', name: 'Needs rebook', negate: false }, { kind: 'status', name: 'Client', negate: true }]);
+    expect(toPython(g)).toBe('status("Needs rebook") and not status("Client")');
+  });
+});

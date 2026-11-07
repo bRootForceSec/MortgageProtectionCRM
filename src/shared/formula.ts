@@ -35,6 +35,7 @@ export const FORMULA_FUNCTIONS: readonly { name: string; usage: string; help: st
   { name: 'added', usage: 'added("No show")', help: 'When that tag was last put on the lead (blank if never): use with days_since, hours_since' },
   { name: 'removed', usage: 'removed("No answer")', help: 'When that tag was last taken off the lead (blank if never)' },
   { name: 'times', usage: 'times("No answer", 7)', help: 'How many times that tag was put on the lead, in the last 7 days if you give a number' },
+  { name: 'status', usage: 'status("Needs rebook")', help: 'Yes when the lead is in that status of yours (in conditions and statuses, not formula fields)' },
   { name: 'before', usage: 'before("Appt set", "No show")', help: 'Yes when the first tag was last put on before the second was' },
   { name: 'pressed', usage: 'pressed("Dial: No answer", 7)', help: 'Calls saved with that outcome (name or code), not undone, in the last 7 days if you give a number' },
   { name: 'min', usage: 'min(a, b, …)', help: 'The smallest' },
@@ -49,7 +50,7 @@ export const FORMULA_FUNCTIONS: readonly { name: string; usage: string; help: st
 
 /** Each function's arguments by name, for Python keyword arguments: times("No answer", days=7). */
 export const FUNCTION_PARAMS: Readonly<Record<string, readonly string[]>> = {
-  has: ['tag'], has_tag: ['tag'], added: ['tag'], removed: ['tag'], times: ['tag', 'days'], before: ['first', 'second'],
+  has: ['tag'], has_tag: ['tag'], status: ['name'], added: ['tag'], removed: ['tag'], times: ['tag', 'days'], before: ['first', 'second'],
   pressed: ['outcome', 'days'], round: ['value', 'places'], ifblank: ['value', 'instead'], blank: ['value'], abs: ['value'],
   contains: ['text', 'part'], days_since: ['date'], days_until: ['date'], hours_since: ['date'],
 };
