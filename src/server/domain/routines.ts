@@ -2,8 +2,7 @@ import type { DB } from '../db/connection.js';
 import { getSetting, setSetting } from '../core/settings.js';
 import { DomainError } from '../core/errors.js';
 import { nowIso, uuidv7 } from '../ids.js';
-import { sqlList } from '../db/sql.js';
-import { CALLABLE_STATUSES } from '../../shared/leadStatus.js';
+import { callableIds } from './callable.js';
 import { LeadQuery } from '../../shared/leadFilter.js';
 import { Routines, routinesOn, starterRoutine, type Routine, type RoutineStep, type RoutineToday, type StepOrder } from '../../shared/routines.js';
 import { addToCallList, clearCallList, loadSavedList, matchingLeadIds, toLeadFilter, WORKED, type AddResult } from './callList.js';
@@ -60,9 +59,7 @@ function stepLeadIds(db: DB, step: RoutineStep, now: Date): string[] | null {
       : savedListLeadIds(db, step.source.list_id);
   if (!ids) return null;
   if (!ids.length) return [];
-  const callable = new Set(
-    (db.prepare(`SELECT lead_id FROM lead_state WHERE status IN ${sqlList(CALLABLE_STATUSES)} AND lead_id IN (SELECT value FROM json_each(?))`).all(JSON.stringify(ids)) as { lead_id: string }[]).map((r) => r.lead_id),
-  );
+  const callable = callableIds(db, ids);
   return ids.filter((id) => callable.has(id));
 }
 

@@ -83,7 +83,7 @@ export function App() {
   const reportAdded = useCallback((r: AddResult, what?: string) => {
     const extra = [
       r.already ? `${r.already} already on it` : '',
-      r.not_callable ? `${r.not_callable} booked, bad or dead (not added)` : '',
+      r.not_callable ? `${r.not_callable} can't be called (not added)` : '',
       r.skipped.length ? `${r.skipped.length} skipped` : '',
     ].filter(Boolean).join(', ');
     const msg = `${what ?? `${r.added} lead${r.added === 1 ? '' : 's'} added to the call list`}${extra ? `; ${extra}` : ''}`;

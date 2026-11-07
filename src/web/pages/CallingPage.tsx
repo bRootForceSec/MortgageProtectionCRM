@@ -15,7 +15,6 @@ import { getStored, getStoredJson, setStored, setStoredJson } from '../storage';
 import { LogCall, type Attempt, type FormValues, type Saved } from './LogCall';
 import { CallerLookup, ModeSwitch, Recent, UNDO_MS, UndoBar, otherNumber } from './CallingPanels';
 import { openingSide, type CallMode } from '../../shared/appointments';
-import { isCallable } from '../../shared/leadStatus';
 import { bestTimeFirst } from '../../shared/bestTime';
 
 const SELECTED_KEY = 'mpcrm.selectedLead';
@@ -229,7 +228,7 @@ export function CallingPage() {
     autoSend.current = null;
     const phone = detail.state?.active_phone_e164 ?? detail.lead.phone_e164;
     // A never-dial lead is never sent on its own: you dial it yourself, after the question.
-    if (phone && isCallable(detail.state?.status ?? 'new') && !detail.never_dial) void dial(phone);
+    if (phone && detail.callable && !detail.never_dial) void dial(phone);
   }, [detail]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /** Shows a lead (looked up for an incoming call, or from Today) without touching your list. */

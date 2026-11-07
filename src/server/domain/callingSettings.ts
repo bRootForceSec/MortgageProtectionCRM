@@ -5,6 +5,8 @@ import { CallingSettings, SHORTCUT_ACTIONS } from '../../shared/callingSettings.
 import type { FollowUpPlans } from '../../shared/followUps.js';
 import { OUTCOMES, OutcomeOverrides, outcomeDef } from '../../shared/outcomes.js';
 import { loadOutcomeOverrides, syncOutcomeCodes } from '../db/outcomeCodes.js';
+import { conditionSql } from './formulas.js';
+import { FormulaError } from '../../shared/formula.js';
 
 // Loads and saves the Calling screen settings (the schema is in src/shared/callingSettings.ts).
 
@@ -20,6 +22,14 @@ export function loadCallingSettings(db: DB): CallingSettings {
 
 export function saveCallingSettings(db: DB, input: unknown): CallingSettings {
   const s = CallingSettings.parse(input);
+  if (s.callable_when) {
+    try {
+      conditionSql(db, s.callable_when);
+    } catch (e) {
+      if (e instanceof FormulaError) throw new DomainError(`"Can be called when": ${e.message}`);
+      throw e;
+    }
+  }
   for (const a of Object.keys(s.shortcuts.actions)) {
     if (!(a in SHORTCUT_ACTIONS)) throw new DomainError(`unknown shortcut action "${a}"`);
   }

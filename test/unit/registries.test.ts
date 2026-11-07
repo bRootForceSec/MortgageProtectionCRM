@@ -8,9 +8,10 @@ import { OUTCOMES } from '../../src/shared/outcomes.js';
 
 describe('lead statuses and Leads tabs', () => {
   it('callable statuses', () => {
-    expect(CALLABLE_STATUSES).toEqual(['new', 'retry', 'callback']);
+    // Booked leads can be called if your "Can be called when" says so (it starts saying no).
+    expect(CALLABLE_STATUSES).toEqual(['new', 'retry', 'callback', 'appointment_set']);
     expect(['new', 'retry', 'callback', 'appointment_set', 'invalid', 'dead', 'toString', '', null].map(isCallable))
-      .toEqual([true, true, true, false, false, false, false, false, false]);
+      .toEqual([true, true, true, true, false, false, false, false, false]);
   });
 
   it('labels', () => {

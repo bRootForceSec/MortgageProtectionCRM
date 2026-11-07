@@ -293,6 +293,8 @@ export interface LeadDetail {
   tags: TagRef[];
   /** Its never-dial tag (Settings → Tags), when it has one: when it went on and what did it. */
   never_dial: { tag: string; at: string | null; source: string | null; source_name: string | null } | null;
+  /** Can go on the call list and be dialed (Settings → Calling, "Can be called when"). */
+  callable: boolean;
   /** Your statuses this lead is in, in your order. */
   statuses: StatusBadge[];
   /** Calling screen buttons whose show-when condition is false for this lead now. */

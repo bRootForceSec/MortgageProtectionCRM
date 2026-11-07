@@ -8,7 +8,10 @@ export type LeadStatus = 'new' | 'retry' | 'callback' | 'appointment_set' | 'inv
 export interface LeadStatusDef {
   /** On the badge beside a lead. */
   label: string;
-  /** Can go on the call list and be dialed. The rest have to be restored first. */
+  /**
+   * Can go on the call list and be dialed, when your "Can be called when" condition (Settings → Calling) is true too.
+   * The rest (dead, no good number) never can until they're restored.
+   */
   callable: boolean;
   /** Stays put until something happens to the lead (a retry becomes due as time passes). */
   timeless: boolean;
@@ -18,14 +21,14 @@ export const LEAD_STATUSES: Record<LeadStatus, LeadStatusDef> = {
   new: { label: 'New', callable: true, timeless: true },
   retry: { label: 'Tried', callable: true, timeless: false },
   callback: { label: 'Callback', callable: true, timeless: true },
-  appointment_set: { label: 'Appointment set', callable: false, timeless: true },
+  appointment_set: { label: 'Appointment set', callable: true, timeless: true },
   invalid: { label: 'Bad number', callable: false, timeless: true },
   dead: { label: 'Dead lead', callable: false, timeless: true },
 };
 
 const statuses = Object.entries(LEAD_STATUSES) as [LeadStatus, LeadStatusDef][];
 
-/** Statuses that can go on the call list. */
+/** Statuses that can go on the call list, if your condition says so (domain/callable.ts). */
 export const CALLABLE_STATUSES: readonly LeadStatus[] = statuses.filter(([, d]) => d.callable).map(([s]) => s);
 
 export function isCallable(status: string | null | undefined): boolean {

@@ -24,8 +24,13 @@ test.beforeAll(async () => {
   });
 });
 
-test.afterAll(() => {
-  server?.kill('SIGTERM');
+test.afterAll(async () => {
+  // Once the server has stopped, its data folder goes, so runs don't fill the disk.
+  if (server && server.exitCode === null) {
+    await new Promise((r) => { server.once('exit', r); server.kill('SIGTERM'); setTimeout(r, 5000); });
+  }
+  // Best-effort: Windows won't delete a file a server that didn't stop in time still has open.
+  if (dataDir) fs.rmSync(dataDir, { recursive: true, force: true, maxRetries: 3 });
 });
 
 test('import a sheet, log calls by keyboard, and start an Appt set', async ({ page }) => {
@@ -875,8 +880,11 @@ test('Reports: arrange the cards, show By hour as a table, save a layout and loa
   await page.getByRole('button', { name: 'Back to default' }).click();
   await page.getByRole('button', { name: 'Done arranging' }).click();
   await expect(page.getByRole('heading', { name: /^Activity/ })).toBeVisible();
+  // The reload must wait for the load to be saved, or it can cut the save off.
+  const savedLoad = page.waitForResponse((r) => r.url().endsWith('/api/reports/layouts') && r.request().method() === 'PUT');
   await page.getByLabel('Load a saved layout').selectOption('Friday');
   await expect(page.getByRole('heading', { name: /^Activity/ })).toHaveCount(0);
+  await savedLoad;
   await page.reload();
   await page.getByRole('button', { name: 'Reports' }).click();
   await expect(page.getByRole('heading', { name: /^By lead age/ })).toBeVisible();
@@ -891,8 +899,9 @@ test('never dial: a tag marked in Settings keeps a lead off the list, with Add a
   await page.goto(launchUrl);
   const origin = new URL(page.url()).origin;
   // A callable lead, off the list, tagged DNC.
-  const rows = (await (await page.request.get(`${origin}/api/leads?status=no_answer&not_on_list=1`)).json()).rows as { id: string; first_name: string; last_name: string }[];
-  const who = { lead_id: rows[0]!.id, name: `${rows[0]!.first_name} ${rows[0]!.last_name}` };
+  const rows = (await (await page.request.get(`${origin}/api/leads?not_on_list=1`)).json()).rows as { id: string; first_name: string; last_name: string; callable: boolean }[];
+  const pick = rows.find((r) => r.callable && r.first_name && r.last_name)!;
+  const who = { lead_id: pick.id, name: `${pick.first_name} ${pick.last_name}` };
   await page.request.post(`${origin}/api/leads/${who.lead_id}/tags`, { data: { name: 'DNC' }, headers: { origin } });
 
   await page.getByRole('button', { name: 'Settings' }).click();
@@ -926,4 +935,28 @@ test('never dial: a tag marked in Settings keeps a lead off the list, with Add a
   page.once('dialog', (d) => { asked = d.message(); void d.dismiss(); });
   await page.locator('.lead-panel').getByRole('button', { name: /^(Copy number|Show QR|Dial on phone)/ }).first().click();
   await expect.poll(() => asked).toBe(`${who.name} is tagged DNC, which is never dialed. Dial anyway?`);
+});
+
+test('who can be called: a condition in Settings → Calling decides which leads can be ticked on Leads', async ({ page }) => {
+  await page.goto(launchUrl);
+  await page.getByRole('button', { name: 'Settings' }).click();
+  await expect(page.getByLabel('Can be called when')).toHaveText('status != "appointment_set"');
+  await page.getByLabel('Can be called when').locator('..').getByRole('button', { name: 'Edit', exact: true }).click();
+  const ed = page.getByRole('group', { name: 'Condition' });
+  await ed.getByRole('tab', { name: 'Python' }).click();
+  await ed.getByLabel('Condition in Python').fill('has("DNC")');
+  await ed.getByRole('button', { name: 'Use this condition' }).click();
+  await expect(page.getByLabel('Can be called when')).toHaveText('has("DNC")');
+  await page.screenshot({ path: 'test-results/who-can-be-called.png' });
+
+  // Only the DNC-tagged lead can be ticked now (it's still never dialed without Add anyway).
+  await page.getByRole('button', { name: 'Leads', exact: true }).click();
+  await expect(page.locator('table.grid tbody tr').first()).toBeVisible();
+  const enabled = await page.locator('table.grid tbody input[type=checkbox]').evaluateAll((els) => els.filter((e) => !(e as HTMLInputElement).disabled).length);
+  expect(enabled).toBeLessThanOrEqual(1);
+
+  // Back to the start.
+  await page.getByRole('button', { name: 'Settings' }).click();
+  await page.getByRole('button', { name: 'Back to the start' }).click();
+  await expect(page.getByLabel('Can be called when')).toHaveText('status != "appointment_set"');
 });

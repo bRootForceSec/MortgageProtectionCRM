@@ -8,6 +8,7 @@ import { batchPdf } from './pageTurn.js';
 import { otherPhones } from './leadPhones.js';
 import { currentAppointment } from './appointments.js';
 import { leadEvents, leadTags, neverDialOf } from './tags.js';
+import { callableIds, callableSql } from './callable.js';
 import { leadStatuses, statusFlags } from './statuses.js';
 import { buttonsHiddenFor } from './buttons.js';
 import { leadCustomValues } from './customFields.js';
@@ -29,6 +30,7 @@ export function listLeads(db: DB, f: LeadFilter, paging: { page?: number; per_pa
     .prepare(
       `SELECT l.id, l.first_name, l.last_name, l.phone_e164, l.state, l.city, l.county, l.lead_type, l.callin_at, b.name batch_name, s.status, s.attempts_total,
               s.last_call_at, s.last_outcome_code, s.next_due_at, s.appt_result,
+              CASE WHEN ${callableSql(db)} THEN 1 ELSE 0 END callable,
               ${flags ? `${flags.sql} status_flags,` : ''}
               ${f.sort_field ? '(SELECT sv.value FROM lead_field_value sv WHERE sv.lead_id = l.id AND sv.field_id = @lf_sort) sort_value,' : ''}
               (SELECT json_group_array(t.name) FROM (SELECT t.name FROM lead_tag x JOIN tag t ON t.id = x.tag_id WHERE x.lead_id = l.id ORDER BY t.name COLLATE NOCASE) t) tags_json
@@ -39,7 +41,7 @@ export function listLeads(db: DB, f: LeadFilter, paging: { page?: number; per_pa
     .all({ ...w.params, ...o.params, lp_limit: perPage, lp_offset: (page - 1) * perPage }) as any[];
   const listed = onCallList(db, rows.map((r) => r.id));
   return {
-    rows: rows.map(({ tags_json, status_flags, ...r }) => ({ ...r, tags: JSON.parse(tags_json) as string[], statuses: flags ? flags.badges(status_flags) : [], on_list: listed.has(r.id) })),
+    rows: rows.map(({ tags_json, status_flags, callable, ...r }) => ({ ...r, callable: callable === 1, tags: JSON.parse(tags_json) as string[], statuses: flags ? flags.badges(status_flags) : [], on_list: listed.has(r.id) })),
     total,
     page,
     per_page: perPage,
@@ -99,6 +101,8 @@ export function getLeadDetail(db: DB, importsDir: string, id: string) {
     tags: leadTags(db, id),
     /** Its never-dial tag, when it has one: the Calling screen shows a banner and asks before dialing. */
     never_dial: neverDialOf(db, [id]).get(id) ?? null,
+    /** Can go on the call list and be dialed (Settings → Calling, "Can be called when"). */
+    callable: callableIds(db, [id]).has(id),
     statuses: leadStatuses(db, id),
     /** Calling screen buttons whose show-when condition is false for this lead now. */
     hidden_buttons: buttonsHiddenFor(db, id),

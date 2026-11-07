@@ -27,9 +27,17 @@ export const SHORTCUT_ACTIONS = {
 export type ShortcutAction = keyof typeof SHORTCUT_ACTIONS;
 
 const key = z.string().min(1).max(20);
+
+/**
+ * Which leads can go on the call list and be dialed, as you start: everyone but booked leads. A lead in the dead pile
+ * or with no good number never can, whatever this says.
+ */
+export const STARTER_CALLABLE = 'status != "appointment_set"';
 const plan = z.array(z.string().refine(isStep, 'not a follow-up step')).max(10).default([]);
 
 export const CallingSettings = z.object({
+  /** A condition (Python syntax) for the leads that can be called; blank means every lead with a good number, not dead. */
+  callable_when: z.string().trim().max(2000).default(STARTER_CALLABLE),
   /** Minutes before an unanswered lead comes back. 0 means right away. */
   retry_gap_minutes: z.number().int().min(0).max(60 * 24 * 60).default(240),
   /** When to try again after a no-show, sat-no-sale or prezi (see followUps.ts). An empty plan means due right away. */

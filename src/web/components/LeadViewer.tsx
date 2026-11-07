@@ -4,7 +4,6 @@ import { useApp } from '../App';
 import { LeadSummary, CallHistory, Notes, StatusBadge, toggleCalledBack } from './LeadDetails';
 import { LeadPolicies } from './LeadPolicies';
 import { SourcePage } from './SourcePage';
-import { isCallable } from '../../shared/leadStatus';
 import { EditLead } from './EditLead';
 import { isAction, isTyping, keyLabel } from '../shortcuts';
 
@@ -124,7 +123,7 @@ export function LeadViewer({ id, list = [], onClose }: { id: string; list?: View
           <header>
             <button className="btn small" onClick={onClose}>← Back <kbd>Esc</kbd></button>
             <div className="row" style={{ marginLeft: 'auto' }}>
-              {d && isCallable(status) && (
+              {d?.callable && (
                 <button className="btn small primary" onClick={callNow} title="Open this lead on the Calling page to dial it and set the outcome">Call now</button>
               )}
               {d && (status === 'dead' || status === 'invalid'

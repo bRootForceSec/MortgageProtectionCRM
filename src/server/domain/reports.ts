@@ -6,7 +6,7 @@ import { LEAD_NAME, CURRENT_OUTCOME } from '../db/sql.js';
 import { getSetting, setSetting } from '../core/settings.js';
 import { groupWhere } from './groupFilter.js';
 import { BOOKED_CODES, outcomeDef } from '../../shared/outcomes.js';
-import { isCallable } from '../../shared/leadStatus.js';
+import { callableSql } from './callable.js';
 import { sqlCodes } from '../db/outcomeCodes.js';
 import { DomainError } from '../core/errors.js';
 import { loadCallingSettings } from './callingSettings.js';
@@ -69,6 +69,8 @@ interface CallRow {
 
 interface LeadRow {
   lead_id: string;
+  /** 1 when the lead can be called (domain/callable.ts). */
+  callable: number;
   lead_name: string;
   phone_e164: string | null;
   county_key: string | null;
@@ -179,7 +181,8 @@ function loadLeads(db: DB, f: ReportFilter, calls: CallRow[]): LeadRow[] {
     .prepare(
       `SELECT l.id lead_id, ${LEAD_NAME} lead_name, l.phone_e164,
               l.county_key, l.county, l.state, l.lead_type, l.price_cents, l.batch_id, b.name batch_name,
-              s.status, coalesce(s.attempts_total, 0) attempts_total, cb.at called_back_at
+              s.status, coalesce(s.attempts_total, 0) attempts_total, cb.at called_back_at,
+              CASE WHEN ${callableSql(db)} THEN 1 ELSE 0 END callable
        FROM lead l JOIN import_batch b ON b.id = l.batch_id LEFT JOIN lead_state s ON s.lead_id = l.id
        LEFT JOIN lead_called_back cb ON cb.lead_id = l.id
        WHERE ${g.sql} ORDER BY b.imported_at, l.created_at`,
@@ -457,7 +460,7 @@ export function buildReport(db: DB, f: ReportFilter) {
           lead_types: typesIn.join(', '),
           type_codes: [...new Set(b.leads.map((l) => l.lead_type ?? ''))],
           bulk_id: bulkOf.get(b.key) ?? null,
-          left: b.leads.filter((l) => isCallable(l.status)).length,
+          left: b.leads.filter((l) => l.callable === 1).length,
           ...m,
           dials: CALL_METRICS.dials.val(b.calls),
           unpriced: b.leads.filter((l) => l.price_cents == null).length,

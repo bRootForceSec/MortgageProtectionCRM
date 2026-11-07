@@ -1,4 +1,5 @@
 import ExcelJS from 'exceljs';
+import { afterAll } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -6,8 +7,23 @@ import { openDatabase } from '../src/server/db/connection.js';
 import type { Config } from '../src/server/config.js';
 import { groupWhere } from '../src/server/domain/groupFilter.js';
 
+// Each test file's temp folders go once its tests are done, so runs don't fill the disk.
+const made: string[] = [];
+const opened: ReturnType<typeof openDatabase>[] = [];
+afterAll(() => {
+  for (const db of opened.splice(0)) if (db.open) db.close();
+  for (const d of made.splice(0)) {
+    try {
+      fs.rmSync(d, { recursive: true, force: true });
+    } catch {
+      // Windows won't delete a file something still has open (a server a test left running): leave that one.
+    }
+  }
+});
+
 export function tempConfig(): Config {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mpcrm-test-'));
+  made.push(dataDir);
   const c: Config = {
     dataDir,
     dbFile: path.join(dataDir, 'crm.sqlite'),
@@ -24,7 +40,9 @@ export function tempConfig(): Config {
 
 export function tempDb() {
   const c = tempConfig();
-  return { c, db: openDatabase(c.dbFile) };
+  const db = openDatabase(c.dbFile);
+  opened.push(db);
+  return { c, db };
 }
 
 /** Header row + data rows, shaped like the Claude-extracted lead sheet. */

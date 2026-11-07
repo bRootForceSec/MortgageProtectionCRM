@@ -1,7 +1,6 @@
 import type { DB } from '../db/connection.js';
 import { LEAD_NAME, CURRENT_OUTCOME } from '../db/sql.js';
 import { APPT_RESULTS, type ApptResult } from '../../shared/appointments.js';
-import { isCallable } from '../../shared/leadStatus.js';
 import { AGE_BANDS, type AgeBand } from '../../shared/leadAge.js';
 import { isLastCall, lastCallRange, type ApptDays, type ImportedWhen, type LeadQuery } from '../../shared/leadFilter.js';
 import { nowIso, uuidv7 } from '../ids.js';
@@ -12,6 +11,7 @@ import { conditionSql } from './formulas.js';
 import { statusWhere } from './statuses.js';
 import { FormulaError } from '../../shared/formula.js';
 import { logNeverDialOverride, neverDialOf } from './tags.js';
+import { callableIds } from './callable.js';
 
 // The call list: the leads you chose to call, worked top to bottom. Leads get here only when you add them
 // (from Leads, or with an import); nothing is added, removed or moved on its own.
@@ -278,7 +278,7 @@ export function getCallList(db: DB): CallListItem[] {
 export interface AddResult {
   added: number;
   already: number;
-  /** Booked, bad-number or dead leads, which can't be called. */
+  /** Leads that can't be called: dead, no good number, or not allowed by your "Can be called when". */
   not_callable: number;
   /** Left off because of a never-dial tag (Settings → Tags), with why; `override` adds them anyway. */
   skipped: { lead_id: string; name: string; why: string }[];
@@ -291,6 +291,7 @@ export interface AddResult {
 export function addToCallList(db: DB, leadIds: string[], now = nowIso(), opts: { override?: boolean } = {}): AddResult {
   const res: AddResult = { added: 0, already: 0, not_callable: 0, skipped: [] };
   const never = neverDialOf(db, [...new Set(leadIds)]);
+  const callable = callableIds(db, [...new Set(leadIds)]);
   const name = db.prepare(`SELECT ${LEAD_NAME} name FROM lead l WHERE l.id = ?`);
   const missedFirst = loadCallingSettings(db).missed_appts_first;
   const status = db.prepare('SELECT status, appt_missed FROM lead_state WHERE lead_id = ?');
@@ -305,7 +306,7 @@ export function addToCallList(db: DB, leadIds: string[], now = nowIso(), opts: {
       if (!s) continue;
       const on = has.get(id) as { worked: number } | undefined;
       if (on && !on.worked) res.already++;
-      else if (!isCallable(s.status)) res.not_callable++;
+      else if (!callable.has(id)) res.not_callable++;
       else if (never.has(id) && !opts.override) {
         res.skipped.push({ lead_id: id, name: (name.get(id) as { name: string | null }).name ?? 'A lead', why: `tagged ${never.get(id)!.tag}` });
       } else {

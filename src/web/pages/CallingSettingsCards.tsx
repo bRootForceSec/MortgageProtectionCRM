@@ -5,10 +5,11 @@ import { chime } from '../components/CallbackAlerts';
 import {
   buildKeyMap, conflicts, keyLabel, normKey, RESERVED, type CallingSettingsResponse,
 } from '../shortcuts';
-import type { CallingSettings, ShortcutAction } from '../../shared/callingSettings';
+import { STARTER_CALLABLE, type CallingSettings, type ShortcutAction } from '../../shared/callingSettings';
 import { parsePlan, SUGGESTED_FOLLOW_UPS } from '../../shared/followUps';
 import { savesInstantly } from '../../shared/outcomes';
 import { APPT_RESULT_LABEL } from '../../shared/appointments';
+import { ConditionEditor } from '../components/ConditionEditor';
 
 // Settings for the Calling screen: retry gap, dialing, timer, goals, alerts, shortcuts and scripts.
 
@@ -59,6 +60,7 @@ export function CallingCard() {
   const { calling, meta, toast } = useApp();
   const save = useSave();
   const [devices, setDevices] = useState<{ ok: boolean; error?: string; devices: { id: string; name: string; reachable: boolean }[] } | null>(null);
+  const [editCallable, setEditCallable] = useState(false);
   const [perm, setPerm] = useState(typeof Notification === 'undefined' ? 'unsupported' : Notification.permission);
   const s = calling?.settings;
   useEffect(() => {
@@ -83,6 +85,22 @@ export function CallingCard() {
     <div className="card">
       <h2>Calling</h2>
       <div className="settings-grid">
+        <label>Who can be called</label>
+        <span>
+          <span className="row" style={{ gap: 6 }}>
+            {s.callable_when ? <>Leads where <code aria-label="Can be called when">{s.callable_when}</code></> : 'Every lead'}
+            <button type="button" className="btn small" onClick={() => setEditCallable(true)}>Edit</button>
+            {s.callable_when !== STARTER_CALLABLE && <button type="button" className="btn small" onClick={() => set({ callable_when: STARTER_CALLABLE })}>Back to the start</button>}
+          </span>
+          {editCallable && (
+            <ConditionEditor value={s.callable_when} onApply={(c) => { set({ callable_when: c }); setEditCallable(false); }} onCancel={() => setEditCallable(false)} />
+          )}
+          <span className="help">
+            Only these leads can go on the call list (by hand, a routine or a rule), and the Calling screen only dials them by itself.
+            It starts as every lead but booked ones. Leads in the dead pile or with no good number are never called, and nor is a lead with a never-dial tag unless you say so.
+          </span>
+        </span>
+
         <label>Dial button (<kbd>{keyLabel(calling.settings.shortcuts.actions.dial?.[0] ?? 'c')}</kbd>)</label>
         <span className="choices">
           {([
