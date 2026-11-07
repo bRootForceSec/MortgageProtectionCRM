@@ -15,7 +15,7 @@ import { runRule, saveRules } from '../../src/server/domain/rules.js';
 import { listLeads } from '../../src/server/domain/leads.js';
 import { LeadQuery } from '../../src/shared/leadFilter.js';
 import { FormulaError, parseFormula, renameFormulaField } from '../../src/shared/formula.js';
-import { describeFilter } from '../../src/shared/routines.js';
+import { describeFilter } from '../../src/shared/leadFilter.js';
 import { openDatabase, type DB } from '../../src/server/db/connection.js';
 import { uuidv7 } from '../../src/server/ids.js';
 

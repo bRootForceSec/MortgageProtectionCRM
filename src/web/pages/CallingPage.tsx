@@ -8,7 +8,6 @@ import { EditLead } from '../components/EditLead';
 import { SourcePage } from '../components/SourcePage';
 import { DialQr } from '../components/DialQr';
 import { FunnelButton } from '../components/Funnel';
-import { RoutineStrip } from '../components/RoutineStrip';
 import { CALL_LIST_CHANGED, ClearListDialog, LoadListDialog, SaveAsDialog, suggestListName } from '../components/CallListDialogs';
 import { isAction, isTyping, keyLabel, type KeyMap } from '../shortcuts';
 import { getStored, getStoredJson, setStored, setStoredJson } from '../storage';
@@ -16,7 +15,7 @@ import { LogCall, type Attempt, type FormValues, type Saved } from './LogCall';
 import { CallerLookup, EveryButton, Recent, UNDO_MS, UndoBar, otherNumber } from './CallingPanels';
 import { bestTimeFirst } from '../../shared/bestTime';
 import { describeSortStep, yourOrder } from '../../shared/listOrder';
-import { STEP_ORDERS, type StepOrder } from '../../shared/routines';
+import { LIST_ORDERS, type ListOrder } from '../../shared/listOrder';
 
 const SELECTED_KEY = 'mpcrm.selectedLead';
 /** A lead opened outside the list (looked up for an incoming call, or from Today), and where to go back to. */
@@ -25,7 +24,7 @@ export const OPENED_KEY = 'mpcrm.openedLead';
 const ORDER_KEY = 'mpcrm.list.order';
 
 /** The list in the order it's shown and worked in. */
-function inOrder(l: CallListResponse, o: StepOrder): CallListItem[] {
+function inOrder(l: CallListResponse, o: ListOrder): CallListItem[] {
   if (o === 'best_time') return bestTimeFirst(l.items, l.best_times);
   if (o === 'yours') return yourOrder(l.items, l.list_order, l.best_times);
   return l.items;
@@ -66,15 +65,14 @@ export function CallingPage() {
   const [editing, setEditing] = useState(false);
   const [qr, setQr] = useState<string | null>(null);
   const [listDialog, setListDialog] = useState<'clear' | 'load' | 'save_as' | null>(null);
-  const [order, setOrderState] = useState<StepOrder>(() => {
+  const [order, setOrderState] = useState<ListOrder>(() => {
     const o = getStored(ORDER_KEY);
-    return o && Object.hasOwn(STEP_ORDERS, o) ? (o as StepOrder) : 'set';
+    return o && Object.hasOwn(LIST_ORDERS, o) ? (o as ListOrder) : 'set';
   });
-  const setOrder = (o: StepOrder) => {
+  const setOrder = (o: ListOrder) => {
     setOrderState(o);
     setStored(ORDER_KEY, o);
   };
-  /** The side you picked for a lead, when it isn't the one it opened on. */
   // "Every button" for this lead: the ones whose condition is false for it show too.
   const [allFor, setAllFor] = useState<string | null>(null);
   const showAll = !!detail && allFor === detail.lead.id;
@@ -508,18 +506,6 @@ export function CallingPage() {
       <FunnelButton />
       <section className="panel queue-panel" aria-label="Queue">
         <header>
-          <RoutineStrip
-            current={current}
-            defaultName={suggestListName(items, list?.name ?? null)}
-            listDone={!!list && left === 0}
-            refreshKey={`${items.length}-${left}`}
-            onStarted={async (o, how) => {
-              setOrder(o);
-              // A new list, or nothing left to call on the old one: start at the first lead to call, in the step's order.
-              if (how === 'replace' || left === 0) await afterSwap(o);
-              else await loadList();
-            }}
-          />
           <div className="row list-head">
             <span><b>{left}</b> to call · {items.length - left} done</span>
             {items.length - left > 0 && (

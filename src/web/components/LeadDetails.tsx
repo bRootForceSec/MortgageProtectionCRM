@@ -247,7 +247,7 @@ export function LeadTags({ leadId, initial }: { leadId: string; initial: TagRef[
         </span>
       ))}
       {adding == null ? (
-        <button type="button" className="btn small" onClick={() => setAdding('')} title="Your own labels on leads. Filter by them on Leads and in routine steps.">+ Tag</button>
+        <button type="button" className="btn small" onClick={() => setAdding('')} title="Your own labels on leads. Filter by them on Leads and in rules.">+ Tag</button>
       ) : (
         <form className="row" style={{ gap: 4, display: 'inline-flex' }} onSubmit={(e) => (e.preventDefault(), void add())}>
           <input

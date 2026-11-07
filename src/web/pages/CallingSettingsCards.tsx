@@ -155,7 +155,7 @@ export function CallingCard() {
             <ConditionEditor value={s.callable_when} onApply={(c) => { set({ callable_when: c }); setEditCallable(false); }} onCancel={() => setEditCallable(false)} />
           )}
           <span className="help">
-            Only these leads can go on the call list (by hand, a routine or a rule), and the Calling screen only dials them by itself.
+            Only these leads can go on the call list (by hand or by a rule), and the Calling screen only dials them by itself.
             It starts as every lead but booked ones. Leads in the dead pile or with no good number are never called, and nor is a lead with a never-dial tag unless you say so.
           </span>
         </span>

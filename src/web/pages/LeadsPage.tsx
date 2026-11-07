@@ -13,7 +13,6 @@ import type { LeadType } from '../importTypes';
 import { LEAD_TABS } from '../../shared/leadStatus';
 import { APPT_DAYS, DIAL_GAPS, IMPORTED_WHEN, LAST_CALL, LEAD_PAGE_SIZES, gapLabel } from '../../shared/leadFilter';
 import { UnmarkedAppointments } from '../components/UnmarkedAppointments';
-import { SaveStepDialog } from '../components/SaveStepDialog';
 import { NewRuleFromFilters } from './RulesCard';
 import { useTags } from '../tags';
 import { useCustomFields } from '../customFields';
@@ -95,7 +94,6 @@ export function LeadsPage() {
   }, [field, numeric, fieldValue]);
   const num = (v: string) => (v.trim() && Number.isFinite(Number(v.replace(/[$,\s]/g, ''))) ? String(Number(v.replace(/[$,\s]/g, ''))) : undefined);
   const [changingType, setChangingType] = useState(false);
-  const [savingStep, setSavingStep] = useState(false);
   const [makingRule, setMakingRule] = useState(false);
   const [rows, setRows] = useState<any[]>([]);
   const [total, setTotal] = useState(0);
@@ -351,10 +349,7 @@ export function LeadsPage() {
           <button className="btn" disabled={!total} onClick={() => setTagging(true)} title="Put a tag on (or take it off) every lead matching these filters">
             Tag all matching
           </button>
-          <button className="btn" onClick={() => setSavingStep(true)} title="Keep these filters as a step of your daily routine (Automation → Rules → Routines)">
-            Save as routine step
-          </button>
-          <button className="btn" onClick={() => setMakingRule(true)} title="Do something to the leads matching these filters every day, or when you save a call (Automation → Rules)">
+          <button className="btn" onClick={() => setMakingRule(true)} title="Do something to the leads matching these filters: every day, when you save a call, when the call list runs out... (Automation → Rules)">
             Make a rule
           </button>
           <button className="btn" onClick={() => go('calling')}>Go to Calling</button>
@@ -415,9 +410,6 @@ export function LeadsPage() {
           onConfirm={(name) => (replacing === 'all' ? addAll({ save_current_as: name }) : addPicked({ save_current_as: name }))}
           onCancel={() => setReplacing(null)}
         />
-      )}
-      {savingStep && (
-        <SaveStepDialog filter={Object.fromEntries(Object.entries(filters).filter(([, v]) => v))} onClose={() => setSavingStep(false)} />
       )}
       {makingRule && (
         <NewRuleFromFilters filter={Object.fromEntries(Object.entries(filters).filter(([, v]) => v))} onClose={() => setMakingRule(false)} />

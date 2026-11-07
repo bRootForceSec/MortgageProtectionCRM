@@ -293,7 +293,7 @@ export function loadStatusDefs(db: DB): Status[] {
 
 /**
  * A condition (a yes/no formula, in Python syntax or the formula's own) as SQL over `lead l JOIN lead_state s`: the
- * Leads `where` filter, and so rules and routine steps too. Throws FormulaError.
+ * Leads `where` filter, and so rules too. Throws FormulaError.
  */
 export function conditionSql(db: DB, src: string, statuses: readonly Status[] = loadStatusDefs(db), using: string[] = []): string {
   const byLabel = new Map(fieldDefs(db).map((f) => [f.label.toLowerCase(), f]));

@@ -6,7 +6,7 @@ import { LEAD_NAME } from '../db/sql.js';
 import { LeadQuery } from '../../shared/leadFilter.js';
 import { normalizeCustomValue } from '../../shared/customFields.js';
 import { Rules, TagShortcuts, shortcutRules, type ActionResult, type Rule, type RuleAction, type RuleRun, type RuleTrigger } from '../../shared/rules.js';
-import { addToCallList, matchingLeadIds, removeFromCallList, toLeadFilter } from './callList.js';
+import { addToCallList, matchingLeadIds, removeFromCallList, toLeadFilter, WORKED } from './callList.js';
 import { ensureTag, setTagOnLeads, tagByName } from './tags.js';
 import { listCustomFields, setCustomValues } from './customFields.js';
 import { addLeadAction, setComeback } from './calls.js';
@@ -17,7 +17,8 @@ import { conditionSql, loadStatusDefs } from './formulas.js';
 // if any action fails, nothing changes and the log says why. Preview does the same and then undoes it.
 // Rules on a lead's changes (a tag put on or taken off, a status entered or left, a condition turning true) run from
 // runEventRules after each change and every minute, on just the leads it happened to. A rule set off again for the
-// same lead by its own changes or another rule's, in one go, is stopped and logged (the loop guard).
+// same lead by its own changes or another rule's, in one go, is stopped and logged (the loop guard). Rules for when the
+// call list runs out run from there too, in your order, until one puts leads on the list.
 
 const RULES = 'rules';
 
@@ -165,6 +166,11 @@ export function runRule(
   try {
     db.transaction(() => {
       ids = matchingLeadIds(db, { ...toLeadFilter(LeadQuery.parse(rule.filter), now), ...(opts.leadIds ? { only_leads: opts.leadIds } : {}) });
+      // Filling a list that ran out: only leads not on it at all, so the ones just called don't come straight back.
+      if (trigger === 'list_empty') {
+        const on = new Set((db.prepare('SELECT lead_id FROM call_list_item').all() as { lead_id: string }[]).map((r) => r.lead_id));
+        ids = ids.filter((id) => !on.has(id));
+      }
       run.matched = ids.length;
       run.results = rule.actions.map((a) => doAction(db, rule, a, ids, nowIso()));
       if (opts.dryRun) throw ROLLBACK;
@@ -334,7 +340,59 @@ export function runEventRules(db: DB, now = new Date()): RuleRun[] {
       if (again.length) runs.push(stoppedLoop(db, r, again, now));
     }
   }
+  // The list may have run out with that change (the last lead called): the rules for that fill it.
+  runs.push(...runListOutRules(db, now));
   return runs;
+}
+
+/** The call list has leads on it, and every one has been called since it went on. */
+function listRanOut(db: DB): boolean {
+  const r = db.prepare(`SELECT COUNT(*) n, SUM(CASE WHEN ${WORKED} THEN 0 ELSE 1 END) todo FROM call_list_item i`).get() as { n: number; todo: number | null };
+  return r.n > 0 && !r.todo;
+}
+
+/**
+ * When the call list runs out: the switched-on "list runs out" rules, in your order, until one puts leads on the list.
+ * One that would add nothing isn't run (or logged), so it waits for the next time.
+ */
+export function runListOutRules(db: DB, now = new Date()): RuleRun[] {
+  const rules = loadRules(db).filter((r) => r.enabled && r.trigger.kind === 'list_empty');
+  if (!rules.length || !listRanOut(db)) return [];
+  const runs: RuleRun[] = [];
+  for (const r of rules) {
+    const fills = (run: RuleRun) => run.results.some((x) => x.action.kind === 'add_to_list' && x.changed > 0);
+    if (!fills(runRule(db, r, 'list_empty', { dryRun: true, now }))) continue;
+    const run = runRule(db, r, 'list_empty', { now });
+    runs.push(run);
+    if (fills(run)) break;
+  }
+  return runs;
+}
+
+/**
+ * Once, after the update that took routines away: each step of your routines that picked leads by filters becomes a
+ * "when the call list runs out" rule adding them, in the same order, switched on. Steps that loaded a saved list have
+ * no rule to become, so they're left out.
+ */
+export function routinesToRules(db: DB): number {
+  if (getSetting<boolean>(db, 'routines_to_rules_done')) return 0;
+  const routines = getSetting<{ steps?: { name?: string; source?: { kind?: string; filter?: unknown } }[] }[]>(db, 'routines') ?? [];
+  const made: Rule[] = [];
+  const names = new Set<string>();
+  for (const routine of Array.isArray(routines) ? routines : []) {
+    for (const step of routine.steps ?? []) {
+      const filter = LeadQuery.partial().safeParse(step.source?.filter);
+      const name = `Then ${step.name ?? 'a routine step'}`.slice(0, 80);
+      if (step.source?.kind !== 'filter' || !filter.success || names.has(name.toLowerCase())) continue;
+      names.add(name.toLowerCase());
+      made.push({ id: uuidv7(), name, enabled: true, trigger: { kind: 'list_empty' }, filter: filter.data, actions: [{ kind: 'add_to_list' }] });
+    }
+  }
+  db.transaction(() => {
+    if (made.length) saveRules(db, [...loadRules(db), ...made]);
+    setSetting(db, 'routines_to_rules_done', true);
+  })();
+  return made.length;
 }
 
 /** Logs that a rule was set off again for leads it already ran on in this go, and didn't run. */

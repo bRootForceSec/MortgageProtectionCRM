@@ -4,8 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-// The daily routine: the steps above the call list, the next one offered when the list runs out, Settings, and a
-// step saved from the Leads page.
+// Working the day: rules that fill the call list when it runs out, tags, your fields, smart lists and rules.
 
 const PORT = 5198;
 let server: ChildProcess;
@@ -36,12 +35,12 @@ test.afterAll(async () => {
   if (dataDir) fs.rmSync(dataDir, { recursive: true, force: true, maxRetries: 3 });
 });
 
-test('work the day by routine: imports, then a step saved from Leads', async ({ page }) => {
+test('work the day by rules: when the call list runs out, the first rule with leads to add fills it', async ({ page }) => {
   page.on('dialog', (d) => void d.accept());
   await page.goto(launchUrl);
   const nav = (name: string) => page.locator('.topbar nav').getByRole('button', { name, exact: true }).click();
 
-  // Import without putting the leads on the list: the routine's imports step does that.
+  // Import without putting the leads on the list: a rule does that when the list runs out.
   await page.locator('.topbar nav').getByRole('button', { name: 'Import', exact: true }).click();
   const file = path.join(dataDir, 'Morning leads.csv');
   fs.copyFileSync('test/fixtures/sample-leads.csv', file);
@@ -54,59 +53,33 @@ test('work the day by routine: imports, then a step saved from Leads', async ({ 
   await page.getByRole('button', { name: 'Import 4 leads' }).click();
   await expect(page.getByText('Import finished')).toBeVisible();
 
-  // Calling: the starter routine, with the imports step offered first since there are no no-shows.
-  await nav('Calling');
-  const routine = page.getByLabel("Today's routine");
-  await expect(routine).toContainText('Every day');
-  await expect(routine.locator('.routine-step')).toHaveText([/1\. No-shows\s+0/, /2\. Today's imports\s+4/, /3\. Today's no-answers\s+0/]);
-  await expect(routine.getByRole('status')).toContainText("Next: Today's imports (4 to call)");
-  await routine.getByRole('status').getByRole('button', { name: 'Start' }).click();
-  await page.getByRole('dialog', { name: "Start: Today's imports" }).getByRole('button', { name: 'Start' }).click();
-  await expect(page.getByLabel('Queue').locator('.queue-list li')).toHaveCount(4);
-  await page.screenshot({ path: 'test-results/routine-calling.png' });
+  // Automation → Rules: the ready-made "Then today's imports", switched on.
+  await nav('Automation');
+  const card = page.locator('#rules');
+  await card.getByLabel('Add a ready-made rule').selectOption({ label: "Then today's imports" });
+  const starter = page.getByRole('dialog', { name: 'New rule' });
+  await starter.getByText('On', { exact: true }).click();
+  await starter.getByRole('button', { name: 'Save rule' }).click();
+  const rule = card.getByLabel("Rule Then today's imports");
+  await expect(rule).toContainText('When the call list runs out');
+  await expect(rule.getByLabel("Then today's imports on")).toBeChecked();
+  await rule.scrollIntoViewIfNeeded();
+  await page.screenshot({ path: 'test-results/list-runs-out-rule.png' });
 
-  // A no answer counts toward the step.
+  // One lead on the list by hand; calling it runs the list out, and the rule adds the other three.
+  await nav('Leads');
+  await page.locator('table.grid tbody tr').first().getByRole('checkbox').check();
+  await page.getByRole('button', { name: /Add 1 ticked to call list/ }).click();
+  await nav('Calling');
+  await expect(page.getByLabel('Queue')).toContainText('1 to call · 0 done');
   const first = await page.locator('.lead-name').innerText();
   await page.keyboard.press('1');
-  await page.keyboard.press('Enter');
   await expect(page.locator('.undo-bar')).toContainText(`Saved for ${first}`);
-  await expect(routine.getByRole('button', { name: /Today's imports/ })).toContainText('1/4 called');
-
-  // Leads: no answers called today, saved as a step of today's routine.
-  await nav('Leads');
-  await page.getByRole('button', { name: 'No answer', exact: true }).click();
-  await page.getByLabel('Last call', { exact: true }).selectOption('today');
-  await expect(page.getByText('1 lead', { exact: true })).toBeVisible();
-  await page.getByRole('button', { name: 'Save as routine step' }).click();
-  const save = page.getByRole('dialog', { name: 'Save as routine step' });
-  await expect(save).toContainText('No answer · Last call today');
-  await save.getByLabel('Step name').fill('Quick no-answers');
-  await save.getByRole('button', { name: 'Save step' }).click();
-  await expect(save).toHaveCount(0);
-
-  // Settings: the step is at the end; move it up one.
-  await nav('Automation');
-  const card = page.getByLabel('Routine Every day');
-  await expect(card.getByLabel('Step name')).toHaveCount(4);
-  await expect(card.getByLabel('Step name').nth(3)).toHaveValue('Quick no-answers');
-  await card.getByRole('button', { name: 'Move Quick no-answers up' }).click();
-  await expect(card.getByLabel('Step name').nth(2)).toHaveValue('Quick no-answers');
-  await page.getByRole('heading', { name: 'Routines' }).scrollIntoViewIfNeeded();
-  await page.screenshot({ path: 'test-results/routine-settings.png' });
-
-  // Back on Calling it's step 3, and starting it puts the lead back under the list to call.
-  await nav('Calling');
-  const step = routine.getByRole('button', { name: /Quick no-answers/ });
-  await expect(step).toContainText('3. Quick no-answers 1');
-  await step.click();
-  const dialog = page.getByRole('dialog', { name: 'Start: Quick no-answers' });
-  await expect(dialog).toContainText('1 lead to call.');
-  await dialog.getByLabel('Add them under the call list').check();
-  await dialog.getByRole('button', { name: 'Start' }).click();
-  await expect(page.getByLabel('Queue')).toContainText('4 to call · 0 done');
+  await expect(page.getByLabel('Queue')).toContainText('3 to call · 1 done');
+  await page.screenshot({ path: 'test-results/list-runs-out-calling.png' });
 });
 
-test('tags: tag a lead, tag all matching, filter by tag, a routine step by tag, and Settings', async ({ page }) => {
+test('tags: tag a lead, tag all matching, filter by tag, a rule by tag, and Automation', async ({ page }) => {
   page.on('dialog', (d) => void d.accept());
   await page.goto(launchUrl);
   const nav = (name: string) => page.locator('.topbar nav').getByRole('button', { name, exact: true }).click();
@@ -128,28 +101,29 @@ test('tags: tag a lead, tag all matching, filter by tag, a routine step by tag, 
   await expect(page.getByText('1 lead', { exact: true })).toBeVisible();
   await expect(page.locator('table.grid tbody .tag-chip')).toHaveText(['Spanish']);
 
-  // Tag every lead with no tags "Friday".
+  // Tag every lead with no tags "Friday" (a lead called earlier has its button's tag, so it isn't one of them).
   await page.getByLabel('Tag', { exact: true }).selectOption({ label: 'No tags' });
-  await expect(page.getByText('3 leads', { exact: true })).toBeVisible();
+  const untagged = page.getByText(/^\d+ leads?$/);
+  await expect(untagged).toBeVisible();
+  const n = Number((await untagged.innerText()).split(' ')[0]);
   await page.getByRole('button', { name: 'Tag all matching' }).click();
   const dialog = page.getByRole('dialog', { name: 'Tag all matching' });
   await dialog.getByLabel('Tag name').fill('Friday');
-  await dialog.getByRole('button', { name: 'Tag 3 leads' }).click();
-  await expect(page.getByText('Tagged 3 leads "Friday"')).toBeVisible();
+  await dialog.getByRole('button', { name: `Tag ${n} lead${n === 1 ? '' : 's'}` }).click();
+  await expect(page.getByText(`Tagged ${n} lead${n === 1 ? '' : 's'} "Friday"`)).toBeVisible();
   await expect(page.getByText('No leads here.')).toBeVisible();
 
-  // A routine step that filters by the tag says its name.
+  // A rule that filters by the tag says its name.
   await page.getByLabel('Tag', { exact: true }).selectOption({ label: 'Tagged Friday' });
-  await expect(page.getByText('3 leads', { exact: true })).toBeVisible();
-  await page.getByRole('button', { name: 'Save as routine step' }).click();
-  const save = page.getByRole('dialog', { name: 'Save as routine step' });
+  await page.getByRole('button', { name: 'Make a rule' }).click();
+  const save = page.getByRole('dialog', { name: 'New rule' });
   await expect(save).toContainText('Tagged "Friday"');
   await save.getByRole('button', { name: 'Cancel' }).click();
 
-  // Settings: both tags with their counts; rename one.
+  // Automation: the tags with their counts; rename one.
   await nav('Automation');
   const card = page.locator('#tags');
-  await expect(card.locator('tbody tr')).toHaveCount(2);
+  await expect(card.getByLabel('Name of tag Spanish')).toBeVisible();
   await card.getByLabel('Name of tag Friday').fill('Friday list');
   await card.getByRole('button', { name: 'Save' }).click();
   await expect(card.getByLabel('Name of tag Friday list')).toBeVisible();

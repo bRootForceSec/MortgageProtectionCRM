@@ -8,7 +8,8 @@ import { CustomFieldInput } from '../components/CustomFieldInput';
 import { ConditionEditor } from '../components/ConditionEditor';
 import { RULES_CHANGED, madeByText } from './TagShortcuts';
 import { pythonToRule, ruleToPython, RuleTextError, type RuleNames } from '../../shared/ruleText';
-import { describeFilter, WEEKDAYS } from '../../shared/routines';
+import { describeFilter } from '../../shared/leadFilter';
+import { WEEKDAYS } from '../../shared/rules';
 import { APPT_DAYS, LAST_CALL, type LeadQuery } from '../../shared/leadFilter';
 import { LEAD_TABS } from '../../shared/leadStatus';
 import { parsePlan } from '../../shared/followUps';
@@ -34,9 +35,16 @@ function useNames() {
   return { tags, tagName, fields, fieldName, statuses, statusName, outcomeLabel, reload };
 }
 
+/** The list with items i and j swapped. */
+const swap = <T,>(list: T[], i: number, j: number): T[] => {
+  const next = [...list];
+  [next[i], next[j]] = [next[j]!, next[i]!];
+  return next;
+};
+
 /** What set a run off, for the log. */
 const RUN_TRIGGER: Record<RuleTrigger['kind'], string> = {
-  daily: 'daily', call_saved: 'call saved', manual: 'run by you', tag_added: 'tag put on', tag_removed: 'tag taken off', status: 'status', becomes_true: 'condition turned true',
+  daily: 'daily', call_saved: 'call saved', manual: 'run by you', tag_added: 'tag put on', tag_removed: 'tag taken off', status: 'smart list', becomes_true: 'condition turned true', list_empty: 'call list ran out',
 };
 
 function resultText(r: ActionResult, fieldName: (id: string) => string | undefined): string {
@@ -113,13 +121,16 @@ export function RulesCard() {
       <h2>Rules</h2>
       <p className="help">
         When something happens, do something to the leads it fits: every day at a time, when you save a call, when a tag is put on or taken off, when a lead
-        enters or leaves a status, or when a condition turns true. A rule on a lead's change acts on just that lead, if it matches the rule's filters (set them
+        comes into or leaves a smart list, when a condition turns true, or when the call list runs out. The call list runs out when it has leads and
+        you've called them all; then the rules for that go in the order they're listed here, and the first one that adds leads wins, so they set the
+        order you call in (like imports, then yesterday's no-shows, then today's no-answers). They only add leads that aren't on the list
+        at all, so the ones you just called don't come straight back (Clear worked lets them). A rule on a lead's change acts on just that lead, if it matches the rule's filters (set them
         here, or on Leads with <b>Make a rule</b>). Rules can set off other rules; one set off again for the same lead stops there, and the log says so.{' '}
         <b>Preview</b> and <b>Run now</b> act on every lead matching the filters; Preview changes nothing. Every run is in the log below.
       </p>
       {rules.length === 0 && <p className="muted">No rules yet.</p>}
       <ul className="rule-list">
-        {rules.map((r) => (
+        {rules.map((r, i) => (
           <li key={r.id} className="rule" aria-label={`Rule ${r.name}`}>
             <div className="row" style={{ justifyContent: 'space-between' }}>
               {r.made_by ? <b>{r.name}</b> : (
@@ -131,6 +142,8 @@ export function RulesCard() {
               <span className="row" style={{ gap: 4 }}>
                 <button className="btn small" onClick={() => void act(r, true)}>Preview</button>
                 <button className="btn small" onClick={() => void act(r, false)} title="Run it now, whatever its trigger">Run now</button>
+                {!r.made_by && <button className="btn small" aria-label={`Move ${r.name} up`} title="Rules for when the call list runs out go in this order" disabled={i === 0 || !!rules[i - 1]?.made_by} onClick={() => void save(swap(rules, i, i - 1))}>↑</button>}
+                {!r.made_by && <button className="btn small" aria-label={`Move ${r.name} down`} title="Rules for when the call list runs out go in this order" disabled={!rules[i + 1] || !!rules[i + 1]?.made_by} onClick={() => void save(swap(rules, i, i + 1))}>↓</button>}
                 {!r.made_by && <button className="btn small" onClick={() => setEditing(r)}>Edit</button>}
                 {!r.made_by && <button className="btn small" onClick={() => { if (window.confirm(`Delete the rule "${r.name}"? Its log stays.`)) void save(rules.filter((x) => x.id !== r.id)); }}>Delete</button>}
               </span>
@@ -247,7 +260,8 @@ const emptyTrigger = (kind: RuleTrigger['kind'], firstStatus: string | undefined
     case 'tag_removed': return { kind, tag: '' };
     case 'status': return { kind, status_id: firstStatus ?? '', when: 'enters' };
     case 'becomes_true': return { kind, condition: '' };
-    case 'manual': return { kind };
+    case 'manual':
+    case 'list_empty': return { kind };
   }
 };
 

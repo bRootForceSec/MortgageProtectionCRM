@@ -61,7 +61,7 @@ export interface LeadFilter {
   in_status?: string;
 }
 
-/** The Leads filters as the API (or a routine step) gives them, with relative choices worked out now. */
+/** The Leads filters as the API (or a rule) gives them, with relative choices worked out now. */
 export function toLeadFilter(q: LeadQuery, now = new Date()): LeadFilter {
   const last = q.last_call && isLastCall(q.last_call) ? lastCallRange(q.last_call, now) : null;
   return {

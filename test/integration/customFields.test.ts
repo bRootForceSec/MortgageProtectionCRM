@@ -10,7 +10,7 @@ import { createCustomField, deleteCustomField, leadCustomValues, listCustomField
 import { exportRows } from '../../src/server/domain/exporter.js';
 import { LeadQuery } from '../../src/shared/leadFilter.js';
 import { normalizeCustomValue, showCustomValue } from '../../src/shared/customFields.js';
-import { describeFilter } from '../../src/shared/routines.js';
+import { describeFilter } from '../../src/shared/leadFilter.js';
 import type { DB } from '../../src/server/db/connection.js';
 
 const TOKEN = 'test-token-0123456789abcdef0123456789abcdef';

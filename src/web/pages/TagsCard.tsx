@@ -34,7 +34,7 @@ export function TagsCard() {
     }
   };
   const remove = async (id: string, name: string, leads: number) => {
-    if (!window.confirm(`Delete the tag "${name}"?${leads ? ` It comes off ${leads} lead${leads === 1 ? '' : 's'}.` : ''} Routine steps that filter by it will match no one.`)) return;
+    if (!window.confirm(`Delete the tag "${name}"?${leads ? ` It comes off ${leads} lead${leads === 1 ? '' : 's'}.` : ''} Rules that filter by it will match no one.`)) return;
     try {
       await api.del(`/tags/${id}`);
       await reload();
@@ -48,7 +48,7 @@ export function TagsCard() {
       <h2>Tags</h2>
       <p className="help">
         Your own labels on leads. Add one on a lead (the + Tag button under its name), or to every lead matching your filters with Leads → Tag all matching.
-        Filter by tag on Leads and in routine steps. A tag can come off by itself, at the end of the day or after some hours: that writes a rule, shown in
+        Filter by tag on Leads and in rules. A tag can come off by itself, at the end of the day or after some hours: that writes a rule, shown in
         Automation → Rules. Mark a tag <b>Never dial</b> (like DNC) and a lead with it is left off the call list, whatever adds it (you can still add it
         anyway), and the Calling screen shows a red banner and asks before dialing it.
       </p>
