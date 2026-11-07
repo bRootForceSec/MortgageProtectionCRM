@@ -7,7 +7,7 @@ import { LEAD_PAGE_SIZES } from '../../shared/leadFilter.js';
 import { batchPdf } from './pageTurn.js';
 import { otherPhones } from './leadPhones.js';
 import { currentAppointment } from './appointments.js';
-import { leadTags } from './tags.js';
+import { leadEvents, leadTags } from './tags.js';
 import { leadCustomValues } from './customFields.js';
 
 // Reading leads for the Leads page and the lead view, and resolving "same person?" links.
@@ -97,6 +97,7 @@ export function getLeadDetail(db: DB, importsDir: string, id: string) {
     actions: db.prepare('SELECT * FROM lead_action WHERE lead_id = ? ORDER BY created_at DESC').all(id),
     linked,
     changes: db.prepare('SELECT * FROM lead_change WHERE lead_id = ? ORDER BY created_at DESC').all(id),
+    events: leadEvents(db, id),
     lead_type: lead.lead_type ? db.prepare('SELECT * FROM lead_type WHERE code = ?').get(lead.lead_type) : null,
     /** Area codes of the county the lead was bought for (not the lead's own phone). */
     county_area_codes: lead.county_key

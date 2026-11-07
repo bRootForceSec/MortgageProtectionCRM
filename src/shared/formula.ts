@@ -4,6 +4,8 @@
 //
 //   if(age >= 60, 20, 0) + if(has_tag("Hot"), 30, 0) + min(attempts, 5) * -2 + ifblank([Mortgage payment], 0) / 100
 //
+// A yes/no formula is a condition, and can read the lead's log: has("No show") and days_since(added("No show")) <= 2.
+//
 // Numbers, "text", yes/no, [Your field name], the values below, + - * /, = != < <= > >=, and/or/not, ( ).
 
 export type FormulaKind = 'number' | 'text' | 'yes_no' | 'date';
@@ -26,7 +28,12 @@ export const FORMULA_FUNCTIONS: readonly { name: string; usage: string; help: st
   { name: 'if', usage: 'if(test, then, else)', help: 'Add more test, then pairs before else: if(age > 70, 3, age > 60, 2, 1)' },
   { name: 'ifblank', usage: 'ifblank(value, instead)', help: 'Use instead when the value is blank, so a sum still adds up' },
   { name: 'blank', usage: 'blank(value)', help: 'Yes when the value is blank' },
-  { name: 'has_tag', usage: 'has_tag("Hot")', help: 'Yes when the lead has that tag' },
+  { name: 'has', usage: 'has("Hot")', help: 'Yes when the lead has that tag now (has_tag works too)' },
+  { name: 'added', usage: 'added("No show")', help: 'When that tag was last put on the lead (blank if never): use with days_since, hours_since' },
+  { name: 'removed', usage: 'removed("No answer")', help: 'When that tag was last taken off the lead (blank if never)' },
+  { name: 'times', usage: 'times("No answer", 7)', help: 'How many times that tag was put on the lead, in the last 7 days if you give a number' },
+  { name: 'before', usage: 'before("Appt set", "No show")', help: 'Yes when the first tag was last put on before the second was' },
+  { name: 'pressed', usage: 'pressed("Dial: No answer", 7)', help: 'Calls saved with that outcome (name or code), not undone, in the last 7 days if you give a number' },
   { name: 'min', usage: 'min(a, b, …)', help: 'The smallest' },
   { name: 'max', usage: 'max(a, b, …)', help: 'The largest' },
   { name: 'round', usage: 'round(value, places)', help: 'Rounds; places is optional' },
@@ -34,6 +41,7 @@ export const FORMULA_FUNCTIONS: readonly { name: string; usage: string; help: st
   { name: 'contains', usage: 'contains(text, "part")', help: 'Yes when the text has that part in it (any case)' },
   { name: 'days_since', usage: 'days_since([A date field])', help: 'Whole days since that date' },
   { name: 'days_until', usage: 'days_until([A date field])', help: 'Whole days until that date' },
+  { name: 'hours_since', usage: 'hours_since(added("Called"))', help: 'Hours since that time' },
 ];
 
 export type FormulaNode =

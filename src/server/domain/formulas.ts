@@ -1,5 +1,5 @@
 import type { DB } from '../db/connection.js';
-import { LEAD_NAME } from '../db/sql.js';
+import { CURRENT_OUTCOME, LEAD_NAME } from '../db/sql.js';
 import { FORMULA_VALUES, FormulaError, parseFormula, type FormulaKind, type FormulaNode, type FormulaPreview } from '../../shared/formula.js';
 import type { CustomField } from '../../shared/customFields.js';
 
@@ -27,6 +27,12 @@ const VALUE_SQL: Record<string, string> = {
   state: 'l.state',
   has_coborrower: "(l.coborrower_signal = 'yes')",
 };
+
+/** The lead's log lines of `kind` for the tag named `name` (any case), in a query over `lead l`. */
+const TAG_LINES = (kind: 'tag_added' | 'tag_removed', name: string) =>
+  `FROM lead_event e WHERE e.lead_id = l.id AND e.kind = '${kind}' AND e.tag_id = (SELECT tt.id FROM tag tt WHERE tt.name = ${name})`;
+/** "since N days ago", as a condition on an ISO time column. */
+const WITHIN_DAYS = (col: string, days: string) => `${col} >= strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '-' || (${days}) || ' days')`;
 
 const KIND_WORD: Record<FormulaKind, string> = { number: 'a number', text: 'text', yes_no: 'a yes/no', date: 'a date' };
 
@@ -111,9 +117,31 @@ function call(name: string, a: Compiled[]): Compiled {
     case 'blank':
       count(1, 1);
       return { sql: `(${a[0]!.sql} IS NULL OR ${a[0]!.sql} = '')`, kind: 'yes_no' };
-    case 'has_tag':
+    case 'has': case 'has_tag':
       count(1, 1);
       return { sql: `EXISTS (SELECT 1 FROM lead_tag xt JOIN tag tt ON tt.id = xt.tag_id WHERE xt.lead_id = l.id AND lower(tt.name) = lower(${want(a[0]!, 'text')}))`, kind: 'yes_no' };
+    // The log (lead_event): when a tag was last put on or taken off, in your time, and how often it was put on.
+    case 'added': case 'removed':
+      count(1, 1);
+      return { sql: `(SELECT datetime(max(e.at), 'localtime') ${TAG_LINES(name === 'added' ? 'tag_added' : 'tag_removed', want(a[0]!, 'text'))})`, kind: 'date' };
+    case 'times':
+      count(1, 2);
+      return { sql: `(SELECT COUNT(*) ${TAG_LINES('tag_added', want(a[0]!, 'text'))}${a[1] ? ` AND ${WITHIN_DAYS('e.at', want(a[1], 'number'))}` : ''})`, kind: 'number' };
+    case 'before': {
+      count(2, 2);
+      const last = (x: Compiled) => `(SELECT max(e.at) ${TAG_LINES('tag_added', want(x, 'text'))})`;
+      return { sql: `coalesce(${last(a[0]!)} < ${last(a[1]!)}, 0)`, kind: 'yes_no' };
+    }
+    // Calls saved with an outcome (by its name or code), not undone, optionally in the last N days.
+    case 'pressed': {
+      count(1, 2);
+      const outcome = want(a[0]!, 'text');
+      return {
+        sql: `(SELECT COUNT(*) FROM call c JOIN call_outcome o ON o.call_id = c.id WHERE c.lead_id = l.id AND c.voided_at IS NULL AND ${CURRENT_OUTCOME}
+          AND o.outcome_code IN (SELECT oc.code FROM outcome_code oc WHERE oc.code = ${outcome} OR lower(oc.label) = lower(${outcome}))${a[1] ? ` AND ${WITHIN_DAYS('c.requested_at', want(a[1], 'number'))}` : ''})`,
+        kind: 'number',
+      };
+    }
     case 'min': case 'max':
       count(2, 20);
       return { sql: `${name}(${a.map((x) => want(x, 'number')).join(', ')})`, kind: 'number' };
@@ -130,7 +158,12 @@ function call(name: string, a: Compiled[]): Compiled {
       count(1, 1);
       const d = want(a[0]!, 'date');
       const today = "julianday(date('now', 'localtime'))";
-      return { sql: name === 'days_since' ? `CAST(${today} - julianday(${d}) AS INTEGER)` : `CAST(julianday(${d}) - ${today} AS INTEGER)`, kind: 'number' };
+      // date() so a time of day (from added()) counts calendar days, like a date field.
+      return { sql: name === 'days_since' ? `CAST(${today} - julianday(date(${d})) AS INTEGER)` : `CAST(julianday(date(${d})) - ${today} AS INTEGER)`, kind: 'number' };
+    }
+    case 'hours_since': {
+      count(1, 1);
+      return { sql: `((julianday('now', 'localtime') - julianday(${want(a[0]!, 'date')})) * 24)`, kind: 'number' };
     }
   }
   throw new FormulaError(`there is no ${name}()`);

@@ -4,6 +4,7 @@ import { useApp } from '../App';
 import { useLeadTypes } from '../leadTypes';
 import { CustomFieldInput } from './CustomFieldInput';
 import { normalizeCustomValue } from '../../shared/customFields';
+import { describeBy } from '../../shared/leadEvents';
 
 // Fix a lead's details by hand. Every change is kept with its old value (shown under "Earlier values").
 
@@ -81,6 +82,11 @@ export function EditLead({ d, onClose, onSaved }: { d: LeadDetail; onClose: () =
   const [county, setCounty] = useState<string>(d.lead.county ?? '');
   const [leadType, setLeadType] = useState<string>(d.lead.lead_type ?? '');
   const [busy, setBusy] = useState(false);
+  // Earlier values and the tags put on and taken off, newest first.
+  const history = [
+    ...d.changes.map((c) => ({ id: c.id, at: c.created_at, text: `${c.field}: ${c.old_value ?? '(blank)'} → ${c.new_value ?? '(blank)'}` })),
+    ...d.events.map((e) => ({ id: e.id, at: e.at, text: `Tag ${e.kind === 'tag_added' ? 'added' : 'taken off'}: ${e.tag_name ?? '(deleted)'}, ${describeBy(e.source, e.source_name)}` })),
+  ].sort((a, b) => b.at.localeCompare(a.at));
   const startCustom = Object.fromEntries(d.custom.map((c) => [c.field_id, c.value ?? '']));
   const [custom, setCustom] = useState<Record<string, string>>(startCustom);
 
@@ -158,13 +164,13 @@ export function EditLead({ d, onClose, onSaved }: { d: LeadDetail; onClose: () =
             <button type="submit" className="btn primary" disabled={busy}>Save <kbd>Enter</kbd></button>
             <button type="button" className="btn" onClick={onClose}>Cancel</button>
           </div>
-          {d.changes.length > 0 && (
+          {history.length > 0 && (
             <details className="wide">
-              <summary>Earlier values ({d.changes.length})</summary>
+              <summary>Earlier values and tags ({history.length})</summary>
               <ul className="history">
-                {d.changes.map((c) => (
-                  <li key={c.id}>
-                    <span className="muted">{fmtDateTime(c.created_at)}</span> {c.field}: {c.old_value ?? '(blank)'} → {c.new_value ?? '(blank)'}
+                {history.map((h) => (
+                  <li key={h.id}>
+                    <span className="muted">{fmtDateTime(h.at)}</span> {h.text}
                   </li>
                 ))}
               </ul>

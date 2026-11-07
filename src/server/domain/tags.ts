@@ -3,9 +3,11 @@ import { nowIso, uuidv7 } from '../ids.js';
 import { DomainError } from '../core/errors.js';
 import { audit } from '../core/audit.js';
 import { matchingLeadIds, type LeadFilter } from './callList.js';
+import { BY_YOU, type EventBy } from '../../shared/leadEvents.js';
 
-// Tags: your own labels on leads. A lead has any number. Adding or taking one off a lead is kept in the lead's
-// change history (lead_change, field "tag"); making, renaming and deleting tags go in the audit log.
+// Tags: your own labels on leads. A lead has any number. Each one put on or taken off a lead is a line in the lead's
+// log (lead_event), with what did it; lead_tag is the tags a lead has now. Making, renaming and deleting tags go in
+// the audit log.
 
 export interface Tag {
   id: string;
@@ -63,11 +65,12 @@ export function renameTag(db: DB, id: string, name: string): { id: string; name:
   })();
 }
 
-/** Deletes a tag and takes it off every lead. Routine steps filtering by it then match no one. */
-export function deleteTag(db: DB, id: string): { removed_from: number } {
+/** Deletes a tag and takes it off every lead (logged). Routine steps filtering by it then match no one. */
+export function deleteTag(db: DB, id: string, now = nowIso()): { removed_from: number } {
   return db.transaction(() => {
     const old = tagById(db, id);
-    const n = db.prepare('DELETE FROM lead_tag WHERE tag_id = ?').run(id).changes;
+    const leads = (db.prepare('SELECT lead_id FROM lead_tag WHERE tag_id = ?').all(id) as { lead_id: string }[]).map((r) => r.lead_id);
+    const n = setTagOnLeads(db, leads, id, false, now);
     db.prepare('DELETE FROM tag WHERE id = ?').run(id);
     audit(db, 'tag', id, 'delete', { ...old, leads: n }, null);
     return { removed_from: n };
@@ -81,24 +84,36 @@ export function leadTags(db: DB, leadId: string): { id: string; name: string }[]
     .all(leadId) as { id: string; name: string }[];
 }
 
-/** Puts a tag on (or takes it off) these leads. Returns how many changed; leads that already were are skipped. */
-export function setTagOnLeads(db: DB, leadIds: string[], tagId: string, on: boolean, now = nowIso()): number {
+/**
+ * Puts a tag on (or takes it off) these leads, logging each change with what did it (`by`). Returns how many changed;
+ * leads that already were are skipped.
+ */
+export function setTagOnLeads(db: DB, leadIds: string[], tagId: string, on: boolean, now = nowIso(), by: EventBy = BY_YOU): number {
   const t = tagById(db, tagId);
   const add = db.prepare('INSERT OR IGNORE INTO lead_tag (lead_id, tag_id, added_at) VALUES (?,?,?)');
   const del = db.prepare('DELETE FROM lead_tag WHERE lead_id = ? AND tag_id = ?');
   const exists = db.prepare('SELECT 1 FROM lead WHERE id = ?');
-  const change = db.prepare('INSERT INTO lead_change (id, lead_id, field, old_value, new_value, created_at) VALUES (?,?,?,?,?,?)');
+  const log = db.prepare(
+    'INSERT INTO lead_event (id, lead_id, at, kind, tag_id, tag_name, source, source_id, source_name) VALUES (?,?,?,?,?,?,?,?,?)',
+  );
   return db.transaction(() => {
     let changed = 0;
     for (const id of leadIds) {
       if (!exists.get(id)) throw new DomainError('lead not found', 404);
       const n = on ? add.run(id, tagId, now).changes : del.run(id, tagId).changes;
       if (!n) continue;
-      change.run(uuidv7(), id, 'tag', on ? null : t.name, on ? t.name : null, now);
+      log.run(uuidv7(), id, now, on ? 'tag_added' : 'tag_removed', tagId, t.name, by.source, by.id ?? null, by.name ?? null);
       changed++;
     }
     return changed;
   })();
+}
+
+/** A lead's log, newest first: each tag put on or taken off, when, and what did it. */
+export function leadEvents(db: DB, leadId: string) {
+  return db
+    .prepare('SELECT id, at, kind, tag_name, source, source_name FROM lead_event WHERE lead_id = ? ORDER BY at DESC, id DESC')
+    .all(leadId) as { id: string; at: string; kind: string; tag_name: string | null; source: string; source_name: string | null }[];
 }
 
 /** Tags one lead by tag name, making the tag if it's new. */

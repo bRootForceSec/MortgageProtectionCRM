@@ -51,7 +51,7 @@ describe('tags', () => {
     expect(matching({ tag: tag.id })).toEqual([jane]);
     expect(matching({ tag: 'none' })).not.toContain(jane);
     expect(matching({ tag: 'none' })).toContain(ann);
-    expect(db.prepare("SELECT old_value, new_value FROM lead_change WHERE lead_id = ? AND field = 'tag'").all(jane)).toEqual([{ old_value: null, new_value: 'Spanish' }]);
+    expect(db.prepare('SELECT kind, tag_name, source FROM lead_event WHERE lead_id = ?').all(jane)).toEqual([{ kind: 'tag_added', tag_name: 'Spanish', source: 'you' }]);
     expect(setTagOnLeads(db, [jane], tag.id, false)).toBe(1);
     expect(matching({ tag: tag.id })).toEqual([]);
   });

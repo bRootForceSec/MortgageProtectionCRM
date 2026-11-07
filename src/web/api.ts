@@ -283,6 +283,8 @@ export interface LeadDetail {
   actions: { id: string; action: string; reason: string | null; created_at: string }[];
   linked: { link_id: string; link_status: string; reason: string; id: string; first_name: string | null; last_name: string | null; batch_name: string; status: string }[];
   changes: { id: string; field: string; old_value: string | null; new_value: string | null; created_at: string }[];
+  /** The lead's log, newest first: tags put on and taken off, and what did it. */
+  events: { id: string; at: string; kind: string; tag_name: string | null; source: string; source_name: string | null }[];
   lead_type: { code: string; label: string; price_cents: number | null } | null;
   county_area_codes: string[];
 }
