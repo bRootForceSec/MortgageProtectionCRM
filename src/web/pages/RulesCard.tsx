@@ -6,6 +6,7 @@ import { useStatuses } from '../statuses';
 import { useCustomFields } from '../customFields';
 import { CustomFieldInput } from '../components/CustomFieldInput';
 import { ConditionEditor } from '../components/ConditionEditor';
+import { RULES_CHANGED, madeByText } from './TagShortcuts';
 import { describeFilter, WEEKDAYS } from '../../shared/routines';
 import { APPT_DAYS, LAST_CALL, type LeadQuery } from '../../shared/leadFilter';
 import { LEAD_TABS } from '../../shared/leadStatus';
@@ -71,6 +72,11 @@ export function RulesCard() {
     }
   }, [toast]);
   useEffect(() => void load(), [load]);
+  useEffect(() => {
+    const again = () => void load();
+    window.addEventListener(RULES_CHANGED, again);
+    return () => window.removeEventListener(RULES_CHANGED, again);
+  }, [load]);
   if (!rules) return null;
 
   const save = async (next: Rule[]): Promise<boolean> => {
@@ -114,17 +120,20 @@ export function RulesCard() {
         {rules.map((r) => (
           <li key={r.id} className="rule" aria-label={`Rule ${r.name}`}>
             <div className="row" style={{ justifyContent: 'space-between' }}>
-              <label className="row" style={{ gap: 6 }}>
-                <input type="checkbox" checked={r.enabled} aria-label={`${r.name} on`} onChange={(e) => void save(rules.map((x) => (x.id === r.id ? { ...x, enabled: e.target.checked } : x)))} />
-                <b>{r.name}</b>{!r.enabled && <span className="muted">(off)</span>}
-              </label>
+              {r.made_by ? <b>{r.name}</b> : (
+                <label className="row" style={{ gap: 6 }}>
+                  <input type="checkbox" checked={r.enabled} aria-label={`${r.name} on`} onChange={(e) => void save(rules.map((x) => (x.id === r.id ? { ...x, enabled: e.target.checked } : x)))} />
+                  <b>{r.name}</b>{!r.enabled && <span className="muted">(off)</span>}
+                </label>
+              )}
               <span className="row" style={{ gap: 4 }}>
                 <button className="btn small" onClick={() => void act(r, true)}>Preview</button>
                 <button className="btn small" onClick={() => void act(r, false)} title="Run it now, whatever its trigger">Run now</button>
-                <button className="btn small" onClick={() => setEditing(r)}>Edit</button>
-                <button className="btn small" onClick={() => { if (window.confirm(`Delete the rule "${r.name}"? Its log stays.`)) void save(rules.filter((x) => x.id !== r.id)); }}>Delete</button>
+                {!r.made_by && <button className="btn small" onClick={() => setEditing(r)}>Edit</button>}
+                {!r.made_by && <button className="btn small" onClick={() => { if (window.confirm(`Delete the rule "${r.name}"? Its log stays.`)) void save(rules.filter((x) => x.id !== r.id)); }}>Delete</button>}
               </span>
             </div>
+            {r.made_by && <div className="help" style={{ margin: '2px 0 0' }}>{madeByText(r)}</div>}
             <div className="help" style={{ margin: '4px 0 0' }}>
               <div><b>When:</b> {describeTrigger(r.trigger, names.outcomeLabel, names.statusName)}</div>
               <div><b>Leads:</b> {describeFilter(r.filter, { tag: names.tagName, field: names.fieldName, status: names.statusName })}</div>
@@ -362,7 +371,10 @@ function RuleEditor(props: { rule: Rule; isNew: boolean; onSave: (r: Rule) => Pr
                     {t.condition ? <code aria-label="Trigger condition">{t.condition}</code> : <span className="muted">No condition yet.</span>}
                     <button type="button" className="btn small" onClick={() => setConditionFor('trigger')}>{t.condition ? 'Edit' : 'Write it…'}</button>
                   </div>
-                  <span className="help">Checked after each change and every minute. It fires when the condition goes from false to true for a lead; leads it's already true for when you save don't count.</span>
+                  <span className="help">Checked after each change and every minute. It fires when the condition goes from false to true for a lead.</span>
+                  <label className="row" style={{ gap: 4 }}>
+                    <input type="checkbox" checked={!!t.already} onChange={(e) => setTrigger({ ...t, already: e.target.checked || undefined })} /> Also for leads it's already true for when I save
+                  </label>
                   {conditionFor === 'trigger' && (
                     <ConditionEditor value={t.condition} onApply={(c) => { setTrigger({ ...t, condition: c }); setConditionFor(null); }} onCancel={() => setConditionFor(null)} />
                   )}

@@ -415,3 +415,31 @@ test('a rule on a tag, with a counter: tagging a lead sets it off at once', asyn
   await expect(tags.locator('.tag-chip', { hasText: 'Call today' })).toHaveCount(1);
   await expect(tags.locator('.tag-chip', { hasText: 'VIP' })).toHaveCount(1);
 });
+
+test('tag shortcuts: a tag that comes off at the end of the day, and only one of a group at a time, each shown as rules', async ({ page }) => {
+  page.on('dialog', (d) => void d.accept());
+  await page.goto(launchUrl);
+  const nav = (name: string) => page.locator('.topbar nav').getByRole('button', { name, exact: true }).click();
+  await nav('Settings');
+  const card = page.locator('#tags');
+  await card.getByLabel('When Call today comes off by itself').selectOption('day');
+  await expect(card.getByLabel('When Call today comes off by itself')).toHaveValue('day');
+
+  await card.getByRole('button', { name: '+ Group' }).click();
+  const editor = card.getByRole('group', { name: 'Edit group' });
+  await editor.getByLabel('Group name').fill('Temperature');
+  await editor.getByLabel('Hot', { exact: true }).check();
+  await editor.getByLabel('VIP', { exact: true }).check();
+  await editor.getByRole('button', { name: 'Save group' }).click();
+  const group = card.getByLabel('Group Temperature');
+  await expect(group).toContainText('Putting on "Hot" takes off "VIP"');
+  await card.scrollIntoViewIfNeeded();
+  await page.screenshot({ path: 'test-results/tag-shortcuts.png' });
+
+  // Settings → Rules lists the rules they wrote, to preview and run but not edit.
+  const rules = page.locator('#rules');
+  const expiry = rules.getByLabel('Rule Take "Call today" off at the end of the day it was put on');
+  await expect(expiry).toContainText('change it in Settings → Tags');
+  await expect(expiry.getByRole('button', { name: 'Edit' })).toHaveCount(0);
+  await expect(rules.getByLabel('Rule Temperature: "Hot" takes the others off')).toContainText('Take tag "VIP" off');
+});

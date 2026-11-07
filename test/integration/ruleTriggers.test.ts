@@ -8,7 +8,7 @@ import { commitImport } from '../../src/server/domain/importer.js';
 import { leadTags, setTagOnLeads, ensureTag, tagLead } from '../../src/server/domain/tags.js';
 import { saveStatuses } from '../../src/server/domain/statuses.js';
 import { createCustomField, leadCustomValues, setCustomValues } from '../../src/server/domain/customFields.js';
-import { ruleRuns, runEventRules, runRule, saveRules } from '../../src/server/domain/rules.js';
+import { loadRules, ruleRuns, runEventRules, runRule, saveRules, saveTagShortcuts } from '../../src/server/domain/rules.js';
 import { listLeads } from '../../src/server/domain/leads.js';
 import { toLeadFilter } from '../../src/server/domain/callList.js';
 import { checkCondition } from '../../src/server/domain/formulas.js';
@@ -168,5 +168,65 @@ describe('rules on lead changes', () => {
     expect(describeTrigger({ kind: 'status', status_id: 's', when: 'leaves' }, undefined, () => 'Needs rebook')).toBe('When a lead leaves the status "Needs rebook"');
     expect(describeAction({ kind: 'counter', field_id: 'f', op: 'add', by: -1 }, () => 'Streak')).toBe('Take 1 off Streak');
     expect(describeAction({ kind: 'counter', field_id: 'f', op: 'set', by: 0 }, () => 'Streak')).toBe('Reset Streak to 0');
+  });
+});
+
+describe('tag shortcuts', () => {
+  /** Moves the times a tag was put on back by `hours`. */
+  const age = (name: string, hours: number) =>
+    db.prepare(`UPDATE lead_event SET at = strftime('%Y-%m-%dT%H:%M:%fZ', at, '-${hours} hours') WHERE tag_name = ?`).run(name);
+
+  it('a tag that comes off by itself: after some hours, for leads tagged before the shortcut too', () => {
+    const jane = lead('Jane');
+    const robert = lead('Robert');
+    tagLead(db, jane, 'Called');
+    age('Called', 30);
+    tagLead(db, robert, 'Called');
+    const called = ensureTag(db, 'Called').id;
+    const { rules } = saveTagShortcuts(db, { expiry: [{ tag_id: called, hours: 24 }], groups: [] });
+    expect(rules).toEqual([expect.objectContaining({
+      id: `expiry:${called}`, name: 'Take "Called" off 1 day after it was put on',
+      trigger: { kind: 'becomes_true', condition: 'has("Called") and hours_since(added("Called")) >= 24', already: true },
+      actions: [{ kind: 'remove_tag', tag: 'Called' }],
+    })]);
+    runEventRules(db);
+    expect(tags(jane)).toEqual([]);
+    expect(tags(robert)).toEqual(['Called']);
+    age('Called', 30);
+    runEventRules(db);
+    expect(tags(robert)).toEqual([]);
+    // Put on again later: comes off again once it's old.
+    tagLead(db, jane, 'Called');
+    runEventRules(db);
+    expect(tags(jane)).toEqual(['Called']);
+    age('Called', 25);
+    runEventRules(db);
+    expect(tags(jane)).toEqual([]);
+  });
+
+  it('only one at a time: putting one on takes the others off; its rules follow a rename and are not yours to edit', () => {
+    const jane = lead('Jane');
+    const ids = ['No show', 'Sat', 'Sold'].map((n) => ensureTag(db, n).id);
+    saveTagShortcuts(db, { expiry: [], groups: [{ id: 'g1', name: 'Appointment result', tag_ids: ids }] });
+    runEventRules(db);
+    tagLead(db, jane, 'No show');
+    tagLead(db, jane, 'Hot');
+    runEventRules(db);
+    tagLead(db, jane, 'Sat');
+    runEventRules(db);
+    expect(tags(jane)).toEqual(['Hot', 'Sat']);
+    db.prepare("UPDATE tag SET name = 'Showed' WHERE id = ?").run(ids[1]);
+    expect(loadRules(db).map((r) => r.name)).toEqual([
+      'Appointment result: "No show" takes the others off', 'Appointment result: "Showed" takes the others off', 'Appointment result: "Sold" takes the others off',
+    ]);
+    tagLead(db, jane, 'Sold');
+    runEventRules(db);
+    expect(tags(jane)).toEqual(['Hot', 'Sold']);
+    // Saving Rules (with the shortcut rules sent back, even changed) keeps them as the shortcut writes them.
+    const mine = rule({ name: 'Mine' });
+    const sent = loadRules(db).map((r) => ({ ...r, enabled: false }));
+    const saved = saveRules(db, [mine, ...sent]);
+    expect(saved.map((r) => [r.name, r.enabled])).toEqual([['Mine', true], ...sent.map((r) => [r.name, true])]);
+    expect(() => saveTagShortcuts(db, { expiry: [], groups: [{ id: 'g2', name: 'Bad', tag_ids: [ids[0], ids[0]] }] })).toThrow(/a tag is in it twice/);
   });
 });
