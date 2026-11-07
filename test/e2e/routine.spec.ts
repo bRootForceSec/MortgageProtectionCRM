@@ -443,3 +443,30 @@ test('tag shortcuts: a tag that comes off at the end of the day, and only one of
   await expect(expiry.getByRole('button', { name: 'Edit' })).toHaveCount(0);
   await expect(rules.getByLabel('Rule Temperature: "Hot" takes the others off')).toContainText('Take tag "VIP" off');
 });
+
+test('a rule as Python: read it, change it there, and see the change in the form', async ({ page }) => {
+  await page.goto(launchUrl);
+  await page.locator('.topbar nav').getByRole('button', { name: 'Settings', exact: true }).click();
+  const card = page.locator('#rules');
+  await card.getByLabel('Rule VIPs today').getByRole('button', { name: 'Edit' }).click();
+  const editor = page.getByRole('dialog', { name: 'Edit rule' });
+  await editor.getByRole('tab', { name: 'Python' }).click();
+  const py = editor.getByLabel('Rule in Python');
+  await expect(py).toHaveValue(/^@when\(tag_added="VIP"\)\ndef rule\(\):\n {4}"VIPs today"\n {4}add_tag\("Call today"\)\n {4}counter\("VIP count", add=1\)$/);
+
+  // A mistake says where, and holds the form and Save until it's fixed.
+  await py.fill('@when(tag_added="VIP")\ndef rule():\n    "VIPs today"\n    add_tag(Call today)');
+  await expect(editor.getByLabel('Python mistake')).toContainText('Line 4');
+  await expect(editor.getByRole('button', { name: 'Save rule' })).toBeDisabled();
+
+  await py.fill('@when(tag_added="VIP")\n@leads(last_call="today")\ndef rule():\n    "VIPs today"\n    if age >= 50:\n        add_tag("Call today")\n        counter("VIP count", add=2)\n        remove_tag("Spanish")');
+  await expect(editor.getByLabel('Python mistake')).toHaveCount(0);
+  await editor.screenshot({ path: 'test-results/rule-python.png' });
+  await editor.getByRole('tab', { name: 'Form' }).click();
+  await expect(editor.getByLabel('Action 3', { exact: true })).toHaveValue('remove_tag');
+  await expect(editor.getByLabel('Action 2 number')).toHaveValue('2');
+  await expect(editor.getByLabel('Last call')).toHaveValue('today');
+  await editor.getByRole('button', { name: 'Save rule' }).click();
+  await expect(card.getByLabel('Rule VIPs today')).toContainText('Add 2 to VIP count');
+  await expect(card.getByLabel('Rule VIPs today')).toContainText('Where age >= 50');
+});

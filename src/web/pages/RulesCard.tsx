@@ -7,6 +7,7 @@ import { useCustomFields } from '../customFields';
 import { CustomFieldInput } from '../components/CustomFieldInput';
 import { ConditionEditor } from '../components/ConditionEditor';
 import { RULES_CHANGED, madeByText } from './TagShortcuts';
+import { pythonToRule, ruleToPython, RuleTextError, type RuleNames } from '../../shared/ruleText';
 import { describeFilter, WEEKDAYS } from '../../shared/routines';
 import { APPT_DAYS, LAST_CALL, type LeadQuery } from '../../shared/leadFilter';
 import { LEAD_TABS } from '../../shared/leadStatus';
@@ -245,6 +246,24 @@ function RuleEditor(props: { rule: Rule; isNew: boolean; onSave: (r: Rule) => Pr
   const [preview, setPreview] = useState<RuleRun | null>(null);
   const [busy, setBusy] = useState(false);
   const set = (patch: Partial<Rule>) => { setR({ ...r, ...patch }); setPreview(null); };
+  // The Python view: its text, and its mistake while it has one (the rule keeps the last text that read right).
+  const [text, setText] = useState<{ src: string; error: { line: number; message: string } | null } | null>(null);
+  const ruleNames: RuleNames = {
+    tag: names.tagName, tagId: (n) => names.tags.find((t) => t.name.toLowerCase() === n.toLowerCase())?.id,
+    field: names.fieldName, fieldId: (n) => names.fields.find((f) => f.label.toLowerCase() === n.toLowerCase())?.id,
+    status: names.statusName, statusId: (n) => names.statuses.find((st) => st.name.toLowerCase() === n.toLowerCase())?.id,
+  };
+  const toText = () => setText({ src: ruleToPython(r, ruleNames), error: null });
+  const toForm = () => { if (!text?.error) setText(null); };
+  const readText = (src: string) => {
+    try {
+      set(pythonToRule(src, r, ruleNames));
+      setText({ src, error: null });
+    } catch (e) {
+      if (!(e instanceof RuleTextError)) throw e;
+      setText({ src, error: { line: e.line, message: e.message } });
+    }
+  };
   const setFilter = (key: keyof Filter, v: unknown) => {
     const f: Record<string, unknown> = { ...r.filter, [key]: v };
     if (v === '' || v == null) delete f[key];
@@ -299,6 +318,23 @@ function RuleEditor(props: { rule: Rule; isNew: boolean; onSave: (r: Rule) => Pr
       >
         <header><b>{props.isNew ? 'New rule' : `Edit "${props.rule.name}"`}</b><button type="button" className="btn small" onClick={props.onCancel}>Close <kbd>Esc</kbd></button></header>
         <div className="body rule-editor">
+          <div className="row" style={{ gap: 8 }}>
+            <div className="tabs small" role="tablist" aria-label="Rule view">
+              <button type="button" role="tab" aria-selected={!text} className={!text ? 'active' : ''} onClick={toForm} disabled={!!text?.error}>Form</button>
+              <button type="button" role="tab" aria-selected={!!text} className={text ? 'active' : ''} onClick={toText}>Python</button>
+            </div>
+            {text?.error && <span className="error" role="alert" aria-label="Python mistake">Line {text.error.line}: {text.error.message}</span>}
+          </div>
+          {text ? (
+            <label className="field">
+              <span className="help" style={{ margin: 0 }}>
+                The same rule as Python: <code>@when(...)</code> says when it runs, <code>@leads(...)</code> which leads, the docstring is its name, an{' '}
+                <code>if</code> is its condition, and each line under it is an action: <code>add_tag</code>, <code>remove_tag</code>, <code>add_to_list</code>,{' '}
+                <code>remove_from_list</code>, <code>set_field</code>, <code>counter</code>, <code>mark_dead</code>. Add <code>@off</code> to save it switched off.
+              </span>
+              <textarea value={text.src} rows={Math.max(8, text.src.split('\n').length + 2)} spellCheck={false} style={{ width: '100%', fontFamily: 'var(--mono, monospace)' }} aria-label="Rule in Python" onChange={(e) => readText(e.target.value)} />
+            </label>
+          ) : (<>
           <label className="field">
             <span>Name</span>
             <input autoFocus value={r.name} maxLength={80} onChange={(e) => set({ name: e.target.value })} aria-label="Rule name" placeholder="e.g. Yesterday's no-shows onto the list" />
@@ -471,6 +507,7 @@ function RuleEditor(props: { rule: Rule; isNew: boolean; onSave: (r: Rule) => Pr
           <label className="row" style={{ gap: 4 }}>
             <input type="checkbox" checked={r.enabled} onChange={(e) => set({ enabled: e.target.checked })} /> On
           </label>
+          </>)}
 
           {preview && (
             <div className="rule-result" aria-label="Preview">
@@ -478,7 +515,7 @@ function RuleEditor(props: { rule: Rule; isNew: boolean; onSave: (r: Rule) => Pr
             </div>
           )}
           <div className="row">
-            <button type="submit" className="btn primary" disabled={busy || !r.name.trim()}>Save rule</button>
+            <button type="submit" className="btn primary" disabled={busy || !r.name.trim() || !!text?.error}>Save rule</button>
             <button type="button" className="btn" onClick={() => void runPreview()}>Preview</button>
             <button type="button" className="btn" onClick={props.onCancel}>Cancel</button>
           </div>
