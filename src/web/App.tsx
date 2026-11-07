@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import { api, ApiError, type Meta } from './api';
+import { api, ApiError, type AddResult, type Meta, type SkippedLead } from './api';
+import { CALL_LIST_CHANGED, SkippedDialog } from './components/CallListDialogs';
 import { CallingPage, OPENED_KEY } from './pages/CallingPage';
 import { ImportPage } from './pages/ImportPage';
 import { LeadsPage } from './pages/LeadsPage';
@@ -30,10 +31,15 @@ const PAGES: { key: Page; label: string }[] = [
   { key: 'settings', label: 'Settings' },
 ];
 
+export interface ToastAction { label: string; run: () => void }
+
 interface Ctx {
   meta: Meta | null;
   reloadMeta: () => Promise<void>;
-  toast: (msg: string, kind?: 'ok' | 'error') => void;
+  /** A short message at the bottom. With `action`, it has a button and stays longer. */
+  toast: (msg: string, kind?: 'ok' | 'error', action?: ToastAction) => void;
+  /** Says how many leads went on the call list, and offers the ones a never-dial tag kept off. */
+  reportAdded: (r: AddResult, what?: string) => void;
   go: (p: Page) => void;
   statsVersion: number;
   bumpStats: () => void;
@@ -55,7 +61,8 @@ export function App() {
   const [page, setPage] = useState<Page>(pageFromHash());
   const [meta, setMeta] = useState<Meta | null>(null);
   const [authError, setAuthError] = useState<string | null>(null);
-  const [toastMsg, setToast] = useState<{ msg: string; kind: 'ok' | 'error' } | null>(null);
+  const [toastMsg, setToast] = useState<{ msg: string; kind: 'ok' | 'error'; action?: ToastAction } | null>(null);
+  const [skipped, setSkipped] = useState<SkippedLead[] | null>(null);
   const [statsVersion, setStatsVersion] = useState(0);
   const [calling, setCalling] = useState<CallingSettingsResponse | null>(null);
   const keys = useMemo(() => buildKeyMap(calling, meta?.buttons ?? []), [calling, meta]);
@@ -69,10 +76,19 @@ export function App() {
   }, []);
   useEffect(() => void reloadMeta(), [reloadMeta]);
 
-  const toast = useCallback((msg: string, kind: 'ok' | 'error' = 'ok') => {
-    setToast({ msg, kind });
-    window.setTimeout(() => setToast((t) => (t?.msg === msg ? null : t)), kind === 'error' ? 6000 : 2500);
+  const toast = useCallback((msg: string, kind: 'ok' | 'error' = 'ok', action?: ToastAction) => {
+    setToast({ msg, kind, action });
+    window.setTimeout(() => setToast((t) => (t?.msg === msg ? null : t)), action ? 10000 : kind === 'error' ? 6000 : 2500);
   }, []);
+  const reportAdded = useCallback((r: AddResult, what?: string) => {
+    const extra = [
+      r.already ? `${r.already} already on it` : '',
+      r.not_callable ? `${r.not_callable} booked, bad or dead (not added)` : '',
+      r.skipped.length ? `${r.skipped.length} skipped` : '',
+    ].filter(Boolean).join(', ');
+    const msg = `${what ?? `${r.added} lead${r.added === 1 ? '' : 's'} added to the call list`}${extra ? `; ${extra}` : ''}`;
+    toast(msg, 'ok', r.skipped.length ? { label: 'See skipped', run: () => setSkipped(r.skipped) } : undefined);
+  }, [toast]);
   useEffect(() => {
     api.get<CallingSettingsResponse>('/settings/calling').then(setCalling).catch((e: Error) => toast(`Couldn't load calling settings: ${e.message}`, 'error'));
   }, [toast]);
@@ -115,7 +131,7 @@ export function App() {
   }
 
   return (
-    <AppCtx.Provider value={{ meta, reloadMeta, toast, go, statsVersion, bumpStats: () => setStatsVersion((v) => v + 1), calling, setCalling, keys, openLead }}>
+    <AppCtx.Provider value={{ meta, reloadMeta, toast, reportAdded, go, statsVersion, bumpStats: () => setStatsVersion((v) => v + 1), calling, setCalling, keys, openLead }}>
       <div className="app">
         <div className="topbar">
           <span className="brand">Calling CRM</span>
@@ -149,7 +165,13 @@ export function App() {
           {page === 'settings' && <SettingsPage />}
         </div>
         <CallbackAlerts />
-        {toastMsg && <div className={`toast ${toastMsg.kind === 'error' ? 'error' : ''}`} role="status">{toastMsg.msg}</div>}
+        {toastMsg && (
+          <div className={`toast ${toastMsg.kind === 'error' ? 'error' : ''}`} role="status">
+            {toastMsg.msg}
+            {toastMsg.action && <button type="button" className="btn small" onClick={() => { toastMsg.action!.run(); setToast(null); }}>{toastMsg.action.label}</button>}
+          </div>
+        )}
+        {skipped && <SkippedDialog leads={skipped} onClose={() => setSkipped(null)} onAdded={() => window.dispatchEvent(new Event(CALL_LIST_CHANGED))} toast={toast} />}
       </div>
     </AppCtx.Provider>
   );

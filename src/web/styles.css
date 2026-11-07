@@ -169,6 +169,8 @@ table.grid tr.click:hover { background: var(--row-hover); cursor: pointer; }
 .summary-tiles .sub { display: block; }
 .toast { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); background: var(--text); color: var(--bg); padding: 8px 14px; border-radius: 8px; z-index: 50; box-shadow: 0 4px 16px rgba(0,0,0,.25); }
 .toast.error { background: var(--bad); color: #fff; }
+.toast .btn { margin-left: 10px; }
+.never-dial { background: var(--bad); color: #fff; padding: 6px 10px; border-radius: 6px; font-weight: 600; margin: 6px 0; }
 .empty { color: var(--muted); padding: 24px; text-align: center; }
 .modal-back { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: flex; align-items: flex-start; justify-content: center; padding: 40px 16px; z-index: 40; overflow: auto; }
 .modal { background: var(--panel); border-radius: 10px; width: min(980px, 100%); max-height: calc(100vh - 80px); overflow: auto; border: 1px solid var(--border); }

@@ -886,3 +886,44 @@ test('Reports: arrange the cards, show By hour as a table, save a layout and loa
   await page.getByRole('button', { name: 'Arrange cards' }).click();
   await page.getByRole('button', { name: 'Back to default' }).click();
 });
+
+test('never dial: a tag marked in Settings keeps a lead off the list, with Add anyway, a red banner and a question before dialing', async ({ page }) => {
+  await page.goto(launchUrl);
+  const origin = new URL(page.url()).origin;
+  // A callable lead, off the list, tagged DNC.
+  const rows = (await (await page.request.get(`${origin}/api/leads?status=no_answer&not_on_list=1`)).json()).rows as { id: string; first_name: string; last_name: string }[];
+  const who = { lead_id: rows[0]!.id, name: `${rows[0]!.first_name} ${rows[0]!.last_name}` };
+  await page.request.post(`${origin}/api/leads/${who.lead_id}/tags`, { data: { name: 'DNC' }, headers: { origin } });
+
+  await page.getByRole('button', { name: 'Settings' }).click();
+  const mark = page.locator('#tags').getByLabel('DNC: never dial');
+  await mark.click();
+  await expect(mark).toBeChecked();
+  await expect(page.getByText('Leads tagged DNC are never dialed')).toBeVisible();
+
+  // From Leads: she's skipped, and the toast says so and offers her.
+  await page.getByRole('button', { name: 'Leads', exact: true }).click();
+  await page.getByLabel('Tag', { exact: true }).selectOption({ label: 'Tagged DNC' });
+  await expect(page.locator('table.grid tbody tr')).toHaveCount(1);
+  await page.getByLabel('Tick every lead shown').check();
+  await page.getByRole('button', { name: 'Add 1 ticked to call list' }).click();
+  await expect(page.locator('.toast')).toContainText('0 leads added to the call list; 1 skipped');
+  await page.locator('.toast').getByRole('button', { name: 'See skipped' }).click();
+  const dlg = page.getByRole('dialog', { name: 'Skipped: never dial' });
+  await expect(dlg).toContainText('tagged DNC');
+  await page.screenshot({ path: 'test-results/never-dial-skipped.png' });
+  await dlg.getByRole('button', { name: `Add ${who.name} anyway` }).click();
+  await expect(page.getByText(`${who.name} added to the call list anyway`)).toBeVisible();
+  await expect(dlg).toHaveCount(0);
+
+  // On the Calling screen: a red banner, and dialing asks first.
+  await page.getByRole('button', { name: 'Calling', exact: true }).click();
+  await page.getByLabel('Queue').locator('.queue-list li', { hasText: who.name }).click();
+  await expect(page.locator('.lead-name')).toHaveText(who.name);
+  await expect(page.getByRole('alert').filter({ hasText: 'Do not call' })).toContainText('Do not call: tagged DNC');
+  await page.screenshot({ path: 'test-results/never-dial-banner.png', fullPage: true });
+  let asked = '';
+  page.once('dialog', (d) => { asked = d.message(); void d.dismiss(); });
+  await page.locator('.lead-panel').getByRole('button', { name: /^(Copy number|Show QR|Dial on phone)/ }).first().click();
+  await expect.poll(() => asked).toBe(`${who.name} is tagged DNC, which is never dialed. Dial anyway?`);
+});

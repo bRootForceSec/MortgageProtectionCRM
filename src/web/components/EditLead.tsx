@@ -85,7 +85,12 @@ export function EditLead({ d, onClose, onSaved }: { d: LeadDetail; onClose: () =
   // Earlier values and the tags put on and taken off, newest first.
   const history = [
     ...d.changes.map((c) => ({ id: c.id, at: c.created_at, text: `${c.field}: ${c.old_value ?? '(blank)'} → ${c.new_value ?? '(blank)'}` })),
-    ...d.events.map((e) => ({ id: e.id, at: e.at, text: `Tag ${e.kind === 'tag_added' ? 'added' : 'taken off'}: ${e.tag_name ?? '(deleted)'}, ${describeBy(e.source, e.source_name)}` })),
+    ...d.events.map((e) => ({
+      id: e.id, at: e.at,
+      text: e.kind === 'never_dial_override'
+        ? `Never dial (${e.tag_name}): ${e.source_name ?? 'gone past'} by you`
+        : `Tag ${e.kind === 'tag_added' ? 'added' : 'taken off'}: ${e.tag_name ?? '(deleted)'}, ${describeBy(e.source, e.source_name)}`,
+    })),
   ].sort((a, b) => b.at.localeCompare(a.at));
   const startCustom = Object.fromEntries(d.custom.map((c) => [c.field_id, c.value ?? '']));
   const [custom, setCustom] = useState<Record<string, string>>(startCustom);

@@ -7,7 +7,7 @@ import { LEAD_PAGE_SIZES } from '../../shared/leadFilter.js';
 import { batchPdf } from './pageTurn.js';
 import { otherPhones } from './leadPhones.js';
 import { currentAppointment } from './appointments.js';
-import { leadEvents, leadTags } from './tags.js';
+import { leadEvents, leadTags, neverDialOf } from './tags.js';
 import { leadStatuses, statusFlags } from './statuses.js';
 import { buttonsHiddenFor } from './buttons.js';
 import { leadCustomValues } from './customFields.js';
@@ -97,6 +97,8 @@ export function getLeadDetail(db: DB, importsDir: string, id: string) {
     called_back_at: (db.prepare('SELECT at FROM lead_called_back WHERE lead_id = ?').get(id) as { at: string } | undefined)?.at ?? null,
     appointment: currentAppointment(db, id),
     tags: leadTags(db, id),
+    /** Its never-dial tag, when it has one: the Calling screen shows a banner and asks before dialing. */
+    never_dial: neverDialOf(db, [id]).get(id) ?? null,
     statuses: leadStatuses(db, id),
     /** Calling screen buttons whose show-when condition is false for this lead now. */
     hidden_buttons: buttonsHiddenFor(db, id),

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api, fmtDateTime, fmtLeadAge, fmtMoney, fmtPhone, fullName, type AddResult, type CallListResponse } from '../api';
-import { ClearListDialog, suggestListName } from '../components/CallListDialogs';
+import { CALL_LIST_CHANGED, ClearListDialog, suggestListName } from '../components/CallListDialogs';
 import { useApp } from '../App';
 import { ApptBadge, StatusBadge } from '../components/LeadDetails';
 import { LeadViewer } from '../components/LeadViewer';
@@ -44,7 +44,7 @@ function takeShown(): string {
 }
 
 export function LeadsPage() {
-  const { meta, toast, go } = useApp();
+  const { meta, toast, go, reportAdded } = useApp();
   const [status, setStatus] = useState('all');
   const [search, setSearch] = useState('');
   /** A batch id, or "bulk:<id>" for every file of a bulk import. */
@@ -114,6 +114,11 @@ export function LeadsPage() {
   const [replacing, setReplacing] = useState<'picked' | 'all' | null>(null);
   const loadCallList = useCallback(() => api.get<CallListResponse>('/call-list').then(setCallList).catch(() => setCallList(null)), []);
   useEffect(() => void loadCallList(), [loadCallList]);
+  useEffect(() => {
+    const on = () => void loadCallList();
+    window.addEventListener(CALL_LIST_CHANGED, on);
+    return () => window.removeEventListener(CALL_LIST_CHANGED, on);
+  }, [loadCallList]);
   const onList = callList?.items.length ?? 0;
   const replaceNow = replace && onList > 0;
   const outcomeLabel = (c: string | null) => (c ? meta?.outcome_codes.find((o) => o.code === c)?.label ?? c : '');
@@ -199,17 +204,8 @@ export function LeadsPage() {
   };
   const typeLabel = (code: string | null) => (code ? types.find((t) => t.code === code)?.label ?? code : '');
 
-  const report = (r: AddResult, replaced = false) => {
-    if (replaced) {
-      toast(`Call list replaced: ${r.added} lead${r.added === 1 ? '' : 's'} on it${r.not_callable ? `; ${r.not_callable} booked, bad or dead (not added)` : ''}`);
-      return;
-    }
-    const extra = [
-      r.already ? `${r.already} already on it` : '',
-      r.not_callable ? `${r.not_callable} booked, bad or dead (not added)` : '',
-    ].filter(Boolean).join(', ');
-    toast(`${r.added} lead${r.added === 1 ? '' : 's'} added to the call list${extra ? `; ${extra}` : ''}`);
-  };
+  const report = (r: AddResult, replaced = false) =>
+    reportAdded(r, replaced ? `Call list replaced: ${r.added} lead${r.added === 1 ? '' : 's'} on it` : undefined);
 
   const addPicked = async (swap?: { save_current_as: string | null }) => {
     // In the order shown on screen.

@@ -1,8 +1,11 @@
 import { useState, type ReactNode } from 'react';
-import { fmtDateTime, type CallListItem, type SavedList } from '../api';
+import { api, fmtDateTime, type AddResult, type CallListItem, type SavedList, type SkippedLead } from '../api';
 
 // Dialogs for saving and swapping call lists: Save as, Load a saved list, and clear or replace the list
 // (saving the old one first if it has changes that aren't saved).
+
+/** Sent on window when the call list changed from outside the page showing it (Add anyway), so it reloads. */
+export const CALL_LIST_CHANGED = 'mpcrm:call-list-changed';
 
 /** A name for the current list: its saved name, or its main county and today's date. */
 export function suggestListName(items: Pick<CallListItem, 'county' | 'state'>[], name: string | null): string {
@@ -275,6 +278,46 @@ export function StartStepDialog(props: {
         </button>
         <button className="btn" type="button" onClick={props.onCancel}>Cancel</button>
       </div>
+    </Modal>
+  );
+}
+
+/**
+ * The leads a never-dial tag kept off the call list, and why, each with "Add anyway" (logged on the lead).
+ * `onAdded` runs after each one goes on, so the list can reload.
+ */
+export function SkippedDialog(props: { leads: SkippedLead[]; onClose: () => void; onAdded: () => void; toast: (msg: string, kind?: 'ok' | 'error') => void }) {
+  const [left, setLeft] = useState(props.leads);
+  const [busy, run] = useBusy();
+  const add = (l: SkippedLead) => run(async () => {
+    try {
+      const r = await api.post<AddResult>('/call-list', { lead_ids: [l.lead_id], override: true });
+      props.toast(r.added ? `${l.name} added to the call list anyway` : `${l.name} wasn't added: already on it, or can't be called`);
+      const rest = left.filter((y) => y.lead_id !== l.lead_id);
+      setLeft(rest);
+      props.onAdded();
+      // Nothing left to decide: close, rather than leave an empty dialog.
+      if (!rest.length) props.onClose();
+    } catch (e: any) {
+      props.toast(e.message, 'error');
+    }
+  });
+  return (
+    <Modal title="Skipped: never dial" onClose={props.onClose} closeButton>
+      <p className="help" style={{ marginTop: 0 }}>These leads have a tag marked "never dial" (Settings → Tags), so they were left off the call list. Adding one anyway is noted on the lead.</p>
+      {left.length > 0 && (
+        <table className="grid">
+          <tbody>
+            {left.map((l) => (
+              <tr key={l.lead_id}>
+                <td>{l.name}</td>
+                <td className="muted">{l.why}</td>
+                <td><button type="button" className="btn small" disabled={busy} onClick={() => void add(l)} aria-label={`Add ${l.name} anyway`}>Add anyway</button></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
     </Modal>
   );
 }

@@ -14,7 +14,7 @@ import { CustomFieldInput } from '../../shared/customFields.js';
 import { checkCondition, previewFormula } from '../domain/formulas.js';
 import { listStatuses, saveStatuses } from '../domain/statuses.js';
 import type { GoogleCalendar } from '../domain/googleCalendar.js';
-import { deleteTag, ensureTag, listTags, renameTag, setTagForMatching, setTagOnLeads, tagLead, leadTags } from '../domain/tags.js';
+import { deleteTag, dialedAnyway, ensureTag, listTags, renameTag, setNeverDial, setTagForMatching, setTagOnLeads, tagLead, leadTags } from '../domain/tags.js';
 import { batchPdf, turnPdfPages, normTurn } from '../domain/pageTurn.js';
 import type { PageChecker } from '../domain/pageTurnFix.js';
 import {
@@ -63,6 +63,15 @@ export function registerLeadRoutes(
   app.put('/api/tags/:id', async (req) => {
     const { id } = z.object({ id: z.string().max(64) }).parse(req.params);
     return renameTag(db, id, z.object({ name: tagName }).parse(req.body).name);
+  });
+  app.put('/api/tags/:id/never-dial', async (req) => {
+    const { id } = z.object({ id: z.string().max(64) }).parse(req.params);
+    return setNeverDial(db, id, z.object({ on: z.boolean() }).parse(req.body).on);
+  });
+  // You dialed a lead with a never-dial tag after the Calling screen asked: noted on the lead.
+  app.post('/api/leads/:id/dialed-anyway', async (req) => {
+    const { id } = z.object({ id: z.string().max(64) }).parse(req.params);
+    return { logged: dialedAnyway(db, id) };
   });
   app.delete('/api/tags/:id', async (req) => {
     const { id } = z.object({ id: z.string().max(64) }).parse(req.params);
@@ -118,10 +127,11 @@ export function registerLeadRoutes(
   // `replace` empties the list first (kept as a saved list named `save_current_as`, if given).
   const replaceOpts = z.object({ replace: z.boolean().optional(), save_current_as: savedName.nullish() });
   app.post('/api/call-list', async (req) => {
-    const b = z.object({ lead_ids: z.array(z.string().max(64)).max(20_000) }).extend(replaceOpts.shape).parse(req.body);
+    // `override`: add leads a never-dial tag would keep off ("Add anyway"), noted on each lead.
+    const b = z.object({ lead_ids: z.array(z.string().max(64)).max(20_000), override: z.boolean().optional() }).extend(replaceOpts.shape).parse(req.body);
     return db.transaction(() => {
       if (b.replace) clearCallList(db, b.save_current_as);
-      return addToCallList(db, b.lead_ids);
+      return addToCallList(db, b.lead_ids, undefined, { override: b.override });
     })();
   });
   app.post('/api/call-list/add-matching', async (req) => {
