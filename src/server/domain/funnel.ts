@@ -1,7 +1,7 @@
 import type { DB } from '../db/connection.js';
 import { getSetting, setSetting } from '../core/settings.js';
 import { DomainError } from '../core/errors.js';
-import { FunnelSteps, STARTER_FUNNEL, type FunnelStepDef } from '../../shared/funnel.js';
+import { FunnelSteps, STARTER_FUNNEL, stepFormula, type FunnelStepDef } from '../../shared/funnel.js';
 import { FormulaError } from '../../shared/formula.js';
 import { funnelStepSql } from './formulas.js';
 
@@ -21,9 +21,10 @@ export function saveFunnelSteps(db: DB, input: unknown): FunnelStepDef[] {
     const key = st.name.toLowerCase();
     if (names.has(key)) throw new DomainError(`two funnel steps are called "${st.name}"`);
     names.add(key);
-    if (st.count.by !== 'formula') continue;
+    const formula = stepFormula(st.count);
+    if (formula == null) continue;
     try {
-      funnelStepSql(db, st.count.formula);
+      funnelStepSql(db, formula);
     } catch (e) {
       if (e instanceof FormulaError) throw new DomainError(`Funnel step "${st.name}": ${e.message}`);
       throw e;
@@ -43,10 +44,11 @@ export function funnelFormulaCounts(
 ): Record<string, number> {
   const out: Record<string, number> = {};
   for (const st of steps) {
-    if (st.count.by !== 'formula') continue;
+    const formula = stepFormula(st.count);
+    if (formula == null) continue;
     let sql: string;
     try {
-      sql = funnelStepSql(db, st.count.formula);
+      sql = funnelStepSql(db, formula);
     } catch (e) {
       if (!(e instanceof FormulaError)) throw e;
       out[st.id] = 0;

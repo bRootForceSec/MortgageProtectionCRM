@@ -8,7 +8,8 @@ import { commitImport } from '../../src/server/domain/importer.js';
 import { logManualCall } from '../../src/server/domain/calls.js';
 import { tagLead } from '../../src/server/domain/tags.js';
 import { funnelFormulaCounts, loadFunnelSteps, saveFunnelSteps } from '../../src/server/domain/funnel.js';
-import { STARTER_FUNNEL, type FunnelStepDef } from '../../src/shared/funnel.js';
+import { describeFunnelCount, stepFormula, STARTER_FUNNEL, type FunnelStepDef } from '../../src/shared/funnel.js';
+import { saveStatuses } from '../../src/server/domain/statuses.js';
 import { buildReport } from '../../src/server/domain/reports.js';
 import { buildApp } from '../../src/server/http/app.js';
 import { uuidv7 } from '../../src/server/ids.js';
@@ -53,6 +54,25 @@ describe('your funnel steps', () => {
     expect(funnelFormulaCounts(db, around.from, around.to)).toEqual({ hot: 2, hot_leads: 2, booked: 1 });
     // Long ago: the log is empty then, but has() is how the lead is now.
     expect(funnelFormulaCounts(db, longAgo.from, longAgo.to)).toEqual({ hot: 0, hot_leads: 2, booked: 0 });
+  });
+
+  it('a step can count a tag or a smart list, and keep a color', () => {
+    tagLead(db, lead('Jane'), 'Hot');
+    tagLead(db, lead('Ann'), 'Hot');
+    saveStatuses(db, [{ id: 'jane', name: 'Just Jane', condition: 'age == 52', color: 'blue', tab: false }]);
+    saveFunnelSteps(db, [
+      ...STARTER_FUNNEL,
+      { id: 'hot', name: 'Hot', count: { by: 'tag', tag: 'Hot' }, color: 'red' },
+      { id: 'jane', name: 'Jane', count: { by: 'list', list: 'Just Jane' } },
+    ]);
+    expect(loadFunnelSteps(db).find((x) => x.id === 'hot')?.color).toBe('red');
+    expect(funnelFormulaCounts(db, around.from, around.to)).toEqual({ hot: 2, jane: 1 });
+    expect(stepFormula({ by: 'tag', tag: 'Hot' })).toBe('times("Hot")');
+    expect(stepFormula({ by: 'list', list: 'Say "hi"' })).toBe(`in_list('Say "hi"')`);
+    expect(describeFunnelCount({ by: 'tag', tag: 'Hot' })).toBe('Times the tag "Hot" was put on a lead in the period');
+    expect(describeFunnelCount({ by: 'list', list: 'Just Jane' })).toBe('Leads in the smart list "Just Jane" now');
+    // A smart list that's gone is refused.
+    expect(() => saveFunnelSteps(db, [{ id: 'x', name: 'X', count: { by: 'list', list: 'Nope' } }])).toThrow(/Funnel step "X"/);
   });
 
   it('refuses text, two steps with one name, and no steps', () => {

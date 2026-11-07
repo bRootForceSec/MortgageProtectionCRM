@@ -16,7 +16,7 @@ import { CallbackAlerts } from './components/CallbackAlerts';
 import { buildKeyMap, type CallingSettingsResponse, type KeyMap } from './shortcuts';
 import { getStored, getStoredJson, setStored, setStoredJson } from './storage';
 import { todayRange, ymd } from './when';
-import type { FunnelStep, FunnelStepDef } from '../shared/funnel';
+import { describeFunnelCount, type FunnelStep, type FunnelStepDef } from '../shared/funnel';
 import { leadIdInText } from '../shared/leadLink';
 
 export type Page = 'calling' | 'today' | 'reports' | 'import' | 'leads' | 'calls' | 'numbers' | 'data' | 'automation' | 'settings';
@@ -218,7 +218,7 @@ function TodayStats() {
   const a = s.appts;
   /** One step's number today, with its daily goal when it has one. */
   const show = (st: FunnelStepDef) => {
-    if (st.count.by === 'formula') return <span key={st.id} title={`Today: ${st.count.formula}`}>{st.name} <b>{s.formula_counts[st.id] ?? 0}</b></span>;
+    if (st.count.by !== 'measure') return <span key={st.id} title={`Today: ${describeFunnelCount(st.count)}`}>{st.name} <b>{s.formula_counts[st.id] ?? 0}</b></span>;
     switch (st.count.measure) {
       case 'dials': return <Goal key={st.id} label={st.name} n={s.dials} goal={g.dials} />;
       case 'leads_called': return <span key={st.id} title="People called (one lead can get several dials)">{st.name} <b>{s.unique_leads}</b></span>;

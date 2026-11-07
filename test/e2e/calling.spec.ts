@@ -1065,6 +1065,13 @@ test('your funnel: rename a step and add one of your own; the top bar and the fu
   await expect(page.getByText(/Funnel step "Hot today": a funnel step has to be a number/)).toBeVisible();
   await expect(added.getByLabel('Formula')).toHaveValue('times("Hot")');
 
+  // The same step, picked as a tag, in red.
+  await saved(() => added.getByLabel('Counts').selectOption('tag'));
+  await saved(() => added.getByLabel('Tag').selectOption('Hot'));
+  await saved(() => added.getByLabel('Color').selectOption('red'));
+  await expect(added).toContainText('Times the tag "Hot" was put on a lead in the period');
+  await expect(page.locator('.topbar .stats')).toContainText('Hot today 1');
+
   await page.getByRole('button', { name: 'Calling', exact: true }).click();
   await page.getByRole('button', { name: 'Show my funnel' }).click();
   const dialog = page.getByRole('dialog', { name: 'My funnel' });

@@ -1,6 +1,7 @@
 import * as z from 'zod/v4';
 import { APPT_RESULTS } from './appointments.js';
 import { outcomeDef } from './outcomes.js';
+import { STATUS_COLORS } from './statuses.js';
 
 // The funnel, top to bottom. These seven are the counts the CRM keeps itself: dials, leads called, pickups and
 // appointments set count first calls; sat, prezis and sales count appointments, on their day.
@@ -35,6 +36,8 @@ export function funnelStepsOf(code: string): FunnelStep[] {
 export const FunnelCount = z.discriminatedUnion('by', [
   z.object({ by: z.literal('measure'), measure: z.enum(['dials', 'leads_called', 'pickups', 'appts_set', 'sat', 'prezis', 'sales']) }),
   z.object({ by: z.literal('formula'), formula: z.string().trim().min(1, 'a funnel step needs a formula').max(2000) }),
+  z.object({ by: z.literal('tag'), tag: z.string().trim().min(1, 'pick a tag').max(40) }),
+  z.object({ by: z.literal('list'), list: z.string().trim().min(1, 'pick a smart list').max(40) }),
 ]);
 export type FunnelCount = z.infer<typeof FunnelCount>;
 
@@ -42,6 +45,8 @@ export const FunnelStepDef = z.object({
   id: z.string().min(1).max(64),
   name: z.string().trim().min(1, 'give the step a name').max(40),
   count: FunnelCount,
+  /** Its glow in the funnel graphic. Left out: the count's own, or the smart list's color for a step that counts one. */
+  color: z.enum(STATUS_COLORS).optional(),
 });
 export type FunnelStepDef = z.infer<typeof FunnelStepDef>;
 
@@ -54,7 +59,28 @@ export const FunnelSteps = z
 /** Today's seven, as your funnel starts. */
 export const STARTER_FUNNEL: FunnelStepDef[] = FUNNEL_STEPS.map((s) => ({ id: s.key, name: s.label, count: { by: 'measure', measure: s.key } }));
 
+/** A name in quotes for a formula (there are no escapes, so a name with " in it goes in single quotes). */
+const quote = (name: string) => (name.includes('"') ? `'${name}'` : `"${name}"`);
+
+/**
+ * The formula a step is counted by, or null for one the CRM keeps. A tag step counts each time the tag was put on in
+ * the period, times("Tag"); a smart list step counts the leads in it now, in_list("List").
+ */
+export function stepFormula(c: FunnelCount): string | null {
+  switch (c.by) {
+    case 'measure': return null;
+    case 'formula': return c.formula;
+    case 'tag': return `times(${quote(c.tag)})`;
+    case 'list': return `in_list(${quote(c.list)})`;
+  }
+}
+
 /** Where a step's number comes from, in words. */
 export function describeFunnelCount(c: FunnelCount): string {
-  return c.by === 'measure' ? `${FUNNEL_LABEL[c.measure]} (kept by the CRM)` : c.formula;
+  switch (c.by) {
+    case 'measure': return `${FUNNEL_LABEL[c.measure]} (kept by the CRM)`;
+    case 'formula': return c.formula;
+    case 'tag': return `Times the tag "${c.tag}" was put on a lead in the period`;
+    case 'list': return `Leads in the smart list "${c.list}" now`;
+  }
 }
