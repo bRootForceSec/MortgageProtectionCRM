@@ -1,4 +1,5 @@
 import ExcelJS from 'exceljs';
+import { afterAll } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -6,8 +7,15 @@ import { openDatabase } from '../src/server/db/connection.js';
 import type { Config } from '../src/server/config.js';
 import { groupWhere } from '../src/server/domain/groupFilter.js';
 
+// Each test file's temp folders go once its tests are done, so runs don't fill the disk.
+const made: string[] = [];
+afterAll(() => {
+  for (const d of made.splice(0)) fs.rmSync(d, { recursive: true, force: true });
+});
+
 export function tempConfig(): Config {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mpcrm-test-'));
+  made.push(dataDir);
   const c: Config = {
     dataDir,
     dbFile: path.join(dataDir, 'crm.sqlite'),

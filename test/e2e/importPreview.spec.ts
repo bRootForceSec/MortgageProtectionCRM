@@ -9,9 +9,10 @@ import path from 'node:path';
 const PORT = 5196;
 let server: ChildProcess;
 let launchUrl = '';
+let dataDir = '';
 
 test.beforeAll(async () => {
-  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mpcrm-e2e-'));
+  dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mpcrm-e2e-'));
   server = spawn('node', ['dist/server/main.js'], { env: { ...process.env, MPCRM_DATA_DIR: dataDir, MPCRM_PORT: String(PORT) } });
   launchUrl = await new Promise<string>((resolve, reject) => {
     let out = '';
@@ -25,8 +26,12 @@ test.beforeAll(async () => {
   });
 });
 
-test.afterAll(() => {
-  server?.kill('SIGTERM');
+test.afterAll(async () => {
+  // Once the server has stopped, its data folder goes, so runs don't fill the disk.
+  if (server && server.exitCode === null) {
+    await new Promise((r) => { server.once('exit', r); server.kill('SIGTERM'); setTimeout(r, 5000); });
+  }
+  if (dataDir) fs.rmSync(dataDir, { recursive: true, force: true });
 });
 
 test('a scanned page saved as JPEG 2000 shows in the review window', async ({ page }) => {

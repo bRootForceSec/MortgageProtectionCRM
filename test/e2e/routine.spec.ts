@@ -27,8 +27,12 @@ test.beforeAll(async () => {
   });
 });
 
-test.afterAll(() => {
-  server?.kill('SIGTERM');
+test.afterAll(async () => {
+  // Once the server has stopped, its data folder goes, so runs don't fill the disk.
+  if (server && server.exitCode === null) {
+    await new Promise((r) => { server.once('exit', r); server.kill('SIGTERM'); setTimeout(r, 5000); });
+  }
+  if (dataDir) fs.rmSync(dataDir, { recursive: true, force: true });
 });
 
 test('work the day by routine: imports, then a step saved from Leads', async ({ page }) => {

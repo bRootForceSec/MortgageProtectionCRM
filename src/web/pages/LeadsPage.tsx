@@ -10,7 +10,7 @@ import { useLeadTypes } from '../leadTypes';
 import { AGE_BANDS } from '../../shared/leadAge';
 import { BatchPicker } from '../components/BatchBrowse';
 import type { LeadType } from '../importTypes';
-import { LEAD_TABS, isCallable } from '../../shared/leadStatus';
+import { LEAD_TABS } from '../../shared/leadStatus';
 import { APPT_DAYS, DIAL_GAPS, IMPORTED_WHEN, LAST_CALL, LEAD_PAGE_SIZES, gapLabel } from '../../shared/leadFilter';
 import { UnmarkedAppointments } from '../components/UnmarkedAppointments';
 import { SaveStepDialog } from '../components/SaveStepDialog';
@@ -171,7 +171,7 @@ export function LeadsPage() {
     />
   );
 
-  const pickable = rows.filter((r) => isCallable(r.status) && (!r.on_list || replaceNow));
+  const pickable = rows.filter((r) => r.callable && (!r.on_list || replaceNow));
   const allPicked = pickable.length > 0 && pickable.every((r) => picked.has(r.id));
   const toggle = (id: string) => setPicked((p) => {
     const n = new Set(p);
@@ -378,7 +378,7 @@ export function LeadsPage() {
         </thead>
         <tbody>
           {rows.map((r) => {
-            const can = isCallable(r.status) && (!r.on_list || replaceNow);
+            const can = r.callable && (!r.on_list || replaceNow);
             return (
               <tr key={r.id} className="click" onClick={() => setOpen(r.id)}>
                 <td className="pick" onClick={(e) => e.stopPropagation()}>
@@ -390,7 +390,7 @@ export function LeadsPage() {
                       aria-label={`Tick ${fullName(r)}`}
                       checked={picked.has(r.id)}
                       disabled={!can}
-                      title={can ? 'Tick to add to the call list' : 'Booked, bad-number and dead leads can\'t be called. Restore it first.'}
+                      title={can ? 'Tick to add to the call list' : r.status === 'dead' || r.status === 'invalid' ? 'Bad-number and dead leads can\'t be called. Restore it first.' : 'Your "Can be called when" (Settings → Calling) leaves this lead out.'}
                       onChange={() => toggle(r.id)}
                     />
                   )}

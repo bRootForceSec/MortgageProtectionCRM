@@ -24,8 +24,12 @@ test.beforeAll(async () => {
   });
 });
 
-test.afterAll(() => {
-  server?.kill('SIGTERM');
+test.afterAll(async () => {
+  // Once the server has stopped, its data folder goes, so runs don't fill the disk.
+  if (server && server.exitCode === null) {
+    await new Promise((r) => { server.once('exit', r); server.kill('SIGTERM'); setTimeout(r, 5000); });
+  }
+  if (dataDir) fs.rmSync(dataDir, { recursive: true, force: true });
 });
 
 test('import a sheet, log calls by keyboard, and start an Appt set', async ({ page }) => {
@@ -926,4 +930,30 @@ test('never dial: a tag marked in Settings keeps a lead off the list, with Add a
   page.once('dialog', (d) => { asked = d.message(); void d.dismiss(); });
   await page.locator('.lead-panel').getByRole('button', { name: /^(Copy number|Show QR|Dial on phone)/ }).first().click();
   await expect.poll(() => asked).toBe(`${who.name} is tagged DNC, which is never dialed. Dial anyway?`);
+});
+
+test('who can be called: a condition in Settings → Calling decides which leads can be ticked on Leads', async ({ page }) => {
+  await page.goto(launchUrl);
+  await page.getByRole('button', { name: 'Settings' }).click();
+  await expect(page.getByLabel('Can be called when')).toHaveText('status != "appointment_set"');
+  await page.getByLabel('Can be called when').locator('..').getByRole('button', { name: 'Edit', exact: true }).click();
+  const ed = page.getByRole('group', { name: 'Condition' });
+  await ed.getByRole('tab', { name: 'Python' }).click();
+  await ed.getByLabel('Condition in Python').fill('has("DNC")');
+  await ed.getByRole('button', { name: 'Use this condition' }).click();
+  await expect(page.getByLabel('Can be called when')).toHaveText('has("DNC")');
+  await page.screenshot({ path: 'test-results/who-can-be-called.png' });
+
+  // Only the DNC-tagged lead can be ticked now (it's still never dialed without Add anyway).
+  await page.getByRole('button', { name: 'Leads', exact: true }).click();
+  await page.getByLabel('Not on the call list').uncheck();
+  const ticks = page.locator('table.grid tbody input[type=checkbox]');
+  await expect(ticks.first()).toBeVisible();
+  const enabled = await ticks.evaluateAll((els) => els.filter((e) => !(e as HTMLInputElement).disabled).length);
+  expect(enabled).toBeLessThanOrEqual(1);
+
+  // Back to the start.
+  await page.getByRole('button', { name: 'Settings' }).click();
+  await page.getByRole('button', { name: 'Back to the start' }).click();
+  await expect(page.getByLabel('Can be called when')).toHaveText('status != "appointment_set"');
 });
