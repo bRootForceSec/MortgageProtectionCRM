@@ -172,7 +172,8 @@ test('your fields: define them in Settings, fill one in on a lead, filter Leads 
   await card.getByLabel('New field kind').selectOption('choice');
   await card.getByLabel('New field choices').fill('Husband, Wife, Both');
   await card.getByRole('button', { name: 'Add field' }).click();
-  await expect(card.locator('tbody tr')).toHaveCount(3);
+  // Two fields now (each has its row and its "shows when" row). Counting every row raced the second save.
+  await expect(card.locator('tbody tr.field-when')).toHaveCount(2);
   await card.scrollIntoViewIfNeeded();
   await page.screenshot({ path: 'test-results/custom-fields-settings.png' });
 
@@ -312,8 +313,11 @@ test('Settings in sections with a menu; Leads shows which leads and how many on 
   await nav('Settings');
   const menu = page.getByRole('navigation', { name: 'Settings sections' });
   await expect(menu.getByRole('button')).toHaveText(['Calling', 'Your day', 'Leads', 'Unitrust and Google', 'Imports', 'App']);
-  await menu.getByRole('button', { name: 'Unitrust and Google settings' }).click();
-  await expect(page.getByRole('region', { name: 'Unitrust and Google' }).locator('#google-calendar')).toBeInViewport();
+  // The cards above load on their own and can grow after the jump on a slow computer, so jump again until it's there.
+  await expect(async () => {
+    await menu.getByRole('button', { name: 'Unitrust and Google settings' }).click();
+    await expect(page.getByRole('region', { name: 'Unitrust and Google' }).locator('#google-calendar')).toBeInViewport({ timeout: 1000 });
+  }).toPass({ timeout: 15_000 });
   await expect(page.getByRole('region', { name: 'Leads' }).locator('#custom-fields')).toHaveCount(1);
   await page.screenshot({ path: 'test-results/settings-sections.png' });
 

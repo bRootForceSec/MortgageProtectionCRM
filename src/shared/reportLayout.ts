@@ -14,6 +14,7 @@ export const REPORT_CARDS = {
   by_county: { label: 'By county' },
   by_batch: { label: 'By batch' },
   objections: { label: 'Objections' },
+  funnel: { label: 'Funnel' },
   by_age: { label: 'By lead age', hidden: true },
 } as const satisfies Record<string, { label: string; hidden?: boolean; views?: readonly ('chart' | 'table')[] }>;
 

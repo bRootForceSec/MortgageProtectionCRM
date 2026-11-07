@@ -985,14 +985,20 @@ test('your order: sort steps in Settings → Calling put a tagged lead first on 
   await page.getByRole('button', { name: 'Settings' }).click();
   const steps = page.getByRole('list', { name: 'Call list order' });
   await expect(steps.getByRole('listitem')).toHaveCount(2);
-  await steps.locator('..').getByRole('button', { name: 'Add a step' }).click();
+  // Each change saves on its own; wait for each save, so the Calling screen reads the last one.
+  const saved = async (act: () => Promise<void>) => {
+    const done = page.waitForResponse((r) => r.url().endsWith('/api/settings/calling') && r.request().method() === 'PUT');
+    await act();
+    expect((await done).ok()).toBe(true);
+  };
+  await saved(() => steps.locator('..').getByRole('button', { name: 'Add a step' }).click());
   await expect(steps.getByRole('listitem')).toHaveCount(3);
   const added = steps.getByRole('listitem').nth(2);
   await added.getByLabel('Sort by').fill('has("Top pick")');
-  await added.getByLabel('Sort by').press('Enter');
+  await saved(() => added.getByLabel('Sort by').press('Enter'));
   await expect(added.getByLabel('Sort by')).toHaveValue('has("Top pick")');
-  await added.getByRole('button', { name: 'Move up' }).click();
-  await steps.getByRole('listitem').nth(1).getByRole('button', { name: 'Move up' }).click();
+  await saved(() => added.getByRole('button', { name: 'Move up' }).click());
+  await saved(() => steps.getByRole('listitem').nth(1).getByRole('button', { name: 'Move up' }).click());
   await expect(steps.getByRole('listitem').first().getByLabel('Sort by')).toHaveValue('has("Top pick")');
   await page.screenshot({ path: 'test-results/call-list-order.png' });
 
@@ -1020,13 +1026,19 @@ test('your funnel: rename a step and add one of your own; the top bar and the fu
   await expect(steps.getByRole('listitem')).toHaveCount(7);
   const card = page.locator('#funnel-steps');
   const first = steps.getByRole('listitem').first().getByLabel('Step name');
+  // Each change saves on its own; wait for each save before the next.
+  const saved = async (act: () => Promise<void>) => {
+    const done = page.waitForResponse((r) => r.url().endsWith('/api/funnel/steps') && r.request().method() === 'PUT');
+    await act();
+    await done;
+  };
   await first.fill('Rings');
-  await first.press('Enter');
-  await card.getByRole('button', { name: 'Add a step' }).click();
+  await saved(() => first.press('Enter'));
+  await saved(() => card.getByRole('button', { name: 'Add a step' }).click());
   await expect(steps.getByRole('listitem')).toHaveCount(8);
   const added = steps.getByRole('listitem').last();
   await added.getByLabel('Step name').fill('Hot today');
-  await added.getByLabel('Step name').press('Enter');
+  await saved(() => added.getByLabel('Step name').press('Enter'));
   await expect(added.getByLabel('Formula')).toHaveValue('times("Hot")');
   await expect(page.locator('.topbar .stats')).toContainText('Rings');
   await expect(page.locator('.topbar .stats')).toContainText('Hot today 1');
@@ -1045,6 +1057,13 @@ test('your funnel: rename a step and add one of your own; the top bar and the fu
   await page.waitForTimeout(1800);
   await dialog.screenshot({ path: 'test-results/funnel-yours.png' });
   await page.keyboard.press('Escape');
+
+  // Reports has them too, for its dates.
+  await page.getByRole('button', { name: 'Reports', exact: true }).click();
+  const report = page.locator('.card', { has: page.getByRole('heading', { name: 'Funnel', exact: true }) });
+  await expect(report.getByRole('row', { name: /^Rings \d+/ })).toBeVisible();
+  await expect(report.getByRole('row', { name: /^Hot today 1/ })).toBeVisible();
+  await report.screenshot({ path: 'test-results/reports-funnel.png' });
 
   // Back as it was.
   await page.getByRole('button', { name: 'Settings' }).click();

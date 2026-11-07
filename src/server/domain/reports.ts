@@ -1,3 +1,4 @@
+import type { FunnelStep } from '../../shared/funnel.js';
 import { funnelFormulaCounts, loadFunnelSteps } from './funnel.js';
 import * as z from 'zod/v4';
 import type { DB } from '../db/connection.js';
@@ -5,7 +6,7 @@ import { AGE_BANDS, ageBand, leadAgeDays } from '../../shared/leadAge.js';
 import { MIN_ATTEMPTS, type BestTimes } from '../../shared/bestTime.js';
 import { LEAD_NAME, CURRENT_OUTCOME } from '../db/sql.js';
 import { getSetting, setSetting } from '../core/settings.js';
-import { groupWhere } from './groupFilter.js';
+import { groupWhere, type GroupFilter } from './groupFilter.js';
 import { BOOKED_CODES, outcomeDef } from '../../shared/outcomes.js';
 import { callableSql } from './callable.js';
 import { sqlCodes } from '../db/outcomeCodes.js';
@@ -489,6 +490,7 @@ export function buildReport(db: DB, f: ReportFilter) {
       .sort((x, y) => x.key.localeCompare(y.key)),
     targets,
     appointments: unitrustSection(db, f, types),
+    funnel: funnelSection(db, f),
     profit: profitSection(db, f, g.leads, batches),
     objections: objectionSection(db, f, types),
     weekly: weeklyRatios(db, f, g.allCalls, types),
@@ -592,6 +594,26 @@ function objectionSection(db: DB, f: ReportFilter, types: Map<string, string>) {
 }
 
 /** Appointments on the days in the range (by the appointment's day, from Unitrust or logged here), overall and by lead type. */
+/**
+ * Your funnel steps for the report's dates and counties, top to bottom, the same numbers as the funnel graphic: first
+ * calls in the dates, appointments on those days, and your formula steps over the log in the dates.
+ */
+function funnelSection(db: DB, f: ReportFilter) {
+  const fromDay = localParts(f.from, f.tz, f.tz).date;
+  const toDay = localParts(new Date(Date.parse(f.to) - 1).toISOString(), f.tz, f.tz).date;
+  const st = todayStats(db, f.from, f.to, undefined, { from: fromDay, to: toDay }, f);
+  const measure: Record<FunnelStep, number> = {
+    dials: st.dials, leads_called: st.unique_leads, pickups: st.human_contacts, appts_set: st.appointments,
+    sat: st.funnel?.sat ?? 0, prezis: st.funnel?.prezis ?? 0, sales: st.funnel?.sales ?? 0,
+  };
+  return st.steps.map((x) => ({
+    id: x.id,
+    name: x.name,
+    formula: x.count.by === 'formula' ? x.count.formula : null,
+    value: x.count.by === 'formula' ? st.formula_counts[x.id] ?? 0 : measure[x.count.measure],
+  }));
+}
+
 function unitrustSection(db: DB, f: ReportFilter, types: Map<string, string>) {
   if (!hasAppointments(db)) return null;
   const fromDay = localParts(f.from, f.tz, f.tz).date;
@@ -852,7 +874,8 @@ export function reportSheets(r: ReturnType<typeof buildReport>, calls: ReturnTyp
  * and sales for appointments on those days (funnel), whether you logged them here or in Unitrust, and how many
  * appointments were for those days (on_the_day).
  */
-export function todayStats(db: DB, from: string, to: string, day?: string, days?: { from: string; to: string }) {
+export function todayStats(db: DB, from: string, to: string, day?: string, days?: { from: string; to: string }, group: GroupFilter = {}) {
+  const g = groupWhere('l.county_key', group);
   const row = db
     .prepare(
       `WITH cur AS (
@@ -864,7 +887,8 @@ export function todayStats(db: DB, from: string, to: string, day?: string, days?
            -- First calls only: appointment calls are counted below as sat, prezis and sales.
            AND coalesce(oc.kind, 'first_call') = 'first_call'
            -- Calls from a spreadsheet's history have a date but no real time, so they aren't today's work (same as Reports).
-           AND c.time_known <> 0)
+           AND c.time_known <> 0
+           AND c.lead_id IN (SELECT l.id FROM lead l WHERE ${g.sql}))
        SELECT COUNT(DISTINCT id) attempts, COUNT(DISTINCT lead_id) unique_leads,
               (SELECT coalesce(SUM(dial_count), 0) FROM call WHERE id IN (SELECT id FROM cur)) dials,
               COUNT(DISTINCT CASE WHEN h = 1 THEN id END) human_contacts,
@@ -872,14 +896,14 @@ export function todayStats(db: DB, from: string, to: string, day?: string, days?
               COUNT(DISTINCT CASE WHEN outcome_code IN ${sqlCodes((o) => o.callback)} THEN id END) callbacks
        FROM cur`,
     )
-    .get({ from, to }) as Record<string, number>;
-  const appts = day && hasAppointments(db) ? appointmentCounts(appointmentsOnDays(db, day, day)) : null;
-  const inRange = days ? appointmentCounts(appointmentsOnDays(db, days.from, days.to)) : null;
+    .get({ from, to, ...g.params }) as { attempts: number; unique_leads: number; dials: number; human_contacts: number; appointments: number; callbacks: number };
+  const appts = day && hasAppointments(db) ? appointmentCounts(appointmentsOnDays(db, day, day, g)) : null;
+  const inRange = days ? appointmentCounts(appointmentsOnDays(db, days.from, days.to, g)) : null;
   // on_the_day: appointments for those days, whenever they were set (moved-away ones left out), for the funnel's
   // "only appointments on these days" tick.
   const funnel = inRange
     ? { on_the_day: inRange.appointments - inRange.rescheduled, sat: inRange.sat, prezis: inRange.prezis, sales: inRange.sold }
     : null;
   const steps = loadFunnelSteps(db);
-  return { ...row, goals: loadCallingSettings(db).goals, appts, funnel, steps, formula_counts: funnelFormulaCounts(db, from, to, steps) };
+  return { ...row, goals: loadCallingSettings(db).goals, appts, funnel, steps, formula_counts: funnelFormulaCounts(db, from, to, steps, g) };
 }
