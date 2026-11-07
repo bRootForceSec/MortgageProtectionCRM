@@ -784,6 +784,58 @@ test('a button as Python: read it, change it there, and see the change in the fo
   expect(meta.buttons.find((b: any) => b.label === 'Left voicemail')).toMatchObject({ color: 'purple', fill: 'filled', border: 'solid', show_when: '' });
 });
 
+test('a field that shows by condition, needed while another is true, filled in by a button that asks for it', async ({ page }) => {
+  await page.goto(launchUrl);
+  const origin = new URL(page.url()).origin;
+  await page.request.post(`${origin}/api/custom-fields`, { data: { label: 'Best time', type: 'text' }, headers: { origin } });
+  await page.getByRole('button', { name: 'Settings' }).click();
+  const fields = page.locator('#custom-fields');
+  const when = async (button: string, python: string) => {
+    await fields.getByRole('button', { name: button }).click();
+    const ed = fields.getByRole('group', { name: 'Condition' });
+    await ed.getByRole('tab', { name: 'Python' }).click();
+    await ed.getByLabel('Condition in Python').fill(python);
+    await ed.getByRole('button', { name: 'Use this condition' }).click();
+  };
+  await when('Only when…', 'has("Voicemail")');
+  await when('Needed when…', 'attempts >= 1');
+  await expect(fields.getByLabel('Best time: shows when')).toHaveText('has("Voicemail")');
+  await fields.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect(page.getByText('Field saved')).toBeVisible();
+
+  const card = page.locator('#outcomes');
+  await card.getByRole('row').filter({ has: page.getByLabel('Name for Left voicemail') }).getByRole('button', { name: 'More' }).click();
+  await card.getByLabel('Left voicemail: asks for').selectOption({ label: 'Best time' });
+  await card.getByRole('button', { name: 'Save buttons' }).click();
+  await expect(page.getByText('Buttons saved')).toBeVisible();
+
+  await page.getByRole('button', { name: 'Calling', exact: true }).click();
+  await expect(page.locator('.lead-panel')).toBeVisible();
+  const lookUp = async (who: string) => {
+    await page.keyboard.press('l');
+    await page.keyboard.type(who);
+    await expect(page.getByRole('option').first()).toBeVisible();
+    await page.keyboard.press('Enter');
+    await expect(page.locator('.lead-name')).toHaveText(who);
+  };
+  // Ann Lee has the Voicemail tag and has been called: the field shows, and it's needed.
+  await lookUp('Ann Lee');
+  const lead = page.getByLabel('Current lead');
+  await expect(lead.getByText('Best time')).toBeVisible();
+  await expect(lead.getByText('needed')).toBeVisible();
+  await page.getByRole('group', { name: 'Outcome', exact: true }).getByRole('button', { name: 'Left voicemail' }).click();
+  const asked = page.getByRole('group', { name: 'Fields this button asks for' });
+  await expect(asked.getByLabel('Best time')).toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect(page.locator('.toast')).toContainText('Best time is needed for this lead');
+  await asked.getByLabel('Best time').fill('evenings');
+  await page.screenshot({ path: 'test-results/button-asks.png', fullPage: true });
+  await page.keyboard.press('Enter');
+  await expect(page.locator('.undo-bar')).toContainText('Saved for Ann Lee: Left voicemail');
+  await lookUp('Ann Lee');
+  await expect(lead.getByText('evenings')).toBeVisible();
+});
+
 test('Reports: arrange the cards, show By hour as a table, save a layout and load it back', async ({ page }) => {
   // The first layout save answers slowly, as on a busy computer: the later changes must still win.
   let slowed = false;

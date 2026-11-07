@@ -35,6 +35,8 @@ export const ButtonDef = z.object({
   tooltip: z.string().trim().max(200).default(''),
   add_tags: tagIds,
   remove_tags: tagIds,
+  /** Your fields it asks for before it saves (by id), filled in on the Calling screen and saved with the call. */
+  asks: z.array(z.string().min(1).max(64)).max(5).default([]),
 });
 export type ButtonDef = z.infer<typeof ButtonDef>;
 export const ButtonDefs = z.array(ButtonDef).max(100);

@@ -199,7 +199,12 @@ export function LeadSummary({
         )}
         {Object.entries(extra).map(([k, v]) => <Fact key={k} label={k} v={v} />)}
         {l.source_page != null && <Fact label="PDF page" v={l.source_page} />}
-        {d.custom.map((c) => <Fact key={c.field_id} label={c.label} v={showCustomValue(c, c.value)} />)}
+        {/* Your fields that show for this lead now; one that's needed and blank says so. */}
+        {d.custom.filter((c) => c.shown !== false).map((c) => (
+          c.required && c.value == null
+            ? <div key={c.field_id}><label>{c.label}</label><span className="warn">needed</span></div>
+            : <Fact key={c.field_id} label={c.label} v={showCustomValue(c, c.value)} />
+        ))}
       </div>
       {d.linked.length > 0 && <LinkedLeads d={d} />}
       {(warnings.length > 0 || importNotes) && <p className="help">Import notes: {[importNotes, ...warnings].filter(Boolean).join(' ')}</p>}

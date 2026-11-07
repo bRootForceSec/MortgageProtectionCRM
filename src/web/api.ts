@@ -293,7 +293,11 @@ export interface LeadDetail {
   /** Calling screen buttons whose show-when condition is false for this lead now. */
   hidden_buttons: string[];
   /** Every custom field, in order, with this lead's value (null for none). */
-  custom: { field_id: string; label: string; type: CustomFieldType; options: string[]; value: string | null }[];
+  custom: {
+    field_id: string; label: string; type: CustomFieldType; options: string[]; value: string | null;
+    /** Its show-when condition is true for this lead now (Settings → Your fields), and its needed-when one. */
+    shown: boolean; required: boolean;
+  }[];
   calls: Call[];
   notes: { id: string; body: string; created_at: string; call_id: string | null }[];
   actions: { id: string; action: string; reason: string | null; created_at: string }[];

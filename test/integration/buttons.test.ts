@@ -6,6 +6,7 @@ import { parseSpreadsheet } from '../../src/server/domain/spreadsheet.js';
 import { suggestMapping } from '../../src/server/domain/mapping.js';
 import { commitImport } from '../../src/server/domain/importer.js';
 import { ensureTag, leadEvents, leadTags, tagLead } from '../../src/server/domain/tags.js';
+import { createCustomField, leadCustomValues, updateCustomField } from '../../src/server/domain/customFields.js';
 import { buttonsHiddenFor, loadButtons, saveButtons } from '../../src/server/domain/buttons.js';
 import { logManualCall, voidCall } from '../../src/server/domain/calls.js';
 import { loadOutcomeOverrides } from '../../src/server/domain/callingSettings.js';
@@ -26,8 +27,8 @@ const lead = (first: string) => (db.prepare('SELECT id FROM lead WHERE first_nam
 const tags = (id: string) => leadTags(db, id).map((t) => t.name);
 const current = () => loadButtons(db).map((b) => ButtonDef.parse(b));
 const button = (over: Partial<ButtonDef> & { label: string; outcome: string }) => ButtonDef.parse({ id: `b-${uuidv7()}`, ...over });
-const call = (leadId: string, outcome: string, button_id?: string) =>
-  logManualCall(db, { lead_id: leadId, idempotency_key: `k-${uuidv7()}`, outcome_code: outcome, button_id }).call_id;
+const call = (leadId: string, outcome: string, button_id?: string, fields?: Record<string, string | null>) =>
+  logManualCall(db, { lead_id: leadId, idempotency_key: `k-${uuidv7()}`, outcome_code: outcome, button_id, fields }).call_id;
 
 beforeEach(async () => {
   const t = tempDb();
@@ -181,3 +182,49 @@ describe('Calling screen buttons', () => {
 function buttonSideOf(b: ButtonDef) {
   return OUTCOMES[b.outcome as keyof typeof OUTCOMES].kind;
 }
+
+describe('fields that show by condition, and buttons that ask for them', () => {
+  it('a field shows, and is needed, only while its conditions are true for the lead', () => {
+    const jane = lead('Jane');
+    const robert = lead('Robert');
+    tagLead(db, jane, 'Appt set');
+    const f = createCustomField(db, { label: 'Appt time', type: 'text', show_when: 'has("Appt set")', required_when: 'has("Appt set")' });
+    expect(f).toMatchObject({ show_when: 'has("Appt set")', required_when: 'has("Appt set")' });
+    const of = (id: string) => leadCustomValues(db, id).find((v) => v.field_id === f.id)!;
+    expect(of(jane)).toMatchObject({ shown: true, required: true });
+    expect(of(robert)).toMatchObject({ shown: false, required: false });
+    // Always shown, never needed, once the conditions are cleared.
+    updateCustomField(db, f.id, { label: 'Appt time', type: 'text', show_when: '', required_when: '' });
+    expect(of(robert)).toMatchObject({ shown: true, required: false });
+    expect(() => updateCustomField(db, f.id, { label: 'Appt time', type: 'text', show_when: 'has(' })).toThrow(/^Appt time, shows when: /);
+  });
+
+  it('a button asks for your fields: their values are saved with the call, and a needed one can\'t be blank', () => {
+    const jane = lead('Jane');
+    const best = createCustomField(db, { label: 'Best time', type: 'text', required_when: 'attempts >= 0' });
+    const spouse = createCustomField(db, { label: 'Spouse', type: 'text' });
+    const b = button({ label: 'Call back later', outcome: 'no_appt', asks: [best.id, spouse.id] });
+    saveButtons(db, [...current(), b]);
+    expect(() => call(jane, 'no_appt', b.id, { [spouse.id]: 'Ann' })).toThrow('Best time is needed for this lead');
+    call(jane, 'no_appt', b.id, { [best.id]: 'evenings', [spouse.id]: null });
+    expect(leadCustomValues(db, jane).filter((v) => v.value).map((v) => [v.label, v.value])).toEqual([['Best time', 'evenings']]);
+    // Only the fields the button asks for.
+    const other = createCustomField(db, { label: 'Other', type: 'text' });
+    expect(() => call(jane, 'no_appt', b.id, { [other.id]: 'x' })).toThrow("Call back later doesn't ask for that field");
+    expect(() => call(jane, 'no_appt', undefined, { [other.id]: 'x' })).toThrow('only a button that asks for a field saves one with the call');
+  });
+
+  it('a button can\'t ask for a counter or a formula, and a deleted field or tag drops out of its button', () => {
+    const c = createCustomField(db, { label: 'Streak', type: 'counter' });
+    expect(() => saveButtons(db, [...current(), button({ label: 'X', outcome: 'no_appt', asks: [c.id] })])).toThrow("X: Streak is a counter, so a button can't ask for it");
+    const t = ensureTag(db, 'Gone soon');
+    const f = createCustomField(db, { label: 'Temp', type: 'text' });
+    const b = button({ label: 'Y', outcome: 'no_appt', asks: [f.id], add_tags: [t.id] });
+    saveButtons(db, [...current(), b]);
+    db.prepare('DELETE FROM lead_tag WHERE tag_id = ?').run(t.id);
+    db.prepare('DELETE FROM tag WHERE id = ?').run(t.id);
+    db.prepare('DELETE FROM custom_field WHERE id = ?').run(f.id);
+    expect(loadButtons(db).find((x) => x.id === b.id)).toMatchObject({ asks: [], add_tags: [] });
+    expect(() => saveButtons(db, current())).not.toThrow();
+  });
+});

@@ -3,19 +3,21 @@ import { BUTTON_BORDERS, BUTTON_COLORS, BUTTON_FILLS, ButtonDef } from './button
 
 // A Calling screen button as Python (Settings → Buttons, the Python tab), and back, in the same style as rules:
 //
-//   @button(counts_as="Dial: No answer", shows_when='not has("Voicemail")', color="red", border="dotted")
+//   @button(counts_as="Dial: No answer", shows_when='not has("Voicemail")', asks=["Best time"], color="red", border="dotted")
 //   def button():
 //       "Left voicemail"
 //       add_tag("Voicemail")
 //       remove_tag("Hot")
 //
-// @button says what it counts as, when it shows and how it looks; @hidden keeps it off the Calling screen; the
+// @button says what it counts as, when it shows, which of your fields it asks for and how it looks; @hidden keeps it off the Calling screen; the
 // docstring is its name, and each line is what it does to tags. Tags and outcomes go by name.
 
-/** Turns ids into names and back, for tags and outcomes (an outcome reads by its name or its code). */
+/** Turns ids into names and back, for tags, your fields and outcomes (an outcome reads by its name or its code). */
 export interface ButtonNames {
   tag: (id: string) => string | undefined;
   tagId: (name: string) => string | undefined;
+  field: (id: string) => string | undefined;
+  fieldId: (name: string) => string | undefined;
   outcome: (code: string) => string | undefined;
   outcomeCode: (nameOrCode: string) => string | undefined;
 }
@@ -26,6 +28,7 @@ const DEFAULTS = ButtonDef.parse({ id: 'x', outcome: 'x', label: 'x' });
 export function buttonToPython(b: ButtonDef, n: ButtonNames): string {
   const kw: [string, Value][] = [['counts_as', n.outcome(b.outcome) ?? b.outcome]];
   if (b.show_when) kw.push(['shows_when', b.show_when]);
+  if (b.asks.length) kw.push(['asks', b.asks.map((f) => n.field(f) ?? f)]);
   for (const k of ['color', 'fill', 'border', 'tooltip'] as const) if (b[k] !== DEFAULTS[k]) kw.push([k, b[k]]);
   if (b.confirm) kw.push(['confirm', true]);
   const lines = [`@${call('button', [], kw)}`];
@@ -79,6 +82,15 @@ export function pythonToButton(src: string, base: ButtonDef, n: ButtonNames): Bu
               break;
             }
             case 'shows_when': d.show_when = str(v, 'shows_when=', no).trim(); break;
+            case 'asks':
+              if (!Array.isArray(v)) throw new RuleTextError('asks= needs a list of your fields, like ["Best time"]', no);
+              d.asks = v.map((x) => {
+                const name = str(x, 'a field', no);
+                const id = n.fieldId(name);
+                if (!id) throw new RuleTextError(`there is no field called "${name}" a button can ask for`, no);
+                return id;
+              });
+              break;
             case 'color': d.color = oneOf(v, BUTTON_COLORS, 'color=', no); break;
             case 'fill': d.fill = oneOf(v, BUTTON_FILLS, 'fill=', no); break;
             case 'border': d.border = oneOf(v, BUTTON_BORDERS, 'border=', no); break;
@@ -87,7 +99,7 @@ export function pythonToButton(src: string, base: ButtonDef, n: ButtonNames): Bu
               if (typeof v !== 'boolean') throw new RuleTextError('confirm= is True or False', no);
               d.confirm = v;
               break;
-            default: throw new RuleTextError(`button() doesn't take ${k}=: use counts_as, shows_when, color, fill, border, tooltip or confirm`, no);
+            default: throw new RuleTextError(`button() doesn't take ${k}=: use counts_as, shows_when, asks, color, fill, border, tooltip or confirm`, no);
           }
         }
         if (!d.outcome) throw new RuleTextError('say what it counts as: @button(counts_as="Dial: No answer")', no);

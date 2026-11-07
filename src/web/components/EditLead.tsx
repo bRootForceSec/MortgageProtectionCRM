@@ -3,7 +3,7 @@ import { api, fmtDateTime, fmtPhone, personAge, type LeadDetail } from '../api';
 import { useApp } from '../App';
 import { useLeadTypes } from '../leadTypes';
 import { CustomFieldInput } from './CustomFieldInput';
-import { normalizeCustomValue } from '../../shared/customFields';
+import { isTypedField, normalizeCustomValue } from '../../shared/customFields';
 import { describeBy } from '../../shared/leadEvents';
 
 // Fix a lead's details by hand. Every change is kept with its old value (shown under "Earlier values").
@@ -154,9 +154,9 @@ export function EditLead({ d, onClose, onSaved }: { d: LeadDetail; onClose: () =
               {types.map((t) => <option key={t.code} value={t.code}>{t.label}</option>)}
             </select>
           </label>
-          {d.custom.filter((f) => f.type !== 'formula' && f.type !== 'counter').map((f) => (
+          {d.custom.filter((f) => isTypedField(f) && f.shown !== false).map((f) => (
             <label key={f.field_id} className="field">
-              <span>{f.label}</span>
+              <span>{f.label}{f.required && <em className="warn"> (needed)</em>}</span>
               <CustomFieldInput field={f} value={custom[f.field_id] ?? ''} onChange={(v) => setCustom({ ...custom, [f.field_id]: v })} />
             </label>
           ))}

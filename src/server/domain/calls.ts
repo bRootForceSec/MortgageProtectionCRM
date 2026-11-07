@@ -10,7 +10,7 @@ import { callObjections, recordObjections, type ObjectionInput } from './objecti
 import { appointmentTimeOfCall, cancelAppointmentsOfCall, recordAppointmentTime } from './appointments.js';
 import { currentOpenerVersion } from './scripts.js';
 import { loadOutcomeOverrides } from '../db/outcomeCodes.js';
-import { buttonById, pressButtonTags, undoButtonTags } from './buttons.js';
+import { buttonById, pressButtonTags, saveAskedFields, undoButtonTags } from './buttons.js';
 
 export interface ManualCallInput {
   lead_id: string;
@@ -29,6 +29,8 @@ export interface ManualCallInput {
   outcome_code: string;
   /** The button pressed (Settings → Buttons). It must save this outcome; its tags go on the lead with the call. */
   button_id?: string | null;
+  /** The values of your fields the button asked for (field id → value). */
+  fields?: Record<string, string | null> | null;
   callback_due_at?: string | null;
   /** The callback is for a day, any time that day; callback_due_at is the start of that day. */
   callback_any_time?: boolean | null;
@@ -130,6 +132,7 @@ export function logManualCall(db: DB, input: ManualCallInput) {
       uuidv7(), callId, outcome.code, now, callbackDue, callbackDue && input.callback_any_time ? 1 : 0, input.note?.trim() || null, input.do_not_call ? 1 : 0,
       button?.id ?? null, button?.label ?? null,
     );
+    saveAskedFields(db, button, lead.id, input.fields ?? {}, now);
     if (button) pressButtonTags(db, button, lead.id, callId, now);
     if (input.note?.trim()) {
       db.prepare('INSERT INTO note (id, lead_id, call_id, body, created_at) VALUES (?,?,?,?,?)').run(

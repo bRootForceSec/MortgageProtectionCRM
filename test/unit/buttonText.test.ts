@@ -5,9 +5,12 @@ import { RuleTextError } from '../../src/shared/ruleText.js';
 import { OUTCOMES } from '../../src/shared/outcomes.js';
 
 const tagNames: Record<string, string> = { t1: 'Voicemail', t2: 'Hot' };
+const fieldNames: Record<string, string> = { f1: 'Best time', f2: 'Spouse' };
 const names: ButtonNames = {
   tag: (id) => tagNames[id],
   tagId: (n) => Object.keys(tagNames).find((k) => tagNames[k]!.toLowerCase() === n.toLowerCase()),
+  field: (id) => fieldNames[id],
+  fieldId: (n) => Object.keys(fieldNames).find((k) => fieldNames[k]!.toLowerCase() === n.toLowerCase()),
   outcome: (c) => (c in OUTCOMES ? OUTCOMES[c as keyof typeof OUTCOMES].label : undefined),
   outcomeCode: (n) => (n in OUTCOMES ? n : Object.keys(OUTCOMES).find((c) => OUTCOMES[c as keyof typeof OUTCOMES].label.toLowerCase() === n.toLowerCase())),
 };
@@ -32,6 +35,7 @@ describe('a button as Python', () => {
       b({}),
       b({ hidden: true, confirm: true, tooltip: "They're \"busy\"", fill: 'filled', color: 'blue', border: 'dashed' }),
       b({ show_when: '# who\nattempts >= 3' }),
+      b({ asks: ['f2', 'f1'], add_tags: ['t1', 't2'] }),
       ButtonDef.parse({ id: 'appt_sale', outcome: 'appt_sale', label: 'Sold!', color: 'green', fill: 'filled' }),
     ];
     for (const x of all) expect(round(x)).toEqual(x);
@@ -60,6 +64,7 @@ describe('a button as Python', () => {
     expect(err('@button(counts_as="no_appt")\ndef button():\n    "X"', ButtonDef.parse({ id: 'no_answer', outcome: 'no_answer', label: 'Dial: No answer' })))
       .toEqual([1, "this is Dial: No answer's own button: it always counts as that"]);
     expect(err('def button():\n    "X"')?.[1]).toMatch(/say what it counts as/);
+    expect(err('@button(counts_as="no_answer", asks=["Nope"])\ndef button():\n    "X"')).toEqual([1, 'there is no field called "Nope" a button can ask for']);
     expect(err('@button(counts_as="no_answer")\ndef button():\n    ""')?.[1]).toBe('give the button a name');
   });
 });

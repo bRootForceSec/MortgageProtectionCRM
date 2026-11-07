@@ -4,6 +4,8 @@ import { getSetting, setSetting } from '../core/settings.js';
 import { DomainError } from '../core/errors.js';
 import { conditionSql } from './formulas.js';
 import { setTagOnLeads } from './tags.js';
+import { leadCustomValues, listCustomFields, setCustomValues } from './customFields.js';
+import { isTypedField } from '../../shared/customFields.js';
 import { loadOutcomeOverrides, saveOutcomeOverrides } from './callingSettings.js';
 import { ButtonDef, ButtonDefs, buttonSide, starterButtons, type ButtonInfo } from '../../shared/buttons.js';
 import { OUTCOMES, outcomeDef, type OutcomeCode, type OutcomeOverrides } from '../../shared/outcomes.js';
@@ -34,7 +36,13 @@ export function loadButtons(db: DB): ButtonInfo[] {
     seen.add(b.id);
   }
   for (const b of starterButtons(label, offered)) if (!seen.has(b.id)) out.push(b);
-  return out.map((b) => ({ ...b, side: buttonSide(b), own: isOwn(b), default_key: isOwn(b) ? OUTCOMES[b.id as OutcomeCode].hotkey : null }));
+  // A tag or field deleted since is left out, so the button still saves.
+  const tags = new Set((db.prepare('SELECT id FROM tag').all() as { id: string }[]).map((t) => t.id));
+  const fields = new Set(listCustomFields(db).filter(isTypedField).map((f) => f.id));
+  return out.map((b) => ({
+    ...b, add_tags: b.add_tags.filter((t) => tags.has(t)), remove_tags: b.remove_tags.filter((t) => tags.has(t)), asks: b.asks.filter((f) => fields.has(f)),
+    side: buttonSide(b), own: isOwn(b), default_key: isOwn(b) ? OUTCOMES[b.id as OutcomeCode].hotkey : null,
+  }));
 }
 
 /** One button, or a DomainError when it's gone. */
@@ -54,6 +62,7 @@ export function saveButtons(db: DB, input: unknown): ButtonInfo[] {
   const ids = new Set<string>();
   const names = new Map<string, string>();
   const tagExists = db.prepare('SELECT 1 FROM tag WHERE id = ?');
+  const fields = new Map(listCustomFields(db).map((f) => [f.id, f]));
   for (const b of list) {
     if (ids.has(b.id)) throw new DomainError('two buttons have the same id');
     ids.add(b.id);
@@ -72,6 +81,11 @@ export function saveButtons(db: DB, input: unknown): ButtonInfo[] {
     }
     for (const t of [...b.add_tags, ...b.remove_tags]) if (!tagExists.get(t)) throw new DomainError(`${b.label}: one of its tags is gone`);
     if (b.add_tags.some((t) => b.remove_tags.includes(t))) throw new DomainError(`${b.label}: it can't add and take off the same tag`);
+    for (const id of b.asks) {
+      const f = fields.get(id);
+      if (!f) throw new DomainError(`${b.label}: one of the fields it asks for is gone`);
+      if (!isTypedField(f)) throw new DomainError(`${b.label}: ${f.label} is ${f.type === 'counter' ? 'a counter' : 'a formula'}, so a button can't ask for it`);
+    }
   }
   const all = loadButtons(db);
   const merged = [...list, ...all.filter((b) => b.own && !ids.has(b.id))];
@@ -106,12 +120,27 @@ export function buttonsHiddenFor(db: DB, leadId: string): string[] {
   return conditional.filter((_, i) => on[i] === 0).map((b) => b.id);
 }
 
+/**
+ * The values a button asked for, saved with its call. Only the fields it asks for; one that's needed for this lead now
+ * (its needed-when condition) can't be left blank.
+ */
+export function saveAskedFields(db: DB, b: ButtonInfo | null, leadId: string, values: Record<string, string | null>, now: string) {
+  const extra = Object.keys(values).find((id) => !b?.asks.includes(id));
+  if (extra) throw new DomainError(b ? `${b.label} doesn't ask for that field` : 'only a button that asks for a field saves one with the call');
+  if (!b?.asks.length) return;
+  for (const f of leadCustomValues(db, leadId)) {
+    if (!b.asks.includes(f.field_id) || !f.required) continue;
+    const v = Object.hasOwn(values, f.field_id) ? values[f.field_id] : f.value;
+    if (!v?.trim()) throw new DomainError(`${f.label} is needed for this lead`);
+  }
+  setCustomValues(db, leadId, values, now);
+}
+
 /** What pressing a button does to the lead's tags, logged with the button and the call (so undoing the call undoes it). */
 export function pressButtonTags(db: DB, b: ButtonInfo, leadId: string, callId: string, now: string) {
-  const exists = db.prepare('SELECT 1 FROM tag WHERE id = ?');
   const by = { source: 'button', id: b.id, name: b.label, call_id: callId } as const;
-  for (const t of b.remove_tags) if (exists.get(t)) setTagOnLeads(db, [leadId], t, false, now, by);
-  for (const t of b.add_tags) if (exists.get(t)) setTagOnLeads(db, [leadId], t, true, now, by);
+  for (const t of b.remove_tags) setTagOnLeads(db, [leadId], t, false, now, by);
+  for (const t of b.add_tags) setTagOnLeads(db, [leadId], t, true, now, by);
 }
 
 /** Undoes what a call's button did to tags, newest first. A tag that was deleted since is left alone. */

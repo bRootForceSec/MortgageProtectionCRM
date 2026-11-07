@@ -2,6 +2,8 @@ import { useState } from 'react';
 import { api } from '../api';
 import { useApp } from '../App';
 import { useTags } from '../tags';
+import { useCustomFields } from '../customFields';
+import { isTypedField } from '../../shared/customFields';
 import { ConditionEditor } from '../components/ConditionEditor';
 import { APPT_RESULT_LABEL } from '../../shared/appointments';
 import { outcomeDef } from '../../shared/outcomes';
@@ -32,7 +34,7 @@ function outcomeMeaning(code: string): string {
 
 /** A button with nothing changed but its name and "shown". */
 const plain = (b: ButtonDef) =>
-  !b.show_when && b.color === 'default' && b.fill === 'outline' && b.border === 'solid' && !b.confirm && !b.tooltip && !b.add_tags.length && !b.remove_tags.length;
+  !b.show_when && b.color === 'default' && b.fill === 'outline' && b.border === 'solid' && !b.confirm && !b.tooltip && !b.add_tags.length && !b.remove_tags.length && !b.asks.length;
 
 const COLOR_NAMES: Record<string, string> = { default: 'Plain' };
 const cap = (s: string) => s[0]!.toUpperCase() + s.slice(1);
@@ -40,6 +42,9 @@ const cap = (s: string) => s[0]!.toUpperCase() + s.slice(1);
 export function ButtonsCard() {
   const { meta, reloadMeta, toast } = useApp();
   const { tags, tagName } = useTags();
+  const { fields } = useCustomFields();
+  // The fields a button can ask for: ones you type (not formulas or counters).
+  const typed = fields.filter(isTypedField);
   const [draft, setDraft] = useState<ButtonDef[] | null>(null);
   const [editing, setEditing] = useState<string | null>(null);
   const [conditionFor, setConditionFor] = useState<string | null>(null);
@@ -53,6 +58,8 @@ export function ButtonsCard() {
   const names: ButtonNames = {
     tag: tagName,
     tagId: (n) => tags.find((t) => t.name.toLowerCase() === n.toLowerCase())?.id,
+    field: (id) => typed.find((f) => f.id === id)?.label,
+    fieldId: (n) => typed.find((f) => f.label.toLowerCase() === n.toLowerCase())?.id,
     outcome: (c) => outcomes.find((o) => o.code === c)?.label,
     outcomeCode: (n) => outcomes.find((o) => o.code === n || o.label.toLowerCase() === n.toLowerCase())?.code,
   };
@@ -104,20 +111,25 @@ export function ButtonsCard() {
     }
   };
 
-  const TagList = ({ b, field, what }: { b: ButtonDef; field: 'add_tags' | 'remove_tags'; what: string }) => (
-    <div className="row" style={{ gap: 4, flexWrap: 'wrap' }}>
-      <span>{what}</span>
-      {b[field].map((t) => (
-        <span key={t} className="chip">{tagName(t) ?? 'a deleted tag'}<button type="button" aria-label={`${what} ${tagName(t) ?? 'tag'}: remove`} onClick={() => change(b.id, { [field]: b[field].filter((x) => x !== t) })}>×</button></span>
-      ))}
-      {b[field].length < 10 && (
-        <select value="" aria-label={`${b.label}: ${what.toLowerCase()}`} onChange={(e) => e.target.value && change(b.id, { [field]: [...b[field], e.target.value] })}>
-          <option value="">+ tag</option>
-          {tags.filter((t) => !b.add_tags.includes(t.id) && !b.remove_tags.includes(t.id)).map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
-        </select>
-      )}
-    </div>
-  );
+  /** Chips for the tags (or fields) a button adds, takes off or asks for, with a list to add one. */
+  const Picks = ({ b, field, what, options, max }: { b: ButtonDef; field: 'add_tags' | 'remove_tags' | 'asks'; what: string; options: { id: string; name: string }[]; max: number }) => {
+    const nameOf = (id: string) => options.find((o) => o.id === id)?.name;
+    const taken = field === 'asks' ? b.asks : [...b.add_tags, ...b.remove_tags];
+    return (
+      <div className="row" style={{ gap: 4, flexWrap: 'wrap' }}>
+        <span>{what}</span>
+        {b[field].map((t) => (
+          <span key={t} className="chip">{nameOf(t) ?? 'a deleted one'}<button type="button" aria-label={`${what} ${nameOf(t) ?? ''}: remove`} onClick={() => change(b.id, { [field]: b[field].filter((x) => x !== t) })}>×</button></span>
+        ))}
+        {b[field].length < max && (
+          <select value="" aria-label={`${b.label}: ${what.toLowerCase()}`} onChange={(e) => e.target.value && change(b.id, { [field]: [...b[field], e.target.value] })}>
+            <option value="">{field === 'asks' ? '+ field' : '+ tag'}</option>
+            {options.filter((o) => !taken.includes(o.id)).map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
+          </select>
+        )}
+      </div>
+    );
+  };
 
   const details = (b: ButtonDef) => {
     const mine = text?.id === b.id ? text : null;
@@ -134,7 +146,7 @@ export function ButtonsCard() {
         <label className="field">
           <span className="help" style={{ margin: 0 }}>
             The same button as Python: <code>@button(...)</code> says what it counts as (<code>counts_as</code>), when it shows (<code>shows_when</code>, a condition)
-            and how it looks (<code>color</code>, <code>fill</code>, <code>border</code>, <code>tooltip</code>, <code>confirm</code>). <code>@hidden</code> keeps it off
+            which of your fields it asks for (<code>asks</code>, a list) and how it looks (<code>color</code>, <code>fill</code>, <code>border</code>, <code>tooltip</code>, <code>confirm</code>). <code>@hidden</code> keeps it off
             the Calling screen. The docstring is its name, and each line is <code>add_tag("...")</code> or <code>remove_tag("...")</code>.
           </span>
           <textarea value={mine.src} rows={Math.max(6, mine.src.split('\n').length + 2)} spellCheck={false} style={{ width: '100%', fontFamily: 'var(--mono, monospace)' }}
@@ -176,8 +188,9 @@ export function ButtonsCard() {
       <label className="row" style={{ gap: 4 }}>
         <input type="checkbox" checked={b.confirm} onChange={(e) => change(b.id, { confirm: e.target.checked })} /> Ask "are you sure?" first
       </label>
-      <TagList b={b} field="add_tags" what="Adds" />
-      <TagList b={b} field="remove_tags" what="Takes off" />
+      <Picks b={b} field="add_tags" what="Adds" options={tags} max={10} />
+      <Picks b={b} field="remove_tags" what="Takes off" options={tags} max={10} />
+      {typed.length > 0 && <Picks b={b} field="asks" what="Asks for" options={typed.map((f) => ({ id: f.id, name: f.label }))} max={5} />}
       {!tags.length && <span className="help">Make tags under Tags to have a button add them.</span>}
       </>)}
     </div>
@@ -204,6 +217,7 @@ export function ButtonsCard() {
                 const does = [
                   own(b) ? outcomeMeaning(b.outcome) : `Counts as ${outcomeLabel(b.outcome)}`,
                   describeButtonTags(b, tagName),
+                  b.asks.length > 0 && `asks for ${b.asks.map((f) => typed.find((x) => x.id === f)?.label ?? 'a field').join(', ')}`,
                   b.show_when && 'only for some leads',
                 ].filter(Boolean).join('; ');
                 return [

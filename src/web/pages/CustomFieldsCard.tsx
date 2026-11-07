@@ -2,23 +2,28 @@ import { Fragment, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { api } from '../api';
 import { useApp } from '../App';
 import { useCustomFields } from '../customFields';
-import { CUSTOM_FIELD_TYPES, type CustomField, type CustomFieldType } from '../../shared/customFields';
+import { CUSTOM_FIELD_TYPES, isTypedField, type CustomField, type CustomFieldType } from '../../shared/customFields';
+import { ConditionEditor } from '../components/ConditionEditor';
 import { FORMULA_FUNCTIONS, FORMULA_VALUES, type FormulaPreview } from '../../shared/formula';
 
 // Settings → Your fields: the fields you add to every lead. Values are typed on the lead (Edit), shown with its
 // details, and the Leads page and routine steps can filter on them. A formula field is worked out from the lead (a
 // lead score): you write the formula here and see what it gives your leads as you type.
 
-interface Draft { label: string; type: CustomFieldType; options: string; formula: string }
+interface Draft { label: string; type: CustomFieldType; options: string; formula: string; show_when: string; required_when: string }
 
-const toDraft = (f: CustomField): Draft => ({ label: f.label, type: f.type, options: f.options.join(', '), formula: f.formula ?? '' });
+const toDraft = (f: CustomField): Draft => ({
+  label: f.label, type: f.type, options: f.options.join(', '), formula: f.formula ?? '', show_when: f.show_when ?? '', required_when: f.required_when ?? '',
+});
 const toBody = (d: Draft) => ({
   label: d.label.trim(),
   type: d.type,
   ...(d.type === 'choice' ? { options: d.options.split(',').map((o) => o.trim()).filter(Boolean) } : {}),
   ...(d.type === 'formula' ? { formula: d.formula } : {}),
+  show_when: d.show_when,
+  required_when: isTypedField(d) ? d.required_when : '',
 });
-const EMPTY: Draft = { label: '', type: 'text', options: '', formula: '' };
+const EMPTY: Draft = { label: '', type: 'text', options: '', formula: '', show_when: '', required_when: '' };
 
 const RESULT_WORDS = { number: 'a number', text: 'text', yes_no: 'yes or no' } as const;
 
@@ -107,6 +112,7 @@ export function CustomFieldsCard() {
   const { fields, setFields, reload } = useCustomFields();
   const [edit, setEdit] = useState<Record<string, Draft>>({});
   const [add, setAdd] = useState<Draft>(EMPTY);
+  const [conditionFor, setConditionFor] = useState<{ id: string; which: 'show_when' | 'required_when' } | null>(null);
   const run = async (what: () => Promise<unknown>, done: string) => {
     try {
       await what();
@@ -140,13 +146,38 @@ export function CustomFieldsCard() {
         <td colSpan={5}><FormulaEditor name={name} fieldId={fieldId} value={d.formula} onChange={(formula) => set({ ...d, formula })} /></td>
       </tr>
     );
+  /** When a field shows on the lead and the Calling screen, and when it's needed: each a condition. */
+  const whenRow = (d: Draft, set: (d: Draft) => void, f: CustomField) => {
+    const part = (which: 'show_when' | 'required_when', words: { none: string; some: string; add: string }) => (
+      <span className="row" style={{ gap: 4 }}>
+        {d[which] ? <>{words.some} <code aria-label={`${f.label}: ${which === 'show_when' ? 'shows when' : 'needed when'}`}>{d[which]}</code></> : words.none}
+        <button type="button" className="btn small" onClick={() => setConditionFor({ id: f.id, which })}>{d[which] ? 'Edit' : words.add}</button>
+        {d[which] && <button type="button" className="btn small" aria-label={`${f.label}: clear ${which === 'show_when' ? 'shows when' : 'needed when'}`} onClick={() => set({ ...d, [which]: '' })}>×</button>}
+      </span>
+    );
+    return (
+      <tr className="field-when">
+        <td colSpan={5}>
+          <div className="row" style={{ gap: 16, flexWrap: 'wrap' }}>
+            {part('show_when', { none: 'Shows for every lead', some: 'Shows when', add: 'Only when…' })}
+            {isTypedField(d) && part('required_when', { none: 'Never needed', some: 'Needed when', add: 'Needed when…' })}
+          </div>
+          {conditionFor?.id === f.id && (
+            <ConditionEditor value={d[conditionFor.which]} onApply={(c) => { set({ ...d, [conditionFor.which]: c }); setConditionFor(null); }} onCancel={() => setConditionFor(null)} />
+          )}
+        </td>
+      </tr>
+    );
+  };
   return (
     <div className="card" id="custom-fields">
       <h2>Your fields</h2>
       <p className="help">
         Fields you add to every lead, such as a spouse's name, the mortgage payment or who decides. Fill them in with Edit on a lead; they show with its
         details. Filter on them on Leads (and save that as a routine step). A formula field, like a lead score, is worked out from the lead and
-        stays up to date by itself: sort Leads by it, filter on a range, and use it in rules.
+        stays up to date by itself: sort Leads by it, filter on a range, and use it in rules. A field can show only while a condition is true for
+        the lead (like <code>has("Appt set")</code>), and be needed while another is: a needed field that's blank is marked, and a button that asks
+        for it won't save without it.
       </p>
       <table className="grid" style={{ maxWidth: 860 }}>
         <thead><tr><th>Name</th><th>Kind</th><th>Choices</th><th>Leads</th><th></th></tr></thead>
@@ -175,6 +206,7 @@ export function CustomFieldsCard() {
                 </td>
               </tr>
               {formulaRow(d, set, `Field ${f.label}`, f.id)}
+              {whenRow(d, set, f)}
               </Fragment>
             );
           })}

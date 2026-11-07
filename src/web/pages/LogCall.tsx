@@ -9,6 +9,7 @@ import { getStored, setStored } from '../storage';
 import type { CallMode } from '../../shared/appointments';
 import { outcomeDef, savesInstantly } from '../../shared/outcomes';
 import { buttonClass, type ButtonInfo } from '../../shared/buttons';
+import { CustomFieldInput } from '../components/CustomFieldInput';
 
 // The "log the call" form on the Calling screen: number used, outcome, callback time, minutes and note.
 // It has two sides with the same layout: First call (no answer, appt set, ...) and Appointment (no show, prezi, sale, ...).
@@ -109,6 +110,8 @@ export function LogCall({
   const [note, setNote] = useState(restore?.note ?? '');
   const [doNotCall, setDoNotCall] = useState(!!restore?.doNotCall);
   const [objections, setObjections] = useState<string[]>(restore?.objections ?? []);
+  // Your fields the picked button asks for (Settings → Buttons), as typed.
+  const [asked, setAsked] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
   const [key, setKey] = useState(newKey());
   const dayRef = useRef<HTMLInputElement>(null);
@@ -137,6 +140,12 @@ export function LogCall({
     if (!b) return;
     if (b.confirm && !window.confirm(`${b.label}: are you sure?`)) return;
     setButton(id);
+    setAsked(Object.fromEntries(d.custom.filter((f) => b.asks.includes(f.field_id)).map((f) => [f.field_id, f.value ?? ''])));
+    // A button that asks for your fields waits for Enter, so you can fill them in.
+    if (b.asks.length) {
+      setTimeout(() => (document.querySelector('.asked-fields input, .asked-fields select') as HTMLElement | null)?.focus(), 0);
+      return;
+    }
     const c = b.outcome;
     const o = outcomeOf(b);
     if (o?.requires_callback_time) {
@@ -150,7 +159,7 @@ export function LogCall({
     }
     // Outcomes set to save without Enter (by default No answer, Bad number and No show) save straight away; Undo still catches a wrong key.
     if (calling?.settings.instant_save !== false && o && savesInstantly(o, calling?.settings.instant_outcomes)) void saveRef.current(id);
-  }, [buttonOf, outcomeOf, calling]);
+  }, [buttonOf, outcomeOf, calling, d.custom]);
 
   // Talk time from the timer, only when someone picked up and you didn't type minutes yourself.
   const timerSeconds = (o: typeof outcome) =>
@@ -182,6 +191,7 @@ export function LogCall({
         to_e164: attempt.to,
         outcome_code: codeNow,
         button_id: b.id,
+        fields: b.asks.length ? Object.fromEntries(b.asks.filter((f) => Object.hasOwn(asked, f)).map((f) => [f, asked[f]!.trim() || null])) : null,
         callback_due_at: cb && !('error' in cb) ? cb.at.toISOString() : null,
         callback_any_time: cb && !('error' in cb) ? cb.anyTime : null,
         appointment_for: appt && !('error' in appt) ? toWall(appt) : null,
@@ -202,6 +212,7 @@ export function LogCall({
       setNote('');
       setDoNotCall(false);
       setObjections([]);
+      setAsked({});
       setKey(newKey());
       await onSaved({
         callId: r.call_id, leadId: d.lead.id, name: [d.lead.first_name, d.lead.last_name].filter(Boolean).join(' ') || 'this lead',
@@ -213,7 +224,7 @@ export function LogCall({
     } finally {
       setSaving(false);
     }
-  }, [button, buttonOf, outcomeOf, saving, day, time, key, numberId, minutes, note, doNotCall, objections, d.lead.id, toast, onSaved, attempt]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [button, buttonOf, outcomeOf, asked, saving, day, time, key, numberId, minutes, note, doNotCall, objections, d.lead.id, toast, onSaved, attempt]); // eslint-disable-line react-hooks/exhaustive-deps
   const saveRef = useRef(save);
   saveRef.current = save;
 
@@ -221,7 +232,7 @@ export function LogCall({
   useLayoutEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (document.querySelector('.modal-back') || !active) return;
-      if (e.key === 'Enter' && button && (!isTyping(e) || e.ctrlKey || e.metaKey || ['callback-day', 'callback-time', 'log-note', 'log-minutes'].includes((e.target as HTMLElement).id))) {
+      if (e.key === 'Enter' && button && (!isTyping(e) || e.ctrlKey || e.metaKey || ['callback-day', 'callback-time', 'log-note', 'log-minutes'].includes((e.target as HTMLElement).id) || !!(e.target as HTMLElement).closest?.('.asked-fields'))) {
         e.preventDefault();
         void save(button, e.shiftKey);
         return;
@@ -332,6 +343,16 @@ export function LogCall({
             <button key={o.code} className={objections.includes(o.code) ? 'active' : undefined} aria-pressed={objections.includes(o.code)} onClick={() => toggleObjection(o.code)}>
               {i < 9 && <kbd>⇧{i + 1}</kbd>}{o.label}
             </button>
+          ))}
+        </div>
+      )}
+      {picked && picked.asks.length > 0 && (
+        <div className="row asked-fields" role="group" aria-label="Fields this button asks for">
+          {d.custom.filter((f) => picked.asks.includes(f.field_id)).map((f) => (
+            <label key={f.field_id} className="field">
+              <span>{f.label}{f.required && <em className="warn"> (needed)</em>}</span>
+              <CustomFieldInput field={f} value={asked[f.field_id] ?? ''} onChange={(v) => setAsked((a) => ({ ...a, [f.field_id]: v }))} />
+            </label>
           ))}
         </div>
       )}
