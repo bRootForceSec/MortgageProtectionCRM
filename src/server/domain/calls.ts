@@ -10,6 +10,7 @@ import { callObjections, recordObjections, type ObjectionInput } from './objecti
 import { appointmentTimeOfCall, cancelAppointmentsOfCall, recordAppointmentTime } from './appointments.js';
 import { currentOpenerVersion } from './scripts.js';
 import { loadOutcomeOverrides } from '../db/outcomeCodes.js';
+import { buttonById, pressButtonTags, saveAskedFields, undoButtonTags } from './buttons.js';
 
 export interface ManualCallInput {
   lead_id: string;
@@ -26,6 +27,10 @@ export interface ManualCallInput {
   /** When you pressed Dial on the Calling page, if you did. Kept with the save time, to match a recording to its call later. */
   dialed_at?: string | null;
   outcome_code: string;
+  /** The button pressed (Settings → Buttons). It must save this outcome; its tags go on the lead with the call. */
+  button_id?: string | null;
+  /** The values of your fields the button asked for (field id → value). */
+  fields?: Record<string, string | null> | null;
   callback_due_at?: string | null;
   /** The callback is for a day, any time that day; callback_due_at is the start of that day. */
   callback_any_time?: boolean | null;
@@ -83,6 +88,8 @@ export function logManualCall(db: DB, input: ManualCallInput) {
     const to = input.to_e164 || active?.active_phone_e164 || lead.phone_e164;
     if (!to) throw new DomainError('lead has no valid phone number');
     const outcome = getOutcome(db, input.outcome_code);
+    const button = input.button_id ? buttonById(db, input.button_id) : null;
+    if (button && button.outcome !== outcome.code) throw new DomainError(`${button.label} saves a different outcome`);
     const callbackDue = checkIso(input.callback_due_at, 'callback time');
     if (outcome.requires_callback_time && !callbackDue) throw new DomainError('a callback needs a date and time');
 
@@ -119,9 +126,14 @@ export function logManualCall(db: DB, input: ManualCallInput) {
        VALUES (?, ?, 'manual', ?, 'manual.logged', 'call.logged_manually', ?, ?, ?)`,
     ).run(uuidv7(), callId, `manual:${callId}`, at, now, JSON.stringify({ talk_seconds: talk, dial_count: dials, from_e164: fromE164, to_e164: to, dialed_at: dialed }));
     db.prepare(
-      `INSERT INTO call_outcome (id, call_id, outcome_code, entered_at, callback_due_at, callback_any_time, note, do_not_call)
-       VALUES (?,?,?,?,?,?,?,?)`,
-    ).run(uuidv7(), callId, outcome.code, now, callbackDue, callbackDue && input.callback_any_time ? 1 : 0, input.note?.trim() || null, input.do_not_call ? 1 : 0);
+      `INSERT INTO call_outcome (id, call_id, outcome_code, entered_at, callback_due_at, callback_any_time, note, do_not_call, button_id, button_label)
+       VALUES (?,?,?,?,?,?,?,?,?,?)`,
+    ).run(
+      uuidv7(), callId, outcome.code, now, callbackDue, callbackDue && input.callback_any_time ? 1 : 0, input.note?.trim() || null, input.do_not_call ? 1 : 0,
+      button?.id ?? null, button?.label ?? null,
+    );
+    saveAskedFields(db, button, lead.id, input.fields ?? {}, now);
+    if (button) pressButtonTags(db, button, lead.id, callId, now);
     if (input.note?.trim()) {
       db.prepare('INSERT INTO note (id, lead_id, call_id, body, created_at) VALUES (?,?,?,?,?)').run(
         uuidv7(), lead.id, callId, input.note.trim(), now,
@@ -157,6 +169,7 @@ export function voidCall(db: DB, callId: string, reason?: string | null) {
        VALUES (?, ?, 'manual', ?, 'manual.voided', 'call.voided', ?, ?, ?)`,
     ).run(uuidv7(), callId, `void:${callId}`, now, now, JSON.stringify({ reason: reason ?? null }));
     const out = currentOutcome(db, callId);
+    undoButtonTags(db, callId, now);
     const appointmentFor = appointmentTimeOfCall(db, callId);
     cancelAppointmentsOfCall(db, callId);
     const note = db.prepare('SELECT body FROM note WHERE call_id = ? ORDER BY created_at LIMIT 1').get(callId) as { body: string } | undefined;
@@ -164,6 +177,7 @@ export function voidCall(db: DB, callId: string, reason?: string | null) {
     return {
       lead_id: call.lead_id as string | null,
       outcome_code: out?.outcome_code ?? null,
+      button_id: out?.button_id ?? null,
       callback_due_at: out?.callback_due_at ?? null,
       callback_any_time: !!out?.callback_any_time,
       do_not_call: !!out?.do_not_call,
@@ -187,7 +201,9 @@ export function currentOutcome(db: DB, callId: string) {
        AND ${CURRENT_OUTCOME}
        ORDER BY entered_at DESC LIMIT 1`,
     )
-    .get(callId) as { id: string; outcome_code: string; callback_due_at: string | null; callback_any_time: number; do_not_call: number } | undefined;
+    .get(callId) as
+      | { id: string; outcome_code: string; button_id: string | null; callback_due_at: string | null; callback_any_time: number; do_not_call: number }
+      | undefined;
 }
 
 /**
@@ -277,7 +293,9 @@ export function callHistory(
               c.time_known,
               ${LEAD_NAME} lead_name, l.county, n.label from_label,
               (SELECT o.outcome_code FROM call_outcome o WHERE o.call_id = c.id
-                 AND ${CURRENT_OUTCOME} ORDER BY o.entered_at DESC LIMIT 1) outcome_code
+                 AND ${CURRENT_OUTCOME} ORDER BY o.entered_at DESC LIMIT 1) outcome_code,
+              (SELECT CASE WHEN o.button_id IS NOT o.outcome_code THEN o.button_label END FROM call_outcome o WHERE o.call_id = c.id
+                 AND ${CURRENT_OUTCOME} ORDER BY o.entered_at DESC LIMIT 1) button_label
        FROM call c LEFT JOIN lead l ON l.id = c.lead_id LEFT JOIN caller_number n ON n.id = c.from_number_id
        WHERE (@from IS NULL OR c.requested_at >= @from) AND (@to IS NULL OR c.requested_at < @to)
          AND (@fromNumber IS NULL OR (@fromNumber = 'none' AND c.from_number_id IS NULL) OR c.from_number_id = @fromNumber)

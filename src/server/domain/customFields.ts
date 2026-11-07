@@ -4,12 +4,15 @@ import { DomainError } from '../core/errors.js';
 import { audit } from '../core/audit.js';
 import { normalizeCustomValue, type CustomField, type CustomFieldInput } from '../../shared/customFields.js';
 import { FormulaError, formulaFieldLabels, parseFormula, renameFormulaField } from '../../shared/formula.js';
-import { compileFormula, formulaResults, syncFieldValueView } from './formulas.js';
+import { compileFormula, conditionSql, formulaResults, syncFieldValueView } from './formulas.js';
 
 // Custom fields: fields you add to every lead. Defining them is audited; a value typed on a lead is kept in the lead's
 // change history (lead_change, under the field's name) like any other edit.
 
-interface FieldRow { id: string; label: string; type: CustomField['type']; options_json: string | null; formula: string | null; sort_order: number; leads: number }
+interface FieldRow {
+  id: string; label: string; type: CustomField['type']; options_json: string | null; formula: string | null; sort_order: number; leads: number;
+  show_when: string | null; required_when: string | null;
+}
 
 /** `leads` counts typed values: a formula field has none of its own. */
 export function listCustomFields(db: DB): CustomField[] {
@@ -19,7 +22,7 @@ export function listCustomFields(db: DB): CustomField[] {
   const results = formulaResults(rows);
   return rows.map((r) => ({
     id: r.id, label: r.label, type: r.type, options: r.options_json ? (JSON.parse(r.options_json) as string[]) : [], sort_order: r.sort_order, leads: r.leads,
-    formula: r.type === 'formula' ? r.formula : null, result: results.get(r.id) ?? null,
+    formula: r.type === 'formula' ? r.formula : null, result: results.get(r.id) ?? null, show_when: r.show_when, required_when: r.required_when,
   }));
 }
 
@@ -57,6 +60,14 @@ function checkInput(db: DB, b: CustomFieldInput, id: string | null): string | nu
       throw e;
     }
   }
+  for (const [cond, what] of [[b.show_when, 'shows when'], [b.required_when, 'needed when']] as const) {
+    if (!cond) continue;
+    try {
+      conditionSql(db, cond);
+    } catch (e) {
+      throw new DomainError(`${b.label}, ${what}: ${(e as Error).message}`);
+    }
+  }
   if (b.type !== 'choice') return null;
   // The same choice typed twice (any case) is kept once, as first typed.
   const seen = new Set<string>();
@@ -70,8 +81,8 @@ export function createCustomField(db: DB, b: CustomFieldInput, now = nowIso()): 
     const options = checkInput(db, b, null);
     const id = uuidv7();
     const order = (db.prepare('SELECT coalesce(max(sort_order), 0) + 1 n FROM custom_field').get() as { n: number }).n;
-    db.prepare('INSERT INTO custom_field (id, label, type, options_json, formula, sort_order, created_at) VALUES (?,?,?,?,?,?,?)').run(
-      id, b.label, b.type, options, b.type === 'formula' ? b.formula!.trim() : null, order, now,
+    db.prepare('INSERT INTO custom_field (id, label, type, options_json, formula, sort_order, created_at, show_when, required_when) VALUES (?,?,?,?,?,?,?,?,?)').run(
+      id, b.label, b.type, options, b.type === 'formula' ? b.formula!.trim() : null, order, now, b.show_when || null, b.required_when || null,
     );
     audit(db, 'custom_field', id, 'insert', null, b, now);
     if (b.type === 'formula' || b.type === 'counter') syncFieldValueView(db);
@@ -95,7 +106,8 @@ export function updateCustomField(db: DB, id: string, b: CustomFieldInput): Cust
     }
     const formula = b.type === 'formula' ? renameFormulaField(b.formula ?? '', old.label, b.label).trim() : null;
     const options = checkInput(db, { ...b, formula: formula ?? undefined }, id);
-    db.prepare('UPDATE custom_field SET label = ?, type = ?, options_json = ?, formula = ? WHERE id = ?').run(b.label, b.type, options, formula, id);
+    db.prepare('UPDATE custom_field SET label = ?, type = ?, options_json = ?, formula = ?, show_when = ?, required_when = ? WHERE id = ?')
+      .run(b.label, b.type, options, formula, b.show_when || null, b.required_when || null, id);
     audit(db, 'custom_field', id, 'update', old, b);
     if ([b.type, old.type].some((t) => t === 'formula' || t === 'counter') || users.length) syncFieldValueView(db);
     return getField(db, id);
@@ -131,10 +143,42 @@ export function deleteCustomField(db: DB, id: string): { removed_from: number } 
   })();
 }
 
-/** Every field with this lead's value (null when it has none), in order. Formula fields come worked out. */
-export function leadCustomValues(db: DB, leadId: string): { field_id: string; label: string; type: CustomField['type']; result: CustomField['result']; options: string[]; value: string | null }[] {
+/**
+ * Every field with this lead's value (null when it has none), in order. Formula fields come worked out. `shown` and
+ * `required` say whether its show-when and needed-when conditions are true for the lead now.
+ */
+export function leadCustomValues(db: DB, leadId: string): {
+  field_id: string; label: string; type: CustomField['type']; result: CustomField['result']; options: string[]; value: string | null; shown: boolean; required: boolean;
+}[] {
   const values = new Map((db.prepare('SELECT field_id, value FROM lead_field_value WHERE lead_id = ?').all(leadId) as { field_id: string; value: unknown }[]).map((r) => [r.field_id, String(r.value)]));
-  return listCustomFields(db).map((f) => ({ field_id: f.id, label: f.label, type: f.type, result: f.result, options: f.options, value: values.get(f.id) ?? null }));
+  const fields = listCustomFields(db);
+  const flags = conditionFlags(db, leadId, fields.flatMap((f) => [f.show_when, f.required_when]));
+  return fields.map((f, i) => ({
+    field_id: f.id, label: f.label, type: f.type, result: f.result, options: f.options, value: values.get(f.id) ?? null,
+    shown: flags[2 * i] ?? true, required: flags[2 * i + 1] ?? false,
+  }));
+}
+
+/**
+ * Whether each condition is true for one lead now: null (no condition) gives null. A condition that stopped working
+ * (a status was deleted...) counts as not there.
+ */
+function conditionFlags(db: DB, leadId: string, conds: (string | null)[]): (boolean | null)[] {
+  const sql = conds.map((c) => {
+    if (!c) return null;
+    try {
+      return conditionSql(db, c);
+    } catch {
+      return null;
+    }
+  });
+  const used = sql.filter((x): x is string => !!x);
+  if (!used.length) return conds.map(() => null);
+  const r = db.prepare(`SELECT json_array(${used.map((x) => `CASE WHEN ${x} THEN 1 ELSE 0 END`).join(', ')}) f FROM lead l JOIN lead_state s ON s.lead_id = l.id WHERE l.id = ?`)
+    .get(leadId) as { f: string } | undefined;
+  const on = r ? (JSON.parse(r.f) as number[]) : [];
+  let k = 0;
+  return sql.map((x) => (x ? on[k++] === 1 : null));
 }
 
 /**

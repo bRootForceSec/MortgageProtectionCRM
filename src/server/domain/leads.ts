@@ -9,6 +9,7 @@ import { otherPhones } from './leadPhones.js';
 import { currentAppointment } from './appointments.js';
 import { leadEvents, leadTags } from './tags.js';
 import { leadStatuses, statusFlags } from './statuses.js';
+import { buttonsHiddenFor } from './buttons.js';
 import { leadCustomValues } from './customFields.js';
 
 // Reading leads for the Leads page and the lead view, and resolving "same person?" links.
@@ -97,6 +98,8 @@ export function getLeadDetail(db: DB, importsDir: string, id: string) {
     appointment: currentAppointment(db, id),
     tags: leadTags(db, id),
     statuses: leadStatuses(db, id),
+    /** Calling screen buttons whose show-when condition is false for this lead now. */
+    hidden_buttons: buttonsHiddenFor(db, id),
     custom: leadCustomValues(db, id),
     calls,
     // Notes saved with a call you undid are left out (the undo puts the note back in the form).

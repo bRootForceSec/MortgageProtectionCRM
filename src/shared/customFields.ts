@@ -23,6 +23,10 @@ export const CustomFieldInput = z.object({
   options: z.array(z.string().trim().min(1).max(60)).max(50).optional(),
   /** The formula, for "Formula" (shared/formula.ts). */
   formula: z.string().max(2000).optional(),
+  /** Shown on the lead and the Calling screen only while this condition is true for it (blank: always). */
+  show_when: z.string().trim().max(2000).optional(),
+  /** Needed while this condition is true: marked when blank, and a button that asks for it won't save without it. */
+  required_when: z.string().trim().max(2000).optional(),
 });
 export type CustomFieldInput = z.infer<typeof CustomFieldInput>;
 
@@ -37,6 +41,14 @@ export interface CustomField {
   /** For a formula field: the formula, and what it works out to (null when it has a mistake). */
   formula: string | null;
   result: 'number' | 'text' | 'yes_no' | null;
+  /** Conditions (Python syntax) for when it shows and when it's needed; null for always shown, never needed. */
+  show_when: string | null;
+  required_when: string | null;
+}
+
+/** Whether you type a value into this field (not worked out by a formula, not changed only by rules). */
+export function isTypedField(f: Pick<CustomField, 'type'>): boolean {
+  return f.type !== 'formula' && f.type !== 'counter';
 }
 
 /** Whether a field holds numbers (so it can be filtered by a range and sorted by). */

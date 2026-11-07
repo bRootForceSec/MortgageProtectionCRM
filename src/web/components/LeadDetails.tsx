@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { api, fmtDateTime, fmtDob, fmtDuration, fmtMoney, fmtPhone, fullName, localTime, personAge, type LeadDetail, type Call, type TagRef } from '../api';
+import { api, fmtDateTime, fmtDob, fmtDuration, fmtMoney, fmtPhone, fullName, localTime, outcomeText, personAge, type LeadDetail, type Call, type TagRef } from '../api';
 import { useTags } from '../tags';
 import { StatusChips } from '../pages/StatusesCard';
 import { useApp } from '../App';
@@ -199,7 +199,12 @@ export function LeadSummary({
         )}
         {Object.entries(extra).map(([k, v]) => <Fact key={k} label={k} v={v} />)}
         {l.source_page != null && <Fact label="PDF page" v={l.source_page} />}
-        {d.custom.map((c) => <Fact key={c.field_id} label={c.label} v={showCustomValue(c, c.value)} />)}
+        {/* Your fields that show for this lead now; one that's needed and blank says so. */}
+        {d.custom.filter((c) => c.shown !== false).map((c) => (
+          c.required && c.value == null
+            ? <div key={c.field_id}><label>{c.label}</label><span className="warn">needed</span></div>
+            : <Fact key={c.field_id} label={c.label} v={showCustomValue(c, c.value)} />
+        ))}
       </div>
       {d.linked.length > 0 && <LinkedLeads d={d} />}
       {(warnings.length > 0 || importNotes) && <p className="help">Import notes: {[importNotes, ...warnings].filter(Boolean).join(' ')}</p>}
@@ -359,7 +364,7 @@ export function CallHistory({ calls, onChange }: { calls: Call[]; onChange: () =
           <div>
             {c.outcomes.map((o) => (
               <div key={o.id} className={o.superseded ? 'superseded' : ''}>
-                {o.label}
+                {outcomeText(o)}
                 {!!o.do_not_call && <span className="warn"> · do not call</span>}
                 {c.outcomes.length > 1 && <span className="muted"> · set {fmtDateTime(o.entered_at)}</span>}
                 {o.callback_due_at && <> · call back {o.callback_any_time ? `${fmtDay(o.callback_due_at)}, any time` : fmtDateTime(o.callback_due_at)}</>}

@@ -12,6 +12,8 @@ export interface EventBy {
   id?: string | null;
   /** Shown in the lead's history, like the rule's name. */
   name?: string | null;
+  /** The call it belongs to (a button pressed when saving a call), so undoing the call can undo it. */
+  call_id?: string | null;
 }
 
 export const BY_YOU: EventBy = { source: 'you' };

@@ -37,7 +37,7 @@ export const FORMULA_FUNCTIONS: readonly { name: string; usage: string; help: st
   { name: 'times', usage: 'times("No answer", 7)', help: 'How many times that tag was put on the lead, in the last 7 days if you give a number' },
   { name: 'status', usage: 'status("Needs rebook")', help: 'Yes when the lead is in that status of yours (in conditions and statuses, not formula fields)' },
   { name: 'before', usage: 'before("Appt set", "No show")', help: 'Yes when the first tag was last put on before the second was' },
-  { name: 'pressed', usage: 'pressed("Dial: No answer", 7)', help: 'Calls saved with that outcome (name or code), not undone, in the last 7 days if you give a number' },
+  { name: 'pressed', usage: 'pressed("Dial: No answer", 7)', help: 'Calls saved with that outcome or button (by name), not undone, in the last 7 days if you give a number' },
   { name: 'min', usage: 'min(a, b, …)', help: 'The smallest' },
   { name: 'max', usage: 'max(a, b, …)', help: 'The largest' },
   { name: 'round', usage: 'round(value, places)', help: 'Rounds; places is optional' },

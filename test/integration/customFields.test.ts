@@ -101,7 +101,7 @@ describe('custom fields', () => {
     expect(bad.json().error).toBe('Smoker?: needs yes or no');
     expect((await app.inject({ method: 'PATCH', url: `/api/leads/${jane}`, headers: write, payload: { custom: { [field.id]: 'no' } } })).statusCode).toBe(200);
     const d = (await app.inject({ url: `/api/leads/${jane}`, headers: auth })).json();
-    expect(d.custom).toEqual([{ field_id: field.id, label: 'Smoker?', result: null, type: 'yes_no', options: [], value: 'no' }]);
+    expect(d.custom).toEqual([{ field_id: field.id, label: 'Smoker?', result: null, type: 'yes_no', options: [], value: 'no', shown: true, required: false }]);
     expect((await app.inject({ url: `/api/leads?field_id=${field.id}&field_value=no`, headers: auth })).json().total).toBe(1);
     expect((await app.inject({ url: '/api/custom-fields', headers: auth })).json()[0]).toMatchObject({ label: 'Smoker?', leads: 1 });
   });

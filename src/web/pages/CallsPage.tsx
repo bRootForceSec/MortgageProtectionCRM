@@ -153,7 +153,7 @@ export function CallsPage() {
                 />
               </td>
               <td>{fmtDateTime(r.requested_at)}</td><td>{r.lead_name}</td><td>{r.county ?? ''}</td><td>{fmtPhone(r.to_e164)}</td>
-              <td>{r.from_label ?? ''} {fmtPhone(r.from_e164)}</td><td>{label(r.outcome_code)}</td>
+              <td>{r.from_label ?? ''} {fmtPhone(r.from_e164)}</td><td>{r.button_label ? `${r.button_label} (${label(r.outcome_code)})` : label(r.outcome_code)}</td>
               <td>{r.talk_seconds != null ? `${Math.round(r.talk_seconds / 60)} min` : ''}</td>
               <td>{fmtDuration(r.lead_seconds)}</td>
               <td className="muted">{r.channel === 'manual_log' ? 'logged by hand' : r.channel}</td>

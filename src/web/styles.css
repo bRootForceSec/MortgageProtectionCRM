@@ -112,6 +112,19 @@ a { color: var(--accent); }
 .outcomes button kbd { margin-right: 6px; }
 .outcomes button.active { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
 .outcomes button.dead { border-color: var(--bad); }
+/* A button's look from Settings → Buttons: a color (outlined or filled) and a border style. */
+.outcomes button.c-gray { --btn: #5f6368; } .outcomes button.c-blue { --btn: #1a5fb4; } .outcomes button.c-green { --btn: #26722b; }
+.outcomes button.c-yellow { --btn: #8a6100; } .outcomes button.c-orange { --btn: #a8461b; } .outcomes button.c-red { --btn: #b3261e; }
+.outcomes button.c-purple { --btn: #5b3fc4; }
+.outcomes button[class*="c-"] { border-color: var(--btn); color: var(--btn); font-weight: 600; }
+.outcomes button.filled { background: var(--btn); color: #fff; }
+.outcomes button.b-dotted { border-style: dotted; border-width: 2px; }
+.outcomes button.b-dashed { border-style: dashed; border-width: 2px; }
+.outcomes button.active[class*="c-"] { background: var(--btn); color: #fff; outline: 2px solid var(--accent); outline-offset: 1px; }
+.button-details { display: grid; gap: 6px; padding: 6px 0; }
+@media (prefers-color-scheme: dark) {
+  .outcomes button[class*="c-"]:not(.filled):not(.active) { color: color-mix(in srgb, var(--btn) 45%, white); border-color: color-mix(in srgb, var(--btn) 70%, white); }
+}
 .outcomes label.dnc { padding: 7px 9px; border: 1px dashed var(--bad); border-radius: 6px; background: var(--panel); cursor: pointer; }
 .outcomes label.dnc kbd { margin-right: 2px; }
 .outcomes label.dnc.active { background: color-mix(in srgb, var(--bad) 15%, var(--panel)); color: var(--bad); border-style: solid; font-weight: 600; }

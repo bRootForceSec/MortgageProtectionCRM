@@ -8,6 +8,8 @@ import { isTyping, keyLabel, normKey, type KeyMap } from '../shortcuts';
 import { getStored, setStored } from '../storage';
 import type { CallMode } from '../../shared/appointments';
 import { outcomeDef, savesInstantly } from '../../shared/outcomes';
+import { buttonClass, type ButtonInfo } from '../../shared/buttons';
+import { CustomFieldInput } from '../components/CustomFieldInput';
 
 // The "log the call" form on the Calling screen: number used, outcome, callback time, minutes and note.
 // It has two sides with the same layout: First call (no answer, appt set, ...) and Appointment (no show, prezi, sale, ...).
@@ -27,7 +29,8 @@ export interface Attempt {
 
 /** What you had entered, put back after an undo. */
 export interface FormValues {
-  code: string | null;
+  /** The button picked (an outcome's own button has the outcome's code). */
+  button: string | null;
   /** Callback picker: the day and the optional time, as typed. */
   day: string;
   time: string;
@@ -100,13 +103,15 @@ export function LogCall({
   }, [d, activeNumbers]);
 
   const [numberId, setNumberId] = useState(restore?.numberId ?? defaultNumber.id);
-  const [code, setCode] = useState<string | null>(restore?.code ?? null);
+  const [button, setButton] = useState<string | null>(restore?.button ?? null);
   const [day, setDay] = useState(restore?.day ?? '');
   const [time, setTime] = useState(restore?.time ?? '');
   const [minutes, setMinutes] = useState(restore?.minutes ?? '');
   const [note, setNote] = useState(restore?.note ?? '');
   const [doNotCall, setDoNotCall] = useState(!!restore?.doNotCall);
   const [objections, setObjections] = useState<string[]>(restore?.objections ?? []);
+  // Your fields the picked button asks for (Settings → Buttons), as typed.
+  const [asked, setAsked] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
   const [key, setKey] = useState(newKey());
   const dayRef = useRef<HTMLInputElement>(null);
@@ -115,8 +120,13 @@ export function LogCall({
     if (!numberId && defaultNumber.id) setNumberId(defaultNumber.id);
   }, [defaultNumber.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const outcomes = useMemo(() => (meta?.outcome_codes ?? []).filter((o) => o.kind === mode && o.offered), [meta, mode]);
-  const outcome = outcomes.find((o) => o.code === code) ?? null;
+  // The buttons on this side that show for this lead now (Settings → Buttons: shown, and its show-when is true).
+  const buttons = useMemo(() => (meta?.buttons ?? []).filter((b) => b.side === mode && !b.hidden && !d.hidden_buttons?.includes(b.id)), [meta, mode, d.hidden_buttons]);
+  const buttonOf = useCallback((id: string | null) => (id ? (meta?.buttons ?? []).find((b) => b.id === id) ?? null : null), [meta]);
+  const picked = buttonOf(button);
+  const code = picked?.outcome ?? null;
+  const outcomeOf = useCallback((b: ButtonInfo | null) => (b ? meta?.outcome_codes.find((o) => o.code === b.outcome) ?? null : null), [meta]);
+  const outcome = outcomeOf(picked);
   const needsWhen = !!outcome?.requires_callback_time;
   // Appt set: the appointment's day and time, optional, typed like a callback.
   const apptWhen = !!outcomeDef(code)?.apptSet;
@@ -125,9 +135,19 @@ export function LogCall({
   const toggleObjection = useCallback((c: string) => setObjections((v) => (v.includes(c) ? v.filter((x) => x !== c) : [...v, c])), []);
   const changed = numberId !== defaultNumber.id;
 
-  const choose = useCallback((c: string) => {
-    setCode(c);
-    const o = meta?.outcome_codes.find((x) => x.code === c);
+  const choose = useCallback((id: string) => {
+    const b = buttonOf(id);
+    if (!b) return;
+    if (b.confirm && !window.confirm(`${b.label}: are you sure?`)) return;
+    setButton(id);
+    setAsked(Object.fromEntries(d.custom.filter((f) => b.asks.includes(f.field_id)).map((f) => [f.field_id, f.value ?? ''])));
+    // A button that asks for your fields waits for Enter, so you can fill them in.
+    if (b.asks.length) {
+      setTimeout(() => (document.querySelector('.asked-fields input, .asked-fields select') as HTMLElement | null)?.focus(), 0);
+      return;
+    }
+    const c = b.outcome;
+    const o = outcomeOf(b);
     if (o?.requires_callback_time) {
       setDay((v) => v || 'tomorrow');
       setTimeout(() => { dayRef.current?.focus(); dayRef.current?.select(); }, 0);
@@ -138,8 +158,8 @@ export function LogCall({
       return;
     }
     // Outcomes set to save without Enter (by default No answer, Bad number and No show) save straight away; Undo still catches a wrong key.
-    if (calling?.settings.instant_save !== false && o && savesInstantly(o, calling?.settings.instant_outcomes)) void saveRef.current(c);
-  }, [meta, calling]);
+    if (calling?.settings.instant_save !== false && o && savesInstantly(o, calling?.settings.instant_outcomes)) void saveRef.current(id);
+  }, [buttonOf, outcomeOf, calling, d.custom]);
 
   // Talk time from the timer, only when someone picked up and you didn't type minutes yourself.
   const timerSeconds = (o: typeof outcome) =>
@@ -148,9 +168,11 @@ export function LogCall({
       : null;
 
   /** `onTheSpot`: Appt set, and you're running it now (Shift+Enter): the appointment is now, whatever day was typed. */
-  const save = useCallback(async (codeNow: string | null = code, onTheSpot = false) => {
-    if (!codeNow || saving) return;
-    const o = meta?.outcome_codes.find((x) => x.code === codeNow) ?? null;
+  const save = useCallback(async (buttonNow: string | null = button, onTheSpot = false) => {
+    const b = buttonOf(buttonNow);
+    const codeNow = b?.outcome ?? null;
+    if (!b || !codeNow || saving) return;
+    const o = outcomeOf(b);
     const cb = o?.requires_callback_time ? readCallback(day, time, new Date(), d.lead.time_zone) : null;
     const isApptSet = !!outcomeDef(codeNow)?.apptSet;
     const spot = onTheSpot && isApptSet;
@@ -168,6 +190,8 @@ export function LogCall({
         from_number_id: numberId || null,
         to_e164: attempt.to,
         outcome_code: codeNow,
+        button_id: b.id,
+        fields: b.asks.length ? Object.fromEntries(b.asks.filter((f) => Object.hasOwn(asked, f)).map((f) => [f, asked[f]!.trim() || null])) : null,
         callback_due_at: cb && !('error' in cb) ? cb.at.toISOString() : null,
         callback_any_time: cb && !('error' in cb) ? cb.anyTime : null,
         appointment_for: appt && !('error' in appt) ? toWall(appt) : null,
@@ -181,17 +205,18 @@ export function LogCall({
         objections: outcomeDef(codeNow)?.objections ? objections.map((c) => ({ code: c })) : [],
       });
       if (numberId) setStored(LAST_NUMBER_KEY, numberId);
-      setCode(null);
+      setButton(null);
       setDay('');
       setTime('');
       setMinutes('');
       setNote('');
       setDoNotCall(false);
       setObjections([]);
+      setAsked({});
       setKey(newKey());
       await onSaved({
         callId: r.call_id, leadId: d.lead.id, name: [d.lead.first_name, d.lead.last_name].filter(Boolean).join(' ') || 'this lead',
-        label: `${o?.label ?? codeNow}${spot ? ', running it now' : ''}${doNotCall ? ', do not call' : ''}`, dials: attempt.dials, at: Date.now(),
+        label: `${b.label}${spot ? ', running it now' : ''}${doNotCall ? ', do not call' : ''}`, dials: attempt.dials, at: Date.now(),
         tz: d.lead.time_zone ?? null, onTheSpot: spot,
       });
     } catch (e: any) {
@@ -199,7 +224,7 @@ export function LogCall({
     } finally {
       setSaving(false);
     }
-  }, [code, saving, meta, day, time, key, numberId, minutes, note, doNotCall, objections, d.lead.id, toast, onSaved, attempt]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [button, buttonOf, outcomeOf, asked, saving, day, time, key, numberId, minutes, note, doNotCall, objections, d.lead.id, toast, onSaved, attempt]); // eslint-disable-line react-hooks/exhaustive-deps
   const saveRef = useRef(save);
   saveRef.current = save;
 
@@ -207,13 +232,13 @@ export function LogCall({
   useLayoutEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (document.querySelector('.modal-back') || !active) return;
-      if (e.key === 'Enter' && code && (!isTyping(e) || e.ctrlKey || e.metaKey || ['callback-day', 'callback-time', 'log-note', 'log-minutes'].includes((e.target as HTMLElement).id))) {
+      if (e.key === 'Enter' && button && (!isTyping(e) || e.ctrlKey || e.metaKey || ['callback-day', 'callback-time', 'log-note', 'log-minutes'].includes((e.target as HTMLElement).id) || !!(e.target as HTMLElement).closest?.('.asked-fields'))) {
         e.preventDefault();
-        void save(code, e.shiftKey);
+        void save(button, e.shiftKey);
         return;
       }
       if (isTyping(e) || e.ctrlKey || e.metaKey || e.altKey) return;
-      if (e.key === 'Escape') return setCode(null);
+      if (e.key === 'Escape') return setButton(null);
       // Shift + 1-9 picks an objection while the chips are showing.
       const digit = /^Digit([1-9])$/.exec(e.code);
       if (e.shiftKey && digit && asksObjections) {
@@ -231,7 +256,8 @@ export function LogCall({
       }
       // Action keys win over outcome keys (Settings warns about clashes).
       if (Object.values(keys.actions).some((ks) => ks.includes(normKey(e.key)))) return;
-      const c = keys.outcomes[mode].get(normKey(e.key));
+      // A key two buttons share goes to the first one showing for this lead.
+      const c = keys.outcomes[mode].get(normKey(e.key))?.find((id) => buttons.some((b) => b.id === id));
       if (c) {
         e.preventDefault();
         choose(c);
@@ -239,7 +265,7 @@ export function LogCall({
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [keys, code, save, choose, active, mode, asksObjections, objectionCodes, toggleObjection]);
+  }, [keys, button, buttons, save, choose, active, mode, asksObjections, objectionCodes, toggleObjection]);
 
   if (!d.lead.phone_e164 && !d.lead.other_phones.some((p) => p.e164)) return <p className="error">This lead has no valid phone number.</p>;
   if (d.state?.status === 'dead') return <RestoreBox d={d} onSaved={onRefresh} label={d.state.block_reason ? `${d.state.block_reason}.` : askedNotToCall(d) ? 'Asked not to be called again. This lead is in the dead pile.' : 'This lead is in the dead pile.'} />;
@@ -299,9 +325,10 @@ export function LogCall({
       </div>
       {mode === 'appointment' && <div className="mode-label">How the appointment went</div>}
       <div className="outcomes" role="group" aria-label={mode === 'appointment' ? 'Appointment outcome' : 'Outcome'}>
-        {outcomes.map((o) => (
-          <button key={o.code} className={`${code === o.code ? 'active' : ''} ${o.marks_dead ? 'dead' : ''}`} onClick={() => choose(o.code)}>
-            {keys.outcomeKey[o.code] && <kbd>{keyLabel(keys.outcomeKey[o.code]!)}</kbd>}{o.label}
+        {buttons.map((b) => (
+          <button key={b.id} className={`${button === b.id ? 'active' : ''} ${outcomeDef(b.outcome)?.marksDead ? 'dead' : ''} ${buttonClass(b)}`} onClick={() => choose(b.id)}
+            title={b.tooltip || undefined}>
+            {keys.outcomeKey[b.id] && <kbd>{keyLabel(keys.outcomeKey[b.id]!)}</kbd>}{b.label}
           </button>
         ))}
         <label className={`choice-inline dnc ${doNotCall ? 'active' : ''}`} title="They asked not to be called again. Pick what happened on the call too; the lead goes to the dead pile.">
@@ -309,7 +336,7 @@ export function LogCall({
           {k('do_not_call') && <kbd>{k('do_not_call')}</kbd>}Do not call
         </label>
       </div>
-      {code && asksObjections && (
+      {button && asksObjections && (
         <div className="objections" role="group" aria-label="Objections">
           <span className="help">What held them back? (optional)</span>
           {objectionCodes.map((o, i) => (
@@ -319,7 +346,17 @@ export function LogCall({
           ))}
         </div>
       )}
-      {code && (
+      {picked && picked.asks.length > 0 && (
+        <div className="row asked-fields" role="group" aria-label="Fields this button asks for">
+          {d.custom.filter((f) => picked.asks.includes(f.field_id)).map((f) => (
+            <label key={f.field_id} className="field">
+              <span>{f.label}{f.required && <em className="warn"> (needed)</em>}</span>
+              <CustomFieldInput field={f} value={asked[f.field_id] ?? ''} onChange={(v) => setAsked((a) => ({ ...a, [f.field_id]: v }))} />
+            </label>
+          ))}
+        </div>
+      )}
+      {button && (
         <div className="row" style={{ alignItems: 'flex-end' }}>
           {(needsWhen || apptWhen) && (() => {
             const cb = readCallback(day, time, new Date(), d.lead.time_zone);
@@ -351,17 +388,17 @@ export function LogCall({
           </label>
           <button className="btn primary" onClick={() => void save()} disabled={saving}>Save <kbd>Enter</kbd></button>
           {apptWhen && (
-            <button className="btn" onClick={() => void save(code, true)} disabled={saving}
+            <button className="btn" onClick={() => void save(button, true)} disabled={saving}
               title="On the spot: saves the appointment as set for now, stays on this lead and switches to the Appointment side, so you log how it went when you're done">
               Run it now <kbd>⇧Enter</kbd>
             </button>
           )}
-          <button className="btn" onClick={() => setCode(null)}>Cancel <kbd>Esc</kbd></button>
+          <button className="btn" onClick={() => setButton(null)}>Cancel <kbd>Esc</kbd></button>
         </div>
       )}
-      {!code && (
+      {!button && (
         <p className="help">
-          {saveHelp(mode, calling?.settings.instant_save !== false ? outcomes.filter((o) => savesInstantly(o, calling?.settings.instant_outcomes)) : [], outcomes.length)}{' '}
+          {saveHelp(mode, calling?.settings.instant_save !== false ? buttons.filter((b) => { const o = outcomeOf(b); return !!o && savesInstantly(o, calling?.settings.instant_outcomes); }) : [], buttons.length)}{' '}
           Dialed more than once? Press <kbd>{k('dials_up')}</kbd> for each extra dial first.
         </p>
       )}

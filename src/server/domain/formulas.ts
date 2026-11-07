@@ -159,13 +159,14 @@ function call(name: string, a: Compiled[]): Compiled {
       const last = (x: Compiled) => `(SELECT max(e.at) ${TAG_LINES('tag_added', want(x, 'text'))})`;
       return { sql: `coalesce(${last(a[0]!)} < ${last(a[1]!)}, 0)`, kind: 'yes_no' };
     }
-    // Calls saved with an outcome (by its name or code), not undone, optionally in the last N days.
+    // Calls saved with an outcome or a button (by its name or id; a button counts as its outcome too), not undone, optionally in the last N days.
     case 'pressed': {
       count(1, 2);
       const outcome = want(a[0]!, 'text');
       return {
         sql: `(SELECT COUNT(*) FROM call c JOIN call_outcome o ON o.call_id = c.id WHERE c.lead_id = l.id AND c.voided_at IS NULL AND ${CURRENT_OUTCOME}
-          AND o.outcome_code IN (SELECT oc.code FROM outcome_code oc WHERE oc.code = ${outcome} OR lower(oc.label) = lower(${outcome}))${a[1] ? ` AND ${WITHIN_DAYS('c.requested_at', want(a[1], 'number'))}` : ''})`,
+          AND (o.outcome_code IN (SELECT oc.code FROM outcome_code oc WHERE oc.code = ${outcome} OR lower(oc.label) = lower(${outcome}))
+            OR o.button_id = ${outcome} OR lower(o.button_label) = lower(${outcome}))${a[1] ? ` AND ${WITHIN_DAYS('c.requested_at', want(a[1], 'number'))}` : ''})`,
         kind: 'number',
       };
     }
