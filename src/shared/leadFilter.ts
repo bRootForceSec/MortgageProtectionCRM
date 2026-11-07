@@ -16,7 +16,7 @@ export const APPT_DAYS = [
   { key: 'yesterday', label: 'Appointment yesterday', title: 'Leads with an appointment yesterday' },
   {
     key: 'since_last_calling_day',
-    label: 'Appointment since my last calling day',
+    label: 'Appointment since my last calling day (from the last day you made calls through yesterday)',
     title: 'Leads with an appointment from the last day you made calls through yesterday. On a Monday after a weekend off, that is Friday to Sunday.',
   },
 ] as const;

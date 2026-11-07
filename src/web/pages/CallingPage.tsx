@@ -13,7 +13,7 @@ import { isAction, isTyping, keyLabel, type KeyMap } from '../shortcuts';
 import { getStored, getStoredJson, setStored, setStoredJson } from '../storage';
 import { LogCall, type Attempt, type FormValues, type Saved } from './LogCall';
 import { CallerLookup, EveryButton, Recent, UNDO_MS, UndoBar, otherNumber } from './CallingPanels';
-import { bestTimeFirst } from '../../shared/bestTime';
+import { BEST_TIME_WORDS, bestTimeFirst } from '../../shared/bestTime';
 import { describeSortStep, yourOrder } from '../../shared/listOrder';
 import { LIST_ORDERS, type ListOrder } from '../../shared/listOrder';
 import { sheetBlocks, type SheetBlockId } from '../../shared/sheetLayout';
@@ -551,7 +551,7 @@ export function CallingPage() {
             <span className="row" style={{ gap: 4 }} role="group" aria-label="Order">
               <button className={`btn small ${order === 'set' ? 'primary' : ''}`} aria-pressed={order === 'set'} onClick={() => setOrder('set')} title="The order you set, or the order leads were added">As set</button>
               <button className={`btn small ${order === 'best_time' ? 'primary' : ''}`} aria-pressed={order === 'best_time'} onClick={() => setOrder('best_time')}
-                title="Leads it's the best time to call right now first, by your pickup rate at that hour in their time (evenings, until you have your own numbers). Before 8 AM or from 9 PM their time goes last.">
+                title={BEST_TIME_WORDS}>
                 Best time first
               </button>
               <button className={`btn small ${order === 'yours' ? 'primary' : ''}`} aria-pressed={order === 'yours'} onClick={() => setOrder('yours')}

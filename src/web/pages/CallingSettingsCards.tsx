@@ -12,6 +12,7 @@ import { APPT_RESULT_LABEL } from '../../shared/appointments';
 import { ConditionEditor } from '../components/ConditionEditor';
 import { STARTER_ORDER, type SortStep } from '../../shared/listOrder';
 import { SHEET_BLOCKS, sheetBlocks } from '../../shared/sheetLayout';
+import { BEST_TIME_WORDS } from '../../shared/bestTime';
 
 // Settings for the Calling screen: retry gap, dialing, timer, goals, alerts, shortcuts and scripts.
 
@@ -85,6 +86,7 @@ function ListOrderField({ steps, onSave }: { steps: SortStep[]; onSave: (steps: 
                 <option value="best_time">Best time to call now</option>
                 <option value="formula">A formula</option>
               </select>
+              {st.by === 'best_time' && <span className="help" style={{ flex: 1 }}>{BEST_TIME_WORDS}</span>}
               {st.by === 'formula' && (
                 <>
                   <FormulaInput value={st.formula} onSave={(f) => put(i, { ...st, formula: f })} />
@@ -108,7 +110,7 @@ function ListOrderField({ steps, onSave }: { steps: SortStep[]; onSave: (steps: 
       </span>
       <span className="help">
         "Your order" on the Calling screen sorts the leads still to call by these, first to last: the first step that tells two leads apart decides.
-        A yes/no formula, like <code>has("Hot")</code> or <code>status("Needs rebook")</code>, puts the leads it's true for first. A number, like{' '}
+        A yes/no formula, like <code>has("Hot")</code> or <code>in_list("Needs rebook")</code>, puts the leads it's true for first. A number, like{' '}
         <code>loan_amount</code> or <code>attempts</code>, puts the highest first; leads without one go last. Lowest first turns a step around.
         Leads every step ties stay as they are on the list.
       </span>
