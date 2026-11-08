@@ -17,7 +17,6 @@ import { BEST_TIME_WORDS, bestTimeFirst } from '../../shared/bestTime';
 import { describeSortStep, yourOrder } from '../../shared/listOrder';
 import { LIST_ORDERS, type ListOrder } from '../../shared/listOrder';
 import { sheetBlocks, type SheetBlockId } from '../../shared/sheetLayout';
-import { StatusChips } from './StatusesCard';
 import { LeadTags } from '../components/LeadDetails';
 
 const SELECTED_KEY = 'mpcrm.selectedLead';
@@ -687,7 +686,6 @@ export function CallingPage() {
                       if (tagsInline) return null;
                       return (
                         <div key={id} className="sheet-tags" aria-label="Tags">
-                          <StatusChips statuses={detail.statuses} />
                           <LeadTags leadId={detail.lead.id} initial={detail.tags} />
                         </div>
                       );

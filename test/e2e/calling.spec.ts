@@ -572,7 +572,7 @@ test('buttons by condition: a lead with an appointment gets the appointment butt
   await page.keyboard.press('Enter');
   await expect(page.locator('.undo-bar')).toContainText('Appt: Presentation');
   await lookUp('Ann Lee');
-  await expect(page.getByLabel('Current lead').locator('.badge.appt-prezi')).toHaveText('Presentation, no sale');
+  await expect(page.getByLabel('Current lead').locator('.status-chip', { hasText: 'Presentations' })).toBeVisible();
   await expect(callButtons).toContainText('No answer');
 });
 
@@ -683,7 +683,7 @@ test('on the spot: Run it now saves the Appt set and stays on the lead, with the
   await page.keyboard.press('4');
   await page.keyboard.press('Enter');
   await expect(page.locator('.undo-bar')).toContainText(`Saved for ${lead}: Appt: Sale`);
-  await expect(page.getByLabel('Current lead').locator('.badge.appt-sold')).toBeVisible();
+  await expect(page.getByLabel('Current lead').locator('.status-chip', { hasText: 'Sold' })).toBeVisible();
 });
 
 test('Automation → Calling screen: rename a button, hide one, show Callback, then reset', async ({ page }) => {

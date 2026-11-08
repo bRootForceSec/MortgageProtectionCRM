@@ -131,7 +131,7 @@ export function LeadSummary({
       <div className="lead-head">
         <div>
           <h2>
-            <span className="lead-name">{fullName(l)}</span> {d.state && <StatusBadge status={d.state.status} />}{d.state && <ApptBadge result={d.state.appt_result} />}
+            <span className="lead-name">{fullName(l)}</span> <StatusChips statuses={d.statuses} />
             {onEdit && <button className="btn small" onClick={onEdit} title="Edit this lead's details">Edit {editKey && <kbd>{editKey}</kbd>}</button>}
             <CopyLeadLink leadId={l.id} />
             <button type="button" className="btn small" onClick={() => void copyCalendarTag(l, toast)} title="Copies what you type into your calendar for the appointment">
@@ -142,7 +142,6 @@ export function LeadSummary({
               Called me back {calledBackKey && <kbd>{calledBackKey}</kbd>}
             </label>
             {/* With the buttons, so tags take no extra height above the outcome buttons. */}
-            {showTags && <StatusChips statuses={d.statuses} />}
             {showTags && <LeadTags leadId={l.id} initial={d.tags} />}
           </h2>
           <div className="where">
