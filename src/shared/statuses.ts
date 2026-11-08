@@ -51,3 +51,6 @@ export interface StatusBadge {
   name: string;
   color: StatusColor;
 }
+
+/** The formula functions that name a smart list: in_list("Name"), and the older status("Name"). */
+export const LIST_FUNCTIONS = ['in_list', 'status'] as const;

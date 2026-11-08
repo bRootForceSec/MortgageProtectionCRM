@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { FormulaError, parseFormula, renameFormulaField } from '../../src/shared/formula.js';
+import { FormulaError, namesIn, parseFormula, renameFormulaField } from '../../src/shared/formula.js';
 import { emptyGroup, formulaToPython, toForm, toPython, type CondGroup } from '../../src/shared/condition.js';
 
 describe('Python syntax in formulas', () => {
@@ -61,5 +61,13 @@ describe('status rows', () => {
     const g = toForm('status("Needs rebook") and not in_list("Client")');
     expect(g.items).toEqual([{ kind: 'status', name: 'Needs rebook', negate: false }, { kind: 'status', name: 'Client', negate: true }]);
     expect(toPython(g)).toBe('in_list("Needs rebook") and not in_list("Client")');
+  });
+});
+
+describe('which smart lists a condition uses', () => {
+  it('names each one once, either quotes, by keyword too, and the older status("...")', () => {
+    expect(namesIn(`in_list("Hot") and not in_list('hot') or status( "Old ones") or in_list(name="Rebook") or has("Tag")`, ['in_list', 'status']))
+      .toEqual(['Hot', 'Old ones', 'Rebook']);
+    expect(namesIn('status == "new"', ['in_list', 'status'])).toEqual([]);
   });
 });

@@ -355,6 +355,15 @@ test('a condition saved as a smart list is used by name, and listed in Automatio
   await expect(page.getByText('1 lead', { exact: true })).toBeVisible();
   await page.locator('.topbar nav').getByRole('button', { name: 'Automation', exact: true }).click();
   await expect(page.locator('#statuses').getByLabel('Name of smart list Spanish speakers')).toBeVisible();
+  // A list that uses it: each says so.
+  const origin = new URL(page.url()).origin;
+  const lists = ((await (await page.request.get(`${origin}/api/statuses`)).json()) as { id: string; name: string; condition: string; color: string; tab: boolean }[])
+    .map(({ id, name, condition, color, tab }) => ({ id, name, condition, color, tab }));
+  await page.request.put(`${origin}/api/statuses`, { data: [...lists, { id: 'sp-new', name: 'Spanish, never called', condition: 'in_list("Spanish speakers") and in_list("Never called")', color: 'blue', tab: false }], headers: { origin } });
+  await page.goto(launchUrl);
+  await page.locator('.topbar nav').getByRole('button', { name: 'Automation', exact: true }).click();
+  await expect(page.locator('#statuses').getByLabel('Lists Spanish, never called uses')).toHaveText('Uses Never called, Spanish speakers');
+  await expect(page.locator('#statuses').getByLabel('Lists Spanish speakers uses')).toHaveText('Used by Spanish, never called');
 });
 
 test('a smart list: named in Automation from a condition, shown as a badge and a Leads tab', async ({ page }) => {

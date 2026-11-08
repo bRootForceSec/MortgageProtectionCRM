@@ -4,7 +4,7 @@ import { uuidv7 } from '../ids.js';
 import { DomainError } from '../core/errors.js';
 import { conditionSql, loadStatusDefs, rewriteSavedFormulas } from './formulas.js';
 import { renameNameIn } from '../../shared/formula.js';
-import { STARTER_LISTS, Statuses, type Status, type StatusBadge, type StatusInfo } from '../../shared/statuses.js';
+import { LIST_FUNCTIONS, STARTER_LISTS, Statuses, type Status, type StatusBadge, type StatusInfo } from '../../shared/statuses.js';
 
 // Your statuses (shared/statuses.ts): named conditions, kept as the `statuses` setting. Nothing is stored per lead:
 // which statuses a lead is in is worked out by SQLite from each condition whenever it's asked.
@@ -125,5 +125,5 @@ export function statusWhere(db: DB, id: string): string {
 
 /** The condition with status("Old") and in_list("Old") (any case, either quotes) using the new name. */
 export function renameStatusIn(src: string, from: string, to: string): string {
-  return renameNameIn(src, ['status', 'in_list'], from, to);
+  return renameNameIn(src, LIST_FUNCTIONS, from, to);
 }
