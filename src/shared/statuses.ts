@@ -21,6 +21,24 @@ export type Status = z.infer<typeof Status>;
 
 export const Statuses = z.array(Status).max(100);
 
+/**
+ * The smart lists you start with: the ways a lead can stand, which were fixed tabs on Leads before. Each is a
+ * condition you can change, rename, recolor or delete; all show as Leads tabs.
+ */
+export const STARTER_LISTS: readonly Omit<Status, 'id'>[] = [
+  { name: 'Never called', condition: 'status == "new"', color: 'blue', tab: true },
+  { name: 'No answer', condition: 'status == "retry" and not picked_up and not put_back', color: 'gray', tab: true },
+  { name: 'Picked up, no appt', condition: 'status == "retry" and picked_up and not put_back', color: 'yellow', tab: true },
+  { name: 'Callbacks', condition: 'status == "callback"', color: 'purple', tab: true },
+  { name: 'Appointment set', condition: 'status == "appointment_set"', color: 'green', tab: true },
+  { name: 'No-shows', condition: 'appt_result == "no_show"', color: 'red', tab: true },
+  { name: 'Appt picked up', condition: 'appt_result == "sat_no_sale"', color: 'orange', tab: true },
+  { name: 'Presentations', condition: 'appt_result == "prezi"', color: 'orange', tab: true },
+  { name: 'Sold', condition: 'appt_result == "sold"', color: 'green', tab: true },
+  { name: 'Bad numbers', condition: 'status == "invalid"', color: 'gray', tab: true },
+  { name: 'Dead pile', condition: 'status == "dead"', color: 'gray', tab: true },
+];
+
 /** A status as the UI gets it: with how many leads are in it now (null when its condition has a mistake). */
 export interface StatusInfo extends Status {
   leads: number | null;

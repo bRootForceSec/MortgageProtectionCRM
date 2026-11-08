@@ -25,6 +25,8 @@ const VALUE_SQL: Record<string, string> = {
   days_since_imported: DAYS_SINCE('(SELECT ib.imported_at FROM import_batch ib WHERE ib.id = l.batch_id)'),
   lead_type: 'l.lead_type',
   status: 's.status',
+  picked_up: "(coalesce((SELECT oc.grp FROM outcome_code oc WHERE oc.code = s.last_outcome_code), '') = 'contact')",
+  put_back: '(s.appt_missed = 1)',
   appt_result: 's.appt_result',
   state: 'l.state',
   has_coborrower: "(l.coborrower_signal = 'yes')",

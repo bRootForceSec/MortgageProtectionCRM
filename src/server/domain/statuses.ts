@@ -1,13 +1,28 @@
 import type { DB } from '../db/connection.js';
-import { setSetting } from '../core/settings.js';
+import { getSetting, setSetting } from '../core/settings.js';
+import { uuidv7 } from '../ids.js';
 import { DomainError } from '../core/errors.js';
 import { conditionSql, loadStatusDefs } from './formulas.js';
-import { Statuses, type Status, type StatusBadge, type StatusInfo } from '../../shared/statuses.js';
+import { STARTER_LISTS, Statuses, type Status, type StatusBadge, type StatusInfo } from '../../shared/statuses.js';
 
 // Your statuses (shared/statuses.ts): named conditions, kept as the `statuses` setting. Nothing is stored per lead:
 // which statuses a lead is in is worked out by SQLite from each condition whenever it's asked.
 
 export { loadStatusDefs as loadStatuses };
+
+/**
+ * Once: the starter smart lists (the old fixed Leads tabs), after any you have, leaving out a name you already use.
+ * Run when the database opens.
+ */
+export function addStarterLists(db: DB): boolean {
+  if (getSetting<boolean>(db, 'starter_lists_done')) return false;
+  const have = loadStatusDefs(db);
+  const taken = new Set(have.map((st) => st.name.toLowerCase()));
+  const add = STARTER_LISTS.filter((st) => !taken.has(st.name.toLowerCase())).map((st) => ({ id: uuidv7(), ...st }));
+  setSetting(db, 'statuses', [...have, ...add]);
+  setSetting(db, 'starter_lists_done', true);
+  return true;
+}
 
 /** Each status's condition as SQL over `lead l JOIN lead_state s`, or null when it has a mistake. */
 function statusSql(db: DB, statuses: readonly Status[]): (string | null)[] {

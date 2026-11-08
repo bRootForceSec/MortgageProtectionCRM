@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api, fmtDateTime, fmtLeadAge, fmtMoney, fmtPhone, fullName, type AddResult, type CallListResponse } from '../api';
 import { CALL_LIST_CHANGED, ClearListDialog, suggestListName } from '../components/CallListDialogs';
 import { useApp } from '../App';
-import { ApptBadge, StatusBadge } from '../components/LeadDetails';
 import { LeadViewer } from '../components/LeadViewer';
 import { GroupPicker, useGroups } from '../components/GroupPicker';
 import { getStored, setStored } from '../storage';
@@ -10,7 +9,6 @@ import { useLeadTypes } from '../leadTypes';
 import { AGE_BANDS } from '../../shared/leadAge';
 import { BatchPicker } from '../components/BatchBrowse';
 import type { LeadType } from '../importTypes';
-import { LEAD_TABS } from '../../shared/leadStatus';
 import { APPT_DAYS, DIAL_GAPS, IMPORTED_WHEN, LAST_CALL, LEAD_PAGE_SIZES, gapLabel } from '../../shared/leadFilter';
 import { UnmarkedAppointments } from '../components/UnmarkedAppointments';
 import { NewRuleFromFilters } from './RulesCard';
@@ -234,9 +232,8 @@ export function LeadsPage() {
     <>
       <div className="leads-tools">
         <div className="tabs">
-          {LEAD_TABS.map((s) => (
-            <button key={s.key} className={!inStatus && status === s.key ? 'active' : ''} title={s.title} onClick={() => { setStatus(s.key); setInStatus(''); }}>{s.label}</button>
-          ))}
+          {/* All, then your smart lists ticked as Leads tabs (Automation → Smart lists). */}
+          <button className={!inStatus && status === 'all' ? 'active' : ''} onClick={() => { setStatus('all'); setInStatus(''); }}>All</button>
           {statuses.filter((st) => st.tab).map((st) => (
             <button key={st.id} className={inStatus === st.id ? 'active' : ''} title={`Your smart list: ${st.condition}`} onClick={() => { setStatus('all'); setInStatus(st.id); }}>{st.name}</button>
           ))}
@@ -368,7 +365,7 @@ export function LeadsPage() {
                 onChange={() => setPicked(allPicked ? new Set() : new Set(pickable.map((r) => r.id)))}
               />
             </th>
-            <th>Name</th>{sortBy && <th>{sortBy.label}</th>}<th>Phone</th><th>County</th><th>Location</th><th>Type</th><th title="Days since the lead called in">Age</th><th>Batch</th><th>Status</th><th>Attempts</th><th>Last call</th><th>Last outcome</th>
+            <th>Name</th>{sortBy && <th>{sortBy.label}</th>}<th>Phone</th><th>County</th><th>Location</th><th>Type</th><th title="Days since the lead called in">Age</th><th>Batch</th><th title="Your smart lists this lead is in (Automation → Smart lists)">Smart lists</th><th>Attempts</th><th>Last call</th><th>Last outcome</th>
           </tr>
         </thead>
         <tbody>
@@ -390,10 +387,10 @@ export function LeadsPage() {
                     />
                   )}
                 </td>
-                <td>{fullName(r)}<StatusChips statuses={r.statuses} />{(r.tags as string[]).map((t) => <span key={t} className="tag-chip" style={{ marginLeft: 4, paddingRight: 8 }}>{t}</span>)}</td>
+                <td>{fullName(r)}{(r.tags as string[]).map((t) => <span key={t} className="tag-chip" style={{ marginLeft: 4, paddingRight: 8 }}>{t}</span>)}</td>
                 {sortBy && <td>{showCustomValue(sortBy, r.sort_value == null ? null : String(r.sort_value))}</td>}
                 <td>{fmtPhone(r.phone_e164)}</td><td>{r.county ?? ''}</td><td>{[r.city, r.state].filter(Boolean).join(', ')}</td>
-                <td title={typeLabel(r.lead_type)}>{r.lead_type ?? ''}</td><td className="nowrap">{fmtLeadAge(r.callin_at)}</td><td>{r.batch_name}</td><td><StatusBadge status={r.status} /><ApptBadge result={r.appt_result} />{r.on_list && <span className="badge" style={{ marginLeft: 4 }}>on call list</span>}</td>
+                <td title={typeLabel(r.lead_type)}>{r.lead_type ?? ''}</td><td className="nowrap">{fmtLeadAge(r.callin_at)}</td><td>{r.batch_name}</td><td><StatusChips statuses={r.statuses} />{r.on_list && <span className="badge" style={{ marginLeft: 4 }}>on call list</span>}</td>
                 <td>{r.attempts_total}</td><td>{fmtDateTime(r.last_call_at)}</td><td>{outcomeLabel(r.last_outcome_code)}</td>
               </tr>
             );
