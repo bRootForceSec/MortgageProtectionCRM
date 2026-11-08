@@ -8,7 +8,7 @@ import { commitImport } from '../../src/server/domain/importer.js';
 import { leadTags, setTagOnLeads, ensureTag, tagLead } from '../../src/server/domain/tags.js';
 import { saveStatuses } from '../../src/server/domain/statuses.js';
 import { createCustomField, leadCustomValues, setCustomValues } from '../../src/server/domain/customFields.js';
-import { loadRules, routinesToRules, ruleRuns, runEventRules, runRule, saveRules, saveTagShortcuts } from '../../src/server/domain/rules.js';
+import { loadRules, previewRule, routinesToRules, ruleRuns, runEventRules, runRule, runWaitingRules, saveRules, saveTagShortcuts } from '../../src/server/domain/rules.js';
 import { addToCallList, getCallList } from '../../src/server/domain/callList.js';
 import { logManualCall } from '../../src/server/domain/calls.js';
 import { setSetting } from '../../src/server/core/settings.js';
@@ -16,7 +16,7 @@ import { listLeads } from '../../src/server/domain/leads.js';
 import { toLeadFilter } from '../../src/server/domain/callList.js';
 import { checkCondition } from '../../src/server/domain/formulas.js';
 import { LeadQuery } from '../../src/shared/leadFilter.js';
-import { describeAction, describeTrigger, type Rule } from '../../src/shared/rules.js';
+import { describeAction, describeTrigger, describeWait, type Rule } from '../../src/shared/rules.js';
 import { buildApp } from '../../src/server/http/app.js';
 import { uuidv7 } from '../../src/server/ids.js';
 
@@ -171,6 +171,46 @@ describe('rules on lead changes', () => {
     expect(describeTrigger({ kind: 'status', status_id: 's', when: 'leaves' }, undefined, () => 'Needs rebook')).toBe('When a lead leaves the smart list "Needs rebook"');
     expect(describeAction({ kind: 'counter', field_id: 'f', op: 'add', by: -1 }, () => 'Streak')).toBe('Take 1 off Streak');
     expect(describeAction({ kind: 'counter', field_id: 'f', op: 'set', by: 0 }, () => 'Streak')).toBe('Reset Streak to 0');
+  });
+});
+
+describe('a wait in a rule', () => {
+  it('holds the steps after it for each lead it reached, then does them when due; preview keeps nothing', () => {
+    const jane = lead('Jane');
+    const r = rule({ trigger: { kind: 'tag_added', tag: 'Hot' }, actions: [{ kind: 'add_tag', tag: 'Warm' }, { kind: 'wait', after: '2h' }, { kind: 'add_tag', tag: 'Call now' }, { kind: 'add_to_list' }] });
+    saveRules(db, [r]);
+    expect(previewRule(db, r).results.map((x) => x.action.kind)).toEqual(['add_tag', 'wait']);
+    expect(db.prepare('SELECT COUNT(*) n FROM rule_wait').get()).toEqual({ n: 0 });
+
+    tagLead(db, jane, 'Hot');
+    runEventRules(db);
+    expect(tags(jane)).toEqual(['Hot', 'Warm']);
+    expect(db.prepare('SELECT lead_id, next_step FROM rule_wait').all()).toEqual([{ lead_id: jane, next_step: 2 }]);
+
+    // Not due yet; then two hours on, the rest runs, logged as after a wait, even though she lost the tag meanwhile.
+    expect(runWaitingRules(db, new Date(Date.now() + 60 * 60_000))).toEqual([]);
+    untag(jane, 'Hot');
+    const [run] = runWaitingRules(db, new Date(Date.now() + 2 * 60 * 60_000 + 60_000));
+    expect(run).toMatchObject({ trigger: 'wait', matched: 1, error: null });
+    expect(tags(jane)).toEqual(['Call now', 'Warm']);
+    expect(getCallList(db).map((i) => i.lead_id)).toContain(jane);
+    expect(db.prepare('SELECT COUNT(*) n FROM rule_wait').get()).toEqual({ n: 0 });
+    expect(ruleRuns(db, { ruleId: r.id })[0]).toMatchObject({ trigger: 'wait' });
+  });
+
+  it('lets go of leads waiting on a rule switched off since, and refuses a wait with nothing after it', () => {
+    const r = rule({ actions: [{ kind: 'wait', after: '15m' }, { kind: 'add_tag', tag: 'Later' }] });
+    saveRules(db, [r]);
+    runRule(db, loadRules(db)[0]!, 'manual');
+    expect((db.prepare('SELECT COUNT(*) n FROM rule_wait').get() as { n: number }).n).toBeGreaterThan(0);
+    saveRules(db, [{ ...r, enabled: false }]);
+    expect(runWaitingRules(db, new Date(Date.now() + 20 * 60_000))).toEqual([]);
+    expect(db.prepare('SELECT COUNT(*) n FROM rule_wait').get()).toEqual({ n: 0 });
+    expect(tags(lead('Jane'))).not.toContain('Later');
+    expect(() => saveRules(db, [rule({ name: 'Ends waiting', actions: [{ kind: 'add_tag', tag: 'X' }, { kind: 'wait', after: '1d' }] })])).toThrow(/a wait needs a step after it/);
+    expect(describeWait('2h')).toBe('2 hours');
+    expect(describeWait('1d@09:00')).toBe('until 09:00 the next day');
+    expect(describeAction({ kind: 'wait', after: '3d' })).toBe('Wait 3 days');
   });
 });
 

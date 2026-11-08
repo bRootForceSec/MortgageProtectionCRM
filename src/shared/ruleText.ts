@@ -86,6 +86,7 @@ function actionText(a: RuleAction, n: RuleNames): string {
     case 'counter': return call('counter', [n.field(a.field_id) ?? a.field_id], [[a.op, a.by]]);
     case 'mark_dead': return a.reason ? call('mark_dead', [a.reason]) : call('mark_dead');
     case 'come_back': return call('come_back', a.steps);
+    case 'wait': return call('wait', [a.after]);
   }
 }
 
@@ -306,8 +307,15 @@ function readAction(c: Call, n: RuleNames, line: number): RuleAction {
       if (bad !== undefined) throw new RuleTextError(`"${bad}" isn't a step: write each like 15m, 2h, 3d or 1d@09:00`, line);
       return { kind: 'come_back', steps };
     }
+    case 'wait': {
+      noKw();
+      if (c.args.length !== 1) throw new RuleTextError('wait() takes how long, like wait("2h") or wait("1d@09:00")', line);
+      const after = str(c.args[0], 'how long', line).trim().toLowerCase();
+      if (!isStep(after)) throw new RuleTextError(`"${after}" isn't a wait: write it like 15m, 2h, 3d or 1d@09:00`, line);
+      return { kind: 'wait', after };
+    }
   }
-  throw new RuleTextError(`there is no action ${c.name}(): use add_tag, remove_tag, add_to_list, remove_from_list, set_field, counter, mark_dead or come_back`, line);
+  throw new RuleTextError(`there is no action ${c.name}(): use add_tag, remove_tag, add_to_list, remove_from_list, set_field, counter, mark_dead, come_back or wait`, line);
 }
 
 /** Whether a condition has a # comment (outside quotes). */

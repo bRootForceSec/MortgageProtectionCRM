@@ -57,6 +57,8 @@ export const RuleAction = z.discriminatedUnion('kind', [
    * try nobody answered. An answer, a callback or any other outcome ends it; a newer one replaces it.
    */
   z.object({ kind: z.literal('come_back'), steps: z.array(z.string().trim().toLowerCase().refine(isStep, 'write each step like 15m, 2h, 3d or 1d@09:00')).min(1, 'give it a step, like 1d@09:00').max(10) }),
+  /** Waits ("2h", "3d", "1d@09:00") before the steps after it, for each lead the rule reached. */
+  z.object({ kind: z.literal('wait'), after: z.string().trim().toLowerCase().refine(isStep, 'write the wait like 15m, 2h, 3d or 1d@09:00') }),
 ]);
 export type RuleAction = z.infer<typeof RuleAction>;
 
@@ -90,6 +92,7 @@ export const ACTION_LABELS: Record<RuleAction['kind'], string> = {
   mark_dead: 'Put in the dead pile',
   counter: 'Change a counter',
   come_back: 'Make it come back',
+  wait: 'Wait',
 };
 
 export const TRIGGER_LABELS: Record<RuleTrigger['kind'], string> = {
@@ -151,8 +154,19 @@ export function describeAction(a: RuleAction, fieldName: (id: string) => string 
       return a.by < 0 ? `Take ${-a.by} off ${name}` : `Add ${a.by} to ${name}`;
     }
     case 'come_back': return `Come back after ${a.steps.join(', then ')}`;
+    case 'wait': return `Wait ${describeWait(a.after)}`;
     default: return ACTION_LABELS[a.kind];
   }
+}
+
+/** "2h" as "2 hours", "1d@09:00" as "until 09:00 the next day". */
+export function describeWait(step: string): string {
+  const m = /^(\d+)([mhd])(?:@(\d\d:\d\d))?$/.exec(step);
+  if (!m) return step;
+  const n = Number(m[1]);
+  const unit = { m: 'minute', h: 'hour', d: 'day' }[m[2] as 'm' | 'h' | 'd'];
+  if (m[3]) return n === 1 ? `until ${m[3]} the next day` : `until ${m[3]}, ${n} days on`;
+  return `${n} ${unit}${n === 1 ? '' : 's'}`;
 }
 
 /** Ready-made rules: the no-show example you gave. They start switched off; switch them on in Automation → Rules. */
@@ -268,7 +282,8 @@ export interface RuleRun {
   id: string;
   rule_id: string;
   rule_name: string;
-  trigger: RuleTrigger['kind'];
+  /** What set it off, or 'wait' for the steps after a wait. */
+  trigger: RuleTrigger['kind'] | 'wait';
   at: string;
   dry_run: boolean;
   matched: number;
