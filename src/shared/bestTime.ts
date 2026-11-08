@@ -15,6 +15,12 @@ function usual(hour: number): number {
   return 0.1;
 }
 
+/** All of the above in plain words, for the screens that use it. */
+export const BEST_TIME_WORDS =
+  "Leads it's the best time to call right now come first, by the share of your calls that were picked up on that weekday " +
+  `and hour in the lead's own time. At an hour where you have fewer than ${MIN_ATTEMPTS} calls, a usual curve stands in: ` +
+  '5 to 8 PM best, then 9 AM to 5 PM, then other hours. Leads where it is before 8 AM or after 9 PM go last.';
+
 const fmts = new Map<string, Intl.DateTimeFormat>();
 
 /** The weekday (0 = Sunday) and hour it is now where the lead is; your own when the lead's zone isn't known. */

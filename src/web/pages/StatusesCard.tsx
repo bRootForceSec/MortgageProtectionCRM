@@ -5,7 +5,7 @@ import { useStatuses } from '../statuses';
 import { ConditionEditor } from '../components/ConditionEditor';
 import { STATUS_COLORS, type Status, type StatusBadge, type StatusInfo } from '../../shared/statuses';
 
-// Settings → Statuses: your statuses are names for conditions. A lead is in every status whose condition is true for
+// Automation → Smart lists: your statuses are names for conditions. A lead is in every status whose condition is true for
 // it, so it can be in many at once. Each shows as a badge in your order; tick "Leads tab" to filter Leads by it.
 
 const strip = ({ leads: _l, error: _e, ...st }: StatusInfo): Status => st;
@@ -40,26 +40,27 @@ export function StatusesCard() {
     void save(next);
   };
   const remove = (st: StatusInfo) => {
-    if (!window.confirm(`Delete the status "${st.name}"? Leads aren't changed; it just stops showing.`)) return;
+    if (!window.confirm(`Delete the smart list "${st.name}"? Leads aren't changed; it just stops showing.`)) return;
     void save(all.filter((x) => x.id !== st.id), `Deleted "${st.name}"`);
   };
 
   return (
     <div className="card" id="statuses">
-      <h2>Statuses</h2>
+      <h2>Smart lists</h2>
       <p className="help">
-        A status is a name for a condition, like "Needs rebook" for leads with a no-show and no new appointment. A lead is in every status whose condition is
-        true for it, so it can be in several at once, and it moves in and out by itself as its tags and calls change. Statuses show as badges on leads, in this
-        order. Tick "Leads tab" to see a status as a tab on Leads. A condition can use another status: <code>status("Needs rebook")</code>.
+        A smart list is a name for a condition, like "Needs rebook" for leads tagged No show with no new appointment. A lead is in every smart list whose
+        condition is true for it, so it can be in several at once, and it moves in and out by itself as its tags and calls change. Smart lists show as badges on
+        leads, in this order. Tick "Leads tab" to see one as a tab on Leads. A smart list can use another one: <code>in_list("Needs rebook")</code>. Anywhere
+        you pick leads (who can be called, rules, the funnel), you can pick a smart list instead of writing the condition again.
       </p>
       {statuses.length > 0 && (
         <table className="grid">
-          <thead><tr><th>Status</th><th>Color</th><th>Leads tab</th><th>Condition</th><th>Leads</th><th></th></tr></thead>
+          <thead><tr><th>Smart list</th><th>Color</th><th>Leads tab</th><th>Condition</th><th>Leads</th><th></th></tr></thead>
           <tbody>
             {statuses.map((st, i) => (
               <tr key={st.id}>
                 <td>
-                  <input defaultValue={st.name} key={st.name} maxLength={40} aria-label={`Name of status ${st.name}`}
+                  <input defaultValue={st.name} key={st.name} maxLength={40} aria-label={`Name of smart list ${st.name}`}
                     onBlur={(e) => { const name = e.target.value.trim(); if (name && name !== st.name) change(st.id, { name }); }} />
                 </td>
                 <td>
@@ -92,25 +93,25 @@ export function StatusesCard() {
       )}
       {editing === 'new' ? (
         <div>
-          <input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="Name, like Needs rebook" aria-label="New status name" maxLength={40} />
+          <input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="Name, like Needs rebook" aria-label="New smart list name" maxLength={40} />
           <ConditionEditor
             value=""
             onApply={async (condition) => {
-              const ok = await save([...all, { id: crypto.randomUUID(), name: newName.trim(), condition: condition || 'True', color: 'blue', tab: false }], `Status "${newName.trim()}" added`);
+              const ok = await save([...all, { id: crypto.randomUUID(), name: newName.trim(), condition: condition || 'True', color: 'blue', tab: false }], `Smart list "${newName.trim()}" added`);
               if (ok) { setEditing(null); setNewName(''); }
             }}
             onCancel={() => setEditing(null)}
           />
         </div>
       ) : (
-        <button className="btn small" onClick={() => setEditing('new')}>+ Status</button>
+        <button className="btn small" onClick={() => setEditing('new')}>+ Smart list</button>
       )}
     </div>
   );
 }
 
-/** A lead's statuses as colored badges, in your order. */
+/** A lead's smart lists as colored badges, in your order. */
 export function StatusChips({ statuses }: { statuses: StatusBadge[] | undefined }) {
   if (!statuses?.length) return null;
-  return <>{statuses.map((st) => <span key={st.id} className={`status-chip c-${st.color}`} title="Your status">{st.name}</span>)}</>;
+  return <>{statuses.map((st) => <span key={st.id} className={`status-chip c-${st.color}`} title="Your smart list">{st.name}</span>)}</>;
 }

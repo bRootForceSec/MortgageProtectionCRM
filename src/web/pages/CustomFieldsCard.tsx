@@ -6,8 +6,8 @@ import { CUSTOM_FIELD_TYPES, isTypedField, type CustomField, type CustomFieldTyp
 import { ConditionEditor } from '../components/ConditionEditor';
 import { FORMULA_FUNCTIONS, FORMULA_VALUES, type FormulaPreview } from '../../shared/formula';
 
-// Settings → Your fields: the fields you add to every lead. Values are typed on the lead (Edit), shown with its
-// details, and the Leads page and routine steps can filter on them. A formula field is worked out from the lead (a
+// Automation → Fields: the fields you add to every lead. Values are typed on the lead (Edit), shown with its
+// details, and the Leads page and rules can filter on them. A formula field is worked out from the lead (a
 // lead score): you write the formula here and see what it gives your leads as you type.
 
 interface Draft { label: string; type: CustomFieldType; options: string; formula: string; show_when: string; required_when: string }
@@ -174,7 +174,7 @@ export function CustomFieldsCard() {
       <h2>Your fields</h2>
       <p className="help">
         Fields you add to every lead, such as a spouse's name, the mortgage payment or who decides. Fill them in with Edit on a lead; they show with its
-        details. Filter on them on Leads (and save that as a routine step). A formula field, like a lead score, is worked out from the lead and
+        details. Filter on them on Leads (and make a rule from that). A formula field, like a lead score, is worked out from the lead and
         stays up to date by itself: sort Leads by it, filter on a range, and use it in rules. A field can show only while a condition is true for
         the lead (like <code>has("Appt set")</code>), and be needed while another is: a needed field that's blank is marked, and a button that asks
         for it won't save without it.

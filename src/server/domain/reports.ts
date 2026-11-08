@@ -1,4 +1,4 @@
-import type { FunnelStep } from '../../shared/funnel.js';
+import { stepFormula, type FunnelStep } from '../../shared/funnel.js';
 import { funnelFormulaCounts, loadFunnelSteps } from './funnel.js';
 import * as z from 'zod/v4';
 import type { DB } from '../db/connection.js';
@@ -609,8 +609,8 @@ function funnelSection(db: DB, f: ReportFilter) {
   return st.steps.map((x) => ({
     id: x.id,
     name: x.name,
-    formula: x.count.by === 'formula' ? x.count.formula : null,
-    value: x.count.by === 'formula' ? st.formula_counts[x.id] ?? 0 : measure[x.count.measure],
+    formula: stepFormula(x.count),
+    value: x.count.by === 'measure' ? measure[x.count.measure] : st.formula_counts[x.id] ?? 0,
   }));
 }
 

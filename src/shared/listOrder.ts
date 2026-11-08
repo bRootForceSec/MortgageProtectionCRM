@@ -8,6 +8,10 @@ import { bestTimeScore, type BestTimes } from './bestTime.js';
 // each formula step for each lead (`sort_keys` on the call list); this file sorts with them, so the best-time step
 // uses the time it is now.
 
+/** The Order buttons on the Calling screen. */
+export const LIST_ORDERS = { set: 'As set', best_time: 'Best time first', yours: 'Your order' } as const;
+export type ListOrder = keyof typeof LIST_ORDERS;
+
 export const SortStep = z.discriminatedUnion('by', [
   z.object({ by: z.literal('best_time') }),
   z.object({

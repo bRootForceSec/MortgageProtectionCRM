@@ -11,6 +11,8 @@ import { savesInstantly } from '../../shared/outcomes';
 import { APPT_RESULT_LABEL } from '../../shared/appointments';
 import { ConditionEditor } from '../components/ConditionEditor';
 import { STARTER_ORDER, type SortStep } from '../../shared/listOrder';
+import { SHEET_BLOCKS, sheetBlocks } from '../../shared/sheetLayout';
+import { BEST_TIME_WORDS } from '../../shared/bestTime';
 
 // Settings for the Calling screen: retry gap, dialing, timer, goals, alerts, shortcuts and scripts.
 
@@ -84,6 +86,7 @@ function ListOrderField({ steps, onSave }: { steps: SortStep[]; onSave: (steps: 
                 <option value="best_time">Best time to call now</option>
                 <option value="formula">A formula</option>
               </select>
+              {st.by === 'best_time' && <span className="help" style={{ flex: 1 }}>{BEST_TIME_WORDS}</span>}
               {st.by === 'formula' && (
                 <>
                   <FormulaInput value={st.formula} onSave={(f) => put(i, { ...st, formula: f })} />
@@ -107,7 +110,7 @@ function ListOrderField({ steps, onSave }: { steps: SortStep[]; onSave: (steps: 
       </span>
       <span className="help">
         "Your order" on the Calling screen sorts the leads still to call by these, first to last: the first step that tells two leads apart decides.
-        A yes/no formula, like <code>has("Hot")</code> or <code>status("Needs rebook")</code>, puts the leads it's true for first. A number, like{' '}
+        A yes/no formula, like <code>has("Hot")</code> or <code>in_list("Needs rebook")</code>, puts the leads it's true for first. A number, like{' '}
         <code>loan_amount</code> or <code>attempts</code>, puts the highest first; leads without one go last. Lowest first turns a step around.
         Leads every step ties stay as they are on the list.
       </span>
@@ -155,7 +158,7 @@ export function CallingCard() {
             <ConditionEditor value={s.callable_when} onApply={(c) => { set({ callable_when: c }); setEditCallable(false); }} onCancel={() => setEditCallable(false)} />
           )}
           <span className="help">
-            Only these leads can go on the call list (by hand, a routine or a rule), and the Calling screen only dials them by itself.
+            Only these leads can go on the call list (by hand or by a rule), and the Calling screen only dials them by itself.
             It starts as every lead but booked ones. Leads in the dead pile or with no good number are never called, and nor is a lead with a never-dial tag unless you say so.
           </span>
         </span>
@@ -201,7 +204,7 @@ export function CallingCard() {
           <label className="choice-inline"><input type="checkbox" checked={s.instant_save} onChange={(e) => set({ instant_save: e.target.checked })} /> some outcomes save as soon as I press the key (no Enter). Undo still works.</label>
           {s.instant_save && (['first_call', 'appointment'] as const).map((side) => (
             <span key={side} className="row" style={{ marginTop: 4 }}>
-              <span className="help">{side === 'appointment' ? 'Appointment:' : 'First call:'}</span>
+              <span className="help">{side === 'appointment' ? 'Appointments:' : 'Calls:'}</span>
               {(meta?.outcome_codes ?? []).filter((o) => o.kind === side && !o.requires_callback_time && o.offered).map((o) => (
                 <label key={o.code} className="choice-inline">
                   <input type="checkbox" checked={savesInstantly(o, s.instant_outcomes)}
@@ -236,7 +239,7 @@ export function CallingCard() {
             When to try again after that result: each step is a callback, timed from the result and then from each try nobody answered.
             15m, 2h and 3d are minutes, hours and days later; 1d@09:00 is the next day at 9 AM. When someone answers, or the steps run out,
             the usual retry takes over. With no steps, the lead is due right away. The same plans are ready-made rules too
-            (Settings → Rules, "Make it come back"), where you can change what sets them off.
+            (Automation → Rules, "Make it come back"), where you can change what sets them off.
           </span>
         </span>
 
@@ -348,7 +351,7 @@ export function ShortcutsCard() {
             const waiting = capture?.kind === 'outcome' && capture.id === b.id;
             return (
               <tr key={b.id}>
-                <td>{b.side === 'appointment' ? 'Appointment' : 'First call'} button: {b.label}</td>
+                <td>Button: {b.label}</td>
                 <td>
                   {k || waiting ? (
                     <Key k={k ?? ''} waiting={waiting} onClick={() => setCapture({ kind: 'outcome', id: b.id })}
@@ -365,6 +368,56 @@ export function ShortcutsCard() {
       <button className="btn small" onClick={() => window.confirm('Put every shortcut back to how it came?') && save({ ...s, shortcuts: { actions: {}, outcomes: {} } })}>
         Reset to defaults
       </button>
+    </div>
+  );
+}
+
+/** The lead sheet on the Calling screen as blocks: show or hide each one and put them in order. */
+export function SheetCard() {
+  const { calling } = useApp();
+  const save = useSave();
+  const s = calling?.settings;
+  if (!s) return null;
+  const blocks = sheetBlocks(s.sheet);
+  const put = (next: typeof blocks) => void save({ ...s, sheet: { ...s.sheet, blocks: next } });
+  const move = (i: number, j: number) => {
+    const next = [...blocks];
+    [next[i], next[j]] = [next[j]!, next[i]!];
+    put(next);
+  };
+  return (
+    <div className="card" id="lead-sheet">
+      <h2>Lead sheet</h2>
+      <p className="help">
+        The middle of the Calling screen, top to bottom. Tick a block to show it, and move it with the arrows. The never-dial warning always comes first
+        when a lead has a never-dial tag, and the outcome buttons always show because they save the call. Tags right under Lead info sit beside its buttons,
+        and Calls just above Notes share a row.
+      </p>
+      <ol className="sheet-blocks">
+        {blocks.map((b, i) => {
+          const def = SHEET_BLOCKS.find((x) => x.id === b.id)!;
+          return (
+            <li key={b.id}>
+              <label className="choice-inline" title={def.help}>
+                <input type="checkbox" checked={b.shown} disabled={b.id === 'outcome'} aria-label={`Show ${def.label}`}
+                  onChange={() => put(blocks.map((x) => (x.id === b.id ? { ...x, shown: !x.shown } : x)))} />
+                {def.label}
+              </label>
+              <span className="help"> {def.help}</span>
+              <button className="btn small" aria-label={`Move ${def.label} up`} disabled={i === 0} onClick={() => move(i, i - 1)}>↑</button>
+              <button className="btn small" aria-label={`Move ${def.label} down`} disabled={i === blocks.length - 1} onClick={() => move(i, i + 1)}>↓</button>
+            </li>
+          );
+        })}
+      </ol>
+      <label className="choice-inline">
+        <input type="checkbox" checked={s.sheet.dial_counter} onChange={() => void save({ ...s, sheet: { ...s.sheet, dial_counter: !s.sheet.dial_counter } })} />
+        Show the dial counter and timer above the buttons
+      </label>
+      <label className="choice-inline">
+        <input type="checkbox" checked={s.sheet.caller_id} onChange={() => void save({ ...s, sheet: { ...s.sheet, caller_id: !s.sheet.caller_id } })} />
+        Show which of your numbers you called from (hidden, the call still records the number it would have picked)
+      </label>
     </div>
   );
 }

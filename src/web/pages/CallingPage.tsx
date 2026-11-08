@@ -8,16 +8,17 @@ import { EditLead } from '../components/EditLead';
 import { SourcePage } from '../components/SourcePage';
 import { DialQr } from '../components/DialQr';
 import { FunnelButton } from '../components/Funnel';
-import { RoutineStrip } from '../components/RoutineStrip';
 import { CALL_LIST_CHANGED, ClearListDialog, LoadListDialog, SaveAsDialog, suggestListName } from '../components/CallListDialogs';
 import { isAction, isTyping, keyLabel, type KeyMap } from '../shortcuts';
 import { getStored, getStoredJson, setStored, setStoredJson } from '../storage';
 import { LogCall, type Attempt, type FormValues, type Saved } from './LogCall';
-import { CallerLookup, ModeSwitch, Recent, UNDO_MS, UndoBar, otherNumber } from './CallingPanels';
-import { openingSide, type CallMode } from '../../shared/appointments';
-import { bestTimeFirst } from '../../shared/bestTime';
+import { CallerLookup, EveryButton, Recent, UNDO_MS, UndoBar, otherNumber } from './CallingPanels';
+import { BEST_TIME_WORDS, bestTimeFirst } from '../../shared/bestTime';
 import { describeSortStep, yourOrder } from '../../shared/listOrder';
-import { STEP_ORDERS, type StepOrder } from '../../shared/routines';
+import { LIST_ORDERS, type ListOrder } from '../../shared/listOrder';
+import { sheetBlocks, type SheetBlockId } from '../../shared/sheetLayout';
+import { StatusChips } from './StatusesCard';
+import { LeadTags } from '../components/LeadDetails';
 
 const SELECTED_KEY = 'mpcrm.selectedLead';
 /** A lead opened outside the list (looked up for an incoming call, or from Today), and where to go back to. */
@@ -26,7 +27,7 @@ export const OPENED_KEY = 'mpcrm.openedLead';
 const ORDER_KEY = 'mpcrm.list.order';
 
 /** The list in the order it's shown and worked in. */
-function inOrder(l: CallListResponse, o: StepOrder): CallListItem[] {
+function inOrder(l: CallListResponse, o: ListOrder): CallListItem[] {
   if (o === 'best_time') return bestTimeFirst(l.items, l.best_times);
   if (o === 'yours') return yourOrder(l.items, l.list_order, l.best_times);
   return l.items;
@@ -67,18 +68,18 @@ export function CallingPage() {
   const [editing, setEditing] = useState(false);
   const [qr, setQr] = useState<string | null>(null);
   const [listDialog, setListDialog] = useState<'clear' | 'load' | 'save_as' | null>(null);
-  const [order, setOrderState] = useState<StepOrder>(() => {
+  const [order, setOrderState] = useState<ListOrder>(() => {
     const o = getStored(ORDER_KEY);
-    return o && Object.hasOwn(STEP_ORDERS, o) ? (o as StepOrder) : 'set';
+    return o && Object.hasOwn(LIST_ORDERS, o) ? (o as ListOrder) : 'set';
   });
-  const setOrder = (o: StepOrder) => {
+  const setOrder = (o: ListOrder) => {
     setOrderState(o);
     setStored(ORDER_KEY, o);
   };
-  /** The side you picked for a lead, when it isn't the one it opened on. */
-  const [modePick, setModePick] = useState<{ leadId: string; mode: CallMode } | null>(null);
-  const mode: CallMode = detail ? (modePick?.leadId === detail.lead.id ? modePick.mode : openingSide(detail.state)) : 'first_call';
-  const switchMode = (m: CallMode) => detail && setModePick({ leadId: detail.lead.id, mode: m });
+  // "Every button" for this lead: the ones whose condition is false for it show too.
+  const [allFor, setAllFor] = useState<string | null>(null);
+  const showAll = !!detail && allFor === detail.lead.id;
+  const toggleAll = () => detail && setAllFor(showAll ? null : detail.lead.id);
   const listRef = useRef<HTMLUListElement>(null);
   /** After a save or skip with KDE Connect: the next lead's number goes to your phone once that lead is shown. */
   const autoSend = useRef<string | null>(null);
@@ -392,14 +393,11 @@ export function CallingPage() {
       }>(`/calls/${s.callId}/void`, { reason: 'undo' });
       const appt = r.appointment_for ? fromWall(r.appointment_for) : null;
       const cb = appt ? callbackFields(appt.at.toISOString(), appt.anyTime, s.tz) : callbackFields(r.callback_due_at, r.callback_any_time, s.tz);
-      // Back on the side the call was saved from.
-      const button = r.button_id ?? r.outcome_code;
-      if (button) setModePick({ leadId: s.leadId, mode: keys.kinds[button] ?? 'first_call' });
       setRestore({
         leadId: s.leadId,
         n: Date.now(),
         values: {
-          button,
+          button: r.button_id ?? r.outcome_code,
           day: cb.day,
           time: cb.time,
           minutes: r.talk_seconds ? String(Math.round(r.talk_seconds / 60)) : '',
@@ -461,11 +459,11 @@ export function CallingPage() {
       else if (act('edit')) { if (detail) { e.preventDefault(); setEditing(true); } }
       else if (act('called_back')) { if (ready && detail) { e.preventDefault(); void toggleCalledBack(detail, toast).then((at) => calledBack(detail.lead.id, at)); } }
       else if (act('copy_tag')) { if (detail) { e.preventDefault(); void copyCalendarTag(detail.lead, toast); } }
-      else if (act('switch_mode')) { if (ready && detail) { e.preventDefault(); switchMode(mode === 'appointment' ? 'first_call' : 'appointment'); } }
+      else if (act('switch_mode')) { if (ready && detail) { e.preventDefault(); toggleAll(); } }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [keys, move, goNext, skip, dial, undo, detail, modalOpen, ready, phoneNow, otherPhone, toast, calledBack, mode]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [keys, move, goNext, skip, dial, undo, detail, modalOpen, ready, phoneNow, otherPhone, toast, calledBack, showAll]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const refreshDetail = async () => {
     await Promise.all([loadDetail(selected), loadList()]);
@@ -474,9 +472,8 @@ export function CallingPage() {
   // Enter saves and moves straight on; the undo bar (or Z) brings you back.
   const onSaved = async (s: Saved) => {
     setSaved(s);
-    // Run it now: same lead, Appointment side, timer started again for the presentation.
+    // Run it now: same lead (its appointment buttons show now it has one), timer started again for the presentation.
     if (s.onTheSpot) {
-      setModePick({ leadId: s.leadId, mode: 'appointment' });
       setRestore(null);
       setAttempt((a) => ({ ...freshAttempt(), to: a.to, timerStart: settings?.use_timer === false ? null : Date.now() }));
       bumpStats();
@@ -484,8 +481,7 @@ export function CallingPage() {
       await refreshDetail();
       return;
     }
-    // The next time this lead is on screen, its side is picked again from how it stands now.
-    setModePick(null);
+    setAllFor(null);
     setRestore(null);
     setAttempt(freshAttempt());
     bumpStats();
@@ -513,18 +509,6 @@ export function CallingPage() {
       <FunnelButton />
       <section className="panel queue-panel" aria-label="Queue">
         <header>
-          <RoutineStrip
-            current={current}
-            defaultName={suggestListName(items, list?.name ?? null)}
-            listDone={!!list && left === 0}
-            refreshKey={`${items.length}-${left}`}
-            onStarted={async (o, how) => {
-              setOrder(o);
-              // A new list, or nothing left to call on the old one: start at the first lead to call, in the step's order.
-              if (how === 'replace' || left === 0) await afterSwap(o);
-              else await loadList();
-            }}
-          />
           <div className="row list-head">
             <span><b>{left}</b> to call · {items.length - left} done</span>
             {items.length - left > 0 && (
@@ -567,7 +551,7 @@ export function CallingPage() {
             <span className="row" style={{ gap: 4 }} role="group" aria-label="Order">
               <button className={`btn small ${order === 'set' ? 'primary' : ''}`} aria-pressed={order === 'set'} onClick={() => setOrder('set')} title="The order you set, or the order leads were added">As set</button>
               <button className={`btn small ${order === 'best_time' ? 'primary' : ''}`} aria-pressed={order === 'best_time'} onClick={() => setOrder('best_time')}
-                title="Leads it's the best time to call right now first, by your pickup rate at that hour in their time (evenings, until you have your own numbers). Before 8 AM or from 9 PM their time goes last.">
+                title={BEST_TIME_WORDS}>
                 Best time first
               </button>
               <button className={`btn small ${order === 'yours' ? 'primary' : ''}`} aria-pressed={order === 'yours'} onClick={() => setOrder('yours')}
@@ -656,7 +640,7 @@ export function CallingPage() {
           <span className="help">
             <kbd>{k('list_up')}</kbd><kbd>{k('list_down')}</kbd> move <kbd>{k('skip')}</kbd> skip to the bottom <kbd>{k('dial')}</kbd> {dialLabel.toLowerCase()} <kbd>{k('dial_alt')}</kbd> other number{' '}
             <kbd>{k('dials_down')}</kbd><kbd>{k('dials_up')}</kbd> dials <kbd>Enter</kbd> save and next <kbd>{k('undo')}</kbd> undo <kbd>{k('note')}</kbd> note{' '}
-            <kbd>{k('edit')}</kbd> edit <kbd>{k('switch_mode')}</kbd> first call / appointment <kbd>{k('lookup')}</kbd> look up a caller <kbd>{k('called_back')}</kbd> called me back <kbd>{k('copy_tag')}</kbd> copy for calendar
+            <kbd>{k('edit')}</kbd> edit <kbd>{k('switch_mode')}</kbd> every button <kbd>{k('lookup')}</kbd> look up a caller <kbd>{k('called_back')}</kbd> called me back <kbd>{k('copy_tag')}</kbd> copy for calendar
           </span>
         </header>
       </section>
@@ -665,7 +649,7 @@ export function CallingPage() {
         <header>
           <CallerLookup inputRef={lookupRef} hotkey={k('lookup')} onOpen={openOutside} />
           {/* In the header, so it takes no room above the outcome buttons on a short screen. */}
-          {detail && <ModeSwitch mode={mode} onChange={switchMode} hotkey={k('switch_mode')} />}
+          {detail && <EveryButton on={showAll} onChange={toggleAll} hotkey={k('switch_mode')} />}
         </header>
         <div className="body">
           {saved && <UndoBar saved={saved} undoKey={k('undo')} onUndo={undo} onExpire={() => setSaved(null)} />}
@@ -685,30 +669,53 @@ export function CallingPage() {
                   {detail.never_dial.source ? ` ${describeBy(detail.never_dial.source, detail.never_dial.source_name)}` : ''}. Dialing asks first.
                 </div>
               )}
-              <LeadSummary d={detail} onDial={dial} dialLabel={dialLabel} dialKey={k('dial')} altKey={k('dial_alt')} onEdit={() => setEditing(true)} editKey={k('edit')}
-                calledBackKey={k('called_back')} tagKey={k('copy_tag')} onCalledBack={(at) => calledBack(detail.lead.id, at)} />
-              <LogCall
-                key={`${detail.lead.id}-${mode}-${restore?.leadId === detail.lead.id ? restore.n : 0}`}
-                d={detail}
-                mode={mode}
-                attempt={attempt}
-                setDials={(n) => setAttempt((a) => ({ ...a, dials: Math.max(1, n) }))}
-                resetTimer={() => setAttempt((a) => ({ ...a, timerStart: null }))}
-                restore={restore?.leadId === detail.lead.id ? restore.values : null}
-                active={ready}
-                onSaved={onSaved}
-                onRefresh={refreshDetail}
-              />
-              <section className="calls-notes" aria-label="History">
-                <div>
-                  <h3>Calls</h3>
-                  <CallHistory calls={detail.calls} onChange={refreshDetail} />
-                </div>
-                <div>
-                  <h3>Notes</h3>
-                  <Notes key={detail.lead.id} d={detail} onChange={refreshDetail} />
-                </div>
-              </section>
+              {(() => {
+                // The blocks in your order (Automation → Calling screen). Tags right after the lead sit beside its
+                // buttons, and calls next to notes share a row, as they always have.
+                const order = sheetBlocks(calling?.settings.sheet).filter((b) => b.shown).map((b) => b.id);
+                const after = (id: SheetBlockId) => order[order.indexOf(id) + 1];
+                const tagsInline = after('lead') === 'tags';
+                const sheet = calling?.settings.sheet;
+                const callsBox = <div><h3>Calls</h3><CallHistory calls={detail.calls} onChange={refreshDetail} /></div>;
+                const notesBox = <div><h3>Notes</h3><Notes key={detail.lead.id} d={detail} onChange={refreshDetail} /></div>;
+                return order.map((id) => {
+                  switch (id) {
+                    case 'lead':
+                      return <LeadSummary key={id} d={detail} onDial={dial} dialLabel={dialLabel} dialKey={k('dial')} altKey={k('dial_alt')} onEdit={() => setEditing(true)} editKey={k('edit')}
+                        calledBackKey={k('called_back')} tagKey={k('copy_tag')} onCalledBack={(at) => calledBack(detail.lead.id, at)} showTags={tagsInline} />;
+                    case 'tags':
+                      if (tagsInline) return null;
+                      return (
+                        <div key={id} className="sheet-tags" aria-label="Tags">
+                          <StatusChips statuses={detail.statuses} />
+                          <LeadTags leadId={detail.lead.id} initial={detail.tags} />
+                        </div>
+                      );
+                    case 'outcome':
+                      return (
+                        <LogCall
+                          key={`${detail.lead.id}-${restore?.leadId === detail.lead.id ? restore.n : 0}`}
+                          d={detail}
+                          showAll={showAll}
+                          attempt={attempt}
+                          setDials={(n) => setAttempt((a) => ({ ...a, dials: Math.max(1, n) }))}
+                          resetTimer={() => setAttempt((a) => ({ ...a, timerStart: null }))}
+                          restore={restore?.leadId === detail.lead.id ? restore.values : null}
+                          active={ready}
+                          onSaved={onSaved}
+                          onRefresh={refreshDetail}
+                          dialCounter={sheet?.dial_counter ?? true}
+                          callerId={sheet?.caller_id ?? true}
+                        />
+                      );
+                    case 'calls':
+                      return <section key={id} className="calls-notes" aria-label="History">{callsBox}{after('calls') === 'notes' && notesBox}</section>;
+                    case 'notes':
+                      if (order[order.indexOf('notes') - 1] === 'calls') return null;
+                      return <section key={id} className="calls-notes" aria-label="Notes">{notesBox}</section>;
+                  }
+                });
+              })()}
             </>
           )}
         </div>

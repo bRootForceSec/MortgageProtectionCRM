@@ -3,10 +3,9 @@ import { api, fmtPhone, fmtRelative, type LeadDetail, type RecentOutcome } from 
 import { useApp } from '../App';
 import { StatusBadge } from '../components/LeadDetails';
 import type { Saved } from './LogCall';
-import type { CallMode } from '../../shared/appointments';
 import { leadIdInText } from '../../shared/leadLink';
 
-// The smaller parts of the Calling screen: the incoming-call lookup, the First call | Appointment switch, the undo
+// The smaller parts of the Calling screen: the incoming-call lookup, the Every button switch, the undo
 // bar, the script and the recent outcomes.
 
 /** How long a saved call can be undone. */
@@ -111,15 +110,12 @@ export function CallerLookup({ inputRef, hotkey, onOpen }: { inputRef: RefObject
   );
 }
 
-/** First call | Appointment: which outcomes the lead section offers. */
-export function ModeSwitch({ mode, onChange, hotkey }: { mode: CallMode; onChange: (m: CallMode) => void; hotkey: string }) {
+/** Every button: shows the buttons whose condition is false for this lead too (Automation → Calling screen). */
+export function EveryButton({ on, onChange, hotkey }: { on: boolean; onChange: () => void; hotkey: string }) {
   return (
-    <div className="mode-switch" role="tablist" aria-label="Kind of call" title={hotkey ? `Press ${hotkey} to switch` : undefined}>
-      {([['first_call', 'First call'], ['appointment', 'Appointment']] as const).map(([m, label]) => (
-        <button key={m} role="tab" aria-selected={mode === m} className={mode === m ? 'active' : ''} onClick={() => onChange(m)}>{label}</button>
-      ))}
-      {hotkey && <kbd>{hotkey}</kbd>}
-    </div>
+    <label className="mode-switch" title={`The buttons whose show-when condition is false for this lead show too${hotkey ? `. Press ${hotkey}` : ''}`}>
+      <input type="checkbox" checked={on} onChange={onChange} /> Every button {hotkey && <kbd>{hotkey}</kbd>}
+    </label>
   );
 }
 

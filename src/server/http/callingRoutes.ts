@@ -10,7 +10,6 @@ import { KdeConnect } from '../dialer.js';
 import { parseList } from '../domain/groupFilter.js';
 import { callbacksDue } from '../domain/callList.js';
 import { appointmentsOnDay } from '../domain/appointments.js';
-import { chooseRoutine, loadRoutines, routineToday, saveRoutines, startStep } from '../domain/routines.js';
 import { loadButtons, saveButtons } from '../domain/buttons.js';
 import { loadRules, loadTagShortcuts, previewRule, ruleRuns, runRuleById, saveRules, saveTagShortcuts } from '../domain/rules.js';
 
@@ -57,20 +56,6 @@ export function registerCallingRoutes(app: FastifyInstance, deps: { db: DB; kde?
   app.get('/api/rules/runs', async (req) => {
     const q = z.object({ rule_id: z.string().max(64).optional(), all: z.enum(['1', '0']).optional() }).parse(req.query);
     return { runs: ruleRuns(db, { ruleId: q.rule_id, all: q.all === '1' }) };
-  });
-
-  // ---------- daily routines ----------
-  app.get('/api/routines', async () => ({ routines: loadRoutines(db) }));
-  app.put('/api/routines', async (req) => {
-    const b = z.object({ routines: z.unknown() }).parse(req.body);
-    return { routines: saveRoutines(db, b.routines) };
-  });
-  app.get('/api/routine/today', async () => routineToday(db));
-  app.post('/api/routine/today', async (req) => chooseRoutine(db, z.object({ routine_id: z.string().max(64) }).parse(req.body).routine_id));
-  app.post('/api/routine/steps/:id/start', async (req) => {
-    const { id } = idParam.parse(req.params);
-    const b = z.object({ mode: z.enum(['add', 'replace']), save_current_as: z.string().trim().max(120).nullish() }).parse(req.body);
-    return startStep(db, id, b.mode, b.save_current_as || null);
   });
 
   // ---------- undo ----------

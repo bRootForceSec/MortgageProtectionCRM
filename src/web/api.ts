@@ -100,7 +100,7 @@ export interface CallerNumber {
 
 export interface Meta {
   outcome_codes: OutcomeCode[];
-  /** Your Calling screen buttons, in order (Settings → Buttons). */
+  /** Your Calling screen buttons, in order (Automation → Calling screen). */
   buttons: ButtonInfo[];
   /** Why a lead said no: offered as chips after an outcome that asks for them. */
   objection_codes: { code: string; label: string }[];
@@ -215,7 +215,7 @@ export interface AddResult {
   added: number;
   already: number;
   not_callable: number;
-  /** Left off because of a never-dial tag, with why (Settings → Tags). */
+  /** Left off because of a never-dial tag, with why (Automation → Tags). */
   skipped: SkippedLead[];
 }
 export interface SkippedLead { lead_id: string; name: string; why: string }
@@ -267,7 +267,7 @@ export interface Call {
 }
 
 export interface TagRef { id: string; name: string }
-/** A tag and how many leads have it (Settings → Tags, and the pickers). */
+/** A tag and how many leads have it (Automation → Tags, and the pickers). */
 export interface Tag extends TagRef { leads: number; never_dial: boolean }
 
 export interface LeadDetail {
@@ -281,7 +281,7 @@ export interface LeadDetail {
     /** The lead's numbers that are ruled out (JSON list). */
     blocked_phones_json: string | null;
     block_reason: string | null;
-    /** How the latest appointment went: logged on the Appointment side, or read from Unitrust by the extension. */
+    /** How the latest appointment went: logged with an appointment button, or read from Unitrust by the extension. */
     appt_result: string | null;
     /** 1 when a no-show, sat-no-sale or prezi put the lead back to be called. */
     appt_missed: number;
@@ -296,7 +296,7 @@ export interface LeadDetail {
   called_back_at: string | null;
   /** Your tags on this lead, by name. */
   tags: TagRef[];
-  /** Its never-dial tag (Settings → Tags), when it has one: when it went on and what did it. */
+  /** Its never-dial tag (Automation → Tags), when it has one: when it went on and what did it. */
   never_dial: { tag: string; at: string | null; source: string | null; source_name: string | null } | null;
   /** Can go on the call list and be dialed (Settings → Calling, "Can be called when"). */
   callable: boolean;
@@ -307,7 +307,7 @@ export interface LeadDetail {
   /** Every custom field, in order, with this lead's value (null for none). */
   custom: {
     field_id: string; label: string; type: CustomFieldType; options: string[]; value: string | null;
-    /** Its show-when condition is true for this lead now (Settings → Your fields), and its needed-when one. */
+    /** Its show-when condition is true for this lead now (Automation → Fields), and its needed-when one. */
     shown: boolean; required: boolean;
   }[];
   calls: Call[];

@@ -1,3 +1,4 @@
+import { SheetLayout } from './sheetLayout.js';
 import * as z from 'zod/v4';
 import { isStep } from './followUps.js';
 import { STARTER_ORDER, SortStep } from './listOrder.js';
@@ -23,7 +24,7 @@ export const SHORTCUT_ACTIONS = {
   called_back: { label: 'Mark (or unmark) that this lead called you back', keys: ['b'] },
   copy_tag: { label: 'Copy "#MP Lead ID Last name" for your calendar', keys: ['i'] },
   do_not_call: { label: 'Tick (or untick) "Do not call" for this call', keys: ['d'] },
-  switch_mode: { label: 'Switch between First call and Appointment', keys: ['m'] },
+  switch_mode: { label: 'Show every button, not only the ones for this lead', keys: ['m'] },
 } as const;
 export type ShortcutAction = keyof typeof SHORTCUT_ACTIONS;
 
@@ -39,6 +40,8 @@ const plan = z.array(z.string().refine(isStep, 'not a follow-up step')).max(10).
 export const CallingSettings = z.object({
   /** A condition (Python syntax) for the leads that can be called; blank means every lead with a good number, not dead. */
   callable_when: z.string().trim().max(2000).default(STARTER_CALLABLE),
+  /** The lead sheet on the Calling screen: its blocks in order, shown or hidden (see sheetLayout.ts). */
+  sheet: SheetLayout.default({ blocks: [], dial_counter: true, caller_id: true }),
   /** "Your order" on the call list: sort steps, first to last (see listOrder.ts). */
   list_order: z.array(SortStep).max(10).default(STARTER_ORDER),
   /** Minutes before an unanswered lead comes back. 0 means right away. */

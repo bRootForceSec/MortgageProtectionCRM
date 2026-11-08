@@ -61,7 +61,7 @@ export interface LeadFilter {
   in_status?: string;
 }
 
-/** The Leads filters as the API (or a routine step) gives them, with relative choices worked out now. */
+/** The Leads filters as the API (or a rule) gives them, with relative choices worked out now. */
 export function toLeadFilter(q: LeadQuery, now = new Date()): LeadFilter {
   const last = q.last_call && isLastCall(q.last_call) ? lastCallRange(q.last_call, now) : null;
   return {
@@ -297,7 +297,7 @@ export interface AddResult {
   already: number;
   /** Leads that can't be called: dead, no good number, or not allowed by your "Can be called when". */
   not_callable: number;
-  /** Left off because of a never-dial tag (Settings → Tags), with why; `override` adds them anyway. */
+  /** Left off because of a never-dial tag (Automation → Tags), with why; `override` adds them anyway. */
   skipped: { lead_id: string; name: string; why: string }[];
 }
 

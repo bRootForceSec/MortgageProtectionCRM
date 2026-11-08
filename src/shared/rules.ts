@@ -1,11 +1,12 @@
 import * as z from 'zod/v4';
 import { LeadQuery } from './leadFilter.js';
-import { WEEKDAYS } from './routines.js';
 import { isStep, SUGGESTED_FOLLOW_UPS } from './followUps.js';
 
-// Rules: "when this happens, for leads like these, do that". Set up in Settings → Rules, or from the Leads filters.
+// Rules: "when this happens, for leads like these, do that". Set up in Automation → Rules, or from the Leads filters.
 // A rule has one trigger, a Leads filter (kept as its query, so "yesterday" means yesterday every day) and its actions.
 // Every run is logged, and Preview shows what a run would do now without changing anything.
+
+export const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as const;
 
 export const RuleTrigger = z.discriminatedUnion('kind', [
   /** Once a day, at or after this time on this computer, on these weekdays (0 is Sunday). */
@@ -29,6 +30,13 @@ export const RuleTrigger = z.discriminatedUnion('kind', [
    * leads it's already true for when the rule is saved count too.
    */
   z.object({ kind: z.literal('becomes_true'), condition: z.string().trim().min(1, 'write the condition').max(2000), already: z.boolean().optional() }),
+  /**
+   * When the call list runs out: it has leads on it and you've called them all. These rules go in your order, and the
+   * first one that puts leads on the list ends it (the order you call in: imports, then no-shows, then no-answers).
+   */
+  z.object({ kind: z.literal('list_empty') }),
+  /** When leads are imported: each new lead, once the import is saved, so its details can tag it (the rule's leads pick which). */
+  z.object({ kind: z.literal('imported') }),
 ]);
 export type RuleTrigger = z.infer<typeof RuleTrigger>;
 
@@ -90,12 +98,14 @@ export const TRIGGER_LABELS: Record<RuleTrigger['kind'], string> = {
   manual: 'Only when I press Run now',
   tag_added: 'When a tag is put on',
   tag_removed: 'When a tag is taken off',
-  status: 'When a lead enters or leaves a status',
+  status: 'When a lead comes into or leaves a smart list',
   becomes_true: 'When a condition turns true',
+  list_empty: 'When the call list runs out',
+  imported: 'When leads are imported',
 };
 
 /** Triggers that fire for a lead when something about it changes, so they act on that lead only. */
-export const LEAD_TRIGGERS: readonly RuleTrigger['kind'][] = ['call_saved', 'tag_added', 'tag_removed', 'status', 'becomes_true'];
+export const LEAD_TRIGGERS: readonly RuleTrigger['kind'][] = ['call_saved', 'tag_added', 'tag_removed', 'status', 'becomes_true', 'imported'];
 
 /** "Mon–Fri" style list of weekdays. */
 export function describeDays(days: readonly number[]): string {
@@ -119,9 +129,11 @@ export function describeTrigger(
     case 'tag_removed': return `When tag "${t.tag}" is taken off a lead`;
     case 'status': {
       const name = statusName(t.status_id);
-      return name ? `When a lead ${t.when === 'enters' ? 'comes into' : 'leaves'} the status "${name}"` : 'When a lead enters or leaves a status that was deleted';
+      return name ? `When a lead ${t.when === 'enters' ? 'comes into' : 'leaves'} the smart list "${name}"` : 'When a lead comes into or leaves a smart list that was deleted';
     }
     case 'becomes_true': return `When this turns true for a lead: ${t.condition}`;
+    case 'list_empty': return 'When the call list runs out (the first of these rules that adds leads wins)';
+    case 'imported': return 'When a new lead is imported';
     case 'manual': return 'Only when you press Run now';
   }
 }
@@ -143,7 +155,7 @@ export function describeAction(a: RuleAction, fieldName: (id: string) => string 
   }
 }
 
-/** Ready-made rules: the no-show example you gave. They start switched off; switch them on in Settings → Rules. */
+/** Ready-made rules: the no-show example you gave. They start switched off; switch them on in Automation → Rules. */
 export const STARTER_RULES: readonly Omit<Rule, 'id'>[] = [
   {
     name: "Yesterday's no-shows onto the call list",
@@ -159,6 +171,22 @@ export const STARTER_RULES: readonly Omit<Rule, 'id'>[] = [
     filter: { status: 'appt_no_show', appt_days_ago: 2, on_list: '1' },
     actions: [{ kind: 'remove_from_list' }],
   },
+  // The order you call in, as rules: when the list runs out, the first of these that has leads to add wins.
+  {
+    name: 'Then no-shows since my last calling day',
+    enabled: false,
+    trigger: { kind: 'list_empty' },
+    filter: { status: 'appt_no_show', appt_days: 'since_last_calling_day', last_call: 'not_today' },
+    actions: [{ kind: 'add_to_list' }],
+  },
+  { name: "Then today's imports", enabled: false, trigger: { kind: 'list_empty' }, filter: { status: 'new', imported: 'today' }, actions: [{ kind: 'add_to_list' }] },
+  {
+    name: "Then today's no-answers, not dialed in the last hour",
+    enabled: false,
+    trigger: { kind: 'list_empty' },
+    filter: { status: 'no_answer', last_call: 'today', not_within_min: 60 },
+    actions: [{ kind: 'add_to_list' }],
+  },
   // The follow-up plans (Settings → Calling) as rules you can see and change: the same steps, set off by the result.
   ...([['no_show', 'No-shows'], ['sat_no_sale', 'Picked up, no presentation'], ['prezi', 'Presentation, no sale']] as const).map(([result, who]) => ({
     name: `${who}: come back ${SUGGESTED_FOLLOW_UPS[result].join(', then ')}`,
@@ -169,7 +197,7 @@ export const STARTER_RULES: readonly Omit<Rule, 'id'>[] = [
   })),
 ];
 
-// Tag shortcuts (Settings → Tags): each one is only a way to write rules, and shows the rules it writes.
+// Tag shortcuts (Automation → Tags): each one is only a way to write rules, and shows the rules it writes.
 // - Take a tag off by itself: after so many hours, or at the end of the day it was put on.
 // - Only one at a time: a group of tags where putting one on takes the others off.
 

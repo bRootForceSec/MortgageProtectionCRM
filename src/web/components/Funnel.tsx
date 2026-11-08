@@ -3,7 +3,9 @@ import { api } from '../api';
 import { useApp } from '../App';
 import { addDays, startOfDay, ymd } from '../when';
 import { getStored, setStored } from '../storage';
-import type { FunnelStep, FunnelStepDef } from '../../shared/funnel';
+import { type FunnelStep, type FunnelStepDef } from '../../shared/funnel';
+import type { StatusColor } from '../../shared/statuses';
+import { useStatuses } from '../statuses';
 
 // Your conversion funnel as an animated 3D graphic sized for an Instagram story (9:16): your funnel steps (Settings →
 // Your day), top to bottom. They start as dials, leads called, pickups and appointments set (first calls), then sat,
@@ -52,19 +54,25 @@ const LOOK: Record<FunnelStep, { value: (s: Stats) => number; colors: readonly [
 };
 /** Glows for your formula steps, in turn. */
 const MORE_COLORS: readonly (readonly [string, string])[] = [['#a3e635', '#4d7c0f'], ['#2dd4bf', '#0f766e'], ['#f87171', '#b91c1c'], ['#c084fc', '#7e22ce'], ['#facc15', '#a16207']];
+/** A step's own color (or its smart list's), as a glow. */
+const GLOW: Record<StatusColor, readonly [string, string]> = {
+  gray: ['#cbd5e1', '#64748b'], blue: ['#60a5fa', '#1d4ed8'], green: ['#4ade80', '#15803d'], yellow: ['#facc15', '#a16207'],
+  orange: ['#fb923c', '#c2410c'], red: ['#f87171', '#b91c1c'], purple: ['#c084fc', '#7e22ce'],
+};
 const ON_THE_DAY_KEY = 'funnel.onTheDay';
 
 /** A step as the graphic draws it. */
 interface Shown { label: string; colors: readonly [string, string]; value: number; apptsSet: boolean }
 
 /** Your steps with their numbers for the range; with `onTheDay`, appointments set becomes the appointments on those days. */
-function shownSteps(st: Stats, onTheDay: boolean): Shown[] {
+function shownSteps(st: Stats, onTheDay: boolean, listColor: (name: string) => StatusColor | undefined): Shown[] {
   let more = 0;
   return st.steps.map((x) => {
-    if (x.count.by === 'formula') return { label: x.name, colors: MORE_COLORS[more++ % MORE_COLORS.length]!, value: st.formula_counts[x.id] ?? 0, apptsSet: false };
+    const own = x.color ?? (x.count.by === 'list' ? listColor(x.count.list) : undefined);
+    if (x.count.by !== 'measure') return { label: x.name, colors: own ? GLOW[own] : MORE_COLORS[more++ % MORE_COLORS.length]!, value: st.formula_counts[x.id] ?? 0, apptsSet: false };
     const m = x.count.measure;
     const onDay = onTheDay && m === 'appts_set';
-    return { label: onDay ? 'Appts on the day' : x.name, colors: LOOK[m].colors, value: onDay ? st.funnel?.on_the_day ?? 0 : LOOK[m].value(st), apptsSet: m === 'appts_set' };
+    return { label: onDay ? 'Appts on the day' : x.name, colors: own ? GLOW[own] : LOOK[m].colors, value: onDay ? st.funnel?.on_the_day ?? 0 : LOOK[m].value(st), apptsSet: m === 'appts_set' };
   });
 }
 
@@ -96,7 +104,9 @@ export function FunnelShowcase({ onClose }: { onClose: () => void }) {
   useEffect(() => {
     api.get<Stats>('/stats/today', rangeOf(range)).then(setStats).catch((e: Error) => toast(`Couldn't load your numbers: ${e.message}`, 'error'));
   }, [range, toast]);
-  const steps = stats ? shownSteps(stats, onTheDay) : null;
+  const { statuses } = useStatuses();
+  const listColor = (name: string) => statuses.find((x) => x.name.toLowerCase() === name.toLowerCase())?.color;
+  const steps = stats ? shownSteps(stats, onTheDay, listColor) : null;
   const title = RANGES.find(([k]) => k === range)![1];
   return (
     <div

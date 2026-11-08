@@ -4,8 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-// The daily routine: the steps above the call list, the next one offered when the list runs out, Settings, and a
-// step saved from the Leads page.
+// Working the day: rules that fill the call list when it runs out, tags, your fields, smart lists and rules.
 
 const PORT = 5198;
 let server: ChildProcess;
@@ -36,12 +35,12 @@ test.afterAll(async () => {
   if (dataDir) fs.rmSync(dataDir, { recursive: true, force: true, maxRetries: 3 });
 });
 
-test('work the day by routine: imports, then a step saved from Leads', async ({ page }) => {
+test('work the day by rules: when the call list runs out, the first rule with leads to add fills it', async ({ page }) => {
   page.on('dialog', (d) => void d.accept());
   await page.goto(launchUrl);
   const nav = (name: string) => page.locator('.topbar nav').getByRole('button', { name, exact: true }).click();
 
-  // Import without putting the leads on the list: the routine's imports step does that.
+  // Import without putting the leads on the list: a rule does that when the list runs out.
   await page.locator('.topbar nav').getByRole('button', { name: 'Import', exact: true }).click();
   const file = path.join(dataDir, 'Morning leads.csv');
   fs.copyFileSync('test/fixtures/sample-leads.csv', file);
@@ -54,59 +53,33 @@ test('work the day by routine: imports, then a step saved from Leads', async ({ 
   await page.getByRole('button', { name: 'Import 4 leads' }).click();
   await expect(page.getByText('Import finished')).toBeVisible();
 
-  // Calling: the starter routine, with the imports step offered first since there are no no-shows.
-  await nav('Calling');
-  const routine = page.getByLabel("Today's routine");
-  await expect(routine).toContainText('Every day');
-  await expect(routine.locator('.routine-step')).toHaveText([/1\. No-shows\s+0/, /2\. Today's imports\s+4/, /3\. Today's no-answers\s+0/]);
-  await expect(routine.getByRole('status')).toContainText("Next: Today's imports (4 to call)");
-  await routine.getByRole('status').getByRole('button', { name: 'Start' }).click();
-  await page.getByRole('dialog', { name: "Start: Today's imports" }).getByRole('button', { name: 'Start' }).click();
-  await expect(page.getByLabel('Queue').locator('.queue-list li')).toHaveCount(4);
-  await page.screenshot({ path: 'test-results/routine-calling.png' });
+  // Automation → Rules: the ready-made "Then today's imports", switched on.
+  await nav('Automation');
+  const card = page.locator('#rules');
+  await card.getByLabel('Add a ready-made rule').selectOption({ label: "Then today's imports" });
+  const starter = page.getByRole('dialog', { name: 'New rule' });
+  await starter.getByText('On', { exact: true }).click();
+  await starter.getByRole('button', { name: 'Save rule' }).click();
+  const rule = card.getByLabel("Rule Then today's imports");
+  await expect(rule).toContainText('When the call list runs out');
+  await expect(rule.getByLabel("Then today's imports on")).toBeChecked();
+  await rule.scrollIntoViewIfNeeded();
+  await page.screenshot({ path: 'test-results/list-runs-out-rule.png' });
 
-  // A no answer counts toward the step.
+  // One lead on the list by hand; calling it runs the list out, and the rule adds the other three.
+  await nav('Leads');
+  await page.locator('table.grid tbody tr').first().getByRole('checkbox').check();
+  await page.getByRole('button', { name: /Add 1 ticked to call list/ }).click();
+  await nav('Calling');
+  await expect(page.getByLabel('Queue')).toContainText('1 to call · 0 done');
   const first = await page.locator('.lead-name').innerText();
   await page.keyboard.press('1');
-  await page.keyboard.press('Enter');
   await expect(page.locator('.undo-bar')).toContainText(`Saved for ${first}`);
-  await expect(routine.getByRole('button', { name: /Today's imports/ })).toContainText('1/4 called');
-
-  // Leads: no answers called today, saved as a step of today's routine.
-  await nav('Leads');
-  await page.getByRole('button', { name: 'No answer', exact: true }).click();
-  await page.getByLabel('Last call', { exact: true }).selectOption('today');
-  await expect(page.getByText('1 lead', { exact: true })).toBeVisible();
-  await page.getByRole('button', { name: 'Save as routine step' }).click();
-  const save = page.getByRole('dialog', { name: 'Save as routine step' });
-  await expect(save).toContainText('No answer · Last call today');
-  await save.getByLabel('Step name').fill('Quick no-answers');
-  await save.getByRole('button', { name: 'Save step' }).click();
-  await expect(save).toHaveCount(0);
-
-  // Settings: the step is at the end; move it up one.
-  await nav('Settings');
-  const card = page.getByLabel('Routine Every day');
-  await expect(card.getByLabel('Step name')).toHaveCount(4);
-  await expect(card.getByLabel('Step name').nth(3)).toHaveValue('Quick no-answers');
-  await card.getByRole('button', { name: 'Move Quick no-answers up' }).click();
-  await expect(card.getByLabel('Step name').nth(2)).toHaveValue('Quick no-answers');
-  await page.getByRole('heading', { name: 'Routines' }).scrollIntoViewIfNeeded();
-  await page.screenshot({ path: 'test-results/routine-settings.png' });
-
-  // Back on Calling it's step 3, and starting it puts the lead back under the list to call.
-  await nav('Calling');
-  const step = routine.getByRole('button', { name: /Quick no-answers/ });
-  await expect(step).toContainText('3. Quick no-answers 1');
-  await step.click();
-  const dialog = page.getByRole('dialog', { name: 'Start: Quick no-answers' });
-  await expect(dialog).toContainText('1 lead to call.');
-  await dialog.getByLabel('Add them under the call list').check();
-  await dialog.getByRole('button', { name: 'Start' }).click();
-  await expect(page.getByLabel('Queue')).toContainText('4 to call · 0 done');
+  await expect(page.getByLabel('Queue')).toContainText('3 to call · 1 done');
+  await page.screenshot({ path: 'test-results/list-runs-out-calling.png' });
 });
 
-test('tags: tag a lead, tag all matching, filter by tag, a routine step by tag, and Settings', async ({ page }) => {
+test('tags: tag a lead, tag all matching, filter by tag, a rule by tag, and Automation', async ({ page }) => {
   page.on('dialog', (d) => void d.accept());
   await page.goto(launchUrl);
   const nav = (name: string) => page.locator('.topbar nav').getByRole('button', { name, exact: true }).click();
@@ -128,28 +101,29 @@ test('tags: tag a lead, tag all matching, filter by tag, a routine step by tag, 
   await expect(page.getByText('1 lead', { exact: true })).toBeVisible();
   await expect(page.locator('table.grid tbody .tag-chip')).toHaveText(['Spanish']);
 
-  // Tag every lead with no tags "Friday".
+  // Tag every lead with no tags "Friday" (a lead called earlier has its button's tag, so it isn't one of them).
   await page.getByLabel('Tag', { exact: true }).selectOption({ label: 'No tags' });
-  await expect(page.getByText('3 leads', { exact: true })).toBeVisible();
+  const untagged = page.getByText(/^\d+ leads?$/);
+  await expect(untagged).toBeVisible();
+  const n = Number((await untagged.innerText()).split(' ')[0]);
   await page.getByRole('button', { name: 'Tag all matching' }).click();
   const dialog = page.getByRole('dialog', { name: 'Tag all matching' });
   await dialog.getByLabel('Tag name').fill('Friday');
-  await dialog.getByRole('button', { name: 'Tag 3 leads' }).click();
-  await expect(page.getByText('Tagged 3 leads "Friday"')).toBeVisible();
+  await dialog.getByRole('button', { name: `Tag ${n} lead${n === 1 ? '' : 's'}` }).click();
+  await expect(page.getByText(`Tagged ${n} lead${n === 1 ? '' : 's'} "Friday"`)).toBeVisible();
   await expect(page.getByText('No leads here.')).toBeVisible();
 
-  // A routine step that filters by the tag says its name.
+  // A rule that filters by the tag says its name.
   await page.getByLabel('Tag', { exact: true }).selectOption({ label: 'Tagged Friday' });
-  await expect(page.getByText('3 leads', { exact: true })).toBeVisible();
-  await page.getByRole('button', { name: 'Save as routine step' }).click();
-  const save = page.getByRole('dialog', { name: 'Save as routine step' });
+  await page.getByRole('button', { name: 'Make a rule' }).click();
+  const save = page.getByRole('dialog', { name: 'New rule' });
   await expect(save).toContainText('Tagged "Friday"');
   await save.getByRole('button', { name: 'Cancel' }).click();
 
-  // Settings: both tags with their counts; rename one.
-  await nav('Settings');
+  // Automation: the tags with their counts; rename one.
+  await nav('Automation');
   const card = page.locator('#tags');
-  await expect(card.locator('tbody tr')).toHaveCount(2);
+  await expect(card.getByLabel('Name of tag Spanish')).toBeVisible();
   await card.getByLabel('Name of tag Friday').fill('Friday list');
   await card.getByRole('button', { name: 'Save' }).click();
   await expect(card.getByLabel('Name of tag Friday list')).toBeVisible();
@@ -162,7 +136,7 @@ test('your fields: define them in Settings, fill one in on a lead, filter Leads 
   await page.goto(launchUrl);
   const nav = (name: string) => page.locator('.topbar nav').getByRole('button', { name, exact: true }).click();
 
-  await nav('Settings');
+  await nav('Automation');
   const card = page.locator('#custom-fields');
   await card.getByLabel('New field name').fill('Mortgage payment');
   await card.getByLabel('New field kind').selectOption('money');
@@ -225,7 +199,7 @@ test('rules: a ready-made one, one made from the Leads filters, preview, run now
   await expect(editor).toHaveCount(0);
 
   // Settings: add the ready-made no-show rule, switched off.
-  await nav('Settings');
+  await nav('Automation');
   const card = page.locator('#rules');
   await card.getByLabel('Add a ready-made rule').selectOption({ label: "Yesterday's no-shows onto the call list" });
   const starter = page.getByRole('dialog', { name: 'New rule' });
@@ -251,7 +225,7 @@ test('a formula field: write it with a preview, see it on the lead, sort and fil
   await page.goto(launchUrl);
   const nav = (name: string) => page.locator('.topbar nav').getByRole('button', { name, exact: true }).click();
 
-  await nav('Settings');
+  await nav('Automation');
   const card = page.locator('#custom-fields');
   await card.getByLabel('New field name').fill('Score');
   await card.getByLabel('New field kind').selectOption('formula');
@@ -307,19 +281,23 @@ test('Google Calendar in Settings: the steps, saving your key, then Connect', as
   await page.screenshot({ path: 'test-results/google-calendar-settings.png' });
 });
 
-test('Settings in sections with a menu; Leads shows which leads and how many on a page', async ({ page }) => {
+test('Settings and Automation in sections with a menu; Leads shows which leads and how many on a page', async ({ page }) => {
   await page.goto(launchUrl);
   const nav = (name: string) => page.locator('.topbar nav').getByRole('button', { name, exact: true }).click();
   await nav('Settings');
   const menu = page.getByRole('navigation', { name: 'Settings sections' });
-  await expect(menu.getByRole('button')).toHaveText(['Calling', 'Your day', 'Leads', 'Unitrust and Google', 'Imports', 'App']);
+  await expect(menu.getByRole('button')).toHaveText(['Calling', 'Leads', 'Unitrust and Google', 'Imports', 'Backups', 'App']);
   // The cards above load on their own and can grow after the jump on a slow computer, so jump again until it's there.
   await expect(async () => {
     await menu.getByRole('button', { name: 'Unitrust and Google settings' }).click();
     await expect(page.getByRole('region', { name: 'Unitrust and Google' }).locator('#google-calendar')).toBeInViewport({ timeout: 1000 });
   }).toPass({ timeout: 15_000 });
-  await expect(page.getByRole('region', { name: 'Leads' }).locator('#custom-fields')).toHaveCount(1);
+  await expect(page.getByRole('region', { name: 'Leads' }).locator('#counties')).toHaveCount(1);
   await page.screenshot({ path: 'test-results/settings-sections.png' });
+  // Automation has the rest, in its own sections.
+  await nav('Automation');
+  await expect(page.getByRole('navigation', { name: 'Automation sections' }).getByRole('button')).toHaveText(['Tags', 'Smart lists', 'Rules', 'Calling screen', 'Fields', 'Funnel']);
+  await expect(page.getByRole('region', { name: 'Fields' }).locator('#custom-fields')).toHaveCount(1);
 
   await nav('Leads');
   const shown = page.getByLabel('Leads shown').first();
@@ -360,19 +338,35 @@ test('a condition on Leads: built in the form, read as Python, and back', async 
   await expect(page.getByLabel('Condition in use')).toHaveCount(0);
 });
 
-test('a status: named in Settings from a condition, shown as a badge and a Leads tab', async ({ page }) => {
+test('a condition saved as a smart list is used by name, and listed in Automation', async ({ page }) => {
+  page.on('dialog', (d) => void d.accept('Spanish speakers'));
+  await page.goto(launchUrl);
+  await page.locator('.topbar nav').getByRole('button', { name: 'Leads', exact: true }).click();
+  await page.getByRole('button', { name: 'Condition…' }).click();
+  const ed = page.getByRole('group', { name: 'Condition' });
+  await ed.getByRole('tab', { name: 'Python' }).click();
+  await ed.getByLabel('Condition in Python').fill('has("Spanish")');
+  await expect(ed.getByLabel('Condition matches')).toHaveText(/^Matches 1 of/);
+  await ed.getByRole('button', { name: 'Save as a smart list…' }).click();
+  await expect(page.getByLabel('Condition in use')).toHaveText('in_list("Spanish speakers")');
+  await expect(page.getByText('1 lead', { exact: true })).toBeVisible();
+  await page.locator('.topbar nav').getByRole('button', { name: 'Automation', exact: true }).click();
+  await expect(page.locator('#statuses').getByLabel('Name of smart list Spanish speakers')).toBeVisible();
+});
+
+test('a smart list: named in Automation from a condition, shown as a badge and a Leads tab', async ({ page }) => {
   await page.goto(launchUrl);
   const nav = (name: string) => page.locator('.topbar nav').getByRole('button', { name, exact: true }).click();
-  await nav('Settings');
+  await nav('Automation');
   const card = page.locator('#statuses');
-  await card.getByRole('button', { name: '+ Status' }).click();
-  await card.getByLabel('New status name').fill('Speaks Spanish');
+  await card.getByRole('button', { name: '+ Smart list' }).click();
+  await card.getByLabel('New smart list name').fill('Speaks Spanish');
   const ed = card.getByRole('group', { name: 'Condition' });
   await ed.getByRole('tab', { name: 'Python' }).click();
   await ed.getByLabel('Condition in Python').fill('has("Spanish")');
   await expect(ed.getByLabel('Condition matches')).toHaveText(/^Matches 1 of/);
   await ed.getByRole('button', { name: 'Use this condition' }).click();
-  await expect(card.getByLabel('Name of status Speaks Spanish')).toBeVisible();
+  await expect(card.getByLabel('Name of smart list Speaks Spanish')).toBeVisible();
   await card.getByLabel('Speaks Spanish as a Leads tab').check();
   await expect(card.getByLabel('Speaks Spanish as a Leads tab')).toBeChecked();
   await card.screenshot({ path: 'test-results/statuses-card.png' });
@@ -387,7 +381,7 @@ test('a status: named in Settings from a condition, shown as a badge and a Leads
 test('a rule on a tag, with a counter: tagging a lead sets it off at once', async ({ page }) => {
   await page.goto(launchUrl);
   const nav = (name: string) => page.locator('.topbar nav').getByRole('button', { name, exact: true }).click();
-  await nav('Settings');
+  await nav('Automation');
   // A counter field.
   const fields = page.locator('#custom-fields');
   await fields.getByLabel('New field name').fill('VIP count');
@@ -429,7 +423,7 @@ test('tag shortcuts: a tag that comes off at the end of the day, and only one of
   page.on('dialog', (d) => void d.accept());
   await page.goto(launchUrl);
   const nav = (name: string) => page.locator('.topbar nav').getByRole('button', { name, exact: true }).click();
-  await nav('Settings');
+  await nav('Automation');
   const card = page.locator('#tags');
   await card.getByLabel('When Call today comes off by itself').selectOption('day');
   await expect(card.getByLabel('When Call today comes off by itself')).toHaveValue('day');
@@ -445,17 +439,17 @@ test('tag shortcuts: a tag that comes off at the end of the day, and only one of
   await card.scrollIntoViewIfNeeded();
   await page.screenshot({ path: 'test-results/tag-shortcuts.png' });
 
-  // Settings → Rules lists the rules they wrote, to preview and run but not edit.
+  // Automation → Rules lists the rules they wrote, to preview and run but not edit.
   const rules = page.locator('#rules');
   const expiry = rules.getByLabel('Rule Take "Call today" off at the end of the day it was put on');
-  await expect(expiry).toContainText('change it in Settings → Tags');
+  await expect(expiry).toContainText('change it in Automation → Tags');
   await expect(expiry.getByRole('button', { name: 'Edit' })).toHaveCount(0);
   await expect(rules.getByLabel('Rule Temperature: "Hot" takes the others off')).toContainText('Take tag "VIP" off');
 });
 
 test('a rule as Python: read it, change it there, and see the change in the form', async ({ page }) => {
   await page.goto(launchUrl);
-  await page.locator('.topbar nav').getByRole('button', { name: 'Settings', exact: true }).click();
+  await page.locator('.topbar nav').getByRole('button', { name: 'Automation', exact: true }).click();
   const card = page.locator('#rules');
   await card.getByLabel('Rule VIPs today').getByRole('button', { name: 'Edit' }).click();
   const editor = page.getByRole('dialog', { name: 'Edit rule' });
@@ -482,7 +476,7 @@ test('a rule as Python: read it, change it there, and see the change in the form
 
 test('a rule that makes a lead come back: steps in the form, read back in words and in Python', async ({ page }) => {
   await page.goto(launchUrl);
-  await page.locator('.topbar nav').getByRole('button', { name: 'Settings', exact: true }).click();
+  await page.locator('.topbar nav').getByRole('button', { name: 'Automation', exact: true }).click();
   const card = page.locator('#rules');
   await card.getByRole('button', { name: '+ New rule' }).click();
   const editor = page.getByRole('dialog', { name: 'New rule' });

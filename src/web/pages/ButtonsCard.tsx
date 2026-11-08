@@ -13,7 +13,7 @@ import {
 import { buttonToPython, pythonToButton, type ButtonNames } from '../../shared/buttonText';
 import { RuleTextError } from '../../shared/ruleText';
 
-// Settings → Buttons: the buttons on the Calling screen. Each counts as an outcome (what Reports and the funnel see),
+// Automation → Calling screen: the buttons on the Calling screen. Each counts as an outcome (what Reports and the funnel see),
 // can show only when a condition is true, has a look, and can add or take off tags. Every outcome has its own button,
 // which you can rename or hide; you can add more that count as any outcome.
 
@@ -34,7 +34,7 @@ function outcomeMeaning(code: string): string {
 
 /** A button with nothing changed but its name and "shown". */
 const plain = (b: ButtonDef) =>
-  !b.show_when && b.color === 'default' && b.fill === 'outline' && b.border === 'solid' && !b.confirm && !b.tooltip && !b.add_tags.length && !b.remove_tags.length && !b.asks.length;
+  !b.show_when && b.color === 'default' && b.fill === 'outline' && b.border === 'solid' && !b.confirm && !b.tooltip && b.tag_self && !b.add_tags.length && !b.remove_tags.length && !b.asks.length;
 
 const COLOR_NAMES: Record<string, string> = { default: 'Plain' };
 const cap = (s: string) => s[0]!.toUpperCase() + s.slice(1);
@@ -146,7 +146,7 @@ export function ButtonsCard() {
         <label className="field">
           <span className="help" style={{ margin: 0 }}>
             The same button as Python: <code>@button(...)</code> says what it counts as (<code>counts_as</code>), when it shows (<code>shows_when</code>, a condition)
-            which of your fields it asks for (<code>asks</code>, a list) and how it looks (<code>color</code>, <code>fill</code>, <code>border</code>, <code>tooltip</code>, <code>confirm</code>). <code>@hidden</code> keeps it off
+            which of your fields it asks for (<code>asks</code>, a list) and how it looks (<code>color</code>, <code>fill</code>, <code>border</code>, <code>tooltip</code>, <code>confirm</code>); <code>tags_lead=False</code> stops it tagging the lead with its name. <code>@hidden</code> keeps it off
             the Calling screen. The docstring is its name, and each line is <code>add_tag("...")</code> or <code>remove_tag("...")</code>.
           </span>
           <textarea value={mine.src} rows={Math.max(6, mine.src.split('\n').length + 2)} spellCheck={false} style={{ width: '100%', fontFamily: 'var(--mono, monospace)' }}
@@ -157,7 +157,7 @@ export function ButtonsCard() {
         <label className="row" style={{ gap: 6 }}>
           Counts as
           <select value={b.outcome} aria-label={`${b.label}: counts as`} onChange={(e) => change(b.id, { outcome: e.target.value })}>
-            {outcomes.map((o) => <option key={o.code} value={o.code}>{o.kind === 'appointment' ? 'Appointment: ' : 'First call: '}{o.label}</option>)}
+            {outcomes.map((o) => <option key={o.code} value={o.code}>{o.label}</option>)}
           </select>
         </label>
       )}
@@ -188,6 +188,9 @@ export function ButtonsCard() {
       <label className="row" style={{ gap: 4 }}>
         <input type="checkbox" checked={b.confirm} onChange={(e) => change(b.id, { confirm: e.target.checked })} /> Ask "are you sure?" first
       </label>
+      <label className="row" style={{ gap: 4 }} title="Pressing it puts on the tag with its name and takes off the tag of the last button pressed, so a smart list can read how the last call went">
+        <input type="checkbox" checked={b.tag_self} onChange={(e) => change(b.id, { tag_self: e.target.checked })} /> Tag the lead "{b.label}" (instead of the last button's tag)
+      </label>
       <Picks b={b} field="add_tags" what="Adds" options={tags} max={10} />
       <Picks b={b} field="remove_tags" what="Takes off" options={tags} max={10} />
       {typed.length > 0 && <Picks b={b} field="asks" what="Asks for" options={typed.map((f) => ({ id: f.id, name: f.label }))} max={5} />}
@@ -202,12 +205,14 @@ export function ButtonsCard() {
       <h2>Buttons</h2>
       <p className="help">
         The buttons on the Calling screen. Each one counts as an outcome (pickup, appt set, sale...), which is what your numbers see.
-        A button can show only for some leads, look how you like, and add or take off tags. Rename an outcome's own button and older calls
+        Pressing one tags the lead with the button's name (taking off the last button's tag), so a smart list can read how the last call went,
+        like <code>has("Dial: No answer")</code>, and <code>times("Dial: No answer")</code> counts them all. A button can also show only for some
+        leads, look how you like, and add or take off other tags. Rename an outcome's own button and older calls
         show the new name; a button you add keeps its name on the calls saved with it. Keys are under Keyboard shortcuts.
       </p>
       {(['first_call', 'appointment'] as const).map((side) => (
         <div key={side}>
-          <h3>{side === 'appointment' ? 'Appointment side' : 'First call side'}</h3>
+          <h3>{side === 'appointment' ? 'Appointment outcomes' : 'Call outcomes'}</h3>
           <table className="grid" style={{ maxWidth: 900 }}>
             <thead><tr><th>Name</th><th>Button</th><th>What it does</th><th></th></tr></thead>
             <tbody>

@@ -7,6 +7,7 @@ import { LeadsPage } from './pages/LeadsPage';
 import { CallsPage } from './pages/CallsPage';
 import { NumbersPage } from './pages/NumbersPage';
 import { DataPage } from './pages/DataPage';
+import { AutomationPage } from './pages/AutomationPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { TodayPage } from './pages/TodayPage';
 import { ReportsPage } from './pages/ReportsPage';
@@ -15,10 +16,10 @@ import { CallbackAlerts } from './components/CallbackAlerts';
 import { buildKeyMap, type CallingSettingsResponse, type KeyMap } from './shortcuts';
 import { getStored, getStoredJson, setStored, setStoredJson } from './storage';
 import { todayRange, ymd } from './when';
-import type { FunnelStep, FunnelStepDef } from '../shared/funnel';
+import { describeFunnelCount, type FunnelStep, type FunnelStepDef } from '../shared/funnel';
 import { leadIdInText } from '../shared/leadLink';
 
-export type Page = 'calling' | 'today' | 'reports' | 'import' | 'leads' | 'calls' | 'numbers' | 'data' | 'settings';
+export type Page = 'calling' | 'today' | 'reports' | 'import' | 'leads' | 'calls' | 'numbers' | 'data' | 'automation' | 'settings';
 const PAGES: { key: Page; label: string }[] = [
   { key: 'calling', label: 'Calling' },
   { key: 'today', label: 'Today' },
@@ -27,7 +28,8 @@ const PAGES: { key: Page; label: string }[] = [
   { key: 'calls', label: 'Call history' },
   { key: 'import', label: 'Import' },
   { key: 'numbers', label: 'Numbers' },
-  { key: 'data', label: 'Export & backup' },
+  { key: 'data', label: 'Export' },
+  { key: 'automation', label: 'Automation' },
   { key: 'settings', label: 'Settings' },
 ];
 
@@ -162,6 +164,7 @@ export function App() {
           {page === 'calls' && <CallsPage />}
           {page === 'numbers' && <NumbersPage />}
           {page === 'data' && <DataPage />}
+          {page === 'automation' && <AutomationPage />}
           {page === 'settings' && <SettingsPage />}
         </div>
         <CallbackAlerts />
@@ -215,7 +218,7 @@ function TodayStats() {
   const a = s.appts;
   /** One step's number today, with its daily goal when it has one. */
   const show = (st: FunnelStepDef) => {
-    if (st.count.by === 'formula') return <span key={st.id} title={`Today: ${st.count.formula}`}>{st.name} <b>{s.formula_counts[st.id] ?? 0}</b></span>;
+    if (st.count.by !== 'measure') return <span key={st.id} title={`Today: ${describeFunnelCount(st.count)}`}>{st.name} <b>{s.formula_counts[st.id] ?? 0}</b></span>;
     switch (st.count.measure) {
       case 'dials': return <Goal key={st.id} label={st.name} n={s.dials} goal={g.dials} />;
       case 'leads_called': return <span key={st.id} title="People called (one lead can get several dials)">{st.name} <b>{s.unique_leads}</b></span>;
@@ -228,14 +231,14 @@ function TodayStats() {
   };
   const onAppts = (st: FunnelStepDef) => st.count.by === 'measure' && APPT_MEASURES.has(st.count.measure);
   return (
-    <div className="stats" title="Today, from your logged calls: your funnel steps (Settings → Your day). Set daily goals in Settings → Calling.">
+    <div className="stats" title="Today, from your logged calls: your funnel steps (Automation → Funnel). Set daily goals in Settings → Calling.">
       {/* The same steps as the funnel on the Calling screen. */}
       {s.steps.filter((st) => !onAppts(st)).map(show)}
       {/* Only on days with appointments, so it takes no room on a short screen otherwise. */}
       {a && a.appointments > 0 && (
         <span
           className="appt-stats"
-          title={`Today's appointments (${a.appointments}): from what you log on the Appointment side, or the Unitrust calendar when the extension sees a change.${a.pending ? ` ${a.pending} not updated yet.` : ''}${a.rescheduled ? ` ${a.rescheduled} rescheduled.` : ''}`}
+          title={`Today's appointments (${a.appointments}): from the appointment buttons you press, or the Unitrust calendar when the extension sees a change.${a.pending ? ` ${a.pending} not updated yet.` : ''}${a.rescheduled ? ` ${a.rescheduled} rescheduled.` : ''}`}
         >
           {s.steps.filter(onAppts).map(show)}
           <span>No-shows <b>{a.no_show}</b></span>

@@ -2,8 +2,11 @@ import * as z from 'zod/v4';
 import type { DB } from '../db/connection.js';
 import { getSetting, setSetting } from '../core/settings.js';
 import { DomainError } from '../core/errors.js';
-import { conditionSql } from './formulas.js';
-import { setTagOnLeads } from './tags.js';
+import { conditionSql, loadStatusDefs } from './formulas.js';
+import { saveStatuses } from './statuses.js';
+import { uuidv7 } from '../ids.js';
+import { ensureTag, setTagOnLeads, tagByName } from './tags.js';
+import { CURRENT_OUTCOME } from '../db/sql.js';
 import { leadCustomValues, listCustomFields, setCustomValues } from './customFields.js';
 import { isTypedField } from '../../shared/customFields.js';
 import { loadOutcomeOverrides, saveOutcomeOverrides } from './callingSettings.js';
@@ -87,13 +90,6 @@ export function saveButtons(db: DB, input: unknown): ButtonInfo[] {
       if (!isTypedField(f)) throw new DomainError(`${b.label}: ${f.label} is ${f.type === 'counter' ? 'a counter' : 'a formula'}, so a button can't ask for it`);
     }
   }
-  const all = loadButtons(db);
-  const merged = [...list, ...all.filter((b) => b.own && !ids.has(b.id))];
-  for (const side of ['first_call', 'appointment'] as const) {
-    if (!merged.some((b) => !b.hidden && buttonSide(b) === side)) {
-      throw new DomainError(`keep at least one button on the ${side === 'appointment' ? 'Appointment' : 'First call'} side`);
-    }
-  }
   const overrides: OutcomeOverrides = { ...loadOutcomeOverrides(db) };
   for (const b of list) if (isOwn(b)) overrides[b.id] = { label: b.label, offered: !b.hidden };
   db.transaction(() => {
@@ -101,6 +97,32 @@ export function saveButtons(db: DB, input: unknown): ButtonInfo[] {
     setSetting(db, 'buttons', list.map((b) => (isOwn(b) ? { ...b, label: undefined, hidden: undefined } : b)));
   })();
   return loadButtons(db);
+}
+
+/** The smart list that says a lead has an appointment to log, which the appointment buttons show for. */
+export const APPOINTMENT_LIST = 'Has an appointment';
+
+/**
+ * Once, after the update that took away the First call and Appointment sides: each button shows by a condition instead.
+ * A smart list "Has an appointment" (the rule the sides used: an appointment set that hasn't sold) is added if there
+ * isn't one; appointment buttons show for leads in it and the others for leads not in it, each joined to any show-when
+ * condition it had. You can change the smart list, or any button's condition, like anything else.
+ */
+export function sidesToConditions(db: DB): boolean {
+  if (getSetting<boolean>(db, 'sides_to_conditions_done')) return false;
+  db.transaction(() => {
+    const lists = loadStatusDefs(db);
+    if (!lists.some((st) => st.name.toLowerCase() === APPOINTMENT_LIST.toLowerCase())) {
+      saveStatuses(db, [...lists, { id: uuidv7(), name: APPOINTMENT_LIST, condition: 'status == "appointment_set" and ifblank(appt_result, "") != "sold"', color: 'blue', tab: false }]);
+    }
+    const cond = (b: ButtonInfo) => {
+      const side = buttonSide(b) === 'appointment' ? `in_list("${APPOINTMENT_LIST}")` : `not in_list("${APPOINTMENT_LIST}")`;
+      return b.show_when ? `${side} and (${b.show_when})` : side;
+    };
+    saveButtons(db, loadButtons(db).map((b) => ButtonDef.parse({ ...b, show_when: cond(b) })));
+    setSetting(db, 'sides_to_conditions_done', true);
+  })();
+  return true;
 }
 
 /** The buttons this lead doesn't get now, because their show-when condition is false for it. */
@@ -136,11 +158,65 @@ export function saveAskedFields(db: DB, b: ButtonInfo | null, leadId: string, va
   setCustomValues(db, leadId, values, now);
 }
 
-/** What pressing a button does to the lead's tags, logged with the button and the call (so undoing the call undoes it). */
+/**
+ * What pressing a button does to the lead's tags, logged with the button and the call (so undoing the call undoes it):
+ * its own tag (its name) replacing the last button's, then the tags it takes off and adds.
+ */
 export function pressButtonTags(db: DB, b: ButtonInfo, leadId: string, callId: string, now: string) {
   const by = { source: 'button', id: b.id, name: b.label, call_id: callId } as const;
+  if (b.tag_self) putOwnTag(db, b, leadId, callId, now);
   for (const t of b.remove_tags) setTagOnLeads(db, [leadId], t, false, now, by);
   for (const t of b.add_tags) setTagOnLeads(db, [leadId], t, true, now, by);
+}
+
+/** Puts the button's own tag on the lead, taking off any other button's own tag. */
+function putOwnTag(db: DB, b: ButtonInfo, leadId: string, callId: string, now: string) {
+  const by = { source: 'button', id: b.id, name: b.label, call_id: callId } as const;
+  const own = ensureTag(db, b.label, now);
+  for (const t of outcomeTagIds(db)) if (t !== own.id) setTagOnLeads(db, [leadId], t, false, now, by);
+  setTagOnLeads(db, [leadId], own.id, true, now, by);
+}
+
+/** A call's outcome was changed: when it's the lead's latest call, the lead gets the new outcome's own tag instead. */
+export function retagChangedOutcome(db: DB, callId: string, leadId: string, outcomeCode: string, now: string) {
+  const latest = db.prepare('SELECT id FROM call WHERE lead_id = ? AND voided_at IS NULL ORDER BY started_at DESC, id DESC LIMIT 1').get(leadId) as { id: string } | undefined;
+  if (latest?.id !== callId) return;
+  const b = loadButtons(db).find((x) => x.id === outcomeCode);
+  if (b?.tag_self) putOwnTag(db, b, leadId, callId, now);
+}
+
+/** The tags buttons put on with their own name (the ones that exist), which replace each other. */
+function outcomeTagIds(db: DB): string[] {
+  return loadButtons(db).filter((b) => b.tag_self).map((b) => tagByName(db, b.label)?.id).filter((t): t is string => !!t);
+}
+
+/**
+ * Once: every lead gets the tag of the button its latest call was saved with (the outcome's name for calls from before
+ * buttons), so smart lists built on those tags see your older leads too. Logged as by that button, "from past calls".
+ */
+export function tagLeadsWithLastButton(db: DB, now: string): number {
+  if (getSetting<boolean>(db, 'outcome_tags_done')) return 0;
+  const buttons = new Map(loadButtons(db).map((b) => [b.id, b]));
+  const rows = db
+    .prepare(
+      `SELECT c.lead_id, o.outcome_code, o.button_id FROM call c JOIN call_outcome o ON o.call_id = c.id
+       WHERE c.voided_at IS NULL AND c.lead_id IS NOT NULL AND ${CURRENT_OUTCOME}
+         AND c.started_at = (SELECT max(c2.started_at) FROM call c2 WHERE c2.lead_id = c.lead_id AND c2.voided_at IS NULL)`,
+    )
+    .all() as { lead_id: string; outcome_code: string; button_id: string | null }[];
+  let n = 0;
+  db.transaction(() => {
+    const done = new Set<string>();
+    for (const r of rows) {
+      if (done.has(r.lead_id)) continue;
+      done.add(r.lead_id);
+      const b = buttons.get(r.button_id ?? r.outcome_code) ?? buttons.get(r.outcome_code);
+      if (!b?.tag_self) continue;
+      n += setTagOnLeads(db, [r.lead_id], ensureTag(db, b.label, now).id, true, now, { source: 'button', id: b.id, name: `${b.label}, from past calls` });
+    }
+    setSetting(db, 'outcome_tags_done', true);
+  })();
+  return n;
 }
 
 /** Undoes what a call's button did to tags, newest first. A tag that was deleted since is left alone. */

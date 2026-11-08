@@ -6,13 +6,12 @@ import { CopyLeadLink, copyCalendarTag } from '../components/LeadDetails';
 import { calendarTag } from '../../shared/leadLink';
 import { isTyping, keyLabel, normKey, type KeyMap } from '../shortcuts';
 import { getStored, setStored } from '../storage';
-import type { CallMode } from '../../shared/appointments';
 import { outcomeDef, savesInstantly } from '../../shared/outcomes';
 import { buttonClass, type ButtonInfo } from '../../shared/buttons';
 import { CustomFieldInput } from '../components/CustomFieldInput';
 
 // The "log the call" form on the Calling screen: number used, outcome, callback time, minutes and note.
-// It has two sides with the same layout: First call (no answer, appt set, ...) and Appointment (no show, prezi, sale, ...).
+// It shows the buttons whose show-when condition is true for the lead (Automation → Calling screen), or every button.
 
 const LAST_NUMBER_KEY = 'mpcrm.lastNumber';
 
@@ -76,11 +75,15 @@ function Timer({ start, onReset }: { start: number; onReset: () => void }) {
  * Phase 2 replaces "log" with "call" but keeps this outcome panel.
  */
 export function LogCall({
-  d, mode, attempt, setDials, resetTimer, restore, active, onSaved, onRefresh,
+  d, showAll, attempt, setDials, resetTimer, restore, active, onSaved, onRefresh, dialCounter = true, callerId = true,
 }: {
   d: LeadDetail;
-  /** Which outcomes to offer: the First call side or the Appointment side. */
-  mode: CallMode;
+  /** Show the dial counter and timer (Automation → Calling screen). */
+  dialCounter?: boolean;
+  /** Show which of your numbers you called from; hidden, the call keeps the number it would have picked. */
+  callerId?: boolean;
+  /** Every button, not only the ones whose condition is true for this lead. */
+  showAll: boolean;
   attempt: Attempt;
   setDials: (n: number) => void;
   resetTimer: () => void;
@@ -110,7 +113,7 @@ export function LogCall({
   const [note, setNote] = useState(restore?.note ?? '');
   const [doNotCall, setDoNotCall] = useState(!!restore?.doNotCall);
   const [objections, setObjections] = useState<string[]>(restore?.objections ?? []);
-  // Your fields the picked button asks for (Settings → Buttons), as typed.
+  // Your fields the picked button asks for (Automation → Calling screen), as typed.
   const [asked, setAsked] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
   const [key, setKey] = useState(newKey());
@@ -120,8 +123,14 @@ export function LogCall({
     if (!numberId && defaultNumber.id) setNumberId(defaultNumber.id);
   }, [defaultNumber.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // The buttons on this side that show for this lead now (Settings → Buttons: shown, and its show-when is true).
-  const buttons = useMemo(() => (meta?.buttons ?? []).filter((b) => b.side === mode && !b.hidden && !d.hidden_buttons?.includes(b.id)), [meta, mode, d.hidden_buttons]);
+  // The buttons that show for this lead now (Automation → Calling screen: shown, and its show-when is true), and the one
+  // an undone call is put back with.
+  const buttons = useMemo(
+    () => (meta?.buttons ?? []).filter((b) => !b.hidden && (showAll || b.id === restore?.button || !d.hidden_buttons?.includes(b.id))),
+    [meta, showAll, d.hidden_buttons, restore?.button],
+  );
+  // Only appointment outcomes showing: the box says so, as the Appointment side did.
+  const apptOnly = buttons.length > 0 && buttons.every((b) => b.side === 'appointment');
   const buttonOf = useCallback((id: string | null) => (id ? (meta?.buttons ?? []).find((b) => b.id === id) ?? null : null), [meta]);
   const picked = buttonOf(button);
   const code = picked?.outcome ?? null;
@@ -257,7 +266,8 @@ export function LogCall({
       // Action keys win over outcome keys (Settings warns about clashes).
       if (Object.values(keys.actions).some((ks) => ks.includes(normKey(e.key)))) return;
       // A key two buttons share goes to the first one showing for this lead.
-      const c = keys.outcomes[mode].get(normKey(e.key))?.find((id) => buttons.some((b) => b.id === id));
+      const k = normKey(e.key);
+      const c = [...(keys.outcomes.first_call.get(k) ?? []), ...(keys.outcomes.appointment.get(k) ?? [])].find((id) => buttons.some((b) => b.id === id));
       if (c) {
         e.preventDefault();
         choose(c);
@@ -265,24 +275,24 @@ export function LogCall({
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [keys, button, buttons, save, choose, active, mode, asksObjections, objectionCodes, toggleObjection]);
+  }, [keys, button, buttons, save, choose, active, asksObjections, objectionCodes, toggleObjection]);
 
   if (!d.lead.phone_e164 && !d.lead.other_phones.some((p) => p.e164)) return <p className="error">This lead has no valid phone number.</p>;
   if (d.state?.status === 'dead') return <RestoreBox d={d} onSaved={onRefresh} label={d.state.block_reason ? `${d.state.block_reason}.` : askedNotToCall(d) ? 'Asked not to be called again. This lead is in the dead pile.' : 'This lead is in the dead pile.'} />;
 
   const k = (a: keyof KeyMap['actions']) => keyLabel(keys.actions[a]?.[0] ?? '');
   return (
-    <div className={`log-box${mode === 'appointment' ? ' appointment' : ''}`}>
+    <div className={`log-box${apptOnly ? ' appointment' : ''}`}>
       <div className="row">
-        <div className="dial-counter" aria-label="Dials this attempt">
+        {dialCounter && <div className="dial-counter" aria-label="Dials this attempt">
           <button className="btn small" onClick={() => setDials(attempt.dials - 1)} disabled={attempt.dials <= 1} aria-label="One less dial">− <kbd>{k('dials_down')}</kbd></button>
           <b>{attempt.dials}</b> dial{attempt.dials === 1 ? '' : 's'}
           <button className="btn small" onClick={() => setDials(attempt.dials + 1)} aria-label="One more dial">+ <kbd>{k('dials_up')}</kbd></button>
-        </div>
-        {attempt.timerStart && <Timer start={attempt.timerStart} onReset={resetTimer} />}
+        </div>}
+        {dialCounter && attempt.timerStart && <Timer start={attempt.timerStart} onReset={resetTimer} />}
         {attempt.to && attempt.to !== d.lead.phone_e164 && <span className="warn">Dialing {fmtPhone(attempt.to)}</span>}
       </div>
-      <div className="row">
+      {callerId && <div className="row">
         <label className="field">
           <span>Caller ID used {defaultNumber.why && !changed && <em>({defaultNumber.why})</em>}</span>
           <select value={numberId} onChange={(e) => setNumberId(e.target.value)} style={changed && defaultNumber.known ? { borderColor: 'var(--warn)' } : undefined}>
@@ -322,9 +332,9 @@ export function LogCall({
           );
         })()}
         {activeNumbers.length === 0 && <span className="help">Add your numbers on the Numbers page to record which one you used.</span>}
-      </div>
-      {mode === 'appointment' && <div className="mode-label">How the appointment went</div>}
-      <div className="outcomes" role="group" aria-label={mode === 'appointment' ? 'Appointment outcome' : 'Outcome'}>
+      </div>}
+      {apptOnly && <div className="mode-label">How the appointment went</div>}
+      <div className="outcomes" role="group" aria-label={apptOnly ? 'Appointment outcome' : 'Outcome'}>
         {buttons.map((b) => (
           <button key={b.id} className={`${button === b.id ? 'active' : ''} ${outcomeDef(b.outcome)?.marksDead ? 'dead' : ''} ${buttonClass(b)}`} onClick={() => choose(b.id)}
             title={b.tooltip || undefined}>
@@ -398,7 +408,7 @@ export function LogCall({
       )}
       {!button && (
         <p className="help">
-          {saveHelp(mode, calling?.settings.instant_save !== false ? buttons.filter((b) => { const o = outcomeOf(b); return !!o && savesInstantly(o, calling?.settings.instant_outcomes); }) : [], buttons.length)}{' '}
+          {saveHelp(apptOnly, calling?.settings.instant_save !== false ? buttons.filter((b) => { const o = outcomeOf(b); return !!o && savesInstantly(o, calling?.settings.instant_outcomes); }) : [], buttons.length)}{' '}
           Dialed more than once? Press <kbd>{k('dials_up')}</kbd> for each extra dial first.
         </p>
       )}
@@ -408,8 +418,8 @@ export function LogCall({
 }
 
 /** How saving works on this side, e.g. "No answer and Bad number save right away; the others save with Enter." */
-function saveHelp(mode: CallMode, instant: { label: string }[], total: number): string {
-  const after = mode === 'appointment' ? 'After the appointment' : 'After the call';
+function saveHelp(apptOnly: boolean, instant: { label: string }[], total: number): string {
+  const after = apptOnly ? 'After the appointment' : 'After the call';
   if (!instant.length) return `${after}, press the outcome key, then Enter.`;
   const names = instant.map((o) => o.label);
   const list = names.length > 1 ? `${names.slice(0, -1).join(', ')} and ${names.at(-1)}` : names[0];

@@ -35,7 +35,7 @@ export function DraftScreen({ id, onLeave, onGone, onCommitted }: {
   const [range, setRange] = useState({ from: '', to: '' });
   const [batch, setBatch] = useState({ name: '', purchased_count: '', cost_total: '', notes: '' });
   /** New imports go straight onto the call list unless you untick this. */
-  // Remembers your last choice: with a routine that adds today's imports in its turn, you'll usually leave it off.
+  // Remembers your last choice: with a rule that adds today's imports in its turn, you'll usually leave it off.
   const [toList, setToListState] = useState(getStored(TO_LIST_KEY) !== '0');
   const setToList = (v: boolean) => {
     setToListState(v);

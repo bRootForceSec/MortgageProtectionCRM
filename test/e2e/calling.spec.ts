@@ -109,7 +109,7 @@ test('import a sheet, log calls by keyboard, and start an Appt set', async ({ pa
   await page.keyboard.press('ArrowDown');
   await expect(page.locator('.lead-name')).toHaveText(second);
 
-  // Callback has no button any more, so 5 does nothing on the First call side.
+  // Callback has no button any more, so 5 does nothing for a lead with no appointment.
   const firstSide = page.getByRole('group', { name: 'Outcome' }).getByRole('button');
   await expect(firstSide).toHaveText([/Dial: No answer/, /Dial: Picked up/, /Dial: Appt set/, /Dial: Bad number/]);
   await page.keyboard.press('5');
@@ -538,11 +538,11 @@ test('Do not call is a tick beside the outcome, toggled with D', async ({ page }
   await expect(page.getByLabel('History').getByText('do not call')).toBeVisible();
 });
 
-test('First call | Appointment: an appointment set opens on the Appointment side; a prezi goes back to be called', async ({ page }) => {
+test('buttons by condition: a lead with an appointment gets the appointment buttons; a prezi goes back to be called', async ({ page }) => {
   await page.goto(launchUrl);
   await page.getByRole('button', { name: 'Calling', exact: true }).click();
   await expect(page.locator('.lead-panel')).toBeVisible();
-  const tabs = page.getByRole('tablist', { name: 'Kind of call' });
+  const callButtons = page.getByRole('group', { name: 'Outcome', exact: true });
   const lookUp = async (who: string) => {
     await page.keyboard.press('l');
     await page.keyboard.type(who);
@@ -550,28 +550,28 @@ test('First call | Appointment: an appointment set opens on the Appointment side
     await page.keyboard.press('Enter');
     await expect(page.locator('.lead-name')).toHaveText(who);
   };
-  // Ann Lee had an appointment set earlier: she opens on the Appointment side.
+  // Ann Lee had an appointment set earlier: she's in the smart list "Has an appointment", so she gets its buttons.
   await lookUp('Ann Lee');
-  await expect(tabs.getByRole('tab', { name: 'Appointment' })).toHaveAttribute('aria-selected', 'true');
   // The time typed on Appt set shows until Unitrust sends its own.
   await expect(page.getByLabel('Current lead').locator('.appt-when')).toContainText('Tomorrow');
   await expect(page.getByLabel('Current lead').locator('.appt-when')).toContainText('not in Unitrust yet');
   const outcomes = page.getByRole('group', { name: 'Appointment outcome' });
   await expect(outcomes.getByRole('button')).toHaveText([/Appt: No show/, /Appt: Picked up/, /Appt: Presentation/, /Appt: Sale/, /Appt: Rescheduled/]);
-  // M flips the side, and back.
+  // M shows every button, and back.
   await page.keyboard.press('m');
-  await expect(tabs.getByRole('tab', { name: 'First call' })).toHaveAttribute('aria-selected', 'true');
-  await expect(page.getByRole('group', { name: 'Outcome', exact: true })).toContainText('No answer');
+  await expect(page.getByLabel('Every button')).toBeChecked();
+  await expect(callButtons).toContainText('No answer');
+  await expect(callButtons).toContainText('Appt: Sale');
   await page.keyboard.press('m');
   await expect(outcomes).toBeVisible();
   await page.screenshot({ path: 'test-results/appointment-side.png', fullPage: true });
-  // 3, Enter: Appt: Presentation. She comes back to be called, tagged as a prezi, on the First call side.
+  // 3, Enter: Appt: Presentation. She comes back to be called, tagged as a prezi, with the call buttons.
   await page.keyboard.press('3');
   await page.keyboard.press('Enter');
   await expect(page.locator('.undo-bar')).toContainText('Appt: Presentation');
   await lookUp('Ann Lee');
   await expect(page.getByLabel('Current lead').locator('.badge.appt-prezi')).toHaveText('Presentation, no sale');
-  await expect(tabs.getByRole('tab', { name: 'First call' })).toHaveAttribute('aria-selected', 'true');
+  await expect(callButtons).toContainText('No answer');
 });
 
 test('call history: change the caller ID on ticked calls', async ({ page }) => {
@@ -662,20 +662,19 @@ test('an appointment about to start: an alert, and its prep card on Today', asyn
   await page.screenshot({ path: 'test-results/today-appointments.png', fullPage: true });
 });
 
-test('on the spot: Run it now saves the Appt set and stays on the lead, on the Appointment side', async ({ page }) => {
+test('on the spot: Run it now saves the Appt set and stays on the lead, with the appointment buttons', async ({ page }) => {
   await page.goto(launchUrl);
   await page.getByRole('button', { name: 'Calling', exact: true }).click();
   await expect(page.locator('.phone-big')).toBeVisible();
   const lead = await page.locator('.lead-name').innerText();
-  const tabs = page.getByRole('tablist', { name: 'Kind of call' });
-  await expect(tabs.getByRole('tab', { name: 'First call' })).toHaveAttribute('aria-selected', 'true');
+  await expect(page.getByRole('group', { name: 'Outcome', exact: true })).toBeVisible();
   // 3 picks Appt set; Shift+Enter runs it now.
   await page.keyboard.press('3');
   await expect(page.getByRole('button', { name: /Run it now/ })).toBeVisible();
   await page.keyboard.press('Shift+Enter');
   await expect(page.locator('.undo-bar')).toContainText('Appt set, running it now');
   await expect(page.locator('.lead-name')).toHaveText(lead);
-  await expect(tabs.getByRole('tab', { name: 'Appointment' })).toHaveAttribute('aria-selected', 'true');
+  await expect(page.getByRole('group', { name: 'Appointment outcome' })).toBeVisible();
   await expect(page.locator('.timer')).toBeVisible();
   await page.screenshot({ path: 'test-results/on-the-spot.png', fullPage: true });
   // When it's done: 4, Enter logs the sale and moves on.
@@ -685,9 +684,9 @@ test('on the spot: Run it now saves the Appt set and stays on the lead, on the A
   await expect(page.getByLabel('Current lead').locator('.badge.appt-sold')).toBeVisible();
 });
 
-test('Settings → Buttons: rename a button, hide one, show Callback, then reset', async ({ page }) => {
+test('Automation → Calling screen: rename a button, hide one, show Callback, then reset', async ({ page }) => {
   await page.goto(launchUrl);
-  await page.getByRole('button', { name: 'Settings' }).click();
+  await page.getByRole('button', { name: 'Automation' }).click();
   const card = page.locator('#outcomes');
   await card.getByLabel('Name for Dial: Bad number').fill('Dial: Wrong #');
   await card.getByLabel('Show a button for Dial: Picked up').uncheck();
@@ -714,11 +713,27 @@ test('Settings → Buttons: rename a button, hide one, show Callback, then reset
   expect(await buttons()).toEqual(['Dial: No answer', 'Dial: Picked up', 'Dial: Appt set', 'Dial: Bad number']);
 });
 
+test('Automation → Calling screen: hide and move lead sheet blocks', async ({ page }) => {
+  await page.goto(launchUrl);
+  await page.getByRole('button', { name: 'Automation' }).click();
+  const card = page.locator('#lead-sheet');
+  const sheet = async () => (await (await page.request.get(new URL('/api/settings/calling', page.url()).href)).json()).settings.sheet;
+  await expect(card.getByLabel('Show Outcome buttons')).toBeDisabled();
+  await card.getByLabel('Show Notes').uncheck();
+  await expect.poll(async () => (await sheet()).blocks.find((b: any) => b.id === 'notes')?.shown).toBe(false);
+  await card.getByRole('button', { name: 'Move Calls up' }).click();
+  await expect.poll(async () => (await sheet()).blocks.map((b: any) => b.id)).toEqual(['lead', 'tags', 'calls', 'outcome', 'notes']);
+  // Put it back for the tests after this one.
+  await card.getByRole('button', { name: 'Move Calls down' }).click();
+  await card.getByLabel('Show Notes').check();
+  await expect.poll(async () => (await sheet()).blocks.every((b: any) => b.shown)).toBe(true);
+});
+
 test('a button of your own: counts as No answer, red and dotted, adds a tag, and shows only while the lead lacks it', async ({ page }) => {
   await page.goto(launchUrl);
   const origin = new URL(page.url()).origin;
   await page.request.post(`${origin}/api/tags`, { data: { name: 'Voicemail' }, headers: { origin } });
-  await page.getByRole('button', { name: 'Settings' }).click();
+  await page.getByRole('button', { name: 'Automation' }).click();
   const card = page.locator('#outcomes');
   await card.getByRole('button', { name: '+ Add a button' }).first().click();
   await card.getByLabel('Name for New button').fill('Left voicemail');
@@ -762,7 +777,7 @@ test('a button of your own: counts as No answer, red and dotted, adds a tag, and
 
 test('a button as Python: read it, change it there, and see the change in the form', async ({ page }) => {
   await page.goto(launchUrl);
-  await page.getByRole('button', { name: 'Settings' }).click();
+  await page.getByRole('button', { name: 'Automation' }).click();
   const card = page.locator('#outcomes');
   await card.getByRole('row').filter({ has: page.getByLabel('Name for Left voicemail') }).getByRole('button', { name: 'More' }).click();
   await card.getByRole('tab', { name: 'Python' }).click();
@@ -793,7 +808,7 @@ test('a field that shows by condition, needed while another is true, filled in b
   await page.goto(launchUrl);
   const origin = new URL(page.url()).origin;
   await page.request.post(`${origin}/api/custom-fields`, { data: { label: 'Best time', type: 'text' }, headers: { origin } });
-  await page.getByRole('button', { name: 'Settings' }).click();
+  await page.getByRole('button', { name: 'Automation' }).click();
   const fields = page.locator('#custom-fields');
   const when = async (button: string, python: string) => {
     await fields.getByRole('button', { name: button }).click();
@@ -904,7 +919,7 @@ test('never dial: a tag marked in Settings keeps a lead off the list, with Add a
   const who = { lead_id: pick.id, name: `${pick.first_name} ${pick.last_name}` };
   await page.request.post(`${origin}/api/leads/${who.lead_id}/tags`, { data: { name: 'DNC' }, headers: { origin } });
 
-  await page.getByRole('button', { name: 'Settings' }).click();
+  await page.getByRole('button', { name: 'Automation' }).click();
   const mark = page.locator('#tags').getByLabel('DNC: never dial');
   await mark.click();
   await expect(mark).toBeChecked();
@@ -1021,7 +1036,7 @@ test('your funnel: rename a step and add one of your own; the top bar and the fu
   const lead = ((await (await page.request.get(`${origin}/api/leads`)).json()).rows as { id: string }[])[0]!;
   await page.request.post(`${origin}/api/leads/${lead.id}/tags`, { data: { name: 'Hot' }, headers: { origin } });
 
-  await page.getByRole('button', { name: 'Settings' }).click();
+  await page.getByRole('button', { name: 'Automation' }).click();
   const steps = page.getByRole('list', { name: 'Funnel steps' });
   await expect(steps.getByRole('listitem')).toHaveCount(7);
   const card = page.locator('#funnel-steps');
@@ -1050,6 +1065,13 @@ test('your funnel: rename a step and add one of your own; the top bar and the fu
   await expect(page.getByText(/Funnel step "Hot today": a funnel step has to be a number/)).toBeVisible();
   await expect(added.getByLabel('Formula')).toHaveValue('times("Hot")');
 
+  // The same step, picked as a tag, in red.
+  await saved(() => added.getByLabel('Counts').selectOption('tag'));
+  await saved(() => added.getByLabel('Tag').selectOption('Hot'));
+  await saved(() => added.getByLabel('Color').selectOption('red'));
+  await expect(added).toContainText('Times the tag "Hot" was put on a lead in the period');
+  await expect(page.locator('.topbar .stats')).toContainText('Hot today 1');
+
   await page.getByRole('button', { name: 'Calling', exact: true }).click();
   await page.getByRole('button', { name: 'Show my funnel' }).click();
   const dialog = page.getByRole('dialog', { name: 'My funnel' });
@@ -1066,7 +1088,7 @@ test('your funnel: rename a step and add one of your own; the top bar and the fu
   await report.screenshot({ path: 'test-results/reports-funnel.png' });
 
   // Back as it was.
-  await page.getByRole('button', { name: 'Settings' }).click();
+  await page.getByRole('button', { name: 'Automation' }).click();
   await page.locator('#funnel-steps').getByRole('button', { name: 'Back to the start' }).click();
   await expect(steps.getByRole('listitem')).toHaveCount(7);
   await expect(page.locator('.topbar .stats')).not.toContainText('Rings');

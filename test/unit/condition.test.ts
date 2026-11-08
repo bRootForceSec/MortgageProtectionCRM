@@ -57,9 +57,9 @@ describe('the condition form', () => {
 });
 
 describe('status rows', () => {
-  it('reads and writes status("Name") and not status("Name")', () => {
-    const g = toForm('status("Needs rebook") and not status("Client")');
+  it('reads status("Name") and in_list("Name"), and writes in_list', () => {
+    const g = toForm('status("Needs rebook") and not in_list("Client")');
     expect(g.items).toEqual([{ kind: 'status', name: 'Needs rebook', negate: false }, { kind: 'status', name: 'Client', negate: true }]);
-    expect(toPython(g)).toBe('status("Needs rebook") and not status("Client")');
+    expect(toPython(g)).toBe('in_list("Needs rebook") and not in_list("Client")');
   });
 });

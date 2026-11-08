@@ -8,7 +8,10 @@ import { commitImport } from '../../src/server/domain/importer.js';
 import { leadTags, setTagOnLeads, ensureTag, tagLead } from '../../src/server/domain/tags.js';
 import { saveStatuses } from '../../src/server/domain/statuses.js';
 import { createCustomField, leadCustomValues, setCustomValues } from '../../src/server/domain/customFields.js';
-import { loadRules, ruleRuns, runEventRules, runRule, saveRules, saveTagShortcuts } from '../../src/server/domain/rules.js';
+import { loadRules, routinesToRules, ruleRuns, runEventRules, runRule, saveRules, saveTagShortcuts } from '../../src/server/domain/rules.js';
+import { addToCallList, getCallList } from '../../src/server/domain/callList.js';
+import { logManualCall } from '../../src/server/domain/calls.js';
+import { setSetting } from '../../src/server/core/settings.js';
 import { listLeads } from '../../src/server/domain/leads.js';
 import { toLeadFilter } from '../../src/server/domain/callList.js';
 import { checkCondition } from '../../src/server/domain/formulas.js';
@@ -165,7 +168,7 @@ describe('rules on lead changes', () => {
     expect(() => saveRules(db, [rule({ name: 'Gone', trigger: { kind: 'status', status_id: 'nope', when: 'enters' } })])).toThrow(/that status is gone/);
     expect(() => saveRules(db, [rule({ name: 'Bad', trigger: { kind: 'becomes_true', condition: 'has(' } })])).toThrow(/Bad: the condition/);
     expect(describeTrigger({ kind: 'tag_added', tag: 'Hot' })).toBe('When tag "Hot" is put on a lead');
-    expect(describeTrigger({ kind: 'status', status_id: 's', when: 'leaves' }, undefined, () => 'Needs rebook')).toBe('When a lead leaves the status "Needs rebook"');
+    expect(describeTrigger({ kind: 'status', status_id: 's', when: 'leaves' }, undefined, () => 'Needs rebook')).toBe('When a lead leaves the smart list "Needs rebook"');
     expect(describeAction({ kind: 'counter', field_id: 'f', op: 'add', by: -1 }, () => 'Streak')).toBe('Take 1 off Streak');
     expect(describeAction({ kind: 'counter', field_id: 'f', op: 'set', by: 0 }, () => 'Streak')).toBe('Reset Streak to 0');
   });
@@ -229,4 +232,72 @@ describe('tag shortcuts', () => {
     expect(saved.map((r) => [r.name, r.enabled])).toEqual([['Mine', true], ...sent.map((r) => [r.name, true])]);
     expect(() => saveTagShortcuts(db, { expiry: [], groups: [{ id: 'g2', name: 'Bad', tag_ids: [ids[0], ids[0]] }] })).toThrow(/a tag is in it twice/);
   });
+
+  it('when the call list runs out, the first rule in order that has leads to add fills it; an empty list or one with leads left does nothing', () => {
+    const jane = lead('Jane');
+    const robert = lead('Robert');
+    const ann = lead('Ann');
+    tagLead(db, robert, 'Second');
+    tagLead(db, ann, 'Third');
+    runEventRules(db);
+    saveRules(db, [
+      rule({ name: 'Then nobody', trigger: { kind: 'list_empty' }, filter: { tag: ensureTag(db, 'Nobody').id } }),
+      rule({ name: 'Then second', trigger: { kind: 'list_empty' }, filter: { tag: ensureTag(db, 'Second').id } }),
+      rule({ name: 'Then third', trigger: { kind: 'list_empty' }, filter: { tag: ensureTag(db, 'Third').id } }),
+    ]);
+    // Nothing on the list: it hasn't run out, it's empty.
+    expect(runEventRules(db)).toEqual([]);
+    addToCallList(db, [jane]);
+    expect(runEventRules(db)).toEqual([]);
+    logManualCall(db, { lead_id: jane, idempotency_key: uuidv7(), outcome_code: 'no_answer' });
+    // Jane called: the list ran out. "Then nobody" has no one, so "Then second" fills it, and "Then third" waits.
+    expect(runEventRules(db).map((r) => r.rule_name)).toEqual(['Then second']);
+    expect(getCallList(db).map((i) => i.lead_id)).toEqual([jane, robert]);
+    expect(ruleRuns(db).map((r) => r.rule_name)).toEqual(['Then second']);
+    logManualCall(db, { lead_id: robert, idempotency_key: uuidv7(), outcome_code: 'no_answer' });
+    expect(runEventRules(db).map((r) => r.rule_name)).toEqual(['Then third']);
+    logManualCall(db, { lead_id: ann, idempotency_key: uuidv7(), outcome_code: 'no_answer' });
+    // Everyone is on the list and called: nothing left to add, nothing runs.
+    expect(runEventRules(db)).toEqual([]);
+    expect(describeTrigger({ kind: 'list_empty' })).toBe('When the call list runs out (the first of these rules that adds leads wins)');
+  });
+
+  it('once, the steps of your routines become "when the call list runs out" rules, in order and switched on', () => {
+    setSetting(db, 'routines', [
+      { id: 'r1', name: 'Every day', days: [1], steps: [
+        { id: 's1', name: 'No-shows', order: 'best_time', source: { kind: 'filter', filter: { status: 'appt_no_show', appt_days: 'since_last_calling_day' } } },
+        { id: 's2', name: 'Friday list', order: 'set', source: { kind: 'saved_list', list_id: 'x' } },
+        { id: 's3', name: "Today's imports", order: 'set', source: { kind: 'filter', filter: { status: 'new', imported: 'today' } } },
+      ] },
+      { id: 'r2', name: 'Weekend', days: [0], steps: [{ id: 's4', name: 'No-shows', order: 'set', source: { kind: 'filter', filter: { status: 'appt_no_show' } } }] },
+    ]);
+    expect(routinesToRules(db)).toBe(2);
+    expect(routinesToRules(db)).toBe(0);
+    expect(loadRules(db).map((r) => [r.name, r.enabled, r.trigger.kind, r.filter])).toEqual([
+      ['Then No-shows', true, 'list_empty', { status: 'appt_no_show', appt_days: 'since_last_calling_day' }],
+      ["Then Today's imports", true, 'list_empty', { status: 'new', imported: 'today' }],
+    ]);
+  });
 });
+
+describe('when leads are imported', () => {
+  it('tags each new lead by its details, once, and leaves leads already there alone', async () => {
+    saveRules(db, [rule({ name: 'Over 60', trigger: { kind: 'imported' }, filter: { where: 'age >= 60' }, actions: [{ kind: 'add_tag', tag: 'Over 60' }] })]);
+    expect(runEventRules(db)).toEqual([]); // Robert (61) was imported before the rule
+    expect(tags(lead('Robert'))).toEqual([]);
+
+    const rows = [
+      ['Mary Old', '(614) 555-0201', 'Chase', 150000, 70, '', '1 A St', 'Columbus', 'OH', '43215', '', '', '', '', '', ''],
+      ['Tom Young', '(614) 555-0202', 'Chase', 150000, 35, '', '2 B St', 'Columbus', 'OH', '43215', '', '', '', '', '', ''],
+    ];
+    const parsed = await parseSpreadsheet(sampleCsv(rows), 'b.csv');
+    commitImport(db, parsed, parsed.sheets[0]!, suggestMapping(parsed.sheets[0]!.headers), { name: 'b2' });
+    const runs = runEventRules(db);
+    expect(runs.map((r) => [r.rule_name, r.trigger, r.matched])).toEqual([['Over 60', 'imported', 1]]);
+    expect(tags(lead('Mary'))).toEqual(['Over 60']);
+    expect(tags(lead('Tom'))).toEqual([]);
+    expect(runEventRules(db)).toEqual([]);
+    expect(describeTrigger({ kind: 'imported' })).toBe('When a new lead is imported');
+  });
+});
+

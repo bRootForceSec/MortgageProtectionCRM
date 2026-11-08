@@ -14,7 +14,7 @@ export interface Tag {
   name: string;
   /** How many leads have it. */
   leads: number;
-  /** A lead with it is never dialed: left off the call list unless you add it anyway (Settings → Tags). */
+  /** A lead with it is never dialed: left off the call list unless you add it anyway (Automation → Tags). */
   never_dial: boolean;
 }
 
@@ -109,7 +109,7 @@ export function renameTag(db: DB, id: string, name: string): { id: string; name:
   })();
 }
 
-/** Deletes a tag and takes it off every lead (logged). Routine steps filtering by it then match no one. */
+/** Deletes a tag and takes it off every lead (logged). Rules filtering by it then match no one. */
 export function deleteTag(db: DB, id: string, now = nowIso()): { removed_from: number } {
   return db.transaction(() => {
     const old = tagById(db, id);

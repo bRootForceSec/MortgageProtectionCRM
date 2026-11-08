@@ -7,7 +7,7 @@ import { loadCallingSettings } from './callingSettings.js';
 import { conditionSql } from './formulas.js';
 
 // Which leads can go on the call list and be dialed: your "Can be called when" condition (Settings → Calling,
-// `callable_when`), never a lead in the dead pile or with no good number. The call list, routines, rules, the Leads
+// `callable_when`), never a lead in the dead pile or with no good number. The call list, rules, the Leads
 // page and the counts of leads left to call all read it from here.
 
 /** SQL over `lead l JOIN lead_state s`: the lead can be called. */

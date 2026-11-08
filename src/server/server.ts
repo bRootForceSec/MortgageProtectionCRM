@@ -7,6 +7,8 @@ import { loadConfig, ensureDirs, loadOrCreateToken, type Config } from './config
 import { openDatabase, type DB } from './db/connection.js';
 import { buildApp } from './http/app.js';
 import { rebuildLeadState } from './domain/leadState.js';
+import { sidesToConditions, tagLeadsWithLastButton } from './domain/buttons.js';
+import { routinesToRules } from './domain/rules.js';
 import { Updates, readBuildInfo, type Runtime, type UpdateProvider } from './updates.js';
 import { DraftWorker } from './domain/drafts.js';
 import { BulkImporter } from './domain/bulkImport.js';
@@ -99,6 +101,12 @@ export async function startServer(opts: StartOptions = {}): Promise<RunningServe
   const db = openDatabase(config.dbFile);
   // lead_state is derived; refreshing it on start keeps time-based statuses current.
   rebuildLeadState(db);
+  // Once, after the update that made buttons tag leads: older leads get the tag of their last call's button.
+  tagLeadsWithLastButton(db, new Date().toISOString());
+  // Once, after the update that took away the First call and Appointment sides: buttons show by conditions instead.
+  sidesToConditions(db);
+  // Once, after the update that took routines away: their steps become "when the call list runs out" rules.
+  routinesToRules(db);
   const token = loadOrCreateToken(config);
   const webDir = [path.resolve(here, '../web'), path.resolve(here, '../../dist/web')].find((d) => fs.existsSync(path.join(d, 'index.html'))) ?? null;
   const build = readBuildInfo(path.resolve(here, '../build-info.json'));
@@ -117,7 +125,7 @@ export async function startServer(opts: StartOptions = {}): Promise<RunningServe
   // Carry on reading any PDF import that was in progress when the app stopped.
   drafts.resumeAll();
   bulk.resume();
-  // Rules that run every day at a time (Settings → Rules).
+  // Rules that run every day at a time (Automation → Rules).
   const rules = new RuleRunner(db, (m) => app.log.warn(m));
   rules.start();
   // Appointments onto Google Calendar, every 15 minutes and soon after a call or a Unitrust read (Settings → Google Calendar).

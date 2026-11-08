@@ -572,7 +572,7 @@ function ByBatch({ rows, N }: { rows: any[]; N: any }) {
       )}
       <p className="help">
         Each bulk import is one line; open it to see its files. Click a column to sort. Reached and booked count leads, not calls.
-        Sales and close rate come from how appointments went (Unitrust or the Appointment side).
+        Sales and close rate come from how appointments went (Unitrust or the appointment buttons).
       </p>
     </div>
   );
@@ -656,7 +656,7 @@ function Benchmarks({ r, N, onSaved }: { r: Report; N: any; onSaved: () => void 
       </div>
       <p className="help">
         Each lead counts under its type now, so fixing a batch's type on Leads moves its history here too.
-        Reached and booked count leads; the small % is out of leads called. Targets start from the flier: A 4 of 5, A1 and AA 1 of 4, B 1 of 5, C 1 of 8, D 1 of 10. Sales and close rate come from how appointments went (Unitrust or the Appointment side).
+        Reached and booked count leads; the small % is out of leads called. Targets start from the flier: A 4 of 5, A1 and AA 1 of 4, B 1 of 5, C 1 of 8, D 1 of 10. Sales and close rate come from how appointments went (Unitrust or the appointment buttons).
       </p>
     </div>
   );
@@ -716,7 +716,7 @@ function DrillModal({ params, drill, onClose, onOpen }: { params: Record<string,
 }
 
 /** Why leads said no on calls in these dates, by lead type: each count, and its share of the calls that offered the chips. */
-/** Your funnel steps (Settings → Your day) for these dates, with the share of the step above that made it to each. */
+/** Your funnel steps (Automation) for these dates, with the share of the step above that made it to each. */
 function FunnelCard({ steps }: { steps: { id: string; name: string; formula: string | null; value: number }[] }) {
   return (
     <div className="card">
@@ -734,7 +734,7 @@ function FunnelCard({ steps }: { steps: { id: string; name: string; formula: str
         </tbody>
       </table>
       <p className="help">
-        Your funnel steps (Settings → Your day), the same numbers as the funnel button on the Calling screen: first calls in these dates, appointments on
+        Your funnel steps (Automation), the same numbers as the funnel button on the Calling screen: first calls in these dates, appointments on
         these days, and your own steps over the log in these dates.
       </p>
     </div>

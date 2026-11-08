@@ -44,6 +44,8 @@ describe('a rule as Python', () => {
       { ...base, trigger: { kind: 'call_saved', outcomes: [] }, filter: { where: 'attempts >= 2 # a comment: here' }, actions: [{ kind: 'add_tag', tag: 'a:b' }] },
       { ...base, filter: { where: '# who\nhas("Hot") or\nattempts > 3' }, actions: [{ kind: 'add_to_list' }] },
       { ...base, trigger: { kind: 'tag_added', tag: 'No show' }, actions: [{ kind: 'come_back', steps: ['15m', '1d@09:00', '3d'] }] },
+      { ...base, trigger: { kind: 'list_empty' }, filter: { status: 'new', imported: 'today' }, actions: [{ kind: 'add_to_list' }] },
+      { ...base, trigger: { kind: 'imported' }, filter: { where: 'age >= 60' }, actions: [{ kind: 'add_tag', tag: 'Over 60' }] },
     ];
     for (const r of rules) expect(round(r)).toEqual(r);
     for (const [i, s] of STARTER_RULES.entries()) expect(round({ ...s, id: `s${i}` })).toEqual({ ...s, id: `s${i}` });

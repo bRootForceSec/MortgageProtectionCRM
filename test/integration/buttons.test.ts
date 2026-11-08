@@ -7,10 +7,10 @@ import { suggestMapping } from '../../src/server/domain/mapping.js';
 import { commitImport } from '../../src/server/domain/importer.js';
 import { ensureTag, leadEvents, leadTags, tagLead } from '../../src/server/domain/tags.js';
 import { createCustomField, leadCustomValues, updateCustomField } from '../../src/server/domain/customFields.js';
-import { buttonsHiddenFor, loadButtons, saveButtons } from '../../src/server/domain/buttons.js';
-import { logManualCall, voidCall } from '../../src/server/domain/calls.js';
+import { buttonsHiddenFor, loadButtons, saveButtons, sidesToConditions, tagLeadsWithLastButton } from '../../src/server/domain/buttons.js';
+import { changeOutcome, logManualCall, voidCall } from '../../src/server/domain/calls.js';
 import { loadOutcomeOverrides } from '../../src/server/domain/callingSettings.js';
-import { checkCondition } from '../../src/server/domain/formulas.js';
+import { checkCondition, loadStatusDefs } from '../../src/server/domain/formulas.js';
 import { runEventRules, saveRules } from '../../src/server/domain/rules.js';
 import { buildReport } from '../../src/server/domain/reports.js';
 import { OUTCOMES } from '../../src/shared/outcomes.js';
@@ -69,7 +69,8 @@ describe('Calling screen buttons', () => {
     const left = button({ label: 'Left voicemail', outcome: 'no_answer', add_tags: [vm.id], remove_tags: [hot.id] });
     saveButtons(db, [...current(), left]);
     const id = call(jane, 'no_answer', left.id);
-    expect(tags(jane)).toEqual(['Voicemail']);
+    // Its own name as a tag, then what it adds and takes off.
+    expect(tags(jane)).toEqual(['Left voicemail', 'Voicemail']);
     const line = leadEvents(db, jane)[0]!;
     expect(line).toMatchObject({ kind: 'tag_added', tag_name: 'Voicemail', source: 'button', source_name: 'Left voicemail' });
     expect(db.prepare('SELECT outcome_code, button_id, button_label FROM call_outcome WHERE call_id = ?').get(id)).toEqual({ outcome_code: 'no_answer', button_id: left.id, button_label: 'Left voicemail' });
@@ -91,12 +92,81 @@ describe('Calling screen buttons', () => {
     const b = button({ label: 'Cold now', outcome: 'no_appt', add_tags: [vm.id], remove_tags: [hot.id] });
     saveButtons(db, [...current(), b]);
     const id = call(jane, 'no_appt', b.id);
-    expect(tags(jane)).toEqual(['Voicemail']);
+    expect(tags(jane)).toEqual(['Cold now', 'Voicemail']);
     const undone = voidCall(db, id);
     expect(undone).toMatchObject({ outcome_code: 'no_appt', button_id: b.id });
     // Hot comes back; Voicemail was on before, so the button didn't add it and the undo leaves it.
     expect(tags(jane)).toEqual(['Hot', 'Voicemail']);
-    expect(leadEvents(db, jane)[0]).toMatchObject({ kind: 'tag_added', tag_name: 'Hot', source: 'button', source_name: 'Cold now, undone' });
+    expect(leadEvents(db, jane).slice(0, 2)).toMatchObject([
+      { kind: 'tag_removed', tag_name: 'Cold now', source: 'button', source_name: 'Cold now, undone' },
+      { kind: 'tag_added', tag_name: 'Hot', source: 'button', source_name: 'Cold now, undone' },
+    ]);
+  });
+
+  it('each button tags the lead with its name, replacing the last button\'s tag; history counts them all, and undo and a change of outcome follow', () => {
+    const jane = lead('Jane');
+    const left = button({ label: 'Left voicemail', outcome: 'no_answer' });
+    const quiet = button({ label: 'Quiet one', outcome: 'no_answer', tag_self: false });
+    saveButtons(db, [...current(), left, quiet]);
+    call(jane, 'no_answer');
+    expect(tags(jane)).toEqual(['Dial: No answer']);
+    call(jane, 'no_answer', left.id);
+    expect(tags(jane)).toEqual(['Left voicemail']);
+    const n = (cond: string) => {
+      const c = checkCondition(db, cond);
+      expect(c.error).toBeNull();
+      return c.matched;
+    };
+    expect(n('times("Dial: No answer") = 1 and has("Left voicemail")')).toBe(1);
+    // A button that doesn't tag leaves the last tag on.
+    call(jane, 'no_answer', quiet.id);
+    expect(tags(jane)).toEqual(['Left voicemail']);
+    const picked = call(jane, 'no_appt');
+    expect(tags(jane)).toEqual(['Dial: Picked up']);
+    // Changing the latest call's outcome changes the tag; undoing it puts the last one back.
+    const cur = db.prepare('SELECT id FROM call_outcome WHERE call_id = ?').get(picked) as { id: string };
+    changeOutcome(db, picked, { outcome_code: 'appointment', expected_current_id: cur.id });
+    expect(tags(jane)).toEqual(['Dial: Appt set']);
+    voidCall(db, picked);
+    expect(tags(jane)).toEqual(['Left voicemail']);
+  });
+
+  it('once, older leads get the tag of their last call\'s button', () => {
+    const jane = lead('Jane');
+    const robert = lead('Robert');
+    db.prepare("DELETE FROM app_setting WHERE key = 'outcome_tags_done'").run();
+    call(jane, 'no_answer');
+    call(robert, 'no_appt');
+    db.prepare('DELETE FROM lead_tag').run();
+    expect(tagLeadsWithLastButton(db, new Date().toISOString())).toBe(2);
+    expect(tags(jane)).toEqual(['Dial: No answer']);
+    expect(tags(robert)).toEqual(['Dial: Picked up']);
+    expect(leadEvents(db, jane)[0]).toMatchObject({ source: 'button', source_name: 'Dial: No answer, from past calls' });
+    db.prepare('DELETE FROM lead_tag').run();
+    expect(tagLeadsWithLastButton(db, new Date().toISOString())).toBe(0);
+  });
+
+  it('once, the First call and Appointment sides become conditions on a smart list, the same rule the sides used', () => {
+    const jane = lead('Jane');
+    const robert = lead('Robert');
+    saveButtons(db, [...current(), button({ label: 'Hot pickup', outcome: 'no_appt', show_when: 'has("Hot")' })]);
+    expect(sidesToConditions(db)).toBe(true);
+    expect(sidesToConditions(db)).toBe(false);
+    expect(loadStatusDefs(db).map((s) => s.name)).toEqual(['Has an appointment']);
+    const bs = loadButtons(db);
+    expect(bs.find((b) => b.id === 'appt_no_show')!.show_when).toBe('in_list("Has an appointment")');
+    expect(bs.find((b) => b.id === 'no_answer')!.show_when).toBe('not in_list("Has an appointment")');
+    expect(bs.find((b) => b.label === 'Hot pickup')!.show_when).toBe('not in_list("Has an appointment") and (has("Hot"))');
+    const side = (id: string) => {
+      const hidden = buttonsHiddenFor(db, id);
+      return hidden.includes('no_answer') && !hidden.includes('appt_no_show') ? 'appointment' : !hidden.includes('no_answer') && hidden.includes('appt_no_show') ? 'first_call' : 'both or neither';
+    };
+    expect(side(jane)).toBe('first_call');
+    call(jane, 'appointment');
+    expect(side(jane)).toBe('appointment');
+    call(jane, 'appt_sale');
+    expect(side(jane)).toBe('first_call');
+    expect(side(robert)).toBe('first_call');
   });
 
   it('a button shows only for leads its condition is true for', () => {
@@ -133,7 +203,7 @@ describe('Calling screen buttons', () => {
     saveButtons(db, [...current(), b]);
     call(jane, 'no_answer', b.id);
     runEventRules(db);
-    expect(tags(jane)).toEqual(['Cold', 'Voicemail']);
+    expect(tags(jane)).toEqual(['Cold', 'Left voicemail', 'Voicemail']);
   });
 
   it('refuses a broken setup, saying what is wrong', () => {
@@ -152,9 +222,8 @@ describe('Calling screen buttons', () => {
     expect(err([...current(), button({ label: 'X', outcome: 'no_answer', add_tags: ['nope'] })])).toBe('X: one of its tags is gone');
     expect(err([...current(), button({ label: 'X', outcome: 'no_answer', add_tags: [vm.id], remove_tags: [vm.id] })])).toBe("X: it can't add and take off the same tag");
     expect(err([...current(), { ...button({ label: 'X', outcome: 'no_appt' }), id: 'no_answer' }])).toBe('two buttons have the same id');
-    expect(err(current().map((b) => (b.side === 'appointment' ? b : { ...b, hidden: true })))).toBe('keep at least one button on the First call side');
-    // With a button of your own on that side, the outcomes' own buttons can all be hidden.
-    expect(err([...current().map((b) => ({ ...b, hidden: buttonSideOf(b) === 'first_call' })), button({ label: 'Mine', outcome: 'no_answer' })])).toBeNull();
+    // There are no sides to keep a button on: any button can be hidden.
+    expect(err(current().map((b) => (b.side === 'appointment' ? b : { ...b, hidden: true })))).toBeNull();
   });
 
   it('a call with a button that saves another outcome is refused', () => {
@@ -178,10 +247,6 @@ describe('Calling screen buttons', () => {
     expect(bad.json().error).toBe('two buttons are called "Hot pickup"');
   });
 });
-
-function buttonSideOf(b: ButtonDef) {
-  return OUTCOMES[b.outcome as keyof typeof OUTCOMES].kind;
-}
 
 describe('fields that show by condition, and buttons that ask for them', () => {
   it('a field shows, and is needed, only while its conditions are true for the lead', () => {

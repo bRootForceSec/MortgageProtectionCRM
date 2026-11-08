@@ -8,7 +8,8 @@ import { CustomFieldInput } from '../components/CustomFieldInput';
 import { ConditionEditor } from '../components/ConditionEditor';
 import { RULES_CHANGED, madeByText } from './TagShortcuts';
 import { pythonToRule, ruleToPython, RuleTextError, type RuleNames } from '../../shared/ruleText';
-import { describeFilter, WEEKDAYS } from '../../shared/routines';
+import { describeFilter } from '../../shared/leadFilter';
+import { WEEKDAYS } from '../../shared/rules';
 import { APPT_DAYS, LAST_CALL, type LeadQuery } from '../../shared/leadFilter';
 import { LEAD_TABS } from '../../shared/leadStatus';
 import { parsePlan } from '../../shared/followUps';
@@ -17,7 +18,7 @@ import {
   type ActionResult, type Rule, type RuleAction, type RuleRun, type RuleTrigger,
 } from '../../shared/rules';
 
-// Settings → Rules: "when this happens, for leads like these, do that". Each rule shows what it does in words, with
+// Automation → Rules: "when this happens, for leads like these, do that". Each rule shows what it does in words, with
 // Preview (what it would do now, changing nothing), Run now, and the log of what it did.
 
 type Filter = Partial<LeadQuery>;
@@ -34,9 +35,16 @@ function useNames() {
   return { tags, tagName, fields, fieldName, statuses, statusName, outcomeLabel, reload };
 }
 
+/** The list with items i and j swapped. */
+const swap = <T,>(list: T[], i: number, j: number): T[] => {
+  const next = [...list];
+  [next[i], next[j]] = [next[j]!, next[i]!];
+  return next;
+};
+
 /** What set a run off, for the log. */
 const RUN_TRIGGER: Record<RuleTrigger['kind'], string> = {
-  daily: 'daily', call_saved: 'call saved', manual: 'run by you', tag_added: 'tag put on', tag_removed: 'tag taken off', status: 'status', becomes_true: 'condition turned true',
+  daily: 'daily', call_saved: 'call saved', manual: 'run by you', tag_added: 'tag put on', tag_removed: 'tag taken off', status: 'smart list', becomes_true: 'condition turned true', list_empty: 'call list ran out', imported: 'leads imported',
 };
 
 function resultText(r: ActionResult, fieldName: (id: string) => string | undefined): string {
@@ -113,13 +121,16 @@ export function RulesCard() {
       <h2>Rules</h2>
       <p className="help">
         When something happens, do something to the leads it fits: every day at a time, when you save a call, when a tag is put on or taken off, when a lead
-        enters or leaves a status, or when a condition turns true. A rule on a lead's change acts on just that lead, if it matches the rule's filters (set them
+        comes into or leaves a smart list, when a condition turns true, or when the call list runs out. The call list runs out when it has leads and
+        you've called them all; then the rules for that go in the order they're listed here, and the first one that adds leads wins, so they set the
+        order you call in (like imports, then yesterday's no-shows, then today's no-answers). They only add leads that aren't on the list
+        at all, so the ones you just called don't come straight back (Clear worked lets them). A rule on a lead's change acts on just that lead, if it matches the rule's filters (set them
         here, or on Leads with <b>Make a rule</b>). Rules can set off other rules; one set off again for the same lead stops there, and the log says so.{' '}
         <b>Preview</b> and <b>Run now</b> act on every lead matching the filters; Preview changes nothing. Every run is in the log below.
       </p>
       {rules.length === 0 && <p className="muted">No rules yet.</p>}
       <ul className="rule-list">
-        {rules.map((r) => (
+        {rules.map((r, i) => (
           <li key={r.id} className="rule" aria-label={`Rule ${r.name}`}>
             <div className="row" style={{ justifyContent: 'space-between' }}>
               {r.made_by ? <b>{r.name}</b> : (
@@ -131,7 +142,10 @@ export function RulesCard() {
               <span className="row" style={{ gap: 4 }}>
                 <button className="btn small" onClick={() => void act(r, true)}>Preview</button>
                 <button className="btn small" onClick={() => void act(r, false)} title="Run it now, whatever its trigger">Run now</button>
+                {!r.made_by && <button className="btn small" aria-label={`Move ${r.name} up`} title="Rules for when the call list runs out go in this order" disabled={i === 0 || !!rules[i - 1]?.made_by} onClick={() => void save(swap(rules, i, i - 1))}>↑</button>}
+                {!r.made_by && <button className="btn small" aria-label={`Move ${r.name} down`} title="Rules for when the call list runs out go in this order" disabled={!rules[i + 1] || !!rules[i + 1]?.made_by} onClick={() => void save(swap(rules, i, i + 1))}>↓</button>}
                 {!r.made_by && <button className="btn small" onClick={() => setEditing(r)}>Edit</button>}
+                <button className="btn small" title="Start a new rule from this one" onClick={() => setEditing({ ...r, made_by: undefined, id: newKey(), name: `${r.name} (copy)`.slice(0, 80) })}>Copy</button>
                 {!r.made_by && <button className="btn small" onClick={() => { if (window.confirm(`Delete the rule "${r.name}"? Its log stays.`)) void save(rules.filter((x) => x.id !== r.id)); }}>Delete</button>}
               </span>
             </div>
@@ -202,7 +216,7 @@ export function NewRuleFromFilters({ filter, onClose }: { filter: Filter; onClos
         try {
           const { rules } = await api.get<{ rules: Rule[] }>('/rules');
           await api.put('/rules', { rules: [...rules, r] });
-          toast(`Saved "${r.name}". See it in Settings → Rules.`);
+          toast(`Saved "${r.name}". See it in Automation → Rules.`);
           onClose();
         } catch (e: any) {
           toast(e.message, 'error');
@@ -247,7 +261,9 @@ const emptyTrigger = (kind: RuleTrigger['kind'], firstStatus: string | undefined
     case 'tag_removed': return { kind, tag: '' };
     case 'status': return { kind, status_id: firstStatus ?? '', when: 'enters' };
     case 'becomes_true': return { kind, condition: '' };
-    case 'manual': return { kind };
+    case 'manual':
+    case 'imported':
+    case 'list_empty': return { kind };
   }
 };
 
@@ -408,11 +424,11 @@ function RuleEditor(props: { rule: Rule; isNew: boolean; onSave: (r: Rule) => Pr
                     <option value="enters">comes into</option>
                     <option value="leaves">leaves</option>
                   </select>
-                  <select value={t.status_id} aria-label="Status" onChange={(e) => setTrigger({ ...t, status_id: e.target.value })}>
-                    {!names.statuses.some((st) => st.id === t.status_id) && <option value={t.status_id}>{t.status_id ? 'A deleted status' : 'Pick a status'}</option>}
+                  <select value={t.status_id} aria-label="Smart list" onChange={(e) => setTrigger({ ...t, status_id: e.target.value })}>
+                    {!names.statuses.some((st) => st.id === t.status_id) && <option value={t.status_id}>{t.status_id ? 'A deleted smart list' : 'Pick a smart list'}</option>}
                     {names.statuses.map((st) => <option key={st.id} value={st.id}>{st.name}</option>)}
                   </select>
-                  {!names.statuses.length && <span className="help" style={{ margin: 0 }}>Make a status first, in Settings → Statuses.</span>}
+                  {!names.statuses.length && <span className="help" style={{ margin: 0 }}>Make a smart list first, in Automation → Smart lists.</span>}
                 </div>
               );
             })()}
