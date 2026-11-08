@@ -12,6 +12,8 @@ import { isTypedField } from '../../shared/customFields.js';
 import { loadOutcomeOverrides, saveOutcomeOverrides } from './callingSettings.js';
 import { APPOINTMENT_LIST, ButtonDef, ButtonDefs, buttonSide, starterButtons, starterShowWhen, type ButtonInfo } from '../../shared/buttons.js';
 import { OUTCOMES, outcomeDef, type OutcomeCode, type OutcomeOverrides } from '../../shared/outcomes.js';
+import type { ApptResult } from '../../shared/appointments.js';
+import type { EventBy } from '../../shared/leadEvents.js';
 
 // Your Calling screen buttons (shared/buttons.ts), kept as the `buttons` setting. An outcome's own button keeps its
 // name and "shown" in `outcome_overrides` (so Reports and older calls follow a rename, as before); everything else
@@ -169,8 +171,7 @@ export function pressButtonTags(db: DB, b: ButtonInfo, leadId: string, callId: s
 }
 
 /** Puts the button's own tag on the lead, taking off any other button's own tag. */
-function putOwnTag(db: DB, b: ButtonInfo, leadId: string, callId: string, now: string) {
-  const by = { source: 'button', id: b.id, name: b.label, call_id: callId } as const;
+function putOwnTag(db: DB, b: ButtonInfo, leadId: string, callId: string | null, now: string, by: EventBy = { source: 'button', id: b.id, name: b.label, call_id: callId }) {
   const own = ensureTag(db, b.label, now);
   for (const t of outcomeTagIds(db)) if (t !== own.id) setTagOnLeads(db, [leadId], t, false, now, by);
   setTagOnLeads(db, [leadId], own.id, true, now, by);
@@ -182,6 +183,44 @@ export function retagChangedOutcome(db: DB, callId: string, leadId: string, outc
   if (latest?.id !== callId) return;
   const b = loadButtons(db).find((x) => x.id === outcomeCode);
   if (b?.tag_self) putOwnTag(db, b, leadId, callId, now);
+}
+
+/**
+ * How an appointment went, read from Unitrust's color: the lead gets the same tag as pressing that result's button
+ * (like "Appt: No show"), in place of the last button's, so smart lists and rules read Unitrust like any other tag.
+ */
+export function tagApptResult(db: DB, leadId: string, result: ApptResult, now: string, name = 'calendar color'): boolean {
+  const code = (Object.keys(OUTCOMES) as OutcomeCode[]).find((c) => OUTCOMES[c].active && OUTCOMES[c].apptResult === result);
+  const b = code && loadButtons(db).find((x) => x.id === code);
+  if (!b?.tag_self) return false;
+  const had = !!db.prepare('SELECT 1 FROM lead_tag lt JOIN tag t ON t.id = lt.tag_id WHERE lt.lead_id = ? AND t.name = ?').get(leadId, b.label);
+  if (had) return false;
+  putOwnTag(db, b, leadId, null, now, { source: 'unitrust', id: b.id, name });
+  return true;
+}
+
+/**
+ * Once: leads whose appointment result is Unitrust's latest color, given after their last call, get that result's tag, so smart lists
+ * built on those tags see older appointments too.
+ */
+export function tagLeadsWithUnitrustResult(db: DB, now: string): number {
+  if (getSetting<boolean>(db, 'unitrust_tags_done')) return 0;
+  const rows = db
+    .prepare(
+      `SELECT s.lead_id, s.appt_result FROM lead_state s
+       WHERE s.appt_result IS NOT NULL AND s.appt_result <> 'not_set'
+         AND s.appt_result = (SELECT r.result FROM appointment_result r JOIN appointment a ON a.id = r.appointment_id
+                              WHERE a.lead_id = s.lead_id ORDER BY r.entered_at DESC, r.id DESC LIMIT 1)
+         AND (SELECT max(r.entered_at) FROM appointment_result r JOIN appointment a ON a.id = r.appointment_id WHERE a.lead_id = s.lead_id)
+           > coalesce((SELECT max(o.entered_at) FROM call_outcome o JOIN call c ON c.id = o.call_id WHERE c.lead_id = s.lead_id AND c.voided_at IS NULL), '')`,
+    )
+    .all() as { lead_id: string; appt_result: ApptResult }[];
+  let n = 0;
+  db.transaction(() => {
+    for (const r of rows) if (tagApptResult(db, r.lead_id, r.appt_result, now, 'calendar color, from past appointments')) n++;
+    setSetting(db, 'unitrust_tags_done', true);
+  })();
+  return n;
 }
 
 /** The tags buttons put on with their own name (the ones that exist), which replace each other. */

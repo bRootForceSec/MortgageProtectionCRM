@@ -8,6 +8,7 @@ import { normalizeUsPhone } from './normalize.js';
 import { outcomeDef } from '../../shared/outcomes.js';
 import { APPT_RESULTS, parseUnitrustTitle, resultOfColor, type ApptResult, type UnitrustColor } from '../../shared/appointments.js';
 import { onTheSpotOn } from './appointments.js';
+import { tagApptResult } from './buttons.js';
 import { apptDayRange } from './callList.js';
 import type { ApptDays } from '../../shared/leadFilter.js';
 
@@ -62,6 +63,8 @@ export function recordUnitrustEvents(db: DB, events: UnitrustEvent[], view: Cale
   const shown = new Set(view.days ?? []);
   const sync: UnitrustSync = { at: now, seen: 0, matched: 0, added: 0, changed: 0, unmatched: [] };
   const touched = new Set<string>();
+  /** Leads whose appointment Unitrust now says went some way, to tag once their state is rebuilt. */
+  const results = new Map<string, ApptResult>();
   const byKey = db.prepare("SELECT id, lead_id FROM appointment WHERE unitrust_key = ?");
   const current = db.prepare('SELECT result FROM appointment_result WHERE appointment_id = ? ORDER BY entered_at DESC, id DESC LIMIT 1');
   const insertAppt = db.prepare(
@@ -137,6 +140,7 @@ export function recordUnitrustEvents(db: DB, events: UnitrustEvent[], view: Cale
       const add = storedResult(result, was);
       if (add) {
         insertResult.run(uuidv7(), apptId, add, now);
+        if (add !== 'cleared') results.set(leadId, add as ApptResult);
         if (existing) sync.changed++;
         touched.add(leadId);
       }
@@ -145,6 +149,15 @@ export function recordUnitrustEvents(db: DB, events: UnitrustEvent[], view: Cale
     setSetting(db, SETTING, sync);
   })();
   if (touched.size) rebuildLeadState(db, [...touched], now);
+  // The color becomes a tag, unless how that appointment went is already logged here (which beats the color).
+  if (results.size) {
+    const state = db.prepare('SELECT appt_result FROM lead_state WHERE lead_id = ?');
+    db.transaction(() => {
+      for (const [leadId, result] of results) {
+        if ((state.get(leadId) as { appt_result: string | null } | undefined)?.appt_result === result) tagApptResult(db, leadId, result, now);
+      }
+    })();
+  }
   return sync;
 }
 
