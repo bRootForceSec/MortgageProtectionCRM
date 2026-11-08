@@ -10,7 +10,7 @@ import { CURRENT_OUTCOME } from '../db/sql.js';
 import { leadCustomValues, listCustomFields, setCustomValues } from './customFields.js';
 import { isTypedField } from '../../shared/customFields.js';
 import { loadOutcomeOverrides, saveOutcomeOverrides } from './callingSettings.js';
-import { ButtonDef, ButtonDefs, buttonSide, starterButtons, type ButtonInfo } from '../../shared/buttons.js';
+import { APPOINTMENT_LIST, ButtonDef, ButtonDefs, buttonSide, starterButtons, starterShowWhen, type ButtonInfo } from '../../shared/buttons.js';
 import { OUTCOMES, outcomeDef, type OutcomeCode, type OutcomeOverrides } from '../../shared/outcomes.js';
 
 // Your Calling screen buttons (shared/buttons.ts), kept as the `buttons` setting. An outcome's own button keeps its
@@ -100,7 +100,6 @@ export function saveButtons(db: DB, input: unknown): ButtonInfo[] {
 }
 
 /** The smart list that says a lead has an appointment to log, which the appointment buttons show for. */
-export const APPOINTMENT_LIST = 'Has an appointment';
 
 /**
  * Once, after the update that took away the First call and Appointment sides: each button shows by a condition instead.
@@ -116,8 +115,8 @@ export function sidesToConditions(db: DB): boolean {
       saveStatuses(db, [...lists, { id: uuidv7(), name: APPOINTMENT_LIST, condition: 'status == "appointment_set" and ifblank(appt_result, "") != "sold"', color: 'blue', tab: false }]);
     }
     const cond = (b: ButtonInfo) => {
-      const side = buttonSide(b) === 'appointment' ? `in_list("${APPOINTMENT_LIST}")` : `not in_list("${APPOINTMENT_LIST}")`;
-      return b.show_when ? `${side} and (${b.show_when})` : side;
+      const side = starterShowWhen(b.outcome);
+      return !b.show_when ? side : b.show_when === side ? side : `${side} and (${b.show_when})`;
     };
     saveButtons(db, loadButtons(db).map((b) => ButtonDef.parse({ ...b, show_when: cond(b) })));
     setSetting(db, 'sides_to_conditions_done', true);

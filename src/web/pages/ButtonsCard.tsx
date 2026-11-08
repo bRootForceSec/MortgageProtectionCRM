@@ -8,7 +8,7 @@ import { ConditionEditor } from '../components/ConditionEditor';
 import { APPT_RESULT_LABEL } from '../../shared/appointments';
 import { outcomeDef } from '../../shared/outcomes';
 import {
-  BUTTON_BORDERS, BUTTON_COLORS, BUTTON_FILLS, ButtonDef, buttonClass, buttonSide, describeButtonTags,
+  BUTTON_BORDERS, BUTTON_COLORS, BUTTON_FILLS, ButtonDef, buttonClass, buttonSide, describeButtonTags, starterShowWhen,
 } from '../../shared/buttons';
 import { buttonToPython, pythonToButton, type ButtonNames } from '../../shared/buttonText';
 import { RuleTextError } from '../../shared/ruleText';
@@ -34,7 +34,7 @@ function outcomeMeaning(code: string): string {
 
 /** A button with nothing changed but its name and "shown". */
 const plain = (b: ButtonDef) =>
-  !b.show_when && b.color === 'default' && b.fill === 'outline' && b.border === 'solid' && !b.confirm && !b.tooltip && b.tag_self && !b.add_tags.length && !b.remove_tags.length && !b.asks.length;
+  b.show_when === starterShowWhen(b.outcome) && b.color === 'default' && b.fill === 'outline' && b.border === 'solid' && !b.confirm && !b.tooltip && b.tag_self && !b.add_tags.length && !b.remove_tags.length && !b.asks.length;
 
 const COLOR_NAMES: Record<string, string> = { default: 'Plain' };
 const cap = (s: string) => s[0]!.toUpperCase() + s.slice(1);
@@ -96,7 +96,7 @@ export function ButtonsCard() {
   };
   const reset = (b: ButtonDef) => {
     const def = outcomeDef(b.outcome)!;
-    setDraft(list.map((x) => (x.id === b.id ? ButtonDef.parse({ id: b.id, outcome: b.outcome, label: def.label, hidden: !def.offered }) : x)));
+    setDraft(list.map((x) => (x.id === b.id ? ButtonDef.parse({ id: b.id, outcome: b.outcome, label: def.label, hidden: !def.offered, show_when: starterShowWhen(b.outcome) }) : x)));
   };
   const save = async () => {
     try {

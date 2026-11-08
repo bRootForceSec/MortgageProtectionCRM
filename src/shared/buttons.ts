@@ -56,11 +56,19 @@ export interface ButtonInfo extends ButtonDef {
 }
 
 /** Every active outcome's own button, in the outcomes' order, before you change anything. */
+/** The smart list the appointment buttons show for (made once, when the First call and Appointment sides went). */
+export const APPOINTMENT_LIST = 'Has an appointment';
+
+/** When an outcome's own button shows to start with: the appointment ones for leads with an appointment, the rest for the others. */
+export function starterShowWhen(outcome: string): string {
+  return buttonSide({ outcome }) === 'appointment' ? `in_list("${APPOINTMENT_LIST}")` : `not in_list("${APPOINTMENT_LIST}")`;
+}
+
 export function starterButtons(label: (code: OutcomeCode) => string, offered: (code: OutcomeCode) => boolean): ButtonDef[] {
   return (Object.entries(OUTCOMES) as [OutcomeCode, (typeof OUTCOMES)[OutcomeCode]][])
     .filter(([, o]) => o.active)
     .sort((a, b) => a[1].sortOrder - b[1].sortOrder)
-    .map(([code]) => ButtonDef.parse({ id: code, outcome: code, label: label(code), hidden: !offered(code) }));
+    .map(([code]) => ButtonDef.parse({ id: code, outcome: code, label: label(code), hidden: !offered(code), show_when: starterShowWhen(code) }));
 }
 
 /** The button's side, from its outcome. */

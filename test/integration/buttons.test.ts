@@ -14,9 +14,10 @@ import { checkCondition, loadStatusDefs } from '../../src/server/domain/formulas
 import { runEventRules, saveRules } from '../../src/server/domain/rules.js';
 import { buildReport } from '../../src/server/domain/reports.js';
 import { OUTCOMES } from '../../src/shared/outcomes.js';
-import { ButtonDef } from '../../src/shared/buttons.js';
+import { ButtonDef, starterShowWhen } from '../../src/shared/buttons.js';
 import { buildApp } from '../../src/server/http/app.js';
 import { uuidv7 } from '../../src/server/ids.js';
+import { setSetting } from '../../src/server/core/settings.js';
 
 const TOKEN = 'test-token-0123456789abcdef0123456789abcdef';
 const write = { host: '127.0.0.1:5170', cookie: `mpcrm_session=${TOKEN}`, origin: 'http://127.0.0.1:5170' };
@@ -46,7 +47,7 @@ describe('Calling screen buttons', () => {
     expect(bs.map((b) => b.id)).toEqual(active.map(([c]) => c));
     for (const b of bs) {
       const o = OUTCOMES[b.id as keyof typeof OUTCOMES];
-      expect(b).toMatchObject({ outcome: b.id, own: true, label: o.label, hidden: !o.offered, default_key: o.hotkey, side: o.kind, show_when: '', add_tags: [] });
+      expect(b).toMatchObject({ outcome: b.id, own: true, label: o.label, hidden: !o.offered, default_key: o.hotkey, side: o.kind, show_when: starterShowWhen(b.id), add_tags: [] });
     }
   });
 
@@ -150,6 +151,9 @@ describe('Calling screen buttons', () => {
     const jane = lead('Jane');
     const robert = lead('Robert');
     saveButtons(db, [...current(), button({ label: 'Hot pickup', outcome: 'no_appt', show_when: 'has("Hot")' })]);
+    // A new database has had it done when it opened; an older one gets it on its first open after the update.
+    expect(sidesToConditions(db)).toBe(false);
+    setSetting(db, 'sides_to_conditions_done', false);
     expect(sidesToConditions(db)).toBe(true);
     expect(sidesToConditions(db)).toBe(false);
     expect(loadStatusDefs(db).map((s) => s.name)).toEqual(['Has an appointment']);
@@ -175,8 +179,11 @@ describe('Calling screen buttons', () => {
     tagLead(db, jane, 'Hot');
     const b = button({ label: 'Hot pickup', outcome: 'no_appt', show_when: 'has("Hot")' });
     saveButtons(db, [...current(), b]);
-    expect(buttonsHiddenFor(db, jane)).toEqual([]);
-    expect(buttonsHiddenFor(db, robert)).toEqual([b.id]);
+    // The appointment buttons are hidden too: neither has an appointment.
+    const appt = current().filter((x) => x.show_when === 'in_list("Has an appointment")').map((x) => x.id);
+    expect(appt.length).toBeGreaterThan(0);
+    expect(buttonsHiddenFor(db, jane)).toEqual(appt);
+    expect(buttonsHiddenFor(db, robert)).toEqual([...appt, b.id]);
   });
 
   it('pressed() counts a button by its name, and the outcome counts its buttons too', () => {
@@ -241,7 +248,7 @@ describe('Calling screen buttons', () => {
     const meta = await app.inject({ method: 'GET', url: '/api/meta', headers: write });
     expect(meta.json().buttons.map((x: { id: string }) => x.id)).toContain(b.id);
     const detail = await app.inject({ method: 'GET', url: `/api/leads/${lead('Jane')}`, headers: write });
-    expect(detail.json().hidden_buttons).toEqual([b.id]);
+    expect(detail.json().hidden_buttons).toEqual([...current().filter((x) => x.show_when === 'in_list("Has an appointment")').map((x) => x.id), b.id]);
     const bad = await app.inject({ method: 'PUT', url: '/api/buttons', headers: write, payload: { buttons: [...current(), { ...b, id: 'b-2' }] } });
     expect(bad.statusCode).toBe(400);
     expect(bad.json().error).toBe('two buttons are called "Hot pickup"');
