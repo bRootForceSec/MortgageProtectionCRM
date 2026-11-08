@@ -61,7 +61,7 @@ export function buttonById(db: DB, id: string): ButtonInfo {
 /**
  * Saves your buttons, in order. Each one counts as an active outcome, has a name no other button has, and a show-when
  * condition that works; the tags it adds or takes off exist. An outcome's own button can be hidden but not deleted
- * (it comes back at the end), and each side of the Calling screen keeps at least one button.
+ * (it comes back at the end).
  */
 export function saveButtons(db: DB, input: unknown): ButtonInfo[] {
   const list = ButtonDefs.parse(input);
@@ -97,7 +97,7 @@ export function saveButtons(db: DB, input: unknown): ButtonInfo[] {
   for (const b of list) if (isOwn(b)) overrides[b.id] = { label: b.label, offered: !b.hidden };
   const before = new Map(loadButtons(db).map((b) => [b.id, b.label]));
   db.transaction(() => {
-    saveOutcomeOverrides(db, overrides, { checkSides: false });
+    saveOutcomeOverrides(db, overrides);
     setSetting(db, 'buttons', list.map((b) => (isOwn(b) ? { ...b, label: undefined, hidden: undefined } : b)));
     for (const b of list) {
       const was = before.get(b.id);

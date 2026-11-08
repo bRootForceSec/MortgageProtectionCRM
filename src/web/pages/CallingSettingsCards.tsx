@@ -203,17 +203,16 @@ export function CallingCard() {
         <label>Saving</label>
         <span>
           <label className="choice-inline"><input type="checkbox" checked={s.instant_save} onChange={(e) => set({ instant_save: e.target.checked })} /> some outcomes save as soon as I press the key (no Enter). Undo still works.</label>
-          {s.instant_save && (['first_call', 'appointment'] as const).map((side) => (
-            <span key={side} className="row" style={{ marginTop: 4 }}>
-              <span className="help">{side === 'appointment' ? 'Appointments:' : 'Calls:'}</span>
-              {(meta?.outcome_codes ?? []).filter((o) => o.kind === side && !o.requires_callback_time && o.offered).map((o) => (
+          {s.instant_save && (
+            <span className="row" style={{ marginTop: 4 }}>
+              {(meta?.outcome_codes ?? []).filter((o) => !o.requires_callback_time && o.offered).map((o) => (
                 <label key={o.code} className="choice-inline">
                   <input type="checkbox" checked={savesInstantly(o, s.instant_outcomes)}
                     onChange={(e) => set({ instant_outcomes: { ...s.instant_outcomes, [o.code]: e.target.checked } })} /> {o.label}
                 </label>
               ))}
             </span>
-          ))}
+          )}
           {s.instant_save && <span className="help">Ticked outcomes save without Enter. Talk minutes come from the timer. Callbacks always wait for their day.</span>}
         </span>
 
