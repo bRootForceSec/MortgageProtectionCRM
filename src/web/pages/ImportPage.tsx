@@ -103,7 +103,7 @@ function Start({ onDraft, onBulk }: { onDraft: (id: string) => void; onBulk: (id
     setPicked(r);
   };
 
-  const startBulk = async (settings: { add_to_call_list: boolean; import_ready_now: boolean }) => {
+  const startBulk = async (settings: { add_to_call_list: boolean; import_ready_now: boolean; tags: string[] }) => {
     if (!picked) return;
     if (isSending()) return toast('Another bulk import is still sending its files. Wait for it to finish, or stop it.', 'error');
     try {

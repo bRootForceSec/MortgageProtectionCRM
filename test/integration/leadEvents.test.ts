@@ -51,6 +51,20 @@ describe("the lead's log", () => {
     expect(getLeadDetail(db, '', jane)!.events).toHaveLength(3);
   });
 
+  it('an import can tag every lead it brings in, logged as by the import', async () => {
+    const rows = [['Zed Quinn', '(614) 555-0301', 'Chase', 100000, 50, 'No', '1 A St', 'Columbus', 'OH', '43215', 'No', 'No', 'No', 'No', 'No', '']];
+    const parsed = await parseSpreadsheet(sampleCsv(rows), 'z.csv');
+    const sheet = parsed.sheets[0]!;
+    commitImport(db, parsed, sheet, suggestMapping(sheet.headers), { name: 'Facebook Nov', tags: ['Facebook', 'November', 'Facebook'] });
+    const zed = lead('Zed');
+    expect(leadEvents(db, zed).map((e) => [e.kind, e.tag_name, e.source, e.source_name]).sort()).toEqual([
+      ['tag_added', 'Facebook', 'import', 'Facebook Nov'],
+      ['tag_added', 'November', 'import', 'Facebook Nov'],
+    ]);
+    // Leads from earlier imports are left alone.
+    expect(leadEvents(db, lead('Jane'))).toEqual([]);
+  });
+
   it('a rule preview logs nothing', () => {
     saveRules(db, [{ id: 'r1', name: 'Hot', enabled: true, trigger: { kind: 'manual' }, filter: {}, actions: [{ kind: 'add_tag', tag: 'Hot' }] }]);
     runRuleById(db, 'r1', true);

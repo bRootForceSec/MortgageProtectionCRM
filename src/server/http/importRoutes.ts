@@ -44,6 +44,7 @@ const batchSchema = z.object({
   lead_type: z.string().max(100).nullish(),
   lead_age_label: z.string().max(100).nullish(),
   notes: z.string().max(2000).nullish(),
+  tags: z.array(z.string().trim().min(1).max(40)).max(20).optional(),
 });
 
 const fieldsSchema = z.record(z.string().max(40), z.string().max(500));
@@ -262,8 +263,8 @@ export function registerImportRoutes(
   app.get('/api/bulk-imports', async () => bulk.list());
 
   app.post('/api/bulk-imports', async (req) => {
-    const b = z.object({ lead_type: typeCode.nullish(), add_to_call_list: z.boolean().optional(), import_ready_now: z.boolean().optional() }).parse(req.body);
-    return bulk.create({ lead_type: b.lead_type ?? null, add_to_call_list: b.add_to_call_list, import_ready_now: b.import_ready_now });
+    const b = z.object({ lead_type: typeCode.nullish(), add_to_call_list: z.boolean().optional(), import_ready_now: z.boolean().optional(), tags: batchSchema.shape.tags }).parse(req.body);
+    return bulk.create({ lead_type: b.lead_type ?? null, add_to_call_list: b.add_to_call_list, import_ready_now: b.import_ready_now, tags: b.tags });
   });
 
   app.get('/api/bulk-imports/:id', async (req) => bulk.status(idParam.parse(req.params).id));

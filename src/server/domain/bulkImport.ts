@@ -21,6 +21,8 @@ export interface BulkSettings {
   add_to_call_list: boolean;
   /** Import the complete leads of a file now and put the ones that need a look aside (else the whole file waits). */
   import_ready_now: boolean;
+  /** Tags put on every lead the files bring in. */
+  tags?: string[];
 }
 
 export type BulkFileState =
@@ -97,6 +99,7 @@ export class BulkImporter {
       lead_type: settings.lead_type ?? null,
       add_to_call_list: settings.add_to_call_list ?? false,
       import_ready_now: settings.import_ready_now ?? true,
+      tags: settings.tags ?? [],
     };
     if (s.lead_type && !this.db.prepare('SELECT 1 FROM lead_type WHERE code = ?').get(s.lead_type)) {
       throw new DomainError(`unknown lead type "${s.lead_type}"`);
@@ -245,7 +248,7 @@ export class BulkImporter {
     }
     const aside = look ? setAsideNeedsReview(this.db, this.importsDir, f.draft_id) : null;
     try {
-      const r = commitDraft(this.db, this.importsDir, f.draft_id, { name: batchNameFor(f.file_name, f.part), lead_type: settings.lead_type });
+      const r = commitDraft(this.db, this.importsDir, f.draft_id, { name: batchNameFor(f.file_name, f.part), lead_type: settings.lead_type, tags: settings.tags });
       const added = settings.add_to_call_list ? addBatchToCallList(this.db, r.batchId).added : 0;
       const summary: BulkFileSummary = {
         leads: r.summary.accepted,

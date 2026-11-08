@@ -9,6 +9,7 @@ import {
 } from './normalize.js';
 import { resolveCounty, lookupZip } from './county.js';
 import { rebuildLeadState } from './leadState.js';
+import { ensureTag, setTagOnLeads } from './tags.js';
 import { recordSheetHistory } from './sheetHistory.js';
 import { ageOn } from '../../shared/age.js';
 import type { OtherPhone } from '../../shared/phones.js';
@@ -362,6 +363,8 @@ export interface BatchInput {
   lead_type?: string | null;
   lead_age_label?: string | null;
   notes?: string | null;
+  /** Tags put on every lead this import brings in (logged as by the import). */
+  tags?: string[];
 }
 
 /** Writes the batch, every row (any status), the accepted leads, duplicate links, history and lead state, atomically. */
@@ -454,6 +457,7 @@ export function commitRows(
       }
     }
     const historyResult = recordSheetHistory(db, history, opts.fileModified ?? now);
+    for (const name of new Set(batch.tags ?? [])) setTagOnLeads(db, newLeadIds, ensureTag(db, name, now).id, true, now, { source: 'import', id: batchId, name: batch.name });
     rebuildLeadState(db, newLeadIds);
     return { batchId, summary, rows, history: historyResult };
   })();

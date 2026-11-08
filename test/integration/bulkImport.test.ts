@@ -82,6 +82,13 @@ describe('bulk import', () => {
     expect(listDrafts(db)).toEqual([]);
   });
 
+  it('tags every lead the files bring in', async () => {
+    const { db, bulk } = setup();
+    const { id } = bulk.create({ tags: ['Facebook'] });
+    expect((await bulk.addFile(id, { fileName: 'week1.csv', bytes: csv(leadRows(5)) }))[0]).toMatchObject({ state: 'imported' });
+    expect(db.prepare("SELECT COUNT(*) n FROM lead_tag lt JOIN tag t ON t.id = lt.tag_id WHERE t.name = 'Facebook'").get()).toEqual({ n: 5 });
+  });
+
   it('imports the complete leads now and puts the ones that need a look aside', async () => {
     const { db, c, bulk } = setup();
     const { id } = bulk.create({ lead_type: 'D' });
