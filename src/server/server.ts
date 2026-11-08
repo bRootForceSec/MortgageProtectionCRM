@@ -7,7 +7,7 @@ import { loadConfig, ensureDirs, loadOrCreateToken, type Config } from './config
 import { openDatabase, type DB } from './db/connection.js';
 import { buildApp } from './http/app.js';
 import { rebuildLeadState } from './domain/leadState.js';
-import { sidesToConditions, tagLeadsWithLastButton } from './domain/buttons.js';
+import { tagLeadsWithLastButton } from './domain/buttons.js';
 import { routinesToRules } from './domain/rules.js';
 import { Updates, readBuildInfo, type Runtime, type UpdateProvider } from './updates.js';
 import { DraftWorker } from './domain/drafts.js';
@@ -103,8 +103,6 @@ export async function startServer(opts: StartOptions = {}): Promise<RunningServe
   rebuildLeadState(db);
   // Once, after the update that made buttons tag leads: older leads get the tag of their last call's button.
   tagLeadsWithLastButton(db, new Date().toISOString());
-  // Once, after the update that took away the First call and Appointment sides: buttons show by conditions instead.
-  sidesToConditions(db);
   // Once, after the update that took routines away: their steps become "when the call list runs out" rules.
   routinesToRules(db);
   const token = loadOrCreateToken(config);

@@ -92,17 +92,20 @@ test('tags: tag a lead, tag all matching, filter by tag, a rule by tag, and Auto
   await tags.getByRole('button', { name: '+ Tag' }).click();
   await tags.getByLabel('Tag name').fill('Spanish');
   await tags.getByLabel('Tag name').press('Enter');
-  await expect(tags.locator('.tag-chip')).toHaveText(['Spanish×']);
+  // The lead may already have its last button's tag (like "Dial: No answer"); Spanish is put on beside it.
+  await expect(tags.locator('.tag-chip', { hasText: 'Spanish' })).toHaveText(['Spanish×']);
   await page.keyboard.press('Escape');
   await expect(viewer).toHaveCount(0);
 
   // Filter by it: one lead, showing its tag.
   await page.getByLabel('Tag', { exact: true }).selectOption({ label: 'Tagged Spanish' });
   await expect(page.getByText('1 lead', { exact: true })).toBeVisible();
-  await expect(page.locator('table.grid tbody .tag-chip')).toHaveText(['Spanish']);
+  await expect(page.locator('table.grid tbody .tag-chip', { hasText: 'Spanish' })).toHaveText(['Spanish']);
 
   // Tag every lead with no tags "Friday" (a lead called earlier has its button's tag, so it isn't one of them).
+  const noTags = page.waitForResponse((r) => r.url().includes('/api/leads?') && r.url().includes('tag=none'));
   await page.getByLabel('Tag', { exact: true }).selectOption({ label: 'No tags' });
+  await noTags;
   const untagged = page.getByText(/^\d+ leads?$/);
   await expect(untagged).toBeVisible();
   const n = Number((await untagged.innerText()).split(' ')[0]);

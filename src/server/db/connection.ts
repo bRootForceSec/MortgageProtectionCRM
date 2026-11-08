@@ -4,6 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { syncOutcomeCodes } from './outcomeCodes.js';
 import { syncFieldValueView } from '../domain/formulas.js';
+import { sidesToConditions } from '../domain/buttons.js';
 
 export type DB = Database.Database;
 
@@ -27,6 +28,8 @@ export function openDatabase(file: string): DB {
   syncOutcomeCodes(db);
   // Formula fields are worked out by a view; it's made again in case how formulas turn into SQL changed.
   syncFieldValueView(db);
+  // Once: the smart list the outcome buttons show by ("Has an appointment"), in place of the old sides.
+  sidesToConditions(db);
   return db;
 }
 

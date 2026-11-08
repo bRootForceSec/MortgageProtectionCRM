@@ -401,8 +401,10 @@ test('leads open full screen like the Calling page, and step through the list', 
   await shown;
   await page.getByLabel('Lead age').selectOption('');
   await expect(rows).toHaveCount(all);
-  const first = (await rows.nth(0).locator('td').nth(1).innerText()).trim();
-  const second = (await rows.nth(1).locator('td').nth(1).innerText()).trim();
+  // The name only: the cell also shows the lead's smart lists and tags (like its last button's).
+  const nameIn = (i: number) => rows.nth(i).locator('td').nth(1).evaluate((td) => (td.firstChild?.textContent ?? '').trim());
+  const first = await nameIn(0);
+  const second = await nameIn(1);
   await rows.first().click();
 
   const viewer = page.getByRole('dialog', { name: 'Lead' });
