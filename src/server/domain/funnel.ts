@@ -34,10 +34,13 @@ export function saveFunnelSteps(db: DB, input: unknown): FunnelStepDef[] {
 }
 
 /**
- * What each of your formula steps counts from `from` to `to` (ISO times), by step id: the sum over your leads.
+ * What each of your formula steps counts from `from` to `to` (ISO times), by step id: the sum over your leads (those
+ * `group` lets through, over `lead l`).
  * A step whose formula has gone wrong since (a field it names was deleted) counts 0.
  */
-export function funnelFormulaCounts(db: DB, from: string, to: string, steps = loadFunnelSteps(db)): Record<string, number> {
+export function funnelFormulaCounts(
+  db: DB, from: string, to: string, steps = loadFunnelSteps(db), group: { sql: string; params: Record<string, unknown> } = { sql: '1', params: {} },
+): Record<string, number> {
   const out: Record<string, number> = {};
   for (const st of steps) {
     if (st.count.by !== 'formula') continue;
@@ -49,7 +52,9 @@ export function funnelFormulaCounts(db: DB, from: string, to: string, steps = lo
       out[st.id] = 0;
       continue;
     }
-    const r = db.prepare(`SELECT coalesce(SUM(${sql}), 0) n FROM lead l JOIN lead_state s ON s.lead_id = l.id`).get({ fw_from: from, fw_to: to }) as { n: number };
+    const r = db
+      .prepare(`SELECT coalesce(SUM(${sql}), 0) n FROM lead l JOIN lead_state s ON s.lead_id = l.id WHERE ${group.sql}`)
+      .get({ ...group.params, fw_from: from, fw_to: to }) as { n: number };
     out[st.id] = Math.round(Number(r.n) * 100) / 100;
   }
   return out;

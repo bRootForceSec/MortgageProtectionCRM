@@ -9,6 +9,7 @@ import { logManualCall } from '../../src/server/domain/calls.js';
 import { tagLead } from '../../src/server/domain/tags.js';
 import { funnelFormulaCounts, loadFunnelSteps, saveFunnelSteps } from '../../src/server/domain/funnel.js';
 import { STARTER_FUNNEL, type FunnelStepDef } from '../../src/shared/funnel.js';
+import { buildReport } from '../../src/server/domain/reports.js';
 import { buildApp } from '../../src/server/http/app.js';
 import { uuidv7 } from '../../src/server/ids.js';
 
@@ -70,5 +71,20 @@ describe('your funnel steps', () => {
     expect(r.json().formula_counts).toEqual({ hot: 1 });
     const bad = await app.inject({ method: 'PUT', url: '/api/funnel/steps', headers: write, payload: [step('x', 'X', 'nope(')] });
     expect(bad.statusCode).toBe(400);
+  });
+
+  it('Reports shows your steps for its dates and counties', () => {
+    for (const who of ['Jane', 'Ann']) {
+      tagLead(db, lead(who), 'Hot');
+      logManualCall(db, { lead_id: lead(who), idempotency_key: uuidv7(), outcome_code: 'appointment' });
+    }
+    saveFunnelSteps(db, [STARTER_FUNNEL[1]!, STARTER_FUNNEL[3]!, step('hot', 'Hot', 'times("Hot")')]);
+    const tz = 'UTC';
+    const all = buildReport(db, { ...around, tz }).funnel;
+    expect(all.map((s) => [s.name, s.value])).toEqual([['Leads called', 2], ['Appts set', 2], ['Hot', 2]]);
+    const jane = (db.prepare("SELECT county_key k FROM lead WHERE first_name = 'Jane'").get() as { k: string }).k;
+    const one = buildReport(db, { ...around, tz, counties: [jane] }).funnel;
+    expect(one.map((s) => s.value)).toEqual([1, 1, 1]);
+    expect(one[2]!.formula).toBe('times("Hot")');
   });
 });
