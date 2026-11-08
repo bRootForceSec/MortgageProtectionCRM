@@ -21,7 +21,7 @@ describe('a button as Python', () => {
   it('writes a button as plain Python, and reads it back the same', () => {
     const x = b({ show_when: 'not has("Voicemail")', color: 'red', border: 'dotted', add_tags: ['t1'], remove_tags: ['t2'] });
     expect(buttonToPython(x, names)).toBe([
-      `@button(counts_as="Dial: No answer", shows_when='not has("Voicemail")', color="red", border="dotted")`,
+      `@button(counts_as="No answer", shows_when='not has("Voicemail")', color="red", border="dotted")`,
       'def button():',
       '    "Left voicemail"',
       '    add_tag("Voicemail")',
@@ -57,13 +57,13 @@ describe('a button as Python', () => {
       }
       return null;
     };
-    const top = '@button(counts_as="Dial: No answer")\ndef button():\n    "X"\n';
+    const top = '@button(counts_as="No answer")\ndef button():\n    "X"\n';
     expect(err(`${top}    add_tag("Nope")`)).toEqual([4, 'there is no tag called "Nope": make it under Tags first']);
     expect(err(`${top}    add_to_list()`)).toEqual([4, 'a button can add_tag("...") or remove_tag("..."), not add_to_list()']);
     expect(err('@button(counts_as="Gone")\ndef button():\n    "X"')).toEqual([1, 'there is no outcome called "Gone"']);
     expect(err('@button(color="pink", counts_as="no_answer")\ndef button():\n    "X"')?.[1]).toMatch(/^color= is one of "default", "gray"/);
-    expect(err('@button(counts_as="no_appt")\ndef button():\n    "X"', ButtonDef.parse({ id: 'no_answer', outcome: 'no_answer', label: 'Dial: No answer' })))
-      .toEqual([1, "this is Dial: No answer's own button: it always counts as that"]);
+    expect(err('@button(counts_as="no_appt")\ndef button():\n    "X"', ButtonDef.parse({ id: 'no_answer', outcome: 'no_answer', label: 'No answer' })))
+      .toEqual([1, "this is No answer's own button: it always counts as that"]);
     expect(err('def button():\n    "X"')?.[1]).toMatch(/say what it counts as/);
     expect(err('@button(counts_as="no_answer", asks=["Nope"])\ndef button():\n    "X"')).toEqual([1, 'there is no field called "Nope" a button can ask for']);
     expect(err('@button(counts_as="no_answer")\ndef button():\n    ""')?.[1]).toBe('give the button a name');

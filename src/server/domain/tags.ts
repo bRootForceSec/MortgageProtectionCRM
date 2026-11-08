@@ -3,6 +3,8 @@ import { nowIso, uuidv7 } from '../ids.js';
 import { DomainError } from '../core/errors.js';
 import { audit } from '../core/audit.js';
 import { matchingLeadIds, type LeadFilter } from './callList.js';
+import { rewriteSavedFormulas } from './formulas.js';
+import { renameNameIn } from '../../shared/formula.js';
 import { BY_YOU, type EventBy } from '../../shared/leadEvents.js';
 
 // Tags: your own labels on leads. A lead has any number. Each one put on or taken off a lead is a line in the lead's
@@ -105,8 +107,18 @@ export function renameTag(db: DB, id: string, name: string): { id: string; name:
     if (clash && clash.id !== id) throw new DomainError(`there is already a tag called "${clash.name}"`, 409);
     db.prepare('UPDATE tag SET name = ? WHERE id = ?').run(n, id);
     audit(db, 'tag', id, 'update', old, { name: n });
+    if (old.name !== n) carryTagRename(db, old.name, n);
     return { id, name: n };
   })();
+}
+
+/** The functions that name a tag. */
+const TAG_FUNCTIONS = ['has', 'has_tag', 'added', 'removed', 'times', 'before'];
+
+/** A renamed tag: every formula and condition that names it (and a funnel step counting it) uses the new name. */
+function carryTagRename(db: DB, from: string, to: string) {
+  const same = (x: unknown) => typeof x === 'string' && x.trim().toLowerCase() === from.trim().toLowerCase();
+  rewriteSavedFormulas(db, (src) => renameNameIn(src, TAG_FUNCTIONS, from, to), (o) => (o.by === 'tag' && same(o.tag) ? { ...o, tag: to } : o));
 }
 
 /** Deletes a tag and takes it off every lead (logged). Rules filtering by it then match no one. */

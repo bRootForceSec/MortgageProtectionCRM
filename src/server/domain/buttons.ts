@@ -2,10 +2,11 @@ import * as z from 'zod/v4';
 import type { DB } from '../db/connection.js';
 import { getSetting, setSetting } from '../core/settings.js';
 import { DomainError } from '../core/errors.js';
-import { conditionSql, loadStatusDefs } from './formulas.js';
+import { conditionSql, loadStatusDefs, rewriteSavedFormulas } from './formulas.js';
+import { renameNameIn } from '../../shared/formula.js';
 import { saveStatuses } from './statuses.js';
 import { uuidv7 } from '../ids.js';
-import { ensureTag, setTagOnLeads, tagByName } from './tags.js';
+import { ensureTag, renameTag, setTagOnLeads, tagByName } from './tags.js';
 import { CURRENT_OUTCOME } from '../db/sql.js';
 import { leadCustomValues, listCustomFields, setCustomValues } from './customFields.js';
 import { isTypedField } from '../../shared/customFields.js';
@@ -94,11 +95,48 @@ export function saveButtons(db: DB, input: unknown): ButtonInfo[] {
   }
   const overrides: OutcomeOverrides = { ...loadOutcomeOverrides(db) };
   for (const b of list) if (isOwn(b)) overrides[b.id] = { label: b.label, offered: !b.hidden };
+  const before = new Map(loadButtons(db).map((b) => [b.id, b.label]));
   db.transaction(() => {
     saveOutcomeOverrides(db, overrides, { checkSides: false });
     setSetting(db, 'buttons', list.map((b) => (isOwn(b) ? { ...b, label: undefined, hidden: undefined } : b)));
+    for (const b of list) {
+      const was = before.get(b.id);
+      if (was && was !== b.label) carryButtonRename(db, was, b.label, b.tag_self);
+    }
   })();
   return loadButtons(db);
+}
+
+/**
+ * A button's new name: pressed("Old name") follows it, and so does its own tag (with every condition that names it),
+ * unless a tag with the new name is there already.
+ */
+function carryButtonRename(db: DB, from: string, to: string, ownTag: boolean) {
+  rewriteSavedFormulas(db, (src) => renameNameIn(src, ['pressed'], from, to));
+  const t = ownTag ? tagByName(db, from) : undefined;
+  if (t && !tagByName(db, to)) renameTag(db, t.id, to);
+}
+
+/** The outcomes' names before they lost "Dial:" and "Appt:" (from when there were two sides). */
+const SIDE_NAMES: Partial<Record<OutcomeCode, string>> = {
+  no_answer: 'Dial: No answer', no_appt: 'Dial: Picked up', appointment: 'Dial: Appt set', bad_number: 'Dial: Bad number',
+  appt_no_show: 'Appt: No show', appt_sat_no_sale: 'Appt: Picked up', appt_prezi: 'Appt: Presentation', appt_sale: 'Appt: Sale', appt_rescheduled: 'Appt: Rescheduled',
+};
+
+/**
+ * Once: the outcomes' buttons lost "Dial:" and "Appt:". A button you never renamed takes its plain name, and its tag
+ * and every condition that names it follow. Run when the database opens.
+ */
+export function plainButtonNames(db: DB): boolean {
+  if (getSetting<boolean>(db, 'plain_names_done')) return false;
+  const over = loadOutcomeOverrides(db);
+  db.transaction(() => {
+    for (const [code, old] of Object.entries(SIDE_NAMES) as [OutcomeCode, string][]) {
+      if (!over[code]?.label) carryButtonRename(db, old, OUTCOMES[code].label, true);
+    }
+    setSetting(db, 'plain_names_done', true);
+  })();
+  return true;
 }
 
 /** The smart list that says a lead has an appointment to log, which the appointment buttons show for. */
@@ -187,7 +225,7 @@ export function retagChangedOutcome(db: DB, callId: string, leadId: string, outc
 
 /**
  * How an appointment went, read from Unitrust's color: the lead gets the same tag as pressing that result's button
- * (like "Appt: No show"), in place of the last button's, so smart lists and rules read Unitrust like any other tag.
+ * (like "No show"), in place of the last button's, so smart lists and rules read Unitrust like any other tag.
  */
 export function tagApptResult(db: DB, leadId: string, result: ApptResult, now: string, name = 'calendar color'): boolean {
   const code = (Object.keys(OUTCOMES) as OutcomeCode[]).find((c) => OUTCOMES[c].active && OUTCOMES[c].apptResult === result);

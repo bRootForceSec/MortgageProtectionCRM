@@ -3,7 +3,7 @@ import { BUTTON_BORDERS, BUTTON_COLORS, BUTTON_FILLS, ButtonDef } from './button
 
 // A Calling screen button as Python (Automation → Calling screen, the Python tab), and back, in the same style as rules:
 //
-//   @button(counts_as="Dial: No answer", shows_when='not has("Voicemail")', asks=["Best time"], color="red", border="dotted")
+//   @button(counts_as="No answer", shows_when='not has("Voicemail")', asks=["Best time"], color="red", border="dotted")
 //   def button():
 //       "Left voicemail"
 //       add_tag("Voicemail")
@@ -71,7 +71,7 @@ export function pythonToButton(src: string, base: ButtonDef, n: ButtonNames): Bu
         if (c.name === 'hidden' && !c.args.length && !c.kw.size) { hidden = true; continue; }
         if (c.name !== 'button') throw new RuleTextError(`there is no @${c.name}: use @button or @hidden`, no);
         if (deco) throw new RuleTextError('a button has one @button', no);
-        if (c.args.length) throw new RuleTextError('button() takes names, like button(counts_as="Dial: No answer")', no);
+        if (c.args.length) throw new RuleTextError('button() takes names, like button(counts_as="No answer")', no);
         const d: Partial<ButtonDef> = {};
         for (const [k, v] of c.kw) {
           switch (k) {
@@ -108,7 +108,7 @@ export function pythonToButton(src: string, base: ButtonDef, n: ButtonNames): Bu
             default: throw new RuleTextError(`button() doesn't take ${k}=: use counts_as, shows_when, asks, color, fill, border, tooltip, confirm or tags_lead`, no);
           }
         }
-        if (!d.outcome) throw new RuleTextError('say what it counts as: @button(counts_as="Dial: No answer")', no);
+        if (!d.outcome) throw new RuleTextError('say what it counts as: @button(counts_as="No answer")', no);
         deco = d;
         continue;
       }

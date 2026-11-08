@@ -95,8 +95,8 @@ describe('formulas read the log', () => {
     const undone = call('no_answer');
     voidCall(db, undone, 'oops');
     expect(evaluate('Ann', 'pressed("no_answer")')).toBe('2');
-    expect(evaluate('Ann', 'pressed("Dial: No answer", 1)')).toBe('2');
-    expect(evaluate('Ann', 'pressed("Dial: Appt set")')).toBe('0');
+    expect(evaluate('Ann', 'pressed("No answer", 1)')).toBe('2');
+    expect(evaluate('Ann', 'pressed("Appt set")')).toBe('0');
   });
 });
 

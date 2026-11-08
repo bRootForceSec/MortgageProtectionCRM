@@ -37,18 +37,12 @@ const ROWS = [
   { code: 'appt_rescheduled', label: 'Rescheduled', grp: 'contact', kind: 'appointment', hotkey: '5', counts_as_human_contact: 1, requires_callback_time: 0, marks_dead: 0, sort_order: 150, active: 1, lead_effect: null, introduced_at: '2026-10-29T00:00:00.000Z', retired_at: null },
 ];
 
-// What the registry changes on an existing database: the Dial / Appt labels (Nov 6), and Callback loses its key.
+// What the registry changes on an existing database: the plain button names (Nov 8: the rest are back to their first names), and Callback loses its key.
 const RENAMED: Record<string, Partial<(typeof ROWS)[number]>> = {
-  no_answer: { label: 'Dial: No answer' },
-  no_appt: { label: 'Dial: Picked up' },
-  appointment: { label: 'Dial: Appt set' },
-  bad_number: { label: 'Dial: Bad number' },
+  no_appt: { label: 'Picked up' },
   callback: { hotkey: null },
-  appt_no_show: { label: 'Appt: No show' },
-  appt_sat_no_sale: { label: 'Appt: Picked up' },
-  appt_prezi: { label: 'Appt: Presentation' },
-  appt_sale: { label: 'Appt: Sale' },
-  appt_rescheduled: { label: 'Appt: Rescheduled' },
+  appt_sat_no_sale: { label: 'Appt picked up' },
+  appt_prezi: { label: 'Presentation' },
 };
 const REGISTRY_ROWS = ROWS.map((r) => ({ ...r, ...RENAMED[r.code] }));
 
@@ -134,7 +128,7 @@ describe('your outcome names and buttons (Settings → Outcomes)', () => {
     expect(outcomeDef('no_answer')?.group).toBe('no_contact');
     // Saving the defaults again puts everything back.
     saveOutcomeOverrides(db, {});
-    expect(label(db, 'no_answer')).toBe('Dial: No answer');
+    expect(label(db, 'no_answer')).toBe('No answer');
     expect(offered(db)).toMatchObject({ callback: false, bad_number: true });
   });
 

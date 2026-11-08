@@ -59,7 +59,7 @@ export function FunnelStepsCard() {
         Your funnel, top to bottom: the top bar shows these each day and the funnel button on the Calling screen draws them. A step counts one of the
         seven things the CRM keeps (dials, pickups and so on), a tag (each time it was put on in the period), a smart list (the leads in it now),
         or a formula of yours. Give a step a color for the funnel graphic; a smart list step takes the list's color unless you pick one. A formula that gives a number is added up over your leads, like{' '}
-        <code>times("Hot")</code>; a yes/no counts the leads it's true for, like <code>pressed("Dial: Appt set") &gt; 0</code>. In a funnel step,{' '}
+        <code>times("Hot")</code>; a yes/no counts the leads it's true for, like <code>pressed("Appt set") &gt; 0</code>. In a funnel step,{' '}
         <code>times</code>, <code>pressed</code>, <code>added</code>, <code>removed</code> and <code>before</code> only see the period being counted
         (today in the top bar).
       </p>

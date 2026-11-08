@@ -52,12 +52,12 @@ describe('Calling screen buttons', () => {
   });
 
   it('an outcome’s own button keeps its name and "shown" in the outcome (Reports follow a rename)', () => {
-    const list = current().map((b) => (b.id === 'bad_number' ? { ...b, label: 'Dial: Wrong #', color: 'red' as const } : b.id === 'callback' ? { ...b, hidden: false } : b));
+    const list = current().map((b) => (b.id === 'bad_number' ? { ...b, label: 'Wrong #', color: 'red' as const } : b.id === 'callback' ? { ...b, hidden: false } : b));
     saveButtons(db, list);
-    expect(loadOutcomeOverrides(db)).toMatchObject({ bad_number: { label: 'Dial: Wrong #' }, callback: { offered: true } });
-    expect((db.prepare("SELECT label FROM outcome_code WHERE code = 'bad_number'").get() as { label: string }).label).toBe('Dial: Wrong #');
+    expect(loadOutcomeOverrides(db)).toMatchObject({ bad_number: { label: 'Wrong #' }, callback: { offered: true } });
+    expect((db.prepare("SELECT label FROM outcome_code WHERE code = 'bad_number'").get() as { label: string }).label).toBe('Wrong #');
     const bad = loadButtons(db).find((b) => b.id === 'bad_number')!;
-    expect(bad).toMatchObject({ label: 'Dial: Wrong #', color: 'red' });
+    expect(bad).toMatchObject({ label: 'Wrong #', color: 'red' });
     // Stored without the name, so the outcome's name is the one truth.
     expect(JSON.stringify((db.prepare("SELECT value_json FROM app_setting WHERE key = 'buttons'").get() as { value_json: string }).value_json)).not.toContain('Wrong #');
   });
@@ -110,7 +110,7 @@ describe('Calling screen buttons', () => {
     const quiet = button({ label: 'Quiet one', outcome: 'no_answer', tag_self: false });
     saveButtons(db, [...current(), left, quiet]);
     call(jane, 'no_answer');
-    expect(tags(jane)).toEqual(['Dial: No answer']);
+    expect(tags(jane)).toEqual(['No answer']);
     call(jane, 'no_answer', left.id);
     expect(tags(jane)).toEqual(['Left voicemail']);
     const n = (cond: string) => {
@@ -118,16 +118,16 @@ describe('Calling screen buttons', () => {
       expect(c.error).toBeNull();
       return c.matched;
     };
-    expect(n('times("Dial: No answer") = 1 and has("Left voicemail")')).toBe(1);
+    expect(n('times("No answer") = 1 and has("Left voicemail")')).toBe(1);
     // A button that doesn't tag leaves the last tag on.
     call(jane, 'no_answer', quiet.id);
     expect(tags(jane)).toEqual(['Left voicemail']);
     const picked = call(jane, 'no_appt');
-    expect(tags(jane)).toEqual(['Dial: Picked up']);
+    expect(tags(jane)).toEqual(['Picked up']);
     // Changing the latest call's outcome changes the tag; undoing it puts the last one back.
     const cur = db.prepare('SELECT id FROM call_outcome WHERE call_id = ?').get(picked) as { id: string };
     changeOutcome(db, picked, { outcome_code: 'appointment', expected_current_id: cur.id });
-    expect(tags(jane)).toEqual(['Dial: Appt set']);
+    expect(tags(jane)).toEqual(['Appt set']);
     voidCall(db, picked);
     expect(tags(jane)).toEqual(['Left voicemail']);
   });
@@ -140,9 +140,9 @@ describe('Calling screen buttons', () => {
     call(robert, 'no_appt');
     db.prepare('DELETE FROM lead_tag').run();
     expect(tagLeadsWithLastButton(db, new Date().toISOString())).toBe(2);
-    expect(tags(jane)).toEqual(['Dial: No answer']);
-    expect(tags(robert)).toEqual(['Dial: Picked up']);
-    expect(leadEvents(db, jane)[0]).toMatchObject({ source: 'button', source_name: 'Dial: No answer, from past calls' });
+    expect(tags(jane)).toEqual(['No answer']);
+    expect(tags(robert)).toEqual(['Picked up']);
+    expect(leadEvents(db, jane)[0]).toMatchObject({ source: 'button', source_name: 'No answer, from past calls' });
     db.prepare('DELETE FROM lead_tag').run();
     expect(tagLeadsWithLastButton(db, new Date().toISOString())).toBe(0);
   });
@@ -198,7 +198,7 @@ describe('Calling screen buttons', () => {
       return c.matched;
     };
     expect(n('pressed("Left voicemail") = 1')).toBe(1);
-    expect(n('pressed("Dial: No answer") = 2')).toBe(1);
+    expect(n('pressed("No answer") = 2')).toBe(1);
   });
 
   it('a button tag sets off rules on that tag', () => {
@@ -223,7 +223,7 @@ describe('Calling screen buttons', () => {
       }
       return null;
     };
-    expect(err([...current(), button({ label: 'Dial: No answer', outcome: 'no_answer' })])).toBe('two buttons are called "Dial: No answer"');
+    expect(err([...current(), button({ label: 'No answer', outcome: 'no_answer' })])).toBe('two buttons are called "No answer"');
     expect(err([...current(), button({ label: 'X', outcome: 'busy' })])).toBe('X: pick what it counts as');
     expect(err([...current(), button({ label: 'X', outcome: 'no_answer', show_when: 'has(' })])).toMatch(/^X, show when: /);
     expect(err([...current(), button({ label: 'X', outcome: 'no_answer', add_tags: ['nope'] })])).toBe('X: one of its tags is gone');

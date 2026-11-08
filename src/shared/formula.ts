@@ -39,7 +39,7 @@ export const FORMULA_FUNCTIONS: readonly { name: string; usage: string; help: st
   { name: 'times', usage: 'times("No answer", 7)', help: 'How many times that tag was put on the lead, in the last 7 days if you give a number' },
   { name: 'in_list', usage: 'in_list("Needs rebook")', help: 'Yes when the lead is in that smart list of yours (in conditions and smart lists, not formula fields; status() works too)' },
   { name: 'before', usage: 'before("Appt set", "No show")', help: 'Yes when the first tag was last put on before the second was' },
-  { name: 'pressed', usage: 'pressed("Dial: No answer", 7)', help: 'Calls saved with that outcome or button (by name), not undone, in the last 7 days if you give a number' },
+  { name: 'pressed', usage: 'pressed("No answer", 7)', help: 'Calls saved with that outcome or button (by name), not undone, in the last 7 days if you give a number' },
   { name: 'min', usage: 'min(a, b, …)', help: 'The smallest' },
   { name: 'max', usage: 'max(a, b, …)', help: 'The largest' },
   { name: 'round', usage: 'round(value, places)', help: 'Rounds; places is optional' },
@@ -285,4 +285,16 @@ export function renameFormulaField(src: string, from: string, to: string): strin
   return src
     .replace(/\[([^\]]*)\]/g, (m, label: string) => (same(label) ? `[${to}]` : m))
     .replace(/\bfield\(\s*(["'])(.*?)\1\s*\)/gi, (m, q: string, label: string) => (same(label) ? `field(${q}${to}${q})` : m));
+}
+
+/**
+ * The formula with every name `from` (any case, either quotes) given to one of `fns` written as `to` instead, so a
+ * renamed tag, smart list or button carries into the formulas and conditions that use it.
+ */
+export function renameNameIn(src: string, fns: readonly string[], from: string, to: string): string {
+  const call = new RegExp(`\\b(${fns.join('|')})\\(([^()]*)\\)`, 'gi');
+  const key = from.trim().toLowerCase();
+  return src.replace(call, (_m, fn: string, args: string) =>
+    `${fn}(${args.replace(/(["'])(.*?)\1/g, (lit: string, q: string, name: string) => (name.trim().toLowerCase() === key ? `${q}${to}${q}` : lit))})`,
+  );
 }

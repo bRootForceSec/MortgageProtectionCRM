@@ -4,7 +4,7 @@ import { DomainError } from '../core/errors.js';
 import { audit } from '../core/audit.js';
 import { normalizeCustomValue, type CustomField, type CustomFieldInput } from '../../shared/customFields.js';
 import { FormulaError, formulaFieldLabels, parseFormula, renameFormulaField } from '../../shared/formula.js';
-import { compileFormula, conditionSql, formulaResults, syncFieldValueView } from './formulas.js';
+import { compileFormula, conditionSql, formulaResults, rewriteSavedFormulas, syncFieldValueView } from './formulas.js';
 
 // Custom fields: fields you add to every lead. Defining them is audited; a value typed on a lead is kept in the lead's
 // change history (lead_change, under the field's name) like any other edit.
@@ -100,10 +100,8 @@ export function updateCustomField(db: DB, id: string, b: CustomFieldInput): Cust
     if (b.type !== old.type && old.leads) throw new DomainError(`${old.leads} lead${old.leads === 1 ? ' has' : 's have'} a value in this field, so its kind can't change. Make a new field instead.`, 409);
     const users = usedBy(db, old);
     if (b.type !== old.type && users.length) throw new DomainError(`${users.join(', ')} use${users.length === 1 ? 's' : ''} this field in a formula, so its kind can't change`, 409);
-    if (b.label !== old.label) {
-      const set = db.prepare('UPDATE custom_field SET formula = ? WHERE id = ?');
-      for (const f of listCustomFields(db)) if (f.type === 'formula' && f.id !== id && f.formula) set.run(renameFormulaField(f.formula, old.label, b.label), f.id);
-    }
+    // A renamed field: every formula and condition that names it follows.
+    if (b.label !== old.label) rewriteSavedFormulas(db, (src) => renameFormulaField(src, old.label, b.label));
     const formula = b.type === 'formula' ? renameFormulaField(b.formula ?? '', old.label, b.label).trim() : null;
     const options = checkInput(db, { ...b, formula: formula ?? undefined }, id);
     db.prepare('UPDATE custom_field SET label = ?, type = ?, options_json = ?, formula = ?, show_when = ?, required_when = ? WHERE id = ?')

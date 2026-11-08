@@ -56,11 +56,11 @@ describe('call list', () => {
     addToCallList(db, [jane], new Date(Date.now() - 1000).toISOString());
     expect(getCallList(db)[0]!.done).toBeNull();
     const { call_id } = logManualCall(db, { lead_id: jane, idempotency_key: key(), outcome_code: 'no_answer', dial_count: 2 });
-    expect(getCallList(db)[0]!.done).toMatchObject({ label: 'Dial: No answer', dials: 2 });
+    expect(getCallList(db)[0]!.done).toMatchObject({ label: 'No answer', dials: 2 });
     const cur = db.prepare('SELECT id FROM call_outcome WHERE call_id = ?').get(call_id) as any;
     changeOutcome(db, call_id, { outcome_code: 'no_appt', expected_current_id: cur.id });
-    expect(getCallList(db)[0]!.done?.label).toBe('Dial: Picked up');
-    expect(recentOutcomes(db)[0]).toMatchObject({ lead_id: jane, label: 'Dial: Picked up' });
+    expect(getCallList(db)[0]!.done?.label).toBe('Picked up');
+    expect(recentOutcomes(db)[0]).toMatchObject({ lead_id: jane, label: 'Picked up' });
     voidCall(db, call_id);
     expect(getCallList(db)[0]!.done).toBeNull();
   });
@@ -153,7 +153,7 @@ describe('clearing, replacing and saved lists', () => {
     const r = loadSavedList(db, saved.id, 'Jane only')!;
     expect(r.loaded).toBe(order.length);
     expect(names()).toEqual(order);
-    expect(getCallList(db).find((i) => i.lead_id === first)!.done).toMatchObject({ label: 'Dial: No answer' });
+    expect(getCallList(db).find((i) => i.lead_id === first)!.done).toMatchObject({ label: 'No answer' });
     expect(callListMeta(db)).toEqual({ name: 'Area 352', saved_list_id: saved.id, unsaved: false });
     // The loaded list stays saved, next to the one it replaced.
     expect(listSavedLists(db).map((l) => l.name).sort()).toEqual(['Area 352', 'Jane only']);

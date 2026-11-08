@@ -101,7 +101,7 @@ describe('rules', () => {
     const r = await app.inject({ method: 'POST', url: `/api/leads/${jane}/calls`, headers: write, payload: { idempotency_key: key(), outcome_code: 'no_appt' } });
     expect(r.statusCode).toBe(200);
     // The outcome's own tag, then the rule's.
-    expect(leadTags(db, jane).map((t) => t.name)).toEqual(['Dial: Picked up', 'Talked']);
+    expect(leadTags(db, jane).map((t) => t.name)).toEqual(['Picked up', 'Talked']);
     expect(leadCustomValues(db, jane)[0]!.value).toBe('Warm');
     expect(leadTags(db, ann)).toEqual([]);
     const other = logManualCall(db, { lead_id: ann, idempotency_key: key(), outcome_code: 'no_answer' });
@@ -142,7 +142,7 @@ describe('rules', () => {
 
   it('describes triggers and actions in words', () => {
     expect(describeTrigger({ kind: 'daily', time: '08:00', days: [1, 2, 3, 4, 5] })).toBe('At 08:00 on Mon–Fri');
-    expect(describeTrigger({ kind: 'call_saved', outcomes: ['no_show'] }, () => 'Appt: No show')).toBe('When a call is saved as Appt: No show');
+    expect(describeTrigger({ kind: 'call_saved', outcomes: ['no_show'] }, () => 'No show')).toBe('When a call is saved as No show');
     expect(describeAction({ kind: 'set_field', field_id: 'f', value: '' }, () => 'Stage')).toBe('Clear Stage');
   });
 
