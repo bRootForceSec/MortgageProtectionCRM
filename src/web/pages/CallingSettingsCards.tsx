@@ -12,7 +12,7 @@ import { APPT_RESULT_LABEL } from '../../shared/appointments';
 import { ConditionEditor } from '../components/ConditionEditor';
 import { STARTER_ORDER, type SortStep } from '../../shared/listOrder';
 import { SHEET_BLOCKS, sheetBlocks } from '../../shared/sheetLayout';
-import { BEST_TIME_WORDS } from '../../shared/bestTime';
+import { bestTimeWords, hourWords } from '../../shared/bestTime';
 
 // Settings for the Calling screen: retry gap, dialing, timer, goals, alerts, shortcuts and scripts.
 
@@ -68,7 +68,7 @@ function FormulaInput({ value, onSave }: { value: string; onSave: (f: string) =>
 }
 
 /** "Your order" on the call list: sort steps, first to last. */
-function ListOrderField({ steps, onSave }: { steps: SortStep[]; onSave: (steps: SortStep[]) => void }) {
+function ListOrderField({ steps, words, onSave }: { steps: SortStep[]; words: string; onSave: (steps: SortStep[]) => void }) {
   const put = (i: number, st: SortStep) => onSave(steps.map((x, j) => (j === i ? st : x)));
   const move = (i: number, by: number) => {
     const next = [...steps];
@@ -86,7 +86,7 @@ function ListOrderField({ steps, onSave }: { steps: SortStep[]; onSave: (steps: 
                 <option value="best_time">Best time to call now</option>
                 <option value="formula">A formula</option>
               </select>
-              {st.by === 'best_time' && <span className="help" style={{ flex: 1 }}>{BEST_TIME_WORDS}</span>}
+              {st.by === 'best_time' && <span className="help" style={{ flex: 1 }}>{words}</span>}
               {st.by === 'formula' && (
                 <>
                   <FormulaInput value={st.formula} onSave={(f) => put(i, { ...st, formula: f })} />
@@ -222,7 +222,26 @@ export function CallingCard() {
         </span>
 
         <label>Call list order</label>
-        <ListOrderField steps={s.list_order} onSave={(list_order) => set({ list_order })} />
+        <ListOrderField steps={s.list_order} words={bestTimeWords(s.best_time)} onSave={(list_order) => set({ list_order })} />
+
+        <label>Best time to call</label>
+        <span>
+          <span className="row" style={{ gap: 6 }}>
+            Call leads from
+            <select aria-label="Calling hours start" value={s.best_time.from_hour} onChange={(e) => set({ best_time: { ...s.best_time, from_hour: Number(e.target.value) } })}>
+              {HOURS.filter((h) => h < 24 && h < s.best_time.to_hour).map((h) => <option key={h} value={h}>{hourWords(h)}</option>)}
+            </select>
+            until
+            <select aria-label="Calling hours end" value={s.best_time.to_hour} onChange={(e) => set({ best_time: { ...s.best_time, to_hour: Number(e.target.value) } })}>
+              {HOURS.filter((h) => h > s.best_time.from_hour).map((h) => <option key={h} value={h}>{hourWords(h)}</option>)}
+            </select>
+            their time; trust my own pickup rate at an hour once I have
+            <input type="number" aria-label="Calls an hour needs" min={1} max={1000} value={s.best_time.min_calls} style={{ width: 70 }}
+              onChange={(e) => Number(e.target.value) >= 1 && set({ best_time: { ...s.best_time, min_calls: Math.round(Number(e.target.value)) } })} />
+            calls there
+          </span>
+          <span className="help">{bestTimeWords(s.best_time)} The Best time to call report in Reports shows the rates it reads.</span>
+        </span>
 
         <label>Follow-ups</label>
         <span>
@@ -421,3 +440,5 @@ export function SheetCard() {
     </div>
   );
 }
+
+const HOURS = Array.from({ length: 25 }, (_, h) => h);

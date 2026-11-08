@@ -123,6 +123,7 @@ export function registerLeadRoutes(
     return {
       items: getCallList(db), recent: recentOutcomes(db), ...callListMeta(db), saved_lists: listSavedLists(db),
       best_times: bestTimes(db, tz || Intl.DateTimeFormat().resolvedOptions().timeZone), list_order: loadCallingSettings(db).list_order,
+      best_time: loadCallingSettings(db).best_time,
     };
   });
   // `replace` empties the list first (kept as a saved list named `save_current_as`, if given).

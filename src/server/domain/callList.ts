@@ -99,6 +99,10 @@ const TODAY = "date('now', 'localtime')";
 export function apptDaysSql(key: ApptDays): { from: string; to: string } {
   const yesterday = `date(${TODAY}, '-1 day')`;
   if (key === 'yesterday') return { from: yesterday, to: yesterday };
+  if (key === 'last_3_days') return { from: `date(${TODAY}, '-3 days')`, to: yesterday };
+  if (key === 'last_7_days') return { from: `date(${TODAY}, '-7 days')`, to: yesterday };
+  // Monday of this week (today, on a Monday, so the range is empty).
+  if (key === 'this_week') return { from: `date(${TODAY}, '-6 days', 'weekday 1')`, to: yesterday };
   const lastCallDay = `(SELECT max(date(c.requested_at, 'localtime')) FROM call c
     WHERE c.voided_at IS NULL AND c.initiation_result = 'accepted' AND date(c.requested_at, 'localtime') < ${TODAY})`;
   return { from: `coalesce(${lastCallDay}, ${yesterday})`, to: yesterday };

@@ -3,7 +3,7 @@ import { funnelFormulaCounts, loadFunnelSteps } from './funnel.js';
 import * as z from 'zod/v4';
 import type { DB } from '../db/connection.js';
 import { AGE_BANDS, ageBand, leadAgeDays } from '../../shared/leadAge.js';
-import { MIN_ATTEMPTS, type BestTimes } from '../../shared/bestTime.js';
+import type { BestTimes } from '../../shared/bestTime.js';
 import { LEAD_NAME, CURRENT_OUTCOME } from '../db/sql.js';
 import { getSetting, setSetting } from '../core/settings.js';
 import { groupWhere, type GroupFilter } from './groupFilter.js';
@@ -355,7 +355,7 @@ function buildGroups(db: DB, f: ReportFilter) {
  * Best time to call: the pickup rate (pickups / calls) over all your calls at each weekday and hour, each weekday,
  * and each hour, in the lead's own time. Every weekday is listed, with 0 calls when you've made none on it.
  */
-function bestTimeReport(groups: Group[], untimed: number, tz: string) {
+function bestTimeReport(groups: Group[], untimed: number, tz: string, minCalls: number) {
   const by = new Map(groups.map((g) => [g.key, g.calls]));
   const line = (key: string, cs: CallRow[] = by.get(key) ?? []) => {
     const m = callMetrics(cs, ['attempts', 'contacts']);
@@ -374,7 +374,7 @@ function bestTimeReport(groups: Group[], untimed: number, tz: string) {
     /** All-time calls left out because their real time isn't known (recreated from a spreadsheet's Status column). */
     untimed_calls: untimed,
     /** Below this many calls, a rate says little (and the call list's "Best time first" uses a usual curve instead). */
-    min_calls: MIN_ATTEMPTS,
+    min_calls: minCalls,
   };
 }
 
@@ -413,7 +413,7 @@ export function buildReport(db: DB, f: ReportFilter) {
       untimed_calls: g.untimedInRange,
     },
     by_hour: g.hourGroups.map((h) => ({ hour: +h.key, ...callMetrics(h.calls, HOURLY) })),
-    best_time: bestTimeReport(g.bestGroups, g.untimedAll, f.tz),
+    best_time: bestTimeReport(g.bestGroups, g.untimedAll, f.tz, loadCallingSettings(db).best_time.min_calls),
     by_age: g.ageGroups.map((a) => {
       const m = callMetrics(a.calls, ['attempts', 'contacts', 'appointments']);
       return {

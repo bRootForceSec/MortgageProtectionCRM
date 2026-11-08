@@ -1,6 +1,6 @@
 import * as z from 'zod/v4';
 import { MISSED_RESULTS } from './appointments.js';
-import { bestTimeScore, type BestTimes } from './bestTime.js';
+import { STARTER_BEST_TIME, bestTimeScore, type BestTimeRules, type BestTimes } from './bestTime.js';
 
 // "Your order" on the call list (Settings → Calling, "Call list order"): sort steps, the first that tells two leads
 // apart decides. A step is "best time now" or a formula: a yes/no puts the leads it's true for first, a number puts the
@@ -43,6 +43,7 @@ export function yourOrder<T extends { done: unknown; time_zone: string | null; s
   steps: readonly SortStep[],
   times: BestTimes,
   now = new Date(),
+  rules: BestTimeRules = STARTER_BEST_TIME,
 ): T[] {
   const keyed = items
     .filter((i) => !i.done)
@@ -50,7 +51,7 @@ export function yourOrder<T extends { done: unknown; time_zone: string | null; s
       i,
       n,
       k: steps.map((s, j) => {
-        if (s.by === 'best_time') return bestTimeScore(times, i.time_zone, now);
+        if (s.by === 'best_time') return bestTimeScore(times, i.time_zone, now, rules);
         const v = i.sort_keys[j] ?? null;
         return v == null ? null : s.lowest_first ? -v : v;
       }),

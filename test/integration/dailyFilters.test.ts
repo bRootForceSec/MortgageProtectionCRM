@@ -68,6 +68,12 @@ describe('daily filters', () => {
     // The last call was 4 days ago, so "since my last calling day" runs from then through yesterday.
     expect(apptDayRange(db, 'since_last_calling_day')).toEqual({ from: day(4), to: day(1) });
     expect(apptDayRange(db, 'yesterday')).toEqual({ from: day(1), to: day(1) });
+    expect(apptDayRange(db, 'last_3_days')).toEqual({ from: day(3), to: day(1) });
+    expect(apptDayRange(db, 'last_7_days')).toEqual({ from: day(7), to: day(1) });
+    // This week: from Monday through yesterday (on a Monday, Monday through Sunday: nothing).
+    const today = new Date(`${day(0)}T12:00:00`);
+    const sinceMonday = (today.getDay() + 6) % 7;
+    expect(apptDayRange(db, 'this_week')).toEqual({ from: day(sinceMonday), to: day(1) });
   });
 
   it('an appointment from before the range does not count, and no calls at all means yesterday', () => {
