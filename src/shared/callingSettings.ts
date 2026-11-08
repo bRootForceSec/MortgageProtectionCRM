@@ -1,4 +1,4 @@
-import { SheetLayout } from './sheetLayout.js';
+import { SavedSheet, SheetLayout } from './sheetLayout.js';
 import * as z from 'zod/v4';
 import { BestTimeRules, STARTER_BEST_TIME } from './bestTime.js';
 import { isStep } from './followUps.js';
@@ -42,7 +42,9 @@ export const CallingSettings = z.object({
   /** A condition (Python syntax) for the leads that can be called; blank means every lead with a good number, not dead. */
   callable_when: z.string().trim().max(2000).default(STARTER_CALLABLE),
   /** The lead sheet on the Calling screen: its blocks in order, shown or hidden (see sheetLayout.ts). */
-  sheet: SheetLayout.default({ blocks: [], dial_counter: true, caller_id: true }),
+  sheet: SheetLayout.default({ blocks: [], facts: [], calls_shown: 0, notes_rows: 2, dial_counter: true, caller_id: true }),
+  /** Lead sheets you saved by name, to switch between. */
+  sheet_layouts: z.array(SavedSheet).max(20).refine((ls) => new Set(ls.map((l) => l.name.toLowerCase())).size === ls.length, 'two saved lead sheets have the same name').default([]),
   /** "Your order" on the call list: sort steps, first to last (see listOrder.ts). */
   list_order: z.array(SortStep).max(10).default(STARTER_ORDER),
   /** "Best time first": the calling hours and how many calls an hour needs before your own rate counts (see bestTime.ts). */

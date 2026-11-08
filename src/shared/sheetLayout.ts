@@ -15,8 +15,36 @@ export type SheetBlockId = (typeof SHEET_BLOCKS)[number]['id'];
 
 const ids = SHEET_BLOCKS.map((b) => b.id) as [SheetBlockId, ...SheetBlockId[]];
 
+/** The facts under Lead info, in their usual order. Your fields are `field:<id>`, after these unless you move them. */
+export const LEAD_FACTS = [
+  { id: 'county', label: 'County' },
+  { id: 'lead_type', label: 'Lead type' },
+  { id: 'called_in', label: 'Called in' },
+  { id: 'lead_id', label: 'Lead ID' },
+  { id: 'age', label: 'Age' },
+  { id: 'dob', label: 'Date of birth' },
+  { id: 'lender', label: 'Lender' },
+  { id: 'loan', label: 'Loan amount' },
+  { id: 'coborrower', label: 'Co-borrower' },
+  { id: 'tobacco', label: 'Tobacco' },
+  { id: 'address', label: 'Address' },
+  { id: 'batch', label: 'Batch' },
+  { id: 'attempts', label: 'Attempts' },
+  { id: 'health', label: 'Health (from the sheet)' },
+  { id: 'extra', label: 'Other columns from the sheet' },
+  { id: 'page', label: 'PDF page' },
+] as const;
+
+const Shown = z.object({ id: z.string().min(1).max(80), shown: z.boolean() });
+
 export const SheetLayout = z.object({
   blocks: z.array(z.object({ id: z.enum(ids), shown: z.boolean() })).max(SHEET_BLOCKS.length).default([]),
+  /** The facts under Lead info, in your order, shown or hidden (see LEAD_FACTS; your fields are `field:<id>`). */
+  facts: z.array(Shown).max(200).default([]),
+  /** How many of the lead's calls to show, newest first; 0 shows them all. */
+  calls_shown: z.number().int().min(0).max(200).default(0),
+  /** How many lines tall the box for a new note is. */
+  notes_rows: z.number().int().min(1).max(30).default(2),
   /** The dial counter and the timer, above the buttons. */
   dial_counter: z.boolean().default(true),
   /** Which of your numbers you called from. */
@@ -36,3 +64,22 @@ export function sheetBlocks(layout: SheetLayout | undefined): { id: SheetBlockId
   for (const b of SHEET_BLOCKS) if (!seen.has(b.id)) out.push({ id: b.id, shown: true });
   return out;
 }
+
+/** Every fact once, in your order, then any you haven't placed (shown): the usual ones, then your fields. */
+export function sheetFacts(layout: SheetLayout | undefined, fieldIds: readonly string[]): { id: string; shown: boolean }[] {
+  const all = [...LEAD_FACTS.map((f) => f.id as string), ...fieldIds.map((id) => `field:${id}`)];
+  const known = new Set(all);
+  const seen = new Set<string>();
+  const out: { id: string; shown: boolean }[] = [];
+  for (const f of layout?.facts ?? []) {
+    if (seen.has(f.id) || !known.has(f.id)) continue;
+    seen.add(f.id);
+    out.push(f);
+  }
+  for (const id of all) if (!seen.has(id)) out.push({ id, shown: true });
+  return out;
+}
+
+/** A lead sheet you saved by name, to switch to (Automation → Calling screen, or on the Calling screen). */
+export const SavedSheet = z.object({ name: z.string().trim().min(1).max(60), sheet: SheetLayout });
+export type SavedSheet = z.infer<typeof SavedSheet>;

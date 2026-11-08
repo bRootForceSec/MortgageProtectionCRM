@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { Fragment, useEffect, useState, type ReactNode } from 'react';
 import { api, fmtDateTime, fmtDob, fmtDuration, fmtMoney, fmtPhone, fullName, localTime, outcomeText, personAge, type LeadDetail, type Call, type TagRef } from '../api';
 import { useTags } from '../tags';
 import { StatusChips } from '../pages/StatusesCard';
@@ -9,6 +9,7 @@ import { outcomeDef } from '../../shared/outcomes';
 import { statusLabel } from '../../shared/leadStatus';
 import { calendarTag, leadLink } from '../../shared/leadLink';
 import { showCustomValue } from '../../shared/customFields';
+import { sheetFacts, type SheetLayout } from '../../shared/sheetLayout';
 
 
 function leadAge(iso: string | null | undefined) {
@@ -71,9 +72,11 @@ export async function toggleCalledBack(d: LeadDetail, toast: (m: string, kind?: 
 
 /** Header + key facts used on the calling screen and the lead modal. */
 export function LeadSummary({
-  d, onDial, dialLabel = 'Copy number', dialKey, altKey, onEdit, editKey, onCalledBack, calledBackKey, tagKey, showTags = true,
+  d, onDial, dialLabel = 'Copy number', dialKey, altKey, onEdit, editKey, onCalledBack, calledBackKey, tagKey, showTags = true, sheet,
 }: {
   d: LeadDetail;
+  /** Which facts show, in what order (the Calling screen's lead sheet); left out, all of them in the usual order. */
+  sheet?: SheetLayout;
   /** Smart list badges and tags beside the buttons; off when the Calling screen shows them as their own block. */
   showTags?: boolean;
   /** On the Calling screen: dial (or copy, or show a QR code, per Settings) and start the attempt. */
@@ -179,33 +182,39 @@ export function LeadSummary({
         </div>
       </div>
       <div className="facts">
-        <Fact label="County" v={l.county ? `${l.county}, ${l.state ?? ''}${l.county_source ? ` (${COUNTY_SOURCE[l.county_source] ?? l.county_source})` : ''}` : null} />
-        <Fact label="Lead type" v={l.lead_type ? `${l.lead_type}${l.price_cents != null ? ` · ${fmtMoney(l.price_cents)}` : ''}${pageType ? ` · ${pageType}` : ''}` : pageType} />
-        <Fact label="Called in" v={l.callin_at ? `${fmtDateTime(l.callin_at)} · ${leadAge(l.callin_at)}` : l.callin_raw} />
-        <Fact label="Lead ID" v={l.source_lead_id} />
-        <Fact label="Age" v={l.dob ? `${age} (from date of birth)` : l.age ?? l.age_raw} />
-        <Fact label="Date of birth" v={l.dob ? fmtDob(l.dob) : l.dob_raw} />
-        <Fact label="Lender" v={l.lender} />
-        <Fact label="Loan amount" v={l.loan_amount_cents != null ? fmtMoney(l.loan_amount_cents) : l.loan_amount_raw} />
-        <Fact label="Co-borrower" v={l.coborrower_signal === 'yes' ? 'Yes' : l.coborrower_raw ? `Unknown (sheet says "${l.coborrower_raw}")` : 'Unknown'} />
-        <Fact label="Tobacco" v={l.tobacco_raw} />
-        <Fact label="Address" v={[l.address_line, l.zip].filter(Boolean).join(' ')} />
-        <Fact label="Batch" v={`${d.batch.name}${d.batch.cost_per_lead_cents != null ? ` · ${fmtMoney(d.batch.cost_per_lead_cents)}/lead` : ''}`} />
-        <Fact label="Attempts" v={d.state ? `${d.state.attempts_total}${d.state.last_call_at ? ` · last ${fmtDateTime(d.state.last_call_at)}` : ''}` : ''} />
-        {health.length > 0 && (
-          <div>
-            <label>Health (from sheet)</label>
-            <span className="sensitive">{health.map(([k, v]) => `${k}: ${v}`).join(' · ')}</span>
-          </div>
-        )}
-        {Object.entries(extra).map(([k, v]) => <Fact key={k} label={k} v={v} />)}
-        {l.source_page != null && <Fact label="PDF page" v={l.source_page} />}
-        {/* Your fields that show for this lead now; one that's needed and blank says so. */}
-        {d.custom.filter((c) => c.shown !== false).map((c) => (
-          c.required && c.value == null
-            ? <div key={c.field_id}><label>{c.label}</label><span className="warn">needed</span></div>
-            : <Fact key={c.field_id} label={c.label} v={showCustomValue(c, c.value)} />
-        ))}
+        {(() => {
+          const cell: Record<string, ReactNode> = {
+            county: <Fact label="County" v={l.county ? `${l.county}, ${l.state ?? ''}${l.county_source ? ` (${COUNTY_SOURCE[l.county_source] ?? l.county_source})` : ''}` : null} />,
+            lead_type: <Fact label="Lead type" v={l.lead_type ? `${l.lead_type}${l.price_cents != null ? ` · ${fmtMoney(l.price_cents)}` : ''}${pageType ? ` · ${pageType}` : ''}` : pageType} />,
+            called_in: <Fact label="Called in" v={l.callin_at ? `${fmtDateTime(l.callin_at)} · ${leadAge(l.callin_at)}` : l.callin_raw} />,
+            lead_id: <Fact label="Lead ID" v={l.source_lead_id} />,
+            age: <Fact label="Age" v={l.dob ? `${age} (from date of birth)` : l.age ?? l.age_raw} />,
+            dob: <Fact label="Date of birth" v={l.dob ? fmtDob(l.dob) : l.dob_raw} />,
+            lender: <Fact label="Lender" v={l.lender} />,
+            loan: <Fact label="Loan amount" v={l.loan_amount_cents != null ? fmtMoney(l.loan_amount_cents) : l.loan_amount_raw} />,
+            coborrower: <Fact label="Co-borrower" v={l.coborrower_signal === 'yes' ? 'Yes' : l.coborrower_raw ? `Unknown (sheet says "${l.coborrower_raw}")` : 'Unknown'} />,
+            tobacco: <Fact label="Tobacco" v={l.tobacco_raw} />,
+            address: <Fact label="Address" v={[l.address_line, l.zip].filter(Boolean).join(' ')} />,
+            batch: <Fact label="Batch" v={`${d.batch.name}${d.batch.cost_per_lead_cents != null ? ` · ${fmtMoney(d.batch.cost_per_lead_cents)}/lead` : ''}`} />,
+            attempts: <Fact label="Attempts" v={d.state ? `${d.state.attempts_total}${d.state.last_call_at ? ` · last ${fmtDateTime(d.state.last_call_at)}` : ''}` : ''} />,
+            health: health.length > 0 && (
+              <div>
+                <label>Health (from sheet)</label>
+                <span className="sensitive">{health.map(([k, v]) => `${k}: ${v}`).join(' · ')}</span>
+              </div>
+            ),
+            extra: Object.entries(extra).map(([k, v]) => <Fact key={k} label={k} v={v} />),
+            page: l.source_page != null && <Fact label="PDF page" v={l.source_page} />,
+          };
+          // Your fields that show for this lead now; one that's needed and blank says so.
+          for (const c of d.custom) {
+            if (c.shown === false) continue;
+            cell[`field:${c.field_id}`] = c.required && c.value == null
+              ? <div><label>{c.label}</label><span className="warn">needed</span></div>
+              : <Fact label={c.label} v={showCustomValue(c, c.value)} />;
+          }
+          return sheetFacts(sheet, d.custom.map((c) => c.field_id)).filter((f) => f.shown).map((f) => <Fragment key={f.id}>{cell[f.id]}</Fragment>);
+        })()}
       </div>
       {d.linked.length > 0 && <LinkedLeads d={d} />}
       {(warnings.length > 0 || importNotes) && <p className="help">Import notes: {[importNotes, ...warnings].filter(Boolean).join(' ')}</p>}
@@ -315,12 +324,14 @@ function LinkedLeads({ d }: { d: LeadDetail }) {
 const fmtDay = (iso: string) => new Date(iso).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
 
 /** Every call is its own entry; changed outcomes show the earlier ones struck through. */
-export function CallHistory({ calls, onChange }: { calls: Call[]; onChange: () => void }) {
+/** A lead's calls, newest first; `limit` shows only that many (the Calling screen's lead sheet), with how many more there are. */
+export function CallHistory({ calls: all, onChange, limit = 0 }: { calls: Call[]; onChange: () => void; limit?: number }) {
+  const calls = limit > 0 ? all.slice(0, limit) : all;
   const { meta, toast, bumpStats } = useApp();
   const [editing, setEditing] = useState<string | null>(null);
   const [code, setCode] = useState('');
   const [due, setDue] = useState('');
-  if (!calls.length) return <p className="muted">No calls yet.</p>;
+  if (!all.length) return <p className="muted">No calls yet.</p>;
   const save = async (c: Call) => {
     try {
       await api.post(`/calls/${c.id}/outcomes`, {
@@ -349,6 +360,7 @@ export function CallHistory({ calls, onChange }: { calls: Call[]; onChange: () =
   };
   const needsTime = meta?.outcome_codes.find((o) => o.code === code)?.requires_callback_time;
   return (
+    <>
     <ul className="history">
       {calls.map((c) => (
         <li key={c.id} className={c.voided_at ? 'voided' : ''}>
@@ -396,10 +408,13 @@ export function CallHistory({ calls, onChange }: { calls: Call[]; onChange: () =
         </li>
       ))}
     </ul>
+    {all.length > calls.length && <p className="muted">{all.length - calls.length} older call{all.length - calls.length === 1 ? '' : 's'} on the lead page.</p>}
+    </>
   );
 }
 
-export function Notes({ d, onChange }: { d: LeadDetail; onChange: () => void }) {
+/** Your notes on a lead, and a box to add one, `rows` lines tall. */
+export function Notes({ d, onChange, rows }: { d: LeadDetail; onChange: () => void; rows?: number }) {
   const { toast } = useApp();
   const [text, setText] = useState('');
   const add = async () => {
@@ -416,6 +431,7 @@ export function Notes({ d, onChange }: { d: LeadDetail; onChange: () => void }) 
     <div>
       <textarea
         id="note-input"
+        rows={rows}
         placeholder="Add a note (Ctrl+Enter to save)"
         value={text}
         onChange={(e) => setText(e.target.value)}
