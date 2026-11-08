@@ -6,7 +6,7 @@ import { CallingCard, ShortcutsCard } from './CallingSettingsCards';
 import { UpdatePanel } from '../components/UpdateBar';
 import { ProductsCard } from './ProductsCard';
 import { GoogleCalendarCard } from './GoogleCalendarCard';
-import { BackupsCard } from './BackupsCard';
+import { BackupsCard, SetupCard } from './BackupsCard';
 import { SectionedPage, type Section } from '../components/Sections';
 
 // Settings: what you set once and leave. In sections with a menu at the top: calling, leads (types and counties),
@@ -37,7 +37,7 @@ const SECTIONS: Section[] = [
   { id: 'settings-leads', title: 'Leads', help: 'Lead types and prices, and counties.', cards: () => <><LeadTypesCard /><CountiesCard /></> },
   { id: 'settings-connected', title: 'Unitrust and Google', help: 'The Unitrust extension, products and comp, and Google Calendar.', cards: () => <><UnitrustCard /><ProductsCard /><GoogleCalendarCard /></> },
   { id: 'settings-imports', title: 'Imports', help: 'The AI that reads scanned lead pages, and how pages are kept.', cards: () => <><AiCard /><LeadPagesCard /></> },
-  { id: 'settings-backups', title: 'Backups', help: 'Back up now, and check a backup restores.', cards: () => <BackupsCard /> },
+  { id: 'settings-backups', title: 'Backups', help: 'Back up now, check a backup restores, and save or load your setup.', cards: () => <><BackupsCard /><SetupCard /></> },
   { id: 'settings-app', title: 'App', help: 'Version and updates.', cards: () => <UpdatePanel /> },
 ];
 
