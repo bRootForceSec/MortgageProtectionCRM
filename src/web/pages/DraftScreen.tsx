@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api, ApiError, fmtMoney, fmtPhone, type AddResult } from '../api';
 import { useApp } from '../App';
 import { ReviewWindow } from '../components/ReviewWindow';
+import { splitTags } from './BulkImport';
 import type { DraftView, DraftRow, DraftSummary } from '../importTypes';
 import { showImportedLeads } from './LeadsPage';
 import { useLeadTypes } from '../leadTypes';
@@ -33,7 +34,7 @@ export function DraftScreen({ id, onLeave, onGone, onCommitted }: {
   const [setTo, setSetTo] = useState('');
   const [byCounty, setByCounty] = useState('');
   const [range, setRange] = useState({ from: '', to: '' });
-  const [batch, setBatch] = useState({ name: '', purchased_count: '', cost_total: '', notes: '' });
+  const [batch, setBatch] = useState({ name: '', purchased_count: '', cost_total: '', notes: '', tags: '' });
   /** New imports go straight onto the call list unless you untick this. */
   // Remembers your last choice: with a rule that adds today's imports in its turn, you'll usually leave it off.
   const [toList, setToListState] = useState(getStored(TO_LIST_KEY) !== '0');
@@ -136,6 +137,7 @@ export function DraftScreen({ id, onLeave, onGone, onCommitted }: {
           cost_total_cents: cents(batch.cost_total),
           lead_type: defaultType,
           notes: batch.notes || null,
+          tags: splitTags(batch.tags),
         },
       });
       toast(`Imported ${r.summary.accepted} leads`);
@@ -288,6 +290,10 @@ export function DraftScreen({ id, onLeave, onGone, onCommitted }: {
             <input inputMode="decimal" value={batch.cost_total} onChange={(e) => setBatch({ ...batch, cost_total: e.target.value })} style={{ width: 120 }} placeholder={costFromTypes != null ? (costFromTypes / 100).toFixed(2) : ''} />
           </label>
           <label className="field" style={{ flex: 1, minWidth: 200 }}><span>Notes</span><input value={batch.notes} onChange={(e) => setBatch({ ...batch, notes: e.target.value })} /></label>
+          <label className="field" style={{ minWidth: 200 }} title="Every lead this import brings in gets these tags (commas between them)">
+            <span>Tag these leads</span>
+            <input value={batch.tags} onChange={(e) => setBatch({ ...batch, tags: e.target.value })} placeholder="Like Facebook, November" />
+          </label>
         </div>
         <p className="help">
           {costFromTypes != null

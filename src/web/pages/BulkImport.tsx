@@ -111,11 +111,12 @@ export function BulkConfirm({ picked, skipped, leadType, onStart, onCancel }: {
   picked: PickedFile[];
   skipped: number;
   leadType: string;
-  onStart: (settings: { add_to_call_list: boolean; import_ready_now: boolean }) => void;
+  onStart: (settings: { add_to_call_list: boolean; import_ready_now: boolean; tags: string[] }) => void;
   onCancel: () => void;
 }) {
   const [toList, setToList] = useState(false);
   const [readyNow, setReadyNow] = useState(true);
+  const [tags, setTags] = useState('');
   const pdfs = picked.filter((p) => /\.pdf$/i.test(p.file.name)).length;
   const bytes = picked.reduce((a, p) => a + p.file.size, 0);
   return (
@@ -140,8 +141,13 @@ export function BulkConfirm({ picked, skipped, leadType, onStart, onCancel }: {
         Add the imported leads to the call list
       </label>
       <p className="help">Off by default for a bulk import: pick who to call from the Leads page instead of adding everyone at once.</p>
+      <label className="field" style={{ maxWidth: 420 }}>
+        <span>Tag these leads</span>
+        <input value={tags} onChange={(e) => setTags(e.target.value)} placeholder="Like Facebook, November" aria-label="Tag these leads" />
+      </label>
+      <p className="help">Every lead these files bring in gets these tags (commas between them). To tag by what's in a lead, like its age or lender, use a rule that runs when leads are imported (Automation → Rules).</p>
       <div className="row" style={{ marginTop: 10 }}>
-        <button className="btn primary" onClick={() => onStart({ add_to_call_list: toList, import_ready_now: readyNow })} disabled={!picked.length}>
+        <button className="btn primary" onClick={() => onStart({ add_to_call_list: toList, import_ready_now: readyNow, tags: splitTags(tags) })} disabled={!picked.length}>
           Start importing
         </button>
         <button className="btn" onClick={onCancel}>Cancel</button>
@@ -376,3 +382,5 @@ export function BulkScreen({ id, onOpenDraft, onBack }: { id: string; onOpenDraf
   );
 }
 
+/** "Facebook, November" as tag names. */
+export const splitTags = (s: string) => [...new Set(s.split(',').map((t) => t.trim()).filter(Boolean))];
