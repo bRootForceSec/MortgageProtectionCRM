@@ -120,13 +120,18 @@ export function RulesCard() {
     <div className="card" id="rules">
       <h2>Rules</h2>
       <p className="help">
-        When something happens, do something to the leads it fits: every day at a time, when you save a call, when a tag is put on or taken off, when a lead
-        comes into or leaves a smart list, when a condition turns true, or when the call list runs out. The call list runs out when it has leads and
-        you've called them all; then the rules for that go in the order they're listed here, and the first one that adds leads wins, so they set the
-        order you call in (like imports, then yesterday's no-shows, then today's no-answers). They only add leads that aren't on the list
-        at all, so the ones you just called don't come straight back (Clear worked lets them). A rule on a lead's change acts on just that lead, if it matches the rule's filters (set them
-        here, or on Leads with <b>Make a rule</b>). Rules can set off other rules; one set off again for the same lead stops there, and the log says so.{' '}
-        <b>Preview</b> and <b>Run now</b> act on every lead matching the filters; Preview changes nothing. Every run is in the log below.
+        Every rule is <b>when X, do Y</b>. X is anything the CRM notices: a time of day, a call saved, a tag put on or taken off, a lead
+        coming into or leaving a smart list, a condition turning true, leads imported, the call list running out, or you pressing Run now.
+        Y is one or more steps, top to bottom, with Waits between them if you like. You can narrow which leads it does Y to with any Leads
+        filter (set it here, or on Leads with <b>Make a rule</b>); a rule set off by one lead's change acts on just that lead, if it fits.
+        Rules can set off other rules; one set off again for the same lead stops there, and the log says so. <b>Preview</b> shows what a
+        rule would do now without changing anything, <b>Run now</b> runs it, and every run is in the log below.
+      </p>
+      <p className="help">
+        Running out of calls is one of these "when"s. The list runs out when it has leads and you've called them all; then the rules for it
+        go in the order listed here and the first one that adds leads wins, so together they set the order you call in (like imports, then
+        yesterday's no-shows, then today's no-answers). They only add leads that aren't on the list at all, so the ones you just called
+        don't come straight back (Clear worked lets them).
       </p>
       {rules.length === 0 && <p className="muted">No rules yet.</p>}
       <ul className="rule-list">
