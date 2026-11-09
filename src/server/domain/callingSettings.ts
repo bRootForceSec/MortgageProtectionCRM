@@ -3,7 +3,7 @@ import { getSetting, setSetting } from '../core/settings.js';
 import { DomainError } from '../core/errors.js';
 import { CallingSettings, SHORTCUT_ACTIONS } from '../../shared/callingSettings.js';
 import type { FollowUpPlans } from '../../shared/followUps.js';
-import { OUTCOMES, OutcomeOverrides, outcomeDef } from '../../shared/outcomes.js';
+import { OutcomeOverrides, outcomeDef } from '../../shared/outcomes.js';
 import { loadOutcomeOverrides, syncOutcomeCodes } from '../db/outcomeCodes.js';
 import { conditionSql, sortStepSql } from './formulas.js';
 import { FormulaError } from '../../shared/formula.js';
@@ -57,9 +57,9 @@ export function followUpPlans(db: DB): FollowUpPlans {
 /**
  * Saves your outcome names and buttons (Settings → Outcomes) and brings the outcome_code table in line. Only active
  * outcomes can be changed. A name or button that matches the default is not stored, so later default changes still
- * reach it. Each side of the Calling screen keeps at least one button.
+ * reach it.
  */
-export function saveOutcomeOverrides(db: DB, input: unknown, opts: { checkSides?: boolean } = {}): OutcomeOverrides {
+export function saveOutcomeOverrides(db: DB, input: unknown): OutcomeOverrides {
   const parsed = OutcomeOverrides.parse(input);
   const out: OutcomeOverrides = {};
   for (const [code, o] of Object.entries(parsed)) {
@@ -70,11 +70,6 @@ export function saveOutcomeOverrides(db: DB, input: unknown, opts: { checkSides?
       ...(o.offered !== undefined && o.offered !== def.offered ? { offered: o.offered } : {}),
     };
     if (Object.keys(keep).length) out[code] = keep;
-  }
-  // Automation → Calling screen checks this itself, counting your own buttons too.
-  for (const side of opts.checkSides === false ? [] : (['first_call', 'appointment'] as const)) {
-    const shown = Object.entries(OUTCOMES).filter(([c, d]) => d.active && d.kind === side && (out[c]?.offered ?? d.offered));
-    if (!shown.length) throw new DomainError(`keep at least one button on the ${side === 'appointment' ? 'Appointment' : 'First call'} side`);
   }
   db.transaction(() => {
     setSetting(db, 'outcome_overrides', out);

@@ -51,7 +51,7 @@ export interface Saved {
   at: number;
   /** The lead's time zone, so an undone callback comes back in their time. */
   tz: string | null;
-  /** Appt set with "Run it now": stay on this lead, on the Appointment side. */
+  /** Appt set with "Run it now": stay on this lead, with its appointment buttons. */
   onTheSpot?: boolean;
 }
 
@@ -399,7 +399,7 @@ export function LogCall({
           <button className="btn primary" onClick={() => void save()} disabled={saving}>Save <kbd>Enter</kbd></button>
           {apptWhen && (
             <button className="btn" onClick={() => void save(button, true)} disabled={saving}
-              title="On the spot: saves the appointment as set for now, stays on this lead and switches to the Appointment side, so you log how it went when you're done">
+              title="On the spot: saves the appointment as set for now, stays on this lead and shows its appointment buttons, so you log how it went when you're done">
               Run it now <kbd>⇧Enter</kbd>
             </button>
           )}

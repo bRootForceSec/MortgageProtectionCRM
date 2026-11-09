@@ -8,7 +8,7 @@ import { ConditionEditor } from '../components/ConditionEditor';
 import { APPT_RESULT_LABEL } from '../../shared/appointments';
 import { outcomeDef } from '../../shared/outcomes';
 import {
-  BUTTON_BORDERS, BUTTON_COLORS, BUTTON_FILLS, ButtonDef, buttonClass, buttonSide, describeButtonTags, starterShowWhen,
+  BUTTON_BORDERS, BUTTON_COLORS, BUTTON_FILLS, ButtonDef, buttonClass, describeButtonTags, starterShowWhen,
 } from '../../shared/buttons';
 import { buttonToPython, pythonToButton, type ButtonNames } from '../../shared/buttonText';
 import { RuleTextError } from '../../shared/ruleText';
@@ -76,19 +76,17 @@ export function ButtonsCard() {
   };
 
   const change = (id: string, patch: Partial<ButtonDef>) => setDraft(list.map((b) => (b.id === id ? { ...b, ...patch } : b)));
-  /** Moves a button up or down past the next one on its side. */
+  /** Moves a button up or down past the next one. */
   const move = (id: string, by: -1 | 1) => {
     const i = list.findIndex((b) => b.id === id);
-    const side = buttonSide(list[i]!);
-    let j = i + by;
-    while (j >= 0 && j < list.length && buttonSide(list[j]!) !== side) j += by;
+    const j = i + by;
     if (j < 0 || j >= list.length) return;
     const next = [...list];
     [next[i], next[j]] = [next[j]!, next[i]!];
     setDraft(next);
   };
-  const add = (side: 'first_call' | 'appointment') => {
-    const first = outcomes.find((o) => o.kind === side);
+  const add = () => {
+    const first = outcomes[0];
     if (!first) return;
     const id = `b-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
     setDraft([...list, ButtonDef.parse({ id, outcome: first.code, label: 'New button' })]);
@@ -210,13 +208,11 @@ export function ButtonsCard() {
         leads, look how you like, and add or take off other tags. Rename an outcome's own button and older calls
         show the new name; a button you add keeps its name on the calls saved with it. Keys are under Keyboard shortcuts.
       </p>
-      {(['first_call', 'appointment'] as const).map((side) => (
-        <div key={side}>
-          <h3>{side === 'appointment' ? 'Appointment outcomes' : 'Call outcomes'}</h3>
+      <div>
           <table className="grid" style={{ maxWidth: 900 }}>
             <thead><tr><th>Name</th><th>Button</th><th>What it does</th><th></th></tr></thead>
             <tbody>
-              {list.filter((b) => buttonSide(b) === side).map((b) => {
+              {list.map((b) => {
                 const def = outcomeDef(b.outcome);
                 const isDefault = own(b) && !!def && b.label === def.label && b.hidden === !def.offered && plain(b);
                 const does = [
@@ -243,9 +239,8 @@ export function ButtonsCard() {
               })}
             </tbody>
           </table>
-          <button type="button" className="btn small" style={{ marginTop: 4 }} onClick={() => add(side)}>+ Add a button</button>
-        </div>
-      ))}
+          <button type="button" className="btn small" style={{ marginTop: 4 }} onClick={add}>+ Add a button</button>
+      </div>
       <div className="row" style={{ marginTop: 8 }}>
         <button className="btn primary" disabled={!draft || !!text?.error} onClick={() => void save()}>Save buttons</button>
         {draft && <button className="btn" onClick={() => { setDraft(null); open(null); }}>Cancel</button>}

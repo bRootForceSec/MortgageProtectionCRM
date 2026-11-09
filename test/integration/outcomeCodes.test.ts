@@ -132,13 +132,11 @@ describe('your outcome names and buttons (Settings → Outcomes)', () => {
     expect(offered(db)).toMatchObject({ callback: false, bad_number: true });
   });
 
-  it('refuses unknown or retired outcomes, blank names and a side with no buttons', () => {
+  it('refuses unknown or retired outcomes, and blank names', () => {
     const { db } = tempDb();
     expect(() => saveOutcomeOverrides(db, { nope: { label: 'x' } })).toThrow(DomainError);
     expect(() => saveOutcomeOverrides(db, { busy: { label: 'x' } })).toThrow(DomainError);
     expect(() => saveOutcomeOverrides(db, { no_answer: { label: '  ' } })).toThrow();
-    const allOff = Object.fromEntries(Object.entries(OUTCOMES).filter(([, o]) => o.kind === 'appointment' && o.active).map(([c]) => [c, { offered: false }]));
-    expect(() => saveOutcomeOverrides(db, allOff)).toThrow(/at least one button on the Appointment side/);
     expect(loadOutcomeOverrides(db)).toEqual({});
   });
 });
