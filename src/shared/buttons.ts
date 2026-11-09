@@ -35,7 +35,7 @@ export const ButtonDef = z.object({
   tooltip: z.string().trim().max(200).default(''),
   /**
    * Tags the lead with the button's name when pressed, taking off the tag of the last button pressed that did the same,
-   * so has("Dial: No answer") means the last call went that way and times("Dial: No answer") counts every one.
+   * so has("No answer") means the last call went that way and times("No answer") counts every one.
    */
   tag_self: z.boolean().default(true),
   add_tags: tagIds,

@@ -84,7 +84,7 @@ test('import a sheet, log calls by keyboard, and start an Appt set', async ({ pa
   await expect(page.getByLabel('Queue').locator('.queue-list li')).toHaveCount(4);
   await page.screenshot({ path: 'test-results/calling.png', fullPage: true });
 
-  // Dial: Picked up: press 2, then Shift+1 for the Price objection (optional), then Enter. Enter saves and moves straight on to the next lead.
+  // Picked up: press 2, then Shift+1 for the Price objection (optional), then Enter. Enter saves and moves straight on to the next lead.
   await page.keyboard.press('2');
   const objections = page.getByRole('group', { name: 'Objections' });
   await expect(objections.getByRole('button')).toHaveText([/Price/, /Spouse/, /Already covered/, /Think about it/, /Health/, /Trust/, /Other/]);
@@ -92,7 +92,7 @@ test('import a sheet, log calls by keyboard, and start an Appt set', async ({ pa
   await expect(objections.getByRole('button', { name: /Price/ })).toHaveAttribute('aria-pressed', 'true');
   await page.keyboard.press('Enter');
   await expect(page.locator('.undo-bar')).toContainText(`Saved for ${first}`);
-  await expect(page.locator('.undo-bar')).toContainText('Dial: Picked up');
+  await expect(page.locator('.undo-bar')).toContainText('Picked up');
   await expect(page.locator('.lead-name')).not.toHaveText(first);
   const second = await page.locator('.lead-name').innerText();
   await expect(page.locator('.topbar .stats')).toContainText('Leads called 1');
@@ -104,14 +104,14 @@ test('import a sheet, log calls by keyboard, and start an Appt set', async ({ pa
   // Up arrow goes back to it and shows the call; down comes back.
   await page.keyboard.press('ArrowUp');
   await expect(page.locator('.lead-name')).toHaveText(first);
-  await expect(page.getByLabel('History').getByText('Dial: Picked up')).toBeVisible();
+  await expect(page.getByLabel('History').getByText('Picked up')).toBeVisible();
   await expect(page.getByLabel('History').getByText('from Sideline')).toBeVisible();
   await page.keyboard.press('ArrowDown');
   await expect(page.locator('.lead-name')).toHaveText(second);
 
   // Callback has no button any more, so 5 does nothing for a lead with no appointment.
   const firstSide = page.getByRole('group', { name: 'Outcome' }).getByRole('button');
-  await expect(firstSide).toHaveText([/Dial: No answer/, /Dial: Picked up/, /Dial: Appt set/, /Dial: Bad number/]);
+  await expect(firstSide).toHaveText([/No answer/, /Picked up/, /Appt set/, /Bad number/]);
   await page.keyboard.press('5');
   await expect(page.locator('#callback-day')).toHaveCount(0);
 
@@ -121,7 +121,7 @@ test('import a sheet, log calls by keyboard, and start an Appt set', async ({ pa
   await expect(page.getByRole('button', { name: /^Copy #MP/ }).first()).toBeVisible();
   await page.locator('#callback-day').blur();
   await page.keyboard.press('1');
-  await expect(page.locator('.undo-bar')).toContainText('Dial: No answer');
+  await expect(page.locator('.undo-bar')).toContainText('No answer');
   await expect(page.locator('.lead-name')).not.toHaveText(second);
   await expect(page.getByLabel('Queue')).toContainText('2 to call · 2 done');
   const current = await page.locator('.lead-name').innerText();
@@ -151,7 +151,7 @@ test('dial counter, undo, remapped keys, QR dialing and lead edits', async ({ pa
   await expect(counter).toContainText('2 dials');
   // No answer saves on its own key, without Enter.
   await page.keyboard.press('1');
-  await expect(page.locator('.undo-bar')).toContainText('Dial: No answer · 2 dials');
+  await expect(page.locator('.undo-bar')).toContainText('No answer · 2 dials');
   await expect(page.locator('.lead-name')).not.toHaveText(lead);
   await expect(page.locator('.topbar .stats')).toContainText('Dials 4');
 
@@ -527,11 +527,11 @@ test('Do not call is a tick beside the outcome, toggled with D', async ({ page }
   await expect(page.getByLabel('Do not call')).toBeChecked();
   await page.keyboard.press('d');
   await expect(page.getByLabel('Do not call')).not.toBeChecked();
-  // D, then 2 and Enter: Dial: Picked up with the tick. The lead goes to the dead pile.
+  // D, then 2 and Enter: Picked up with the tick. The lead goes to the dead pile.
   await page.keyboard.press('d');
   await page.keyboard.press('2');
   await page.keyboard.press('Enter');
-  await expect(page.locator('.undo-bar')).toContainText('Dial: Picked up, do not call');
+  await expect(page.locator('.undo-bar')).toContainText('Picked up, do not call');
   await expect(page.getByLabel('Do not call')).not.toBeChecked();
   await expect(page.locator('.lead-name')).not.toHaveText(lead);
   await page.keyboard.press('ArrowUp');
@@ -558,19 +558,19 @@ test('buttons by condition: a lead with an appointment gets the appointment butt
   await expect(page.getByLabel('Current lead').locator('.appt-when')).toContainText('Tomorrow');
   await expect(page.getByLabel('Current lead').locator('.appt-when')).toContainText('not in Unitrust yet');
   const outcomes = page.getByRole('group', { name: 'Appointment outcome' });
-  await expect(outcomes.getByRole('button')).toHaveText([/Appt: No show/, /Appt: Picked up/, /Appt: Presentation/, /Appt: Sale/, /Appt: Rescheduled/]);
+  await expect(outcomes.getByRole('button')).toHaveText([/No show/, /Appt picked up/, /Presentation/, /Sale/, /Rescheduled/]);
   // M shows every button, and back.
   await page.keyboard.press('m');
   await expect(page.getByLabel('Every button')).toBeChecked();
   await expect(callButtons).toContainText('No answer');
-  await expect(callButtons).toContainText('Appt: Sale');
+  await expect(callButtons).toContainText('Sale');
   await page.keyboard.press('m');
   await expect(outcomes).toBeVisible();
   await page.screenshot({ path: 'test-results/appointment-side.png', fullPage: true });
-  // 3, Enter: Appt: Presentation. She comes back to be called, tagged as a prezi, with the call buttons.
+  // 3, Enter: Presentation. She comes back to be called, tagged as a prezi, with the call buttons.
   await page.keyboard.press('3');
   await page.keyboard.press('Enter');
-  await expect(page.locator('.undo-bar')).toContainText('Appt: Presentation');
+  await expect(page.locator('.undo-bar')).toContainText('Presentation');
   await lookUp('Ann Lee');
   await expect(page.getByLabel('Current lead').locator('.status-chip', { hasText: 'Presentations' })).toBeVisible();
   await expect(callButtons).toContainText('No answer');
@@ -682,7 +682,7 @@ test('on the spot: Run it now saves the Appt set and stays on the lead, with the
   // When it's done: 4, Enter logs the sale and moves on.
   await page.keyboard.press('4');
   await page.keyboard.press('Enter');
-  await expect(page.locator('.undo-bar')).toContainText(`Saved for ${lead}: Appt: Sale`);
+  await expect(page.locator('.undo-bar')).toContainText(`Saved for ${lead}: Sale`);
   await expect(page.getByLabel('Current lead').locator('.status-chip', { hasText: 'Sold' })).toBeVisible();
 });
 
@@ -690,8 +690,8 @@ test('Automation → Calling screen: rename a button, hide one, show Callback, t
   await page.goto(launchUrl);
   await page.getByRole('button', { name: 'Automation' }).click();
   const card = page.locator('#outcomes');
-  await card.getByLabel('Name for Dial: Bad number').fill('Dial: Wrong #');
-  await card.getByLabel('Show a button for Dial: Picked up').uncheck();
+  await card.getByLabel('Name for Bad number').fill('Wrong #');
+  await card.getByLabel('Show a button for Picked up').uncheck();
   await card.getByLabel('Show a button for Callback').check();
   await card.getByRole('button', { name: 'Save buttons' }).click();
   await expect(page.getByText('Buttons saved')).toBeVisible();
@@ -702,7 +702,7 @@ test('Automation → Calling screen: rename a button, hide one, show Callback, t
     const meta = await (await page.request.get(new URL('/api/meta', page.url()).href)).json();
     return meta.outcome_codes.filter((o: any) => o.kind === 'first_call' && o.offered).map((o: any) => o.label);
   };
-  expect(await buttons()).toEqual(['Dial: No answer', 'Dial: Appt set', 'Dial: Wrong #', 'Callback']);
+  expect(await buttons()).toEqual(['No answer', 'Appt set', 'Wrong #', 'Callback']);
 
   // Reset shows only on the three changed rows, and goes away once a row is back to its default.
   const resets = card.getByRole('button', { name: 'Reset' });
@@ -711,8 +711,8 @@ test('Automation → Calling screen: rename a button, hide one, show Callback, t
   await expect(resets).toHaveCount(0);
   await card.getByRole('button', { name: 'Save buttons' }).click();
   await expect(page.getByText('Buttons saved')).toHaveCount(1);
-  await expect(card.getByLabel('Name for Dial: Bad number')).toHaveValue('Dial: Bad number');
-  expect(await buttons()).toEqual(['Dial: No answer', 'Dial: Picked up', 'Dial: Appt set', 'Dial: Bad number']);
+  await expect(card.getByLabel('Name for Bad number')).toHaveValue('Bad number');
+  expect(await buttons()).toEqual(['No answer', 'Picked up', 'Appt set', 'Bad number']);
 });
 
 test('Automation → Calling screen: hide and move lead sheet blocks', async ({ page }) => {
@@ -773,7 +773,7 @@ test('a button of your own: counts as No answer, red and dotted, adds a tag, and
   await expect(page.locator('.undo-bar')).toContainText('Saved for Ann Lee: Left voicemail');
   // She has the tag now, so the button is gone for her.
   await lookUp('Ann Lee');
-  await expect(outcomes.getByRole('button', { name: 'Dial: No answer' })).toBeVisible();
+  await expect(outcomes.getByRole('button', { name: 'No answer' })).toBeVisible();
   await expect(outcomes.getByRole('button', { name: 'Left voicemail' })).toHaveCount(0);
 });
 
@@ -785,16 +785,16 @@ test('a button as Python: read it, change it there, and see the change in the fo
   await card.getByRole('tab', { name: 'Python' }).click();
   const py = card.getByLabel('Button in Python');
   await expect(py).toHaveValue([
-    `@button(counts_as="Dial: No answer", shows_when='not has("Voicemail")', color="red", border="dotted")`,
+    `@button(counts_as="No answer", shows_when='not has("Voicemail")', color="red", border="dotted")`,
     'def button():',
     '    "Left voicemail"',
     '    add_tag("Voicemail")',
   ].join('\n'));
   // A mistake says where, and holds the form and Save until it's fixed.
-  await py.fill('@button(counts_as="Dial: No answer")\ndef button():\n    "Left voicemail"\n    add_tag("Nope")');
+  await py.fill('@button(counts_as="No answer")\ndef button():\n    "Left voicemail"\n    add_tag("Nope")');
   await expect(card.getByLabel('Python mistake')).toHaveText('Line 4: there is no tag called "Nope": make it under Tags first');
   await expect(card.getByRole('button', { name: 'Save buttons' })).toBeDisabled();
-  await py.fill('@button(counts_as="Dial: No answer", color="purple", fill="filled", tooltip="Left a message")\ndef button():\n    "Left voicemail"\n    add_tag("Voicemail")');
+  await py.fill('@button(counts_as="No answer", color="purple", fill="filled", tooltip="Left a message")\ndef button():\n    "Left voicemail"\n    add_tag("Voicemail")');
   await expect(card.getByLabel('Python mistake')).toHaveCount(0);
   await card.screenshot({ path: 'test-results/button-python.png' });
   await card.getByRole('tab', { name: 'Form' }).click();

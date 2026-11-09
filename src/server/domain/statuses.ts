@@ -2,7 +2,8 @@ import type { DB } from '../db/connection.js';
 import { getSetting, setSetting } from '../core/settings.js';
 import { uuidv7 } from '../ids.js';
 import { DomainError } from '../core/errors.js';
-import { conditionSql, loadStatusDefs } from './formulas.js';
+import { conditionSql, loadStatusDefs, rewriteSavedFormulas } from './formulas.js';
+import { renameNameIn } from '../../shared/formula.js';
 import { STARTER_LISTS, Statuses, type Status, type StatusBadge, type StatusInfo } from '../../shared/statuses.js';
 
 // Your statuses (shared/statuses.ts): named conditions, kept as the `statuses` setting. Nothing is stored per lead:
@@ -52,10 +53,14 @@ export function listStatuses(db: DB): StatusInfo[] {
 /** Saves your statuses, in order. Every name is different, and every condition works (including status() in it). */
 export function saveStatuses(db: DB, input: unknown): StatusInfo[] {
   let statuses = Statuses.parse(input);
-  // A renamed status: other conditions that use status("Old name") follow it.
+  // A renamed status: other conditions that use in_list("Old name") follow it, here and everywhere else.
+  const renamed: [string, string][] = [];
   for (const before of loadStatusDefs(db)) {
     const now = statuses.find((st) => st.id === before.id);
-    if (now && now.name !== before.name) statuses = statuses.map((st) => ({ ...st, condition: renameStatusIn(st.condition, before.name, now.name) }));
+    if (now && now.name !== before.name) {
+      statuses = statuses.map((st) => ({ ...st, condition: renameStatusIn(st.condition, before.name, now.name) }));
+      renamed.push([before.name, now.name]);
+    }
   }
   const names = new Set<string>();
   for (const st of statuses) {
@@ -71,7 +76,13 @@ export function saveStatuses(db: DB, input: unknown): StatusInfo[] {
       throw new DomainError(`${st.name}: ${(e as Error).message}`);
     }
   }
-  setSetting(db, 'statuses', statuses);
+  db.transaction(() => {
+    setSetting(db, 'statuses', statuses);
+    for (const [from, to] of renamed) {
+      const same = (x: unknown) => typeof x === 'string' && x.trim().toLowerCase() === from.toLowerCase();
+      rewriteSavedFormulas(db, (src) => renameStatusIn(src, from, to), (o) => (o.by === 'list' && same(o.list) ? { ...o, list: to } : o));
+    }
+  })();
   return listStatuses(db);
 }
 
@@ -112,7 +123,7 @@ export function statusWhere(db: DB, id: string): string {
   }
 }
 
-/** The condition with status("Old") (any case, either quotes) using the new name. */
+/** The condition with status("Old") and in_list("Old") (any case, either quotes) using the new name. */
 export function renameStatusIn(src: string, from: string, to: string): string {
-  return src.replace(/\b(status|in_list)\(\s*(["'])(.*?)\2\s*\)/gi, (m, fn: string, q: string, name: string) => (name.trim().toLowerCase() === from.toLowerCase() ? `${fn}(${q}${to}${q})` : m));
+  return renameNameIn(src, ['status', 'in_list'], from, to);
 }

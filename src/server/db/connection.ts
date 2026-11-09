@@ -4,7 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { syncOutcomeCodes } from './outcomeCodes.js';
 import { syncFieldValueView } from '../domain/formulas.js';
-import { sidesToConditions } from '../domain/buttons.js';
+import { plainButtonNames, sidesToConditions } from '../domain/buttons.js';
 import { addStarterLists } from '../domain/statuses.js';
 
 export type DB = Database.Database;
@@ -33,6 +33,8 @@ export function openDatabase(file: string): DB {
   sidesToConditions(db);
   // Once: the old fixed Leads tabs become smart lists you can change.
   addStarterLists(db);
+  // Once: buttons lose "Dial:" and "Appt:", and their tags and conditions follow.
+  plainButtonNames(db);
   return db;
 }
 

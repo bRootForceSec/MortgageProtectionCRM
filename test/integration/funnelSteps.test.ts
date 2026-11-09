@@ -48,7 +48,7 @@ describe('your funnel steps', () => {
       ...STARTER_FUNNEL,
       step('hot', 'Hot', 'times("Hot")'),
       step('hot_leads', 'Hot now', 'has("Hot")'),
-      step('booked', 'Booked', 'pressed("Dial: Appt set") > 0'),
+      step('booked', 'Booked', 'pressed("Appt set") > 0'),
     ];
     saveFunnelSteps(db, steps);
     expect(funnelFormulaCounts(db, around.from, around.to)).toEqual({ hot: 2, hot_leads: 2, booked: 1 });

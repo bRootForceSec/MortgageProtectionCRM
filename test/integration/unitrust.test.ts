@@ -227,15 +227,15 @@ describe('appointment calls logged here', () => {
     const ann = id('Ann');
     const tags = (lead: string) => (db.prepare('SELECT t.name FROM lead_tag lt JOIN tag t ON t.id = lt.tag_id WHERE lt.lead_id = ? ORDER BY t.name').all(lead) as { name: string }[]).map((r) => r.name);
     log(robert, 'appointment', '2026-10-24T15:00:00.000Z');
-    expect(tags(robert)).toEqual(['Dial: Appt set']);
+    expect(tags(robert)).toEqual(['Appt set']);
     recordUnitrustEvents(db, [ev('blue')], { today: '2026-10-25' }, '2026-10-25T12:00:00.000Z');
-    expect(tags(robert)).toEqual(['Dial: Appt set']);
+    expect(tags(robert)).toEqual(['Appt set']);
     recordUnitrustEvents(db, [ev('red')], { today: '2026-10-26' }, '2026-10-26T18:00:00.000Z');
-    expect(tags(robert)).toEqual(['Appt: No show']);
-    const line = db.prepare("SELECT source, source_name FROM lead_event WHERE lead_id = ? AND tag_name = 'Appt: No show'").get(robert);
+    expect(tags(robert)).toEqual(['No show']);
+    const line = db.prepare("SELECT source, source_name FROM lead_event WHERE lead_id = ? AND tag_name = 'No show'").get(robert);
     expect(line).toEqual({ source: 'unitrust', source_name: 'calendar color' });
     recordUnitrustEvents(db, [ev('green')], { today: '2026-10-26' }, '2026-10-26T19:00:00.000Z');
-    expect(tags(robert)).toEqual(['Appt: Sale']);
+    expect(tags(robert)).toEqual(['Sale']);
 
     // A prezi logged here, then yellow in Unitrust: the tag stays the prezi.
     log(ann, 'appointment', '2026-10-24T15:00:00.000Z');
@@ -243,7 +243,7 @@ describe('appointment calls logged here', () => {
     recordUnitrustEvents(db, [annEv('blue')], { today: '2026-10-25' }, '2026-10-25T12:00:00.000Z');
     log(ann, 'appt_prezi', '2026-10-26T15:00:00.000Z');
     recordUnitrustEvents(db, [annEv('yellow')], { today: '2026-10-26' }, later(1));
-    expect(tags(ann)).toEqual(['Appt: Presentation']);
+    expect(tags(ann)).toEqual(['Presentation']);
   });
 
   it('once: leads whose last word came from Unitrust before this update get its tag', () => {
@@ -257,7 +257,7 @@ describe('appointment calls logged here', () => {
     db.prepare('DELETE FROM lead_tag').run();
     expect(tagLeadsWithUnitrustResult(db, later(2))).toBe(1);
     const names = db.prepare('SELECT lt.lead_id, t.name FROM lead_tag lt JOIN tag t ON t.id = lt.tag_id').all();
-    expect(names).toEqual([{ lead_id: robert, name: 'Appt: No show' }]);
+    expect(names).toEqual([{ lead_id: robert, name: 'No show' }]);
     expect(tagLeadsWithUnitrustResult(db, later(3))).toBe(0);
   });
 });

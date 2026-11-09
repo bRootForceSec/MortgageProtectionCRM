@@ -54,19 +54,19 @@ const appt = { ...base, kind: 'appointment', introducedAt: OCT29 } as const;
 
 export const OUTCOMES = {
   // First call side
-  no_answer: { ...base, label: 'Dial: No answer', group: 'no_contact', hotkey: '1', sortOrder: 10 },
-  no_appt: { ...base, label: 'Dial: Picked up', group: 'contact', hotkey: '2', pickup: true, objections: true, sortOrder: 20 },
-  appointment: { ...base, label: 'Dial: Appt set', group: 'contact', hotkey: '3', pickup: true, books: true, apptSet: true, sortOrder: 30 },
-  bad_number: { ...base, label: 'Dial: Bad number', group: 'invalid', hotkey: '4', sortOrder: 40 },
+  no_answer: { ...base, label: 'No answer', group: 'no_contact', hotkey: '1', sortOrder: 10 },
+  no_appt: { ...base, label: 'Picked up', group: 'contact', hotkey: '2', pickup: true, objections: true, sortOrder: 20 },
+  appointment: { ...base, label: 'Appt set', group: 'contact', hotkey: '3', pickup: true, books: true, apptSet: true, sortOrder: 30 },
+  bad_number: { ...base, label: 'Bad number', group: 'invalid', hotkey: '4', sortOrder: 40 },
   // No button (Alistair rarely used it), but follow-up plans, spreadsheet history and older calls still use it.
   callback: { ...base, label: 'Callback', group: 'contact', pickup: true, callback: true, offered: false, sortOrder: 50 },
 
   // Appointment side
-  appt_no_show: { ...appt, label: 'Appt: No show', group: 'no_contact', hotkey: '1', apptResult: 'no_show', sortOrder: 110 },
-  appt_sat_no_sale: { ...appt, label: 'Appt: Picked up', group: 'contact', hotkey: '2', pickup: true, objections: true, apptResult: 'sat_no_sale', sortOrder: 120 },
-  appt_prezi: { ...appt, label: 'Appt: Presentation', group: 'contact', hotkey: '3', pickup: true, objections: true, apptResult: 'prezi', sortOrder: 130 },
-  appt_sale: { ...appt, label: 'Appt: Sale', group: 'contact', hotkey: '4', pickup: true, apptResult: 'sold', leadEffect: 'sold', sortOrder: 140 },
-  appt_rescheduled: { ...appt, label: 'Appt: Rescheduled', group: 'contact', hotkey: '5', pickup: true, apptResult: 'rescheduled', sortOrder: 150 },
+  appt_no_show: { ...appt, label: 'No show', group: 'no_contact', hotkey: '1', apptResult: 'no_show', sortOrder: 110 },
+  appt_sat_no_sale: { ...appt, label: 'Appt picked up', group: 'contact', hotkey: '2', pickup: true, objections: true, apptResult: 'sat_no_sale', sortOrder: 120 },
+  appt_prezi: { ...appt, label: 'Presentation', group: 'contact', hotkey: '3', pickup: true, objections: true, apptResult: 'prezi', sortOrder: 130 },
+  appt_sale: { ...appt, label: 'Sale', group: 'contact', hotkey: '4', pickup: true, apptResult: 'sold', leadEffect: 'sold', sortOrder: 140 },
+  appt_rescheduled: { ...appt, label: 'Rescheduled', group: 'contact', hotkey: '5', pickup: true, apptResult: 'rescheduled', sortOrder: 150 },
 
   // Retired. Older calls (and spreadsheet history) still carry them.
   vm_left: { ...retired, label: 'Voicemail, message left', group: 'no_contact', sortOrder: 20 },

@@ -34,11 +34,11 @@ describe('Python syntax in formulas', () => {
 
 describe('the condition form', () => {
   it('reads Python into rows and groups, and writes the same text back', () => {
-    const src = 'has("No show") and hours_since(added("No show")) < 72 and before("Appt set", "No show") and not (times("No answer", days=7) >= 3 or pressed("Dial: Bad number") >= 1) and (state == "OH" or field("Score") > 50)';
+    const src = 'has("No show") and hours_since(added("No show")) < 72 and before("Appt set", "No show") and not (times("No answer", days=7) >= 3 or pressed("Bad number") >= 1) and (state == "OH" or field("Score") > 50)';
     const g = toForm(src);
     expect(g.mode).toBe('all');
     expect(g.items.map((i) => i.kind)).toEqual(['has', 'since', 'before', 'group', 'group']);
-    expect(g.items[3]).toMatchObject({ kind: 'group', mode: 'any', negate: true, items: [{ kind: 'times', days: 7, op: '>=', n: 3 }, { kind: 'pressed', outcome: 'Dial: Bad number' }] });
+    expect(g.items[3]).toMatchObject({ kind: 'group', mode: 'any', negate: true, items: [{ kind: 'times', days: 7, op: '>=', n: 3 }, { kind: 'pressed', outcome: 'Bad number' }] });
     expect(g.items[4]).toMatchObject({ items: [{ kind: 'value', name: 'state', op: '==', value: 'OH' }, { kind: 'field', label: 'Score', op: '>', value: 50 }] });
     expect(toPython(g)).toBe(src);
   });

@@ -3,7 +3,7 @@ import { CURRENT_OUTCOME, LEAD_NAME } from '../db/sql.js';
 import { FORMULA_VALUES, FormulaError, parseFormula, type FormulaKind, type FormulaNode, type FormulaPreview } from '../../shared/formula.js';
 import type { CustomField } from '../../shared/customFields.js';
 import { Statuses, type Status } from '../../shared/statuses.js';
-import { getSetting } from '../core/settings.js';
+import { getSetting, setSetting } from '../core/settings.js';
 
 // Formula fields (shared/formula.ts) are worked out by SQLite: each formula becomes an SQL expression over
 // `lead l JOIN lead_state s`, and the view lead_field_value puts them next to the typed values. So filters, sorting,
@@ -324,7 +324,7 @@ export function funnelStepSql(db: DB, src: string, statuses: readonly Status[] =
   const byLabel = new Map(fieldDefs(db).map((f) => [f.label.toLowerCase(), f]));
   const x = compile(parseFormula(src), byLabel, [], new Map(statuses.map((st) => [st.name.toLowerCase(), st])), true);
   if (x.kind === 'yes_no' || x.kind === 'number') return `coalesce(${x.sql}, 0)`;
-  throw new FormulaError(`a funnel step has to be a number, like times("Hot"), or yes or no, like pressed("Dial: Appt set") > 0; this gives ${KIND_WORD[x.kind]}`);
+  throw new FormulaError(`a funnel step has to be a number, like times("Hot"), or yes or no, like pressed("Appt set") > 0; this gives ${KIND_WORD[x.kind]}`);
 }
 
 /** How many leads a condition matches now, or its mistake (the condition editor shows it as you type). */
@@ -339,4 +339,38 @@ export function checkCondition(db: DB, src: string): { error: string | null; at:
   }
   const matched = (db.prepare(`SELECT COUNT(*) n FROM lead l JOIN lead_state s ON s.lead_id = l.id WHERE ${sql}`).get() as { n: number }).n;
   return { error: null, at: null, matched, total };
+}
+
+/** Where your formulas and conditions are kept: these settings (under these keys), and your fields. */
+const SAVED_SETTINGS = ['statuses', 'buttons', 'rules', 'funnel_steps', 'calling'];
+const FORMULA_KEYS = new Set(['condition', 'show_when', 'where', 'formula', 'callable_when', 'required_when']);
+
+/**
+ * Every formula and condition you've saved, rewritten by `rewrite`, so a rename carries into all of them: smart lists,
+ * buttons, rules, funnel steps, who can be called, your order and your fields. `step` can change a funnel step that
+ * names a tag or a smart list.
+ */
+export function rewriteSavedFormulas(db: DB, rewrite: (src: string) => string, step: (o: Record<string, unknown>) => Record<string, unknown> = (o) => o): void {
+  const walk = (v: unknown): unknown => {
+    if (Array.isArray(v)) return v.map(walk);
+    if (!v || typeof v !== 'object') return v;
+    const o = Object.fromEntries(Object.entries(v).map(([k, x]) => [k, typeof x === 'string' && FORMULA_KEYS.has(k) ? rewrite(x) : walk(x)]));
+    return step(o);
+  };
+  for (const key of SAVED_SETTINGS) {
+    const v = getSetting<unknown>(db, key);
+    if (v == null) continue;
+    const next = walk(v);
+    if (JSON.stringify(next) !== JSON.stringify(v)) setSetting(db, key, next);
+  }
+  const rows = db.prepare('SELECT id, formula, show_when, required_when FROM custom_field').all() as { id: string; formula: string | null; show_when: string | null; required_when: string | null }[];
+  const set = db.prepare('UPDATE custom_field SET formula = ?, show_when = ?, required_when = ? WHERE id = ?');
+  let formulas = false;
+  for (const r of rows) {
+    const [f, sw, rw] = [r.formula, r.show_when, r.required_when].map((x) => (x == null ? x : rewrite(x)));
+    if (f === r.formula && sw === r.show_when && rw === r.required_when) continue;
+    set.run(f, sw, rw, r.id);
+    formulas ||= f !== r.formula;
+  }
+  if (formulas) syncFieldValueView(db);
 }

@@ -92,7 +92,7 @@ test('tags: tag a lead, tag all matching, filter by tag, a rule by tag, and Auto
   await tags.getByRole('button', { name: '+ Tag' }).click();
   await tags.getByLabel('Tag name').fill('Spanish');
   await tags.getByLabel('Tag name').press('Enter');
-  // The lead may already have its last button's tag (like "Dial: No answer"); Spanish is put on beside it.
+  // The lead may already have its last button's tag (like "No answer"); Spanish is put on beside it.
   await expect(tags.locator('.tag-chip', { hasText: 'Spanish' })).toHaveText(['Spanish×']);
   await page.keyboard.press('Escape');
   await expect(viewer).toHaveCount(0);

@@ -762,7 +762,7 @@ function Objections({ o }: { o: any }) {
           </tbody>
         </table>
       </div>
-      <p className="help">The chips you ticked after Dial: Picked up, Appt: Picked up and Appt: Presentation. The small % is out of those calls; a call can have more than one.</p>
+      <p className="help">The chips you ticked after Picked up, Appt picked up and Presentation. The small % is out of those calls; a call can have more than one.</p>
     </div>
   );
 }

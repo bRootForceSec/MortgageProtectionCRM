@@ -206,7 +206,7 @@ export function ButtonsCard() {
       <p className="help">
         The buttons on the Calling screen. Each one counts as an outcome (pickup, appt set, sale...), which is what your numbers see.
         Pressing one tags the lead with the button's name (taking off the last button's tag), so a smart list can read how the last call went,
-        like <code>has("Dial: No answer")</code>, and <code>times("Dial: No answer")</code> counts them all. A button can also show only for some
+        like <code>has("No answer")</code>, and <code>times("No answer")</code> counts them all. A button can also show only for some
         leads, look how you like, and add or take off other tags. Rename an outcome's own button and older calls
         show the new name; a button you add keeps its name on the calls saved with it. Keys are under Keyboard shortcuts.
       </p>
