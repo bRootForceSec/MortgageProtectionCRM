@@ -500,3 +500,17 @@ test('a rule that makes a lead come back: steps in the form, read back in words 
   await card.scrollIntoViewIfNeeded();
   await page.screenshot({ path: 'test-results/rule-come-back.png' });
 });
+
+test('your setup: save it as a file from Settings → Backups and load it back', async ({ page }) => {
+  await page.goto(launchUrl);
+  await page.locator('.topbar nav').getByRole('button', { name: 'Settings', exact: true }).click();
+  const card = page.locator('#setup-file');
+  await card.scrollIntoViewIfNeeded();
+  const download = page.waitForEvent('download');
+  await card.getByRole('link', { name: 'Save my setup' }).click();
+  const file = await (await download).path();
+  expect(JSON.parse(fs.readFileSync(file, 'utf8'))).toMatchObject({ kind: 'mpcrm-setup', version: 1 });
+  page.once('dialog', (d) => void d.accept());
+  await card.getByLabel('Load a setup file').setInputFiles({ name: 'mpcrm-setup.json', mimeType: 'application/json', buffer: fs.readFileSync(file) });
+  await expect(page.getByText(/^Setup loaded: 0 new tags, 0 new fields$/)).toBeVisible();
+});

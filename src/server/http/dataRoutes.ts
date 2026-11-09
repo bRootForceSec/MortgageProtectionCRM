@@ -6,6 +6,7 @@ import type { DB } from '../db/connection.js';
 import type { Config } from '../config.js';
 import { DomainError } from '../core/errors.js';
 import { exportRows, toCsv, toXlsx, fullJsonDump, EXPORT_TABLES, type ExportTable } from '../domain/exporter.js';
+import { exportSetup, loadSetup } from '../domain/setup.js';
 import { createBackup, listBackups, lastBackupCheck, runBackupCheck } from '../backup.js';
 
 // Your data: exports and backups.
@@ -37,6 +38,13 @@ export function registerDataRoutes(app: FastifyInstance, deps: { db: DB; config:
     return reply.header('content-disposition', `attachment; filename="${m[1]}-${stamp}.xlsx"`)
       .type('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet').send(buf);
   });
+
+  // ---------- your setup as one file ----------
+  app.get('/api/setup/file', async (_req, reply) => {
+    const stamp = new Date().toISOString().slice(0, 10);
+    return reply.header('content-disposition', `attachment; filename="mpcrm-setup-${stamp}.json"`).type('application/json').send(JSON.stringify(exportSetup(db), null, 2));
+  });
+  app.post('/api/setup', async (req) => loadSetup(db, req.body));
 
   app.get('/api/backups', async () =>
     listBackups(config).reverse().map((f) => {

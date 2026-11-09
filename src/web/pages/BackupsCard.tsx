@@ -63,3 +63,47 @@ export function BackupsCard() {
     </div>
   );
 }
+
+/** Settings → Backups: your setup (not your leads) as one file, to keep or to load on another computer. */
+export function SetupCard() {
+  const { toast, reloadMeta } = useApp();
+  const [busy, setBusy] = useState(false);
+  const load = async (file: File | undefined) => {
+    if (!file) return;
+    if (!window.confirm(`Load the setup in "${file.name}"? Your smart lists, buttons, rules, tag shortcuts, funnel steps, calling settings and report layouts are replaced by the file's. Tags and fields are added; nothing is deleted, and leads and calls stay as they are.`)) return;
+    setBusy(true);
+    try {
+      let body: unknown;
+      try {
+        body = JSON.parse(await file.text());
+      } catch {
+        throw new Error("that file isn't a setup file");
+      }
+      const r = await api.post<{ tags_added: number; fields_added: number }>('/setup', body);
+      await reloadMeta();
+      toast(`Setup loaded: ${r.tags_added} new tag${r.tags_added === 1 ? '' : 's'}, ${r.fields_added} new field${r.fields_added === 1 ? '' : 's'}`);
+    } catch (e: any) {
+      toast(e.message, 'error');
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="card" id="setup-file">
+      <h2>Your setup</h2>
+      <p className="help">
+        Everything you've set up, as one file: tags, fields, smart lists, buttons, rules, tag shortcuts, funnel steps, calling
+        settings and report layouts. No leads, calls or keys. Save it to keep a copy, or load it on another computer.
+        Loading one checks it all first: if anything in it doesn't work here, nothing changes and you're told what.
+      </p>
+      <div className="row">
+        <a className="btn" href="/api/setup/file">Save my setup</a>
+        <label className="btn">
+          Load a setup…
+          <input type="file" accept=".json,application/json" hidden disabled={busy} aria-label="Load a setup file"
+            onChange={(e) => { void load(e.target.files?.[0]); e.target.value = ''; }} />
+        </label>
+      </div>
+    </div>
+  );
+}

@@ -41,6 +41,7 @@ A small calling CRM that runs on your own computer. It imports your lead spreads
 - **Time zones** come from the lead's state, and from the county where a state has two (Indiana's and Michigan's Central-time counties).
 - **Duplicates**: leads with the same phone are linked (not merged), so co-borrowers and re-bought leads stay separate. Importing a phone number that's in the dead pile is flagged in the preview.
 - **Export** any table to CSV or Excel, or everything as one Excel file or a full JSON dump. Health fields are left out unless you tick the box.
+- **Your setup as one file** (Settings → Backups): **Save my setup** downloads your tags, fields, smart lists, buttons, rules, tag shortcuts, funnel steps, calling settings and report layouts, with no leads, calls or keys. **Load a setup** puts one back, here or on another computer: tags and fields with the same name are matched (new ones are added, nothing is deleted) and the rest is replaced. It's all checked first, so a file with a mistake changes nothing and tells you which part is wrong.
 - **Backups** are verified copies of the database. Restore keeps the current database aside instead of deleting it. Once a week the app restores the newest backup into a scratch copy to check it works, and shows the result on Export & backup.
 
 ## Install (Windows, Mac, Linux)
