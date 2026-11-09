@@ -94,6 +94,8 @@ export function LeadsPage() {
   const [changingType, setChangingType] = useState(false);
   const [makingRule, setMakingRule] = useState(false);
   const [rows, setRows] = useState<any[]>([]);
+  // The filters the rows on screen were loaded for: until the new ones arrive, nothing can be ticked.
+  const [rowsFor, setRowsFor] = useState<object | null>(null);
   const [total, setTotal] = useState(0);
   /** Which page of the list (from 1), and how many on a page (remembered). */
   const [page, setPage] = useState(1);
@@ -145,7 +147,7 @@ export function LeadsPage() {
 
   const load = useCallback(
     () => api.get<{ rows: any[]; total: number; page: number }>('/leads', { ...filters, page: String(page), per_page: String(perPage) })
-      .then((r) => { setRows(r.rows); setTotal(r.total); if (r.page !== page) setPage(r.page); }, (e: Error) => toast(e.message, 'error')),
+      .then((r) => { setRows(r.rows); setRowsFor(filters); setTotal(r.total); if (r.page !== page) setPage(r.page); }, (e: Error) => toast(e.message, 'error')),
     [filters, page, perPage, toast],
   );
   useEffect(() => {
@@ -167,7 +169,8 @@ export function LeadsPage() {
     />
   );
 
-  const pickable = rows.filter((r) => r.callable && (!r.on_list || replaceNow));
+  const fresh = rowsFor === filters;
+  const pickable = fresh ? rows.filter((r) => r.callable && (!r.on_list || replaceNow)) : [];
   const allPicked = pickable.length > 0 && pickable.every((r) => picked.has(r.id));
   const toggle = (id: string) => setPicked((p) => {
     const n = new Set(p);
@@ -381,7 +384,7 @@ export function LeadsPage() {
                       type="checkbox"
                       aria-label={`Tick ${fullName(r)}`}
                       checked={picked.has(r.id)}
-                      disabled={!can}
+                      disabled={!can || !fresh}
                       title={can ? 'Tick to add to the call list' : r.status === 'dead' || r.status === 'invalid' ? 'Bad-number and dead leads can\'t be called. Restore it first.' : 'Your "Can be called when" (Settings → Calling) leaves this lead out.'}
                       onChange={() => toggle(r.id)}
                     />

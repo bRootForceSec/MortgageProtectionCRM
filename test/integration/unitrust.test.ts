@@ -11,6 +11,7 @@ import { addToCallList, leadFilterWhere } from '../../src/server/domain/callList
 import { appointmentCounts, appointmentsOnDays, recordUnitrustEvents, type UnitrustEvent } from '../../src/server/domain/unitrustAppointments.js';
 import { buildReport, todayStats } from '../../src/server/domain/reports.js';
 import { verifyLeadState } from '../../src/server/domain/leadState.js';
+import { tagLeadsWithUnitrustResult } from '../../src/server/domain/buttons.js';
 import { buildApp } from '../../src/server/http/app.js';
 import type { DB } from '../../src/server/db/connection.js';
 import type { Config } from '../../src/server/config.js';
@@ -219,5 +220,44 @@ describe('appointment calls logged here', () => {
     ], { today: '2026-10-28' }, '2026-10-28T15:00:00.000Z');
     const t = todayStats(db, '2026-10-28T04:00:00.000Z', '2026-10-29T04:00:00.000Z', undefined, { from: '2026-10-28', to: '2026-10-28' });
     expect(t).toMatchObject({ appointments: 2, funnel: { on_the_day: 2, sales: 1 } });
+  });
+
+  it("a color becomes the same tag as pressing that result's button, in place of the last button's; a result logged here wins", () => {
+    const robert = id('Robert');
+    const ann = id('Ann');
+    const tags = (lead: string) => (db.prepare('SELECT t.name FROM lead_tag lt JOIN tag t ON t.id = lt.tag_id WHERE lt.lead_id = ? ORDER BY t.name').all(lead) as { name: string }[]).map((r) => r.name);
+    log(robert, 'appointment', '2026-10-24T15:00:00.000Z');
+    expect(tags(robert)).toEqual(['Dial: Appt set']);
+    recordUnitrustEvents(db, [ev('blue')], { today: '2026-10-25' }, '2026-10-25T12:00:00.000Z');
+    expect(tags(robert)).toEqual(['Dial: Appt set']);
+    recordUnitrustEvents(db, [ev('red')], { today: '2026-10-26' }, '2026-10-26T18:00:00.000Z');
+    expect(tags(robert)).toEqual(['Appt: No show']);
+    const line = db.prepare("SELECT source, source_name FROM lead_event WHERE lead_id = ? AND tag_name = 'Appt: No show'").get(robert);
+    expect(line).toEqual({ source: 'unitrust', source_name: 'calendar color' });
+    recordUnitrustEvents(db, [ev('green')], { today: '2026-10-26' }, '2026-10-26T19:00:00.000Z');
+    expect(tags(robert)).toEqual(['Appt: Sale']);
+
+    // A prezi logged here, then yellow in Unitrust: the tag stays the prezi.
+    log(ann, 'appointment', '2026-10-24T15:00:00.000Z');
+    const annEv = (color: UnitrustEvent['color']) => ev(color, 'IL - WELLS FARGO - ANN LEE- (312) 555-0103 LEE');
+    recordUnitrustEvents(db, [annEv('blue')], { today: '2026-10-25' }, '2026-10-25T12:00:00.000Z');
+    log(ann, 'appt_prezi', '2026-10-26T15:00:00.000Z');
+    recordUnitrustEvents(db, [annEv('yellow')], { today: '2026-10-26' }, later(1));
+    expect(tags(ann)).toEqual(['Appt: Presentation']);
+  });
+
+  it('once: leads whose last word came from Unitrust before this update get its tag', () => {
+    const robert = id('Robert');
+    const ann = id('Ann');
+    log(robert, 'appointment', '2026-10-24T15:00:00.000Z');
+    log(ann, 'appointment', '2026-10-24T15:00:00.000Z');
+    recordUnitrustEvents(db, [ev('red'), ev('green', 'IL - WELLS FARGO - ANN LEE- (312) 555-0103 LEE')], { today: '2026-10-26' }, later(1));
+    log(ann, 'appt_prezi', '2026-10-27T15:00:00.000Z');
+    // As before the update: no tags from colors.
+    db.prepare('DELETE FROM lead_tag').run();
+    expect(tagLeadsWithUnitrustResult(db, later(2))).toBe(1);
+    const names = db.prepare('SELECT lt.lead_id, t.name FROM lead_tag lt JOIN tag t ON t.id = lt.tag_id').all();
+    expect(names).toEqual([{ lead_id: robert, name: 'Appt: No show' }]);
+    expect(tagLeadsWithUnitrustResult(db, later(3))).toBe(0);
   });
 });
