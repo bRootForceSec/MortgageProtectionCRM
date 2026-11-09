@@ -4,7 +4,7 @@ import { ageOn } from '../shared/age';
 import { leadAgeDays } from '../shared/leadAge';
 import type { OtherPhone } from '../shared/phones';
 import type { CallMode } from '../shared/appointments';
-import type { BestTimes } from '../shared/bestTime';
+import type { BestTimeRules, BestTimes } from '../shared/bestTime';
 import type { SortStep } from '../shared/listOrder';
 import type { ButtonInfo } from '../shared/buttons';
 
@@ -209,6 +209,8 @@ export interface CallListResponse {
   best_times: BestTimes;
   /** Your sort steps (Settings → Calling), for "Your order"; each item's `sort_keys` line up with them. */
   list_order: SortStep[];
+  /** Your calling hours and call count for "Best time first" (Settings → Calling). */
+  best_time: BestTimeRules;
 }
 
 export interface AddResult {

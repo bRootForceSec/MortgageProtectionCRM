@@ -1,5 +1,6 @@
 import { SheetLayout } from './sheetLayout.js';
 import * as z from 'zod/v4';
+import { BestTimeRules, STARTER_BEST_TIME } from './bestTime.js';
 import { isStep } from './followUps.js';
 import { STARTER_ORDER, SortStep } from './listOrder.js';
 
@@ -44,6 +45,8 @@ export const CallingSettings = z.object({
   sheet: SheetLayout.default({ blocks: [], dial_counter: true, caller_id: true }),
   /** "Your order" on the call list: sort steps, first to last (see listOrder.ts). */
   list_order: z.array(SortStep).max(10).default(STARTER_ORDER),
+  /** "Best time first": the calling hours and how many calls an hour needs before your own rate counts (see bestTime.ts). */
+  best_time: BestTimeRules.default(STARTER_BEST_TIME),
   /** Minutes before an unanswered lead comes back. 0 means right away. */
   retry_gap_minutes: z.number().int().min(0).max(60 * 24 * 60).default(240),
   /** When to try again after a no-show, sat-no-sale or prezi (see followUps.ts). An empty plan means due right away. */

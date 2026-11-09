@@ -19,6 +19,9 @@ export const APPT_DAYS = [
     label: 'Appointment since my last calling day (from the last day you made calls through yesterday)',
     title: 'Leads with an appointment from the last day you made calls through yesterday. On a Monday after a weekend off, that is Friday to Sunday.',
   },
+  { key: 'last_3_days', label: 'Appointment in the last 3 days', title: 'Leads with an appointment in the 3 days before today' },
+  { key: 'last_7_days', label: 'Appointment in the last 7 days', title: 'Leads with an appointment in the 7 days before today' },
+  { key: 'this_week', label: 'Appointment this week, before today', title: 'Leads with an appointment from Monday through yesterday (none on a Monday)' },
 ] as const;
 export type ApptDays = (typeof APPT_DAYS)[number]['key'];
 

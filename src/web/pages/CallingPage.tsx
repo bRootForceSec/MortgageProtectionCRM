@@ -13,7 +13,7 @@ import { isAction, isTyping, keyLabel, type KeyMap } from '../shortcuts';
 import { getStored, getStoredJson, setStored, setStoredJson } from '../storage';
 import { LogCall, type Attempt, type FormValues, type Saved } from './LogCall';
 import { CallerLookup, EveryButton, Recent, UNDO_MS, UndoBar, otherNumber } from './CallingPanels';
-import { BEST_TIME_WORDS, bestTimeFirst } from '../../shared/bestTime';
+import { bestTimeFirst, bestTimeWords } from '../../shared/bestTime';
 import { describeSortStep, yourOrder } from '../../shared/listOrder';
 import { LIST_ORDERS, type ListOrder } from '../../shared/listOrder';
 import { sheetBlocks, type SheetBlockId } from '../../shared/sheetLayout';
@@ -27,8 +27,8 @@ const ORDER_KEY = 'mpcrm.list.order';
 
 /** The list in the order it's shown and worked in. */
 function inOrder(l: CallListResponse, o: ListOrder): CallListItem[] {
-  if (o === 'best_time') return bestTimeFirst(l.items, l.best_times);
-  if (o === 'yours') return yourOrder(l.items, l.list_order, l.best_times);
+  if (o === 'best_time') return bestTimeFirst(l.items, l.best_times, new Date(), l.best_time);
+  if (o === 'yours') return yourOrder(l.items, l.list_order, l.best_times, new Date(), l.best_time);
   return l.items;
 }
 
@@ -550,7 +550,7 @@ export function CallingPage() {
             <span className="row" style={{ gap: 4 }} role="group" aria-label="Order">
               <button className={`btn small ${order === 'set' ? 'primary' : ''}`} aria-pressed={order === 'set'} onClick={() => setOrder('set')} title="The order you set, or the order leads were added">As set</button>
               <button className={`btn small ${order === 'best_time' ? 'primary' : ''}`} aria-pressed={order === 'best_time'} onClick={() => setOrder('best_time')}
-                title={BEST_TIME_WORDS}>
+                title={bestTimeWords(list?.best_time)}>
                 Best time first
               </button>
               <button className={`btn small ${order === 'yours' ? 'primary' : ''}`} aria-pressed={order === 'yours'} onClick={() => setOrder('yours')}
