@@ -11,7 +11,8 @@ import { savesInstantly } from '../../shared/outcomes';
 import { APPT_RESULT_LABEL } from '../../shared/appointments';
 import { ConditionEditor } from '../components/ConditionEditor';
 import { STARTER_ORDER, type SortStep } from '../../shared/listOrder';
-import { SHEET_BLOCKS, sheetBlocks } from '../../shared/sheetLayout';
+import { LEAD_FACTS, SHEET_BLOCKS, sheetBlocks, sheetFacts, type SheetLayout } from '../../shared/sheetLayout';
+import { useCustomFields } from '../customFields';
 import { bestTimeWords, hourWords } from '../../shared/bestTime';
 
 // Settings for the Calling screen: retry gap, dialing, timer, goals, alerts, shortcuts and scripts.
@@ -395,10 +396,20 @@ export function ShortcutsCard() {
 export function SheetCard() {
   const { calling } = useApp();
   const save = useSave();
+  const { fields } = useCustomFields();
+  const [name, setName] = useState('');
   const s = calling?.settings;
   if (!s) return null;
   const blocks = sheetBlocks(s.sheet);
   const put = (next: typeof blocks) => void save({ ...s, sheet: { ...s.sheet, blocks: next } });
+  const setSheet = (patch: Partial<SheetLayout>) => void save({ ...s, sheet: { ...s.sheet, ...patch } });
+  const facts = sheetFacts(s.sheet, fields.map((f) => f.id));
+  const factLabel = (id: string) => LEAD_FACTS.find((f) => f.id === id)?.label ?? fields.find((f) => `field:${f.id}` === id)?.label ?? id;
+  const moveFact = (i: number, j: number) => {
+    const next = [...facts];
+    [next[i], next[j]] = [next[j]!, next[i]!];
+    setSheet({ facts: next });
+  };
   const move = (i: number, j: number) => {
     const next = [...blocks];
     [next[i], next[j]] = [next[j]!, next[i]!];
@@ -437,6 +448,59 @@ export function SheetCard() {
         <input type="checkbox" checked={s.sheet.caller_id} onChange={() => void save({ ...s, sheet: { ...s.sheet, caller_id: !s.sheet.caller_id } })} />
         Show which of your numbers you called from (hidden, the call still records the number it would have picked)
       </label>
+      <div className="row" style={{ gap: 6, marginTop: 6 }}>
+        <label className="choice-inline">
+          Calls: show the last
+          <input type="number" aria-label="Calls to show" min={0} max={200} value={s.sheet.calls_shown} style={{ width: 60 }}
+            onChange={(e) => Number(e.target.value) >= 0 && setSheet({ calls_shown: Math.round(Number(e.target.value)) })} />
+          (0 for all)
+        </label>
+        <label className="choice-inline">
+          Notes: the box for a new note is
+          <input type="number" aria-label="Note box lines" min={1} max={30} value={s.sheet.notes_rows} style={{ width: 60 }}
+            onChange={(e) => Number(e.target.value) >= 1 && setSheet({ notes_rows: Math.round(Number(e.target.value)) })} />
+          lines tall
+        </label>
+      </div>
+
+      <h3>Lead info</h3>
+      <p className="help">Which facts about the lead show under its name, top to bottom. Your fields are here too; one with a show-when condition still shows only while it's true.</p>
+      <ol className="sheet-blocks" aria-label="Lead info facts">
+        {facts.map((f, i) => (
+          <li key={f.id}>
+            <label className="choice-inline">
+              <input type="checkbox" checked={f.shown} aria-label={`Show ${factLabel(f.id)}`} onChange={() => setSheet({ facts: facts.map((x) => (x.id === f.id ? { ...x, shown: !x.shown } : x)) })} />
+              {factLabel(f.id)}
+            </label>
+            <button className="btn small" aria-label={`Move ${factLabel(f.id)} up`} disabled={i === 0} onClick={() => moveFact(i, i - 1)}>↑</button>
+            <button className="btn small" aria-label={`Move ${factLabel(f.id)} down`} disabled={i === facts.length - 1} onClick={() => moveFact(i, i + 1)}>↓</button>
+          </li>
+        ))}
+      </ol>
+
+      <h3>Saved lead sheets</h3>
+      <p className="help">Save this lead sheet under a name, like "New leads" or "Appointment call-backs", and switch to it here or on the Calling screen.</p>
+      {s.sheet_layouts.length > 0 && (
+        <ul className="plain" aria-label="Saved lead sheets">
+          {s.sheet_layouts.map((l) => (
+            <li key={l.name} className="row" style={{ gap: 6 }}>
+              <b>{l.name}</b>
+              <button className="btn small" onClick={() => void save({ ...s, sheet: l.sheet })}>Use it</button>
+              <button className="btn small" onClick={() => void save({ ...s, sheet_layouts: s.sheet_layouts.map((x) => (x.name === l.name ? { ...x, sheet: s.sheet } : x)) })}
+                title="Saves the lead sheet as it is now under this name">Save over it</button>
+              <button className="btn small" aria-label={`Delete ${l.name}`} onClick={() => void save({ ...s, sheet_layouts: s.sheet_layouts.filter((x) => x.name !== l.name) })}>✕</button>
+            </li>
+          ))}
+        </ul>
+      )}
+      <span className="row" style={{ gap: 6 }}>
+        <input aria-label="Name for this lead sheet" placeholder="Name" value={name} onChange={(e) => setName(e.target.value)} maxLength={60} />
+        <button className="btn small" disabled={!name.trim() || s.sheet_layouts.length >= 20} onClick={() => {
+          const n = name.trim();
+          void save({ ...s, sheet_layouts: [...s.sheet_layouts.filter((x) => x.name.toLowerCase() !== n.toLowerCase()), { name: n, sheet: s.sheet }] });
+          setName('');
+        }}>Save this lead sheet</button>
+      </span>
     </div>
   );
 }

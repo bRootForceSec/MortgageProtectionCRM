@@ -119,6 +119,29 @@ export function EveryButton({ on, onChange, hotkey }: { on: boolean; onChange: (
   );
 }
 
+/** Switch the lead sheet to one you saved (Automation → Calling screen). Shown only once you've saved one. */
+export function SheetSwitch() {
+  const { calling, setCalling, toast } = useApp();
+  const s = calling?.settings;
+  if (!calling || !s?.sheet_layouts.length) return null;
+  const current = s.sheet_layouts.find((l) => JSON.stringify(l.sheet) === JSON.stringify(s.sheet))?.name ?? '';
+  const use = async (name: string) => {
+    const l = s.sheet_layouts.find((x) => x.name === name);
+    if (!l) return;
+    try {
+      setCalling(await api.put<NonNullable<typeof calling>>('/settings/calling', { ...s, sheet: l.sheet }));
+    } catch (e: any) {
+      toast(e.message, 'error');
+    }
+  };
+  return (
+    <select aria-label="Lead sheet" value={current} onChange={(e) => void use(e.target.value)} title="Switch to a lead sheet you saved (Automation → Calling screen)">
+      {!current && <option value="">Lead sheet: as set</option>}
+      {s.sheet_layouts.map((l) => <option key={l.name} value={l.name}>Lead sheet: {l.name}</option>)}
+    </select>
+  );
+}
+
 export function UndoBar({ saved, undoKey, onUndo, onExpire }: { saved: Saved; undoKey: string; onUndo: () => void; onExpire: () => void }) {
   const [left, setLeft] = useState(Math.ceil((UNDO_MS - (Date.now() - saved.at)) / 1000));
   useEffect(() => {

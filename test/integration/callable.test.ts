@@ -85,6 +85,10 @@ describe('the lead sheet layout', () => {
     const sheet = { blocks: [{ id: 'outcome', shown: true }, { id: 'lead', shown: true }, { id: 'notes', shown: false }], dial_counter: false, caller_id: true };
     const r = await app.inject({ method: 'PUT', url: '/api/settings/calling', headers: write, payload: { ...loadCallingSettings(db), sheet } });
     expect(r.statusCode).toBe(200);
-    expect(loadCallingSettings(db).sheet).toEqual(sheet);
+    expect(loadCallingSettings(db).sheet).toEqual({ ...sheet, facts: [], calls_shown: 0, notes_rows: 2 });
+    // Saved under a name, to switch to.
+    const layouts = [{ name: 'Appointments', sheet: { ...loadCallingSettings(db).sheet, calls_shown: 3 } }];
+    expect((await app.inject({ method: 'PUT', url: '/api/settings/calling', headers: write, payload: { ...loadCallingSettings(db), sheet_layouts: layouts } })).statusCode).toBe(200);
+    expect(loadCallingSettings(db).sheet_layouts).toEqual(layouts);
   });
 });

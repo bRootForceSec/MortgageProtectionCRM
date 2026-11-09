@@ -729,6 +729,24 @@ test('Automation → Calling screen: hide and move lead sheet blocks', async ({ 
   await card.getByRole('button', { name: 'Move Calls down' }).click();
   await card.getByLabel('Show Notes').check();
   await expect.poll(async () => (await sheet()).blocks.every((b: any) => b.shown)).toBe(true);
+
+  // Lead info: hide Tobacco, save the sheet as "No tobacco", and switch back to it from the Calling screen.
+  await card.getByLabel('Show Tobacco').uncheck();
+  await expect.poll(async () => (await sheet()).facts.find((f: any) => f.id === 'tobacco')?.shown).toBe(false);
+  await card.getByLabel('Name for this lead sheet').fill('No tobacco');
+  await card.getByRole('button', { name: 'Save this lead sheet' }).click();
+  await expect(card.getByLabel('Saved lead sheets')).toContainText('No tobacco');
+  await card.getByLabel('Show Tobacco').check();
+  await expect.poll(async () => (await sheet()).facts.find((f: any) => f.id === 'tobacco')?.shown).toBe(true);
+  await page.getByRole('button', { name: 'Calling', exact: true }).click();
+  await expect(page.locator('.lead-panel .facts')).toContainText('Tobacco');
+  await page.getByLabel('Lead sheet').selectOption('No tobacco');
+  await expect(page.locator('.lead-panel .facts')).not.toContainText('Tobacco');
+  // Put it back for the tests after this one.
+  await page.request.put(new URL('/api/settings/calling', page.url()).href, {
+    data: { ...(await (await page.request.get(new URL('/api/settings/calling', page.url()).href)).json()).settings, sheet_layouts: [], sheet: { blocks: [] } },
+    headers: { origin: new URL(page.url()).origin },
+  });
 });
 
 test('a button of your own: counts as No answer, red and dotted, adds a tag, and shows only while the lead lacks it', async ({ page }) => {

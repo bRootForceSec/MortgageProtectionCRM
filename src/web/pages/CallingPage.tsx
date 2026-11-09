@@ -12,7 +12,7 @@ import { CALL_LIST_CHANGED, ClearListDialog, LoadListDialog, SaveAsDialog, sugge
 import { isAction, isTyping, keyLabel, type KeyMap } from '../shortcuts';
 import { getStored, getStoredJson, setStored, setStoredJson } from '../storage';
 import { LogCall, type Attempt, type FormValues, type Saved } from './LogCall';
-import { CallerLookup, EveryButton, Recent, UNDO_MS, UndoBar, otherNumber } from './CallingPanels';
+import { CallerLookup, EveryButton, SheetSwitch, Recent, UNDO_MS, UndoBar, otherNumber } from './CallingPanels';
 import { bestTimeFirst, bestTimeWords } from '../../shared/bestTime';
 import { describeSortStep, yourOrder } from '../../shared/listOrder';
 import { LIST_ORDERS, type ListOrder } from '../../shared/listOrder';
@@ -648,6 +648,7 @@ export function CallingPage() {
         <header>
           <CallerLookup inputRef={lookupRef} hotkey={k('lookup')} onOpen={openOutside} />
           {/* In the header, so it takes no room above the outcome buttons on a short screen. */}
+          <SheetSwitch />
           {detail && <EveryButton on={showAll} onChange={toggleAll} hotkey={k('switch_mode')} />}
         </header>
         <div className="body">
@@ -675,13 +676,13 @@ export function CallingPage() {
                 const after = (id: SheetBlockId) => order[order.indexOf(id) + 1];
                 const tagsInline = after('lead') === 'tags';
                 const sheet = calling?.settings.sheet;
-                const callsBox = <div><h3>Calls</h3><CallHistory calls={detail.calls} onChange={refreshDetail} /></div>;
-                const notesBox = <div><h3>Notes</h3><Notes key={detail.lead.id} d={detail} onChange={refreshDetail} /></div>;
+                const callsBox = <div><h3>Calls</h3><CallHistory calls={detail.calls} onChange={refreshDetail} limit={sheet?.calls_shown ?? 0} /></div>;
+                const notesBox = <div><h3>Notes</h3><Notes key={detail.lead.id} d={detail} onChange={refreshDetail} rows={sheet?.notes_rows} /></div>;
                 return order.map((id) => {
                   switch (id) {
                     case 'lead':
                       return <LeadSummary key={id} d={detail} onDial={dial} dialLabel={dialLabel} dialKey={k('dial')} altKey={k('dial_alt')} onEdit={() => setEditing(true)} editKey={k('edit')}
-                        calledBackKey={k('called_back')} tagKey={k('copy_tag')} onCalledBack={(at) => calledBack(detail.lead.id, at)} showTags={tagsInline} />;
+                        calledBackKey={k('called_back')} tagKey={k('copy_tag')} onCalledBack={(at) => calledBack(detail.lead.id, at)} showTags={tagsInline} sheet={sheet} />;
                     case 'tags':
                       if (tagsInline) return null;
                       return (
