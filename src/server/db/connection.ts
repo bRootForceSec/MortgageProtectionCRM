@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { syncOutcomeCodes } from './outcomeCodes.js';
 import { syncFieldValueView } from '../domain/formulas.js';
 import { sidesToConditions } from '../domain/buttons.js';
+import { addStarterLists } from '../domain/statuses.js';
 
 export type DB = Database.Database;
 
@@ -30,6 +31,8 @@ export function openDatabase(file: string): DB {
   syncFieldValueView(db);
   // Once: the smart list the outcome buttons show by ("Has an appointment"), in place of the old sides.
   sidesToConditions(db);
+  // Once: the old fixed Leads tabs become smart lists you can change.
+  addStarterLists(db);
   return db;
 }
 

@@ -412,6 +412,8 @@ th button.sort { background: none; border: 0; padding: 0; font: inherit; font-we
   .calling > .lead-page { height: max(360px, 80vh); }
   .calling .lead-head { gap: 6px; }
   .calling .phone-big { font-size: 22px; }
+  /* The smart lists would take a line of their own here and push the outcome buttons off screen; the lead's page still shows them. */
+  .calling .lead-head .tag-row .status-chip { display: none; }
 }
 
 /* ---------- Today: appointment prep cards ---------- */

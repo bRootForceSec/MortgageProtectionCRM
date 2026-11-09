@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { api, fmtDateTime, fmtDob, fmtDuration, fmtMoney, fmtPhone, fullName, localTime, outcomeText, personAge, type LeadDetail, type Call, type TagRef } from '../api';
 import { useTags } from '../tags';
 import { StatusChips } from '../pages/StatusesCard';
@@ -131,7 +131,7 @@ export function LeadSummary({
       <div className="lead-head">
         <div>
           <h2>
-            <span className="lead-name">{fullName(l)}</span> {d.state && <StatusBadge status={d.state.status} />}{d.state && <ApptBadge result={d.state.appt_result} />}
+            <span className="lead-name">{fullName(l)}</span> {!showTags && <StatusChips statuses={d.statuses} />}
             {onEdit && <button className="btn small" onClick={onEdit} title="Edit this lead's details">Edit {editKey && <kbd>{editKey}</kbd>}</button>}
             <CopyLeadLink leadId={l.id} />
             <button type="button" className="btn small" onClick={() => void copyCalendarTag(l, toast)} title="Copies what you type into your calendar for the appointment">
@@ -142,8 +142,7 @@ export function LeadSummary({
               Called me back {calledBackKey && <kbd>{calledBackKey}</kbd>}
             </label>
             {/* With the buttons, so tags take no extra height above the outcome buttons. */}
-            {showTags && <StatusChips statuses={d.statuses} />}
-            {showTags && <LeadTags leadId={l.id} initial={d.tags} />}
+            {showTags && <LeadTags leadId={l.id} initial={d.tags} before={<StatusChips statuses={d.statuses} />} />}
           </h2>
           <div className="where">
             {age != null && <><b>Age {age}</b> · </>}
@@ -215,7 +214,7 @@ export function LeadSummary({
 }
 
 /** The lead's tags: take one off with ×, or type a name to add one (a new name makes a new tag). */
-export function LeadTags({ leadId, initial }: { leadId: string; initial: TagRef[] }) {
+export function LeadTags({ leadId, initial, before }: { leadId: string; initial: TagRef[]; before?: ReactNode }) {
   const { toast } = useApp();
   const { tags: all, reload } = useTags();
   const [tags, setTags] = useState(initial);
@@ -242,6 +241,7 @@ export function LeadTags({ leadId, initial }: { leadId: string; initial: TagRef[
   const listId = `tags-${leadId}`;
   return (
     <span className="tag-row" role="group" aria-label="Tags">
+      {before}
       {tags.map((t) => (
         <span key={t.id} className="tag-chip">
           {t.name}

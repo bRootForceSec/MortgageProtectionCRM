@@ -1,11 +1,14 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { tempDb, sampleCsv } from '../helpers.js';
+import { tempDb, sampleCsv, SAMPLE_ROWS } from '../helpers.js';
 import type { DB } from '../../src/server/db/connection.js';
 import { parseSpreadsheet } from '../../src/server/domain/spreadsheet.js';
 import { suggestMapping } from '../../src/server/domain/mapping.js';
 import { commitImport } from '../../src/server/domain/importer.js';
 import { tagLead } from '../../src/server/domain/tags.js';
-import { listStatuses, saveStatuses } from '../../src/server/domain/statuses.js';
+import { listStatuses, loadStatuses, saveStatuses } from '../../src/server/domain/statuses.js';
+import { logManualCall } from '../../src/server/domain/calls.js';
+import { LEAD_TABS } from '../../src/shared/leadStatus.js';
+import { uuidv7 } from '../../src/server/ids.js';
 import { getLeadDetail, listLeads } from '../../src/server/domain/leads.js';
 import { matchingLeadIds, toLeadFilter } from '../../src/server/domain/callList.js';
 import { createCustomField } from '../../src/server/domain/customFields.js';
@@ -69,5 +72,44 @@ describe('statuses', () => {
   it('status() is for conditions, not formula fields', () => {
     saveStatuses(db, [st('a', 'A', 'True')]);
     expect(() => createCustomField(db, { label: 'S', type: 'formula', formula: 'status("A")' })).toThrow(/not in formula fields/);
+  });
+
+  it('the starter lists pick the same leads as the old fixed Leads tabs', async () => {
+    // More leads, each called its own way.
+    const rows = Array.from({ length: 12 }, (_, i) => [`P${i} Test`, `(614) 555-02${String(i).padStart(2, '0')}`, ...SAMPLE_ROWS[0]!.slice(2)]);
+    const parsed = await parseSpreadsheet(sampleCsv(rows), 'b.csv');
+    const sheet = parsed.sheets[0]!;
+    commitImport(db, parsed, sheet, suggestMapping(sheet.headers), { name: 'b2' });
+    const plans: string[][] = [
+      [],
+      ['no_answer'],
+      ['no_appt'],
+      ['appointment'],
+      ['appointment', 'appt_no_show'],
+      ['appointment', 'appt_sat_no_sale'],
+      ['appointment', 'appt_prezi'],
+      ['appointment', 'appt_sale'],
+      ['appointment', 'appt_rescheduled'],
+      ['bad_number'],
+      ['callback'],
+      ['no_appt!'],
+    ];
+    const tomorrow = new Date(Date.now() + 86_400_000).toISOString();
+    plans.forEach((plan, i) => {
+      for (const code of plan) {
+        logManualCall(db, { lead_id: lead(`P${i}`), idempotency_key: uuidv7(), outcome_code: code.replace('!', ''), do_not_call: code.endsWith('!'), ...(code === 'callback' ? { callback_due_at: tomorrow } : {}) });
+      }
+    });
+    const lists = loadStatuses(db);
+    const ids = (q: Record<string, string>) => listLeads(db, toLeadFilter(LeadQuery.parse({ ...q, limit: 500 }))).rows.map((r) => r.id).sort();
+    let checked = 0;
+    for (const tab of LEAD_TABS) {
+      if (tab.key === 'all') continue;
+      const list = lists.find((x) => x.name === tab.label);
+      expect(list, tab.label).toBeDefined();
+      expect(ids({ in_status: list!.id }), tab.label).toEqual(ids({ status: tab.key }));
+      if (ids({ status: tab.key }).length) checked++;
+    }
+    expect(checked).toBe(LEAD_TABS.length - 1); // and every tab has someone in it
   });
 });

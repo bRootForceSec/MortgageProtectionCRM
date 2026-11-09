@@ -156,7 +156,7 @@ describe('Calling screen buttons', () => {
     setSetting(db, 'sides_to_conditions_done', false);
     expect(sidesToConditions(db)).toBe(true);
     expect(sidesToConditions(db)).toBe(false);
-    expect(loadStatusDefs(db).map((s) => s.name)).toEqual(['Has an appointment']);
+    expect(loadStatusDefs(db).filter((s) => s.name === 'Has an appointment')).toHaveLength(1);
     const bs = loadButtons(db);
     expect(bs.find((b) => b.id === 'appt_no_show')!.show_when).toBe('in_list("Has an appointment")');
     expect(bs.find((b) => b.id === 'no_answer')!.show_when).toBe('not in_list("Has an appointment")');
