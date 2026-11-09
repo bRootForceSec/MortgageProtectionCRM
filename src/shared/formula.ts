@@ -287,6 +287,14 @@ export function renameFormulaField(src: string, from: string, to: string): strin
     .replace(/\bfield\(\s*(["'])(.*?)\1\s*\)/gi, (m, q: string, label: string) => (same(label) ? `field(${q}${to}${q})` : m));
 }
 
+/** The names (as written, once each) given to any of `fns` in a formula, like the smart lists in in_list("..."). */
+export function namesIn(src: string, fns: readonly string[]): string[] {
+  const call = new RegExp(`\\b(?:${fns.join('|')})\\(\\s*(?:\\w+\\s*=\\s*)?(["'])(.*?)\\1`, 'gi');
+  const out = new Map<string, string>();
+  for (const m of src.matchAll(call)) if (!out.has(m[2]!.trim().toLowerCase())) out.set(m[2]!.trim().toLowerCase(), m[2]!.trim());
+  return [...out.values()];
+}
+
 /**
  * The formula with every name `from` (any case, either quotes) given to one of `fns` written as `to` instead, so a
  * renamed tag, smart list or button carries into the formulas and conditions that use it.
