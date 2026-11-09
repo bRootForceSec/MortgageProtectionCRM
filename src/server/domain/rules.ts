@@ -11,6 +11,7 @@ import { ensureTag, setTagOnLeads, tagByName } from './tags.js';
 import { listCustomFields, setCustomValues } from './customFields.js';
 import { addLeadAction, setComeback } from './calls.js';
 import { conditionSql, loadStatusDefs } from './formulas.js';
+import { afterStep } from '../../shared/followUps.js';
 
 // Rules (shared/rules.ts): stored as one setting, run by their trigger, every run written to rule_run.
 // A run finds the leads matching the rule's filter now, then does each action to them in order, in one transaction:
@@ -85,6 +86,7 @@ export function saveRules(db: DB, input: unknown): Rule[] {
         throw new DomainError(`${r.name}: the condition: ${(e as Error).message}`);
       }
     }
+    if (r.actions.at(-1)?.kind === 'wait') throw new DomainError(`${r.name}: a wait needs a step after it`);
     for (const a of r.actions) {
       if (a.kind === 'counter') {
         const f = fields.get(a.field_id);
@@ -107,8 +109,28 @@ export function saveRules(db: DB, input: unknown): Rule[] {
   return loadRules(db);
 }
 
+/**
+ * Does the rule's steps from `from` on to these leads, and says what each changed. A wait stops there: the leads wait
+ * in rule_wait, and the rule runner does the rest when it's due.
+ */
+function doSteps(db: DB, rule: Rule, ids: string[], from: number, now: string): ActionResult[] {
+  const out: ActionResult[] = [];
+  for (let i = from; i < rule.actions.length; i++) {
+    const a = rule.actions[i]!;
+    if (a.kind === 'wait') {
+      const due = afterStep(now, a.after);
+      const ins = db.prepare('INSERT INTO rule_wait (id, rule_id, lead_id, next_step, due_at, created_at) VALUES (?,?,?,?,?,?)');
+      for (const id of ids) ins.run(uuidv7(), rule.id, id, i + 1, due, now);
+      out.push({ action: a, changed: ids.length, note: ids.length ? `the rest from ${new Date(due).toLocaleString()}` : null });
+      break;
+    }
+    out.push(doAction(db, rule, a, ids, now));
+  }
+  return out;
+}
+
 /** Does one action to these leads and says what changed. */
-function doAction(db: DB, rule: Rule, a: RuleAction, ids: string[], now: string): ActionResult {
+function doAction(db: DB, rule: Rule, a: Exclude<RuleAction, { kind: 'wait' }>, ids: string[], now: string): ActionResult {
   switch (a.kind) {
     case 'add_to_list': {
       const r = addToCallList(db, ids, now);
@@ -159,7 +181,7 @@ export function runRule(
   db: DB,
   rule: Rule,
   trigger: RuleRun['trigger'],
-  opts: { dryRun?: boolean; leadIds?: string[]; now?: Date; matched?: (ids: string[]) => void } = {},
+  opts: { dryRun?: boolean; leadIds?: string[]; now?: Date; matched?: (ids: string[]) => void; from?: number } = {},
 ): RuleRun {
   const now = opts.now ?? new Date();
   const at = now.toISOString();
@@ -174,7 +196,7 @@ export function runRule(
         ids = ids.filter((id) => !on.has(id));
       }
       run.matched = ids.length;
-      run.results = rule.actions.map((a) => doAction(db, rule, a, ids, nowIso()));
+      run.results = doSteps(db, rule, ids, opts.from ?? 0, nowIso());
       if (opts.dryRun) throw ROLLBACK;
     })();
   } catch (e) {
@@ -184,7 +206,7 @@ export function runRule(
     }
   }
   opts.matched?.(ids);
-  if (!opts.dryRun && !ids.length && !run.error && EVENT_TRIGGERS.includes(trigger)) return run;
+  if (!opts.dryRun && !ids.length && !run.error && trigger !== 'wait' && EVENT_TRIGGERS.includes(trigger)) return run;
   const shown = ids.slice(0, 50);
   const name = db.prepare(`SELECT ${LEAD_NAME} name FROM lead l WHERE l.id = ?`);
   run.leads = shown.map((id) => ({ id, name: (name.get(id) as { name: string } | undefined)?.name || 'No name' }));
@@ -440,6 +462,33 @@ export function ruleRuns(db: DB, opts: { ruleId?: string; limit?: number; all?: 
   }));
 }
 
+/**
+ * The steps after a wait, for the leads whose wait is over: each rule goes on from where it stopped (to the next wait).
+ * A lead waiting on a rule that's gone or switched off since is let go.
+ */
+export function runWaitingRules(db: DB, now = new Date()): RuleRun[] {
+  const due = db.prepare('SELECT id, rule_id, lead_id, next_step FROM rule_wait WHERE due_at <= ? ORDER BY due_at').all(now.toISOString()) as
+    { id: string; rule_id: string; lead_id: string; next_step: number }[];
+  if (!due.length) return [];
+  const rules = new Map(loadRules(db).map((r) => [r.id, r]));
+  const groups = new Map<string, { rule: Rule | undefined; from: number; leads: string[] }>();
+  for (const w of due) {
+    const key = `${w.rule_id}|${w.next_step}`;
+    const g = groups.get(key) ?? { rule: rules.get(w.rule_id), from: w.next_step, leads: [] };
+    g.leads.push(w.lead_id);
+    groups.set(key, g);
+  }
+  db.prepare('DELETE FROM rule_wait WHERE id IN (SELECT value FROM json_each(?))').run(JSON.stringify(due.map((w) => w.id)));
+  const runs: RuleRun[] = [];
+  for (const g of groups.values()) {
+    if (!g.rule?.enabled || g.from >= g.rule.actions.length) continue;
+    // Its steps go to the leads that waited, whether or not they'd still match its filter, like a workflow.
+    const leads = [...new Set(g.leads)];
+    runs.push(runRule(db, { ...g.rule, filter: {} }, 'wait', { leadIds: leads, now, from: g.from }));
+  }
+  return runs;
+}
+
 /** Checks for due daily rules, and conditions turned true, every minute while the app runs. */
 export class RuleRunner {
   private timer: NodeJS.Timeout | null = null;
@@ -450,7 +499,7 @@ export class RuleRunner {
   start(firstAfterMs = 10_000) {
     const tick = () => {
       try {
-        for (const r of [...runDueDailyRules(this.db), ...runEventRules(this.db)]) if (r.error) this.warn(`rule "${r.rule_name}" failed: ${r.error}`);
+        for (const r of [...runDueDailyRules(this.db), ...runWaitingRules(this.db), ...runEventRules(this.db)]) if (r.error) this.warn(`rule "${r.rule_name}" failed: ${r.error}`);
       } catch (e) {
         this.warn(`rules check failed: ${(e as Error).message}`);
       }

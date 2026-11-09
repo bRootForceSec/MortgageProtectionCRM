@@ -12,9 +12,9 @@ import { describeFilter } from '../../shared/leadFilter';
 import { WEEKDAYS } from '../../shared/rules';
 import { APPT_DAYS, LAST_CALL, type LeadQuery } from '../../shared/leadFilter';
 import { LEAD_TABS } from '../../shared/leadStatus';
-import { parsePlan } from '../../shared/followUps';
+import { isStep, parsePlan } from '../../shared/followUps';
 import {
-  ACTION_LABELS, STARTER_RULES, TRIGGER_LABELS, describeAction, describeTrigger,
+  ACTION_LABELS, STARTER_RULES, TRIGGER_LABELS, describeAction, describeTrigger, describeWait,
   type ActionResult, type Rule, type RuleAction, type RuleRun, type RuleTrigger,
 } from '../../shared/rules';
 
@@ -43,8 +43,8 @@ const swap = <T,>(list: T[], i: number, j: number): T[] => {
 };
 
 /** What set a run off, for the log. */
-const RUN_TRIGGER: Record<RuleTrigger['kind'], string> = {
-  daily: 'daily', call_saved: 'call saved', manual: 'run by you', tag_added: 'tag put on', tag_removed: 'tag taken off', status: 'smart list', becomes_true: 'condition turned true', list_empty: 'call list ran out', imported: 'leads imported',
+const RUN_TRIGGER: Record<RuleRun['trigger'], string> = {
+  wait: 'after a wait', daily: 'daily', call_saved: 'call saved', manual: 'run by you', tag_added: 'tag put on', tag_removed: 'tag taken off', status: 'smart list', becomes_true: 'condition turned true', list_empty: 'call list ran out', imported: 'leads imported',
 };
 
 function resultText(r: ActionResult, fieldName: (id: string) => string | undefined): string {
@@ -120,13 +120,18 @@ export function RulesCard() {
     <div className="card" id="rules">
       <h2>Rules</h2>
       <p className="help">
-        When something happens, do something to the leads it fits: every day at a time, when you save a call, when a tag is put on or taken off, when a lead
-        comes into or leaves a smart list, when a condition turns true, or when the call list runs out. The call list runs out when it has leads and
-        you've called them all; then the rules for that go in the order they're listed here, and the first one that adds leads wins, so they set the
-        order you call in (like imports, then yesterday's no-shows, then today's no-answers). They only add leads that aren't on the list
-        at all, so the ones you just called don't come straight back (Clear worked lets them). A rule on a lead's change acts on just that lead, if it matches the rule's filters (set them
-        here, or on Leads with <b>Make a rule</b>). Rules can set off other rules; one set off again for the same lead stops there, and the log says so.{' '}
-        <b>Preview</b> and <b>Run now</b> act on every lead matching the filters; Preview changes nothing. Every run is in the log below.
+        Every rule is <b>when X, do Y</b>. X is anything the CRM notices: a time of day, a call saved, a tag put on or taken off, a lead
+        coming into or leaving a smart list, a condition turning true, leads imported, the call list running out, or you pressing Run now.
+        Y is one or more steps, top to bottom, with Waits between them if you like. You can narrow which leads it does Y to with any Leads
+        filter (set it here, or on Leads with <b>Make a rule</b>); a rule set off by one lead's change acts on just that lead, if it fits.
+        Rules can set off other rules; one set off again for the same lead stops there, and the log says so. <b>Preview</b> shows what a
+        rule would do now without changing anything, <b>Run now</b> runs it, and every run is in the log below.
+      </p>
+      <p className="help">
+        Running out of calls is one of these "when"s. The list runs out when it has leads and you've called them all; then the rules for it
+        go in the order listed here and the first one that adds leads wins, so together they set the order you call in (like imports, then
+        yesterday's no-shows, then today's no-answers). They only add leads that aren't on the list at all, so the ones you just called
+        don't come straight back (Clear worked lets them).
       </p>
       {rules.length === 0 && <p className="muted">No rules yet.</p>}
       <ul className="rule-list">
@@ -150,11 +155,16 @@ export function RulesCard() {
               </span>
             </div>
             {r.made_by && <div className="help" style={{ margin: '2px 0 0' }}>{madeByText(r)}</div>}
-            <div className="help" style={{ margin: '4px 0 0' }}>
-              <div><b>When:</b> {describeTrigger(r.trigger, names.outcomeLabel, names.statusName)}</div>
-              <div><b>Leads:</b> {describeFilter(r.filter, { tag: names.tagName, field: names.fieldName, status: names.statusName })}</div>
-              <div><b>Do:</b> {r.actions.map((a) => describeAction(a, names.fieldName)).join(', then ')}</div>
-            </div>
+            {/* The rule as a chain, read top to bottom: when, for which leads, then each step. */}
+            <ol className="rule-chain" aria-label={`Steps of ${r.name}`}>
+              <li className="when"><b>When</b> {describeTrigger(r.trigger, names.outcomeLabel, names.statusName)}</li>
+              <li className="if"><b>For leads</b> {describeFilter(r.filter, { tag: names.tagName, field: names.fieldName, status: names.statusName })}</li>
+              {r.actions.map((a, j) => (
+                <li key={j} className={a.kind === 'wait' ? 'wait' : 'do'}>
+                  {a.kind === 'wait' ? <><b>Wait</b> {describeWait(a.after)}</> : <><b>Do</b> {describeAction(a, names.fieldName)}</>}
+                </li>
+              ))}
+            </ol>
             {shown[r.id] && (
               <div className="rule-result" aria-label={`${shown[r.id]!.dry_run ? 'Preview' : 'Run'} of ${r.name}`}>
                 <b>{shown[r.id]!.dry_run ? 'Preview (nothing changed)' : 'Just ran'}:</b> <RunSummary run={shown[r.id]!} fieldName={names.fieldName} />
@@ -241,6 +251,19 @@ function StepsInput({ steps, label, onChange }: { steps: string[]; label: string
   );
 }
 
+/** How long a Wait step waits: one step, like 2h or 1d@09:00. */
+function WaitInput({ after, label, onChange }: { after: string; label: string; onChange: (after: string) => void }) {
+  const [text, setText] = useState(after);
+  const ok = isStep(text.trim().toLowerCase());
+  return (
+    <span className="row" style={{ gap: 4 }}>
+      <input value={text} aria-label={label} placeholder="2h" style={{ width: 100 }}
+        onChange={(e) => { setText(e.target.value); const v = e.target.value.trim().toLowerCase(); if (isStep(v)) onChange(v); }} />
+      {ok ? <span className="help">{describeWait(text.trim().toLowerCase())}, then the steps below</span> : <span className="error">write it like 15m, 2h, 3d or 1d@09:00</span>}
+    </span>
+  );
+}
+
 const emptyAction = (kind: RuleAction['kind'], firstField: string | undefined, firstCounter: string | undefined): RuleAction => {
   switch (kind) {
     case 'add_tag':
@@ -249,6 +272,7 @@ const emptyAction = (kind: RuleAction['kind'], firstField: string | undefined, f
     case 'mark_dead': return { kind, reason: '' };
     case 'counter': return { kind, field_id: firstCounter ?? '', op: 'add', by: 1 };
     case 'come_back': return { kind, steps: ['1d@09:00'] };
+    case 'wait': return { kind, after: '1d@09:00' };
     default: return { kind };
   }
 };
@@ -491,6 +515,7 @@ function RuleEditor(props: { rule: Rule; isNew: boolean; onSave: (r: Rule) => Pr
 
           <fieldset>
             <legend>Do this</legend>
+            <p className="help" style={{ marginTop: 0 }}>Top to bottom. A Wait holds the steps after it for each lead, then does them (the leads that waited get them, whether or not they still match).</p>
             {r.actions.map((a, i) => (
               <div key={i} className="row" style={{ gap: 6, marginBottom: 4, flexWrap: 'wrap' }}>
                 <span className="muted">{i + 1}.</span>
@@ -529,6 +554,7 @@ function RuleEditor(props: { rule: Rule; isNew: boolean; onSave: (r: Rule) => Pr
                   );
                 })()}
                 {a.kind === 'come_back' && <StepsInput steps={a.steps} label={`Action ${i + 1} steps`} onChange={(steps) => setAction(i, { ...a, steps })} />}
+                {a.kind === 'wait' && <WaitInput after={a.after} label={`Action ${i + 1} wait`} onChange={(after) => setAction(i, { ...a, after })} />}
                 {a.kind === 'mark_dead' && (
                   <input value={a.reason ?? ''} maxLength={200} placeholder={`Reason (default: Rule: ${r.name || 'its name'})`} aria-label={`Action ${i + 1} reason`} onChange={(e) => setAction(i, { ...a, reason: e.target.value })} style={{ minWidth: 240 }} />
                 )}

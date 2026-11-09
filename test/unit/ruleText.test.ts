@@ -46,6 +46,7 @@ describe('a rule as Python', () => {
       { ...base, trigger: { kind: 'tag_added', tag: 'No show' }, actions: [{ kind: 'come_back', steps: ['15m', '1d@09:00', '3d'] }] },
       { ...base, trigger: { kind: 'list_empty' }, filter: { status: 'new', imported: 'today' }, actions: [{ kind: 'add_to_list' }] },
       { ...base, trigger: { kind: 'imported' }, filter: { where: 'age >= 60' }, actions: [{ kind: 'add_tag', tag: 'Over 60' }] },
+      { ...base, trigger: { kind: 'tag_added', tag: 'Hot' }, actions: [{ kind: 'wait', after: '2h' }, { kind: 'add_tag', tag: 'Call now' }, { kind: 'wait', after: '1d@09:00' }, { kind: 'add_to_list' }] },
     ];
     for (const r of rules) expect(round(r)).toEqual(r);
     for (const [i, s] of STARTER_RULES.entries()) expect(round({ ...s, id: `s${i}` })).toEqual({ ...s, id: `s${i}` });
@@ -79,6 +80,8 @@ describe('a rule as Python', () => {
     expect(err(`${head}    set_field("Nope", "x")`)).toEqual([4, 'there is no field called "Nope"']);
     expect(err(`${head}    come_back("15m", "soon")`)).toEqual([4, '"soon" isn\'t a step: write each like 15m, 2h, 3d or 1d@09:00']);
     expect(err(`${head}    come_back()`)?.[1]).toMatch(/come_back\(\) takes its steps/);
+    expect(err(`${head}    wait("soon")`)).toEqual([4, '"soon" isn\'t a wait: write it like 15m, 2h, 3d or 1d@09:00']);
+    expect(err(`${head}    wait()`)?.[1]).toMatch(/wait\(\) takes how long/);
     expect(err(`@when(enters="Gone")\ndef rule():\n    "R"\n    add_to_list()`)).toEqual([1, 'there is no status called "Gone"']);
     expect(err(`${head}    if has("Hot")\n        add_to_list()`)).toEqual([4, 'an if line ends with ":"']);
     expect(err(`${head}    if has("Hot"):\n        add_to_list()\n    add_tag("x")`)).toEqual([6, 'after an if, every action goes under it']);

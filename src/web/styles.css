@@ -448,6 +448,14 @@ th button.sort { background: none; border: 0; padding: 0; font: inherit; font-we
 .tag-chip button { border: 0; background: none; color: inherit; cursor: pointer; padding: 0 3px; font-size: 13px; line-height: 1; }
 .rule-list { list-style: none; padding: 0; margin: 8px 0; display: flex; flex-direction: column; gap: 8px; }
 .rule { border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; background: var(--panel-2); }
+/* A rule drawn as a chain (Automation → Rules): when, for which leads, then each step, top to bottom. */
+.rule-chain { list-style: none; padding: 0; margin: 6px 0 0; display: flex; flex-direction: column; gap: 12px; font-size: 13px; max-width: 640px; }
+.rule-chain li { position: relative; padding: 3px 8px; border: 1px solid var(--border); border-left: 4px solid var(--accent); border-radius: 6px; background: var(--panel); }
+.rule-chain li + li::before { content: '↓'; position: absolute; top: -13px; left: 14px; font-size: 11px; line-height: 12px; color: var(--muted); }
+.rule-chain li.when { border-left-color: #1a5fb4; }
+.rule-chain li.if { border-left-color: #5b3fc4; }
+.rule-chain li.do { border-left-color: #26722b; }
+.rule-chain li.wait { border-left-color: #8a6100; border-style: dashed; border-left-style: solid; }
 .rule-result { margin-top: 6px; padding: 6px 8px; border-left: 3px solid var(--accent); background: var(--panel); font-size: 13px; }
 .rule-editor fieldset { border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; margin: 8px 0; }
 .rule-editor legend { font-weight: 600; padding: 0 4px; }
