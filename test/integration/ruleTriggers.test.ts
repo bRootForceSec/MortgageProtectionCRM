@@ -8,8 +8,9 @@ import { commitImport } from '../../src/server/domain/importer.js';
 import { leadTags, setTagOnLeads, ensureTag, tagLead } from '../../src/server/domain/tags.js';
 import { saveStatuses } from '../../src/server/domain/statuses.js';
 import { createCustomField, leadCustomValues, setCustomValues } from '../../src/server/domain/customFields.js';
-import { loadRules, previewRule, routinesToRules, ruleRuns, runEventRules, runRule, runWaitingRules, saveRules, saveTagShortcuts } from '../../src/server/domain/rules.js';
-import { addToCallList, getCallList } from '../../src/server/domain/callList.js';
+import { listRefill, loadRules, previewRule, routinesToRules, ruleRuns, runEventRules, runRule, runWaitingRules, saveRules, saveTagShortcuts } from '../../src/server/domain/rules.js';
+import { addToCallList, clearWorked, getCallList } from '../../src/server/domain/callList.js';
+import { rebuildLeadState } from '../../src/server/domain/leadState.js';
 import { logManualCall } from '../../src/server/domain/calls.js';
 import { setSetting } from '../../src/server/core/settings.js';
 import { listLeads } from '../../src/server/domain/leads.js';
@@ -273,21 +274,22 @@ describe('tag shortcuts', () => {
     expect(() => saveTagShortcuts(db, { expiry: [], groups: [{ id: 'g2', name: 'Bad', tag_ids: [ids[0], ids[0]] }] })).toThrow(/a tag is in it twice/);
   });
 
-  it('when the call list runs out, the first rule in order that has leads to add fills it; an empty list or one with leads left does nothing', () => {
+  it('when the call list runs out, the first rule in order that has leads to add fills it; a list with leads left does nothing', () => {
     const jane = lead('Jane');
     const robert = lead('Robert');
     const ann = lead('Ann');
+    tagLead(db, jane, 'First');
     tagLead(db, robert, 'Second');
     tagLead(db, ann, 'Third');
     runEventRules(db);
+    addToCallList(db, [jane]);
     saveRules(db, [
       rule({ name: 'Then nobody', trigger: { kind: 'list_empty' }, filter: { tag: ensureTag(db, 'Nobody').id } }),
       rule({ name: 'Then second', trigger: { kind: 'list_empty' }, filter: { tag: ensureTag(db, 'Second').id } }),
       rule({ name: 'Then third', trigger: { kind: 'list_empty' }, filter: { tag: ensureTag(db, 'Third').id } }),
+      rule({ name: 'Then first', trigger: { kind: 'list_empty' }, filter: { tag: ensureTag(db, 'First').id } }),
     ]);
-    // Nothing on the list: it hasn't run out, it's empty.
-    expect(runEventRules(db)).toEqual([]);
-    addToCallList(db, [jane]);
+    // Jane is still to call: the list hasn't run out.
     expect(runEventRules(db)).toEqual([]);
     logManualCall(db, { lead_id: jane, idempotency_key: uuidv7(), outcome_code: 'no_answer' });
     // Jane called: the list ran out. "Then nobody" has no one, so "Then second" fills it, and "Then third" waits.
@@ -297,9 +299,42 @@ describe('tag shortcuts', () => {
     logManualCall(db, { lead_id: robert, idempotency_key: uuidv7(), outcome_code: 'no_answer' });
     expect(runEventRules(db).map((r) => r.rule_name)).toEqual(['Then third']);
     logManualCall(db, { lead_id: ann, idempotency_key: uuidv7(), outcome_code: 'no_answer' });
-    // Everyone is on the list and called: nothing left to add, nothing runs.
+    // Everyone is called from the list, and no rule waits between dials, so nobody you just called comes straight back.
     expect(runEventRules(db)).toEqual([]);
+    expect(listRefill(db)).toEqual({ rules: 4, next: null });
+    // Clear worked leads: an empty list has run out too, and the rules fill it again.
+    clearWorked(db);
+    expect(runEventRules(db).map((r) => r.rule_name)).toEqual(['Then second']);
+    expect(getCallList(db).map((i) => i.lead_id)).toEqual([robert]);
+    expect(listRefill(db)).toBeNull();
     expect(describeTrigger({ kind: 'list_empty' })).toBe('When the call list runs out (the first of these rules that adds leads wins)');
+  });
+
+  it("today's imports, then today's no-answers once the hour is up: called leads come back onto the list, and the wait is told", () => {
+    const all = (db.prepare('SELECT id FROM lead').all() as { id: string }[]).map((r) => r.id);
+    saveRules(db, [
+      rule({ name: "Then today's imports", trigger: { kind: 'list_empty' }, filter: { status: 'new', imported: 'today' } }),
+      rule({ name: "Then today's no-answers", trigger: { kind: 'list_empty' }, filter: { status: 'no_answer', not_within_min: 60 } }),
+    ]);
+    // The list is empty, so it has run out: today's imports go on.
+    expect(runEventRules(db).map((r) => r.rule_name)).toEqual(["Then today's imports"]);
+    const imported = getCallList(db).map((i) => i.lead_id);
+    expect(imported.length).toBeGreaterThan(1);
+    for (const id of imported) logManualCall(db, { lead_id: id, idempotency_key: uuidv7(), outcome_code: 'no_answer' });
+    // All called, all no answer: none is ready before the hour is up, and the Calling screen is told when they will be.
+    expect(runEventRules(db)).toEqual([]);
+    const refill = listRefill(db)!;
+    expect(refill.next).toMatchObject({ rule_name: "Then today's no-answers", leads: imported.length });
+    const firstCall = (db.prepare('SELECT min(requested_at) at FROM call').get() as { at: string }).at;
+    expect(Date.parse(refill.next!.ready_at)).toBe(Date.parse(firstCall) + 60 * 60_000);
+    // An hour on, they come back onto the list (they're on it already, as called) to call again.
+    const back = (col: string) => `strftime('%Y-%m-%dT%H:%M:%fZ', ${col}, '-61 minutes')`;
+    db.prepare(`UPDATE call SET requested_at = ${back('requested_at')}`).run();
+    db.prepare(`UPDATE call_list_item SET added_at = ${back('added_at')}`).run();
+    rebuildLeadState(db, all);
+    expect(runEventRules(db).map((r) => r.rule_name)).toEqual(["Then today's no-answers"]);
+    expect(getCallList(db).filter((i) => !i.done).map((i) => i.lead_id).sort()).toEqual([...imported].sort());
+    expect(listRefill(db)).toBeNull();
   });
 
   it('once, the steps of your routines become "when the call list runs out" rules, in order and switched on', () => {

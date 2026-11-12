@@ -5,7 +5,7 @@ import type { DB } from '../db/connection.js';
 import type { Config } from '../config.js';
 import { DomainError } from '../core/errors.js';
 import { logManualCall, changeOutcome, addLeadAction, addNote, callHistory, changeCallerId } from '../domain/calls.js';
-import { runCallRules, runEventRules } from '../domain/rules.js';
+import { listRefill, runCallRules, runEventRules } from '../domain/rules.js';
 import { leadExists, listLeads, getLeadDetail, leadPdfPage, setLinkStatus } from '../domain/leads.js';
 import { parseList } from '../domain/groupFilter.js';
 import { setLeadTypeForMatching } from '../domain/leadEdit.js';
@@ -123,7 +123,7 @@ export function registerLeadRoutes(
     return {
       items: getCallList(db), recent: recentOutcomes(db), ...callListMeta(db), saved_lists: listSavedLists(db),
       best_times: bestTimes(db, tz || Intl.DateTimeFormat().resolvedOptions().timeZone), list_order: loadCallingSettings(db).list_order,
-      best_time: loadCallingSettings(db).best_time,
+      best_time: loadCallingSettings(db).best_time, refill: listRefill(db),
     };
   });
   // `replace` empties the list first (kept as a saved list named `save_current_as`, if given).

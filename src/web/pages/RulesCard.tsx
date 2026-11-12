@@ -128,10 +128,11 @@ export function RulesCard() {
         rule would do now without changing anything, <b>Run now</b> runs it, and every run is in the log below.
       </p>
       <p className="help">
-        Running out of calls is one of these "when"s. The list runs out when it has leads and you've called them all; then the rules for it
-        go in the order listed here and the first one that adds leads wins, so together they set the order you call in (like imports, then
-        yesterday's no-shows, then today's no-answers). They only add leads that aren't on the list at all, so the ones you just called
-        don't come straight back (Clear worked lets them).
+        Running out of calls is one of these "when"s. The list runs out when you've called every lead on it (or it's empty); then the rules
+        for it go in the order listed here and the first one that adds leads wins, so together they set the order you call in (like imports,
+        then yesterday's no-shows, then today's no-answers). A lead you already called from the list comes back only with a rule that has
+        <b> Not dialed in the last …</b>, once that time is up, so the one you just called doesn't come straight back. It's checked every
+        minute, and the Calling screen says what's next while you wait.
       </p>
       {rules.length === 0 && <p className="muted">No rules yet.</p>}
       <ul className="rule-list">

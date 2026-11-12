@@ -211,6 +211,14 @@ export interface CallListResponse {
   list_order: SortStep[];
   /** Your calling hours and call count for "Best time first" (Settings → Calling). */
   best_time: BestTimeRules;
+  /** When the list has run out and your "list runs out" rules have nobody to add yet: what comes next (null otherwise). */
+  refill: ListRefill | null;
+}
+
+/** Mirrors ListRefill in server/domain/rules.ts. */
+export interface ListRefill {
+  rules: number;
+  next: { rule_name: string; leads: number; ready_at: string } | null;
 }
 
 export interface AddResult {

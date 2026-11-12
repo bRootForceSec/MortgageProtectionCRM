@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { callbackFields, fromWall } from '../when';
-import { api, fmtDateTime, fmtLeadAge, fmtPhone, fmtRelative, type LeadDetail, type CallListItem, type CallListResponse } from '../api';
+import { api, fmtDateTime, fmtLeadAge, fmtPhone, fmtRelative, type LeadDetail, type CallListItem, type CallListResponse, type ListRefill } from '../api';
 import { describeBy } from '../../shared/leadEvents';
 import { useApp } from '../App';
 import { ApptBadge, LeadSummary, CallHistory, Notes, copyCalendarTag, toggleCalledBack } from '../components/LeadDetails';
@@ -101,6 +101,13 @@ export function CallingPage() {
     }
   }, [toast]);
   useEffect(() => void loadList(), [loadList]);
+  // The list ran out and your rules will fill it: look every minute, so leads show up when they're ready.
+  const waiting = !!list?.refill;
+  useEffect(() => {
+    if (!waiting) return;
+    const t = setInterval(() => void loadList(), 60_000);
+    return () => clearInterval(t);
+  }, [waiting, loadList]);
   useEffect(() => {
     const on = () => void loadList();
     window.addEventListener(CALL_LIST_CHANGED, on);
@@ -587,12 +594,14 @@ export function CallingPage() {
           {list && items.length > 0 && left === 0 && (
             <div className="list-done" role="status">
               <b>List done.</b> Every lead on it has been worked.
+              {list.refill && <RefillNote refill={list.refill} />}
               <button className="btn small primary" onClick={() => void clearWorked()}>Clear worked leads</button>
             </div>
           )}
           {!list ? null : items.length === 0 ? (
             <div className="empty">
               Your call list is empty.
+              {list.refill && <div className="help"><RefillNote refill={list.refill} /></div>}
               <div className="help">Pick leads on the Leads page, or import a file. New imports go straight onto this list.</div>
               <div className="row" style={{ justifyContent: 'center', marginTop: 8 }}>
                 <button className="btn small primary" onClick={() => go('leads')}>Go to Leads</button>
@@ -724,5 +733,17 @@ export function CallingPage() {
       {editing && detail && <EditLead d={detail} onClose={() => setEditing(false)} onSaved={async () => { setEditing(false); await refreshDetail(); }} />}
       {qr && <DialQr e164={qr} onClose={() => setQr(null)} />}
     </div>
+  );
+}
+
+/** What your "when the call list runs out" rules will put on next, and when (Automation → Rules). */
+function RefillNote({ refill }: { refill: ListRefill }) {
+  const n = refill.next;
+  if (!n) return <span className="muted">Your rules for when the list runs out have no more leads to add right now.</span>;
+  const at = new Date(n.ready_at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  return (
+    <span>
+      Next: <b>{n.rule_name.replace(/^then\s+/i, '')}</b>, {n.leads} lead{n.leads === 1 ? '' : 's'}, the first ready at {at}. They'll come onto the list by themselves.
+    </span>
   );
 }
