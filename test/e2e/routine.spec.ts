@@ -53,6 +53,11 @@ test('work the day by rules: when the call list runs out, the first rule with le
   await page.getByRole('button', { name: 'Import 4 leads' }).click();
   await expect(page.getByText('Import finished')).toBeVisible();
 
+  // One lead on the list by hand first (an empty list counts as run out, so the rule would fill it at once).
+  await nav('Leads');
+  await page.locator('table.grid tbody tr').first().getByRole('checkbox').check();
+  await page.getByRole('button', { name: /Add 1 ticked to call list/ }).click();
+
   // Automation → Rules: the ready-made "Then today's imports", switched on.
   await nav('Automation');
   const card = page.locator('#rules');
@@ -66,10 +71,7 @@ test('work the day by rules: when the call list runs out, the first rule with le
   await rule.scrollIntoViewIfNeeded();
   await page.screenshot({ path: 'test-results/list-runs-out-rule.png' });
 
-  // One lead on the list by hand; calling it runs the list out, and the rule adds the other three.
-  await nav('Leads');
-  await page.locator('table.grid tbody tr').first().getByRole('checkbox').check();
-  await page.getByRole('button', { name: /Add 1 ticked to call list/ }).click();
+  // Calling the one lead runs the list out, and the rule adds the other three.
   await nav('Calling');
   await expect(page.getByLabel('Queue')).toContainText('1 to call · 0 done');
   const first = await page.locator('.lead-name').innerText();

@@ -7,9 +7,10 @@ import { LeadQuery } from '../../shared/leadFilter.js';
 import { normalizeCustomValue } from '../../shared/customFields.js';
 import { Rules, TagShortcuts, shortcutRules, type ActionResult, type Rule, type RuleAction, type RuleRun, type RuleTrigger } from '../../shared/rules.js';
 import { addToCallList, matchingLeadIds, removeFromCallList, toLeadFilter, WORKED } from './callList.js';
-import { ensureTag, setTagOnLeads, tagByName } from './tags.js';
+import { ensureTag, neverDialOf, setTagOnLeads, tagByName } from './tags.js';
 import { listCustomFields, setCustomValues } from './customFields.js';
 import { addLeadAction, setComeback } from './calls.js';
+import { callableIds } from './callable.js';
 import { conditionSql, loadStatusDefs } from './formulas.js';
 import { afterStep } from '../../shared/followUps.js';
 
@@ -190,11 +191,7 @@ export function runRule(
   try {
     db.transaction(() => {
       ids = matchingLeadIds(db, { ...toLeadFilter(LeadQuery.parse(rule.filter), now), ...(opts.leadIds ? { only_leads: opts.leadIds } : {}) });
-      // Filling a list that ran out: only leads not on it at all, so the ones just called don't come straight back.
-      if (trigger === 'list_empty') {
-        const on = new Set((db.prepare('SELECT lead_id FROM call_list_item').all() as { lead_id: string }[]).map((r) => r.lead_id));
-        ids = ids.filter((id) => !on.has(id));
-      }
+      if (trigger === 'list_empty') ids = withoutListed(db, rule, ids);
       run.matched = ids.length;
       run.results = doSteps(db, rule, ids, opts.from ?? 0, nowIso());
       if (opts.dryRun) throw ROLLBACK;
@@ -384,10 +381,56 @@ export function runEventRules(db: DB, now = new Date()): RuleRun[] {
   return runs;
 }
 
-/** The call list has leads on it, and every one has been called since it went on. */
+/** Every lead on the call list has been called since it went on (an empty list, after Clear worked leads, too). */
 function listRanOut(db: DB): boolean {
-  const r = db.prepare(`SELECT COUNT(*) n, SUM(CASE WHEN ${WORKED} THEN 0 ELSE 1 END) todo FROM call_list_item i`).get() as { n: number; todo: number | null };
-  return r.n > 0 && !r.todo;
+  return !(db.prepare(`SELECT 1 FROM call_list_item i WHERE NOT ${WORKED} LIMIT 1`).get());
+}
+
+/** Minutes a rule waits between dials of a lead ("Not dialed in the last …"), or 0. */
+const gapOf = (rule: Rule) => LeadQuery.partial().safeParse(rule.filter).data?.not_within_min ?? 0;
+
+/**
+ * Filling a list that ran out leaves out leads still waiting on it. A lead already called from the list comes back
+ * only when the rule waits between dials ("Not dialed in the last …"), so a rule without one can't put the lead you
+ * just called straight back on, over and over.
+ */
+function withoutListed(db: DB, rule: Rule, ids: string[]): string[] {
+  const on = new Set((db.prepare(`SELECT i.lead_id FROM call_list_item i${gapOf(rule) ? ` WHERE NOT ${WORKED}` : ''}`).all() as { lead_id: string }[]).map((r) => r.lead_id));
+  return ids.filter((id) => !on.has(id));
+}
+
+/** What the "list runs out" rules will add next, when the list has run out and none of them has anyone to add now. */
+export interface ListRefill {
+  /** How many "list runs out" rules are switched on. */
+  rules: number;
+  /** The first rule in your order with leads waiting out its "Not dialed in the last …": how many, and when the first is ready. */
+  next: { rule_name: string; leads: number; ready_at: string } | null;
+}
+
+export function listRefill(db: DB, now = new Date()): ListRefill | null {
+  const rules = loadRules(db).filter((r) => r.enabled && r.trigger.kind === 'list_empty');
+  if (!rules.length || !listRanOut(db)) return null;
+  const last = db.prepare('SELECT last_call_at FROM lead_state WHERE lead_id = ?');
+  for (const r of rules) {
+    const gap = gapOf(r);
+    if (!gap) continue;
+    let ids: string[];
+    try {
+      ids = withoutListed(db, r, matchingLeadIds(db, { ...toLeadFilter(LeadQuery.parse(r.filter), now), not_within_min: undefined }));
+    } catch {
+      continue; // A filter that no longer reads: the Rules card shows it.
+    }
+    // Only leads it would really add: ones that can be called and have no never-dial tag.
+    const callable = callableIds(db, ids);
+    const never = neverDialOf(db, ids);
+    const since = now.getTime() - gap * 60_000;
+    const waits = ids
+      .filter((id) => callable.has(id) && !never.has(id))
+      .map((id) => Date.parse((last.get(id) as { last_call_at: string | null } | undefined)?.last_call_at ?? ''))
+      .filter((t) => t >= since);
+    if (waits.length) return { rules: rules.length, next: { rule_name: r.name, leads: waits.length, ready_at: new Date(Math.min(...waits) + gap * 60_000).toISOString() } };
+  }
+  return { rules: rules.length, next: null };
 }
 
 /**
