@@ -4,7 +4,7 @@ import * as z from 'zod/v4';
 import type { DB } from '../db/connection.js';
 import type { Config } from '../config.js';
 import { DomainError } from '../core/errors.js';
-import { logManualCall, changeOutcome, addLeadAction, addNote, callHistory, changeCallerId } from '../domain/calls.js';
+import { logManualCall, changeOutcome, addLeadAction, addNote, editNote, deleteNote, callHistory, changeCallerId } from '../domain/calls.js';
 import { listRefill, runCallRules, runEventRules } from '../domain/rules.js';
 import { leadExists, listLeads, getLeadDetail, leadPdfPage, setLinkStatus } from '../domain/leads.js';
 import { parseList } from '../domain/groupFilter.js';
@@ -272,6 +272,14 @@ export function registerLeadRoutes(
     const b = z.object({ body: z.string().max(10000), call_id: z.string().max(64).nullish() }).parse(req.body);
     return addNote(db, id, b.body, b.call_id);
   });
+
+  app.patch('/api/notes/:id', async (req) => {
+    const { id } = z.object({ id: z.string().max(64) }).parse(req.params);
+    const b = z.object({ body: z.string().max(10000) }).parse(req.body);
+    return editNote(db, id, b.body);
+  });
+
+  app.delete('/api/notes/:id', async (req) => deleteNote(db, z.object({ id: z.string().max(64) }).parse(req.params).id));
 
   app.post('/api/lead-links/:id', async (req) => {
     const { id } = z.object({ id: z.string().max(64) }).parse(req.params);

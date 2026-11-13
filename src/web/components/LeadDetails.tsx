@@ -444,13 +444,69 @@ export function Notes({ d, onChange, rows }: { d: LeadDetail; onChange: () => vo
       />
       <button className="btn small" onClick={add} disabled={!text.trim()}>Add note</button>
       <ul className="history notes">
-        {d.notes.map((n) => (
-          <li key={n.id}>
-            <div className="meta">{fmtDateTime(n.created_at)}</div>
-            {n.body}
-          </li>
-        ))}
+        {d.notes.map((n) => <NoteItem key={n.id} n={n} onChange={onChange} />)}
       </ul>
     </div>
+  );
+}
+
+/** One note, with Edit and Delete. An edit replaces the note (the old text stays in the history kept behind it). */
+function NoteItem({ n, onChange }: { n: LeadDetail['notes'][number]; onChange: () => void }) {
+  const { toast } = useApp();
+  const [draft, setDraft] = useState<string | null>(null);
+  const save = async () => {
+    if (draft === null || !draft.trim()) return;
+    try {
+      await api.patch(`/notes/${n.id}`, { body: draft });
+      setDraft(null);
+      onChange();
+    } catch (e: any) {
+      toast(e.message, 'error');
+    }
+  };
+  const remove = async () => {
+    if (!window.confirm('Delete this note?')) return;
+    try {
+      await api.del(`/notes/${n.id}`);
+      onChange();
+    } catch (e: any) {
+      toast(e.message, 'error');
+    }
+  };
+  return (
+    <li>
+      <div className="meta">
+        {fmtDateTime(n.created_at)}
+        {n.edited_at && <span title={`Edited ${fmtDateTime(n.edited_at)}`}> · edited</span>}
+        {draft === null && (
+          <span className="note-actions">
+            {' · '}<button type="button" className="link" onClick={() => setDraft(n.body)}>Edit</button>
+            {' · '}<button type="button" className="link" onClick={() => void remove()}>Delete</button>
+          </span>
+        )}
+      </div>
+      {draft === null ? n.body : (
+        <>
+          <textarea
+            autoFocus
+            aria-label="Edit note"
+            rows={Math.min(8, Math.max(2, draft.split('\n').length))}
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+                e.preventDefault();
+                void save();
+              } else if (e.key === 'Escape') {
+                e.stopPropagation();
+                setDraft(null);
+              }
+            }}
+          />
+          <button type="button" className="btn small primary" onClick={() => void save()} disabled={!draft.trim()}>Save</button>{' '}
+          <button type="button" className="btn small" onClick={() => setDraft(null)}>Cancel</button>
+        </>
+      )}
+    </li>
   );
 }

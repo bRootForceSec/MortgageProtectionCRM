@@ -1,5 +1,5 @@
 import type { DB } from '../db/connection.js';
-import { LEAD_NAME, CURRENT_OUTCOME } from '../db/sql.js';
+import { LEAD_NAME, CURRENT_OUTCOME, CURRENT_NOTE } from '../db/sql.js';
 import { uuidv7, nowIso } from '../ids.js';
 import { rebuildLeadState } from './leadState.js';
 import { DomainError } from '../core/errors.js';
@@ -174,7 +174,7 @@ export function voidCall(db: DB, callId: string, reason?: string | null) {
     undoButtonTags(db, callId, now);
     const appointmentFor = appointmentTimeOfCall(db, callId);
     cancelAppointmentsOfCall(db, callId);
-    const note = db.prepare('SELECT body FROM note WHERE call_id = ? ORDER BY created_at LIMIT 1').get(callId) as { body: string } | undefined;
+    const note = db.prepare(`SELECT n.body FROM note n WHERE n.call_id = ? AND ${CURRENT_NOTE} ORDER BY n.created_at LIMIT 1`).get(callId) as { body: string } | undefined;
     if (call.lead_id) rebuildLeadState(db, [call.lead_id]);
     return {
       lead_id: call.lead_id as string | null,
@@ -285,6 +285,49 @@ export function addNote(db: DB, leadId: string, body: string, callId?: string | 
   const id = uuidv7();
   db.prepare('INSERT INTO note (id, lead_id, call_id, body, created_at) VALUES (?,?,?,?,?)').run(id, leadId, callId ?? null, text, nowIso());
   return { note_id: id };
+}
+
+type NoteRow = { id: string; lead_id: string; call_id: string | null; body: string; replaces_id: string | null; created_at: string; edited_at: string | null; deleted_at: string | null };
+
+/** A note you can still change: it exists, isn't deleted, and no edit has replaced it. */
+function currentNote(db: DB, noteId: string): NoteRow {
+  const n = db.prepare('SELECT * FROM note WHERE id = ?').get(noteId) as NoteRow | undefined;
+  if (!n) throw new DomainError('note not found', 404);
+  if (n.deleted_at) throw new DomainError('this note was deleted', 409);
+  if (db.prepare('SELECT 1 FROM note WHERE replaces_id = ?').get(noteId)) throw new DomainError('this note was changed since; reload the lead', 409);
+  return n;
+}
+
+/**
+ * Edits a note. Notes are append-only: the new text is a new note that replaces the old one, keeping its time and
+ * call (so it stays in its place in the list) and saying when it was edited.
+ */
+export function editNote(db: DB, noteId: string, body: string) {
+  const text = body?.trim();
+  if (!text) throw new DomainError('note is empty');
+  if (text.length > 10_000) throw new DomainError('note is too long');
+  return db.transaction(() => {
+    const old = currentNote(db, noteId);
+    if (text === old.body) return { note_id: old.id };
+    const id = uuidv7();
+    const now = nowIso();
+    db.prepare('INSERT INTO note (id, lead_id, call_id, body, replaces_id, created_at, edited_at) VALUES (?,?,?,?,?,?,?)').run(
+      id, old.lead_id, old.call_id, text, old.id, old.created_at, now,
+    );
+    audit(db, 'note', id, 'update', { id: old.id, body: old.body }, { id, body: text }, now);
+    return { note_id: id };
+  })();
+}
+
+/** Deletes a note: it is marked deleted and drops off the lead, but its text stays in the table and the audit log. */
+export function deleteNote(db: DB, noteId: string) {
+  return db.transaction(() => {
+    const old = currentNote(db, noteId);
+    const now = nowIso();
+    db.prepare('UPDATE note SET deleted_at = ? WHERE id = ?').run(now, noteId);
+    audit(db, 'note', noteId, 'delete', { body: old.body }, null, now);
+    return { ok: true };
+  })();
 }
 
 /** Active outcome codes, in key order, each saying whether it has a button on the Calling screen. */

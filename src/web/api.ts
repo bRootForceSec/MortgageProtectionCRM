@@ -321,7 +321,7 @@ export interface LeadDetail {
     shown: boolean; required: boolean;
   }[];
   calls: Call[];
-  notes: { id: string; body: string; created_at: string; call_id: string | null }[];
+  notes: { id: string; body: string; created_at: string; call_id: string | null; edited_at: string | null }[];
   actions: { id: string; action: string; reason: string | null; created_at: string }[];
   linked: { link_id: string; link_status: string; reason: string; id: string; first_name: string | null; last_name: string | null; batch_name: string; status: string }[];
   changes: { id: string; field: string; old_value: string | null; new_value: string | null; created_at: string }[];

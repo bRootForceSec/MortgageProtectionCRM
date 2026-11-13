@@ -2,6 +2,7 @@ import type { DB } from '../db/connection.js';
 import { nowIso } from '../ids.js';
 import { DomainError } from '../core/errors.js';
 import { audit } from '../core/audit.js';
+import { CURRENT_NOTE } from '../db/sql.js';
 import { leadFilterWhere, onCallList, sortFieldOrder, type LeadFilter } from './callList.js';
 import { LEAD_PAGE_SIZES } from '../../shared/leadFilter.js';
 import { batchPdf } from './pageTurn.js';
@@ -108,9 +109,10 @@ export function getLeadDetail(db: DB, importsDir: string, id: string) {
     hidden_buttons: buttonsHiddenFor(db, id),
     custom: leadCustomValues(db, id),
     calls,
-    // Notes saved with a call you undid are left out (the undo puts the note back in the form).
+    // Notes saved with a call you undid are left out (the undo puts the note back in the form), and so are deleted
+    // notes and the old text of edited ones.
     notes: db
-      .prepare('SELECT n.* FROM note n LEFT JOIN call c ON c.id = n.call_id WHERE n.lead_id = ? AND c.voided_at IS NULL ORDER BY n.created_at DESC')
+      .prepare(`SELECT n.* FROM note n LEFT JOIN call c ON c.id = n.call_id WHERE n.lead_id = ? AND c.voided_at IS NULL AND ${CURRENT_NOTE} ORDER BY n.created_at DESC`)
       .all(id),
     actions: db.prepare('SELECT * FROM lead_action WHERE lead_id = ? ORDER BY created_at DESC').all(id),
     linked,
