@@ -1,7 +1,7 @@
 import type { DB } from '../db/connection.js';
 import { nowIso, uuidv7 } from '../ids.js';
 import { DomainError } from '../core/errors.js';
-import { LEAD_NAME } from '../db/sql.js';
+import { LEAD_NAME, CURRENT_NOTE } from '../db/sql.js';
 import type { PrepCard } from '../../shared/appointments.js';
 
 // The appointment time you can type on "Appt set" (optional). It's stored like a Unitrust appointment, in your own
@@ -93,7 +93,7 @@ export function appointmentsOnDay(db: DB, day: string): PrepCard[] {
               s.status, s.appt_result,
               (SELECT n.body FROM note n LEFT JOIN call nc ON nc.id = n.call_id
                 WHERE n.lead_id = a.lead_id AND nc.voided_at IS NULL
-                  AND NOT EXISTS (SELECT 1 FROM note r WHERE r.replaces_id = n.id)
+                  AND ${CURRENT_NOTE}
                 ORDER BY n.created_at DESC LIMIT 1) last_note
        FROM appointment a JOIN lead l ON l.id = a.lead_id LEFT JOIN lead_state s ON s.lead_id = a.lead_id
        LEFT JOIN call c ON c.id = a.set_on_call_id

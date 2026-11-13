@@ -8,3 +8,6 @@ export const LEAD_NAME = "trim(coalesce(l.first_name,'') || ' ' || coalesce(l.la
 
 /** In a query over `call_outcome o`: `o` is its call's current outcome, since outcomes are never changed, only superseded. */
 export const CURRENT_OUTCOME = 'NOT EXISTS (SELECT 1 FROM call_outcome sup WHERE sup.supersedes_id = o.id)';
+
+/** In a query over `note n`: `n` is a note's current version (no edit replaces it) and it isn't deleted. */
+export const CURRENT_NOTE = 'n.deleted_at IS NULL AND NOT EXISTS (SELECT 1 FROM note rep WHERE rep.replaces_id = n.id)';

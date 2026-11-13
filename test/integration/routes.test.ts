@@ -42,6 +42,28 @@ describe('lead routes', () => {
     expect(detail.notes.map((n: any) => n.body)).toEqual(['call after 5']);
   });
 
+  it('notes: edit keeps the note in its place, delete takes it off; old text stays in the audit log', async () => {
+    const id = lead('Jane');
+    const patch = (url: string, payload: unknown) => app.inject({ method: 'PATCH', url, headers: write, payload: payload as any });
+    const del = (url: string) => app.inject({ method: 'DELETE', url, headers: write });
+    const first = (await post(`/api/leads/${id}/notes`, { body: 'call after 5' })).json().note_id;
+    await post(`/api/leads/${id}/notes`, { body: 'wife is on the loan' });
+    const edited = await patch(`/api/notes/${first}`, { body: 'call after 6' });
+    expect(edited.statusCode).toBe(200);
+    let notes = (await get(`/api/leads/${id}`)).json().notes;
+    expect(notes.map((n: any) => n.body)).toEqual(['wife is on the loan', 'call after 6']);
+    expect(notes[1].edited_at).toBeTruthy();
+    // The old version can't be changed again.
+    expect((await patch(`/api/notes/${first}`, { body: 'x' })).statusCode).toBe(409);
+    expect((await patch(`/api/notes/${notes[1].id}`, { body: '  ' })).statusCode).toBe(400);
+    expect((await del(`/api/notes/${notes[1].id}`)).statusCode).toBe(200);
+    notes = (await get(`/api/leads/${id}`)).json().notes;
+    expect(notes.map((n: any) => n.body)).toEqual(['wife is on the loan']);
+    expect((await del(`/api/notes/nope`)).statusCode).toBe(404);
+    expect(audits('note').map((a) => a.action)).toEqual(['update', 'delete']);
+    expect(JSON.parse(audits('note')[0].old_json).body).toBe('call after 5');
+  });
+
   it('actions: mark dead, then restore', async () => {
     const id = lead('Robert');
     expect((await post(`/api/leads/${id}/actions`, { action: 'mark_dead', reason: 'test' })).statusCode).toBe(200);
