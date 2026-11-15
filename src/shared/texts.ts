@@ -4,10 +4,13 @@ import * as z from 'zod/v4';
 // screen shows the filled-in text as a QR code (your phone's camera offers to copy it) and a Copy button, so you paste
 // it into whatever app you text from. Each one you send is a line in the lead's log (kind `texted`).
 
+/** The most a text can hold: room for a long confirmation text, and still a QR code a phone reads. */
+export const TEXT_MAX = 2000;
+
 export const TextTemplate = z.object({
   id: z.string().min(1).max(64),
   name: z.string().trim().min(1, 'give the text a name').max(60),
-  body: z.string().max(1000),
+  body: z.string().max(TEXT_MAX, `keep a text under ${TEXT_MAX} characters`),
 });
 export type TextTemplate = z.infer<typeof TextTemplate>;
 
@@ -33,6 +36,7 @@ export const TEXT_FIELDS = [
   { id: 'email', label: 'Email' },
   { id: 'lead_id', label: 'Lead ID from the sheet' },
   { id: 'appointment', label: 'Their appointment, like Tuesday, Nov 18 at 3:00 PM' },
+  { id: 'today', label: 'Today\'s date, like Saturday, Nov 15' },
   { id: 'my_name', label: 'Your name (Settings → Calling)' },
 ] as const;
 

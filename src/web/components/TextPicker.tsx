@@ -26,9 +26,12 @@ export function TextPicker({ leadId, who, onClose }: { leadId: string; who: stri
     });
   }, [leadId]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const [tooBig, setTooBig] = useState(false);
   useEffect(() => {
     box.current?.focus();
-    if (pick && canvas.current) void QRCode.toCanvas(canvas.current, pick.text, { width: 320, margin: 2, errorCorrectionLevel: 'L' });
+    setTooBig(false);
+    // A very long text (most often one with emoji or curly quotes, which take more room) can be past what a QR code holds.
+    if (pick && canvas.current) QRCode.toCanvas(canvas.current, pick.text, { width: pick.text.length > 400 ? 480 : 320, margin: 2, errorCorrectionLevel: 'L' }).catch(() => setTooBig(true));
   }, [pick, data]);
 
   const copy = useCallback(async (t: FilledText, quiet = false) => {
@@ -114,7 +117,8 @@ export function TextPicker({ leadId, who, onClose }: { leadId: string; who: stri
             )
           ) : (
             <div style={{ textAlign: 'center' }}>
-              <canvas ref={canvas} aria-label={`QR code of the text "${pick.name}"`} />
+              <canvas ref={canvas} aria-label={`QR code of the text "${pick.name}"`} hidden={tooBig} />
+              {tooBig && <p className="warn">This text is too long for a QR code. Use Copy or Send to phone, or shorten it in Settings.</p>}
               <p className="text-preview">{pick.text}</p>
               {pick.missing.length > 0 && (
                 <p className="warn">Left blank, this lead has no {pick.missing.join(', ')}. Read it over before you send.</p>

@@ -25,7 +25,7 @@ function apptWords(wall: string): string {
 }
 
 /** Every value a text can fill in for this lead, by placeholder name (any case): its own fields, your fields by name, the sheet's other columns. */
-export function textValues(db: DB, leadId: string): Record<string, string> {
+export function textValues(db: DB, leadId: string, now = new Date()): Record<string, string> {
   const l = db.prepare('SELECT * FROM lead WHERE id = ?').get(leadId) as Record<string, any> | undefined;
   if (!l) throw new DomainError('lead not found', 404);
   const extra = l.extra_json ? (JSON.parse(l.extra_json) as Record<string, string>) : {};
@@ -50,6 +50,8 @@ export function textValues(db: DB, leadId: string): Record<string, string> {
     lead_id: l.source_lead_id ?? '',
     appointment: appt ? apptWords(appt.scheduled_for) : '',
     my_name: loadCallingSettings(db).scripts.agent_name,
+    // Your day, on this computer.
+    today: now.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' }),
   });
   return out;
 }

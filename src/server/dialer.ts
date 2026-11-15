@@ -55,7 +55,7 @@ export class KdeConnect {
   /** Puts text on the phone's clipboard (KDE Connect's "share text"), for pasting into the app you text from. */
   async shareText(deviceId: string, text: string) {
     if (!/^[\w-]{1,100}$/.test(deviceId)) throw new Error('choose your phone in Settings first');
-    if (!text.trim() || text.length > 2000) throw new Error('nothing to send');
+    if (!text.trim() || text.length > 8000) throw new Error('nothing to send');
     await this.runner(this.cmd, ['-d', deviceId, `--share-text=${text}`]);
   }
 }
