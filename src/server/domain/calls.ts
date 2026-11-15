@@ -36,6 +36,8 @@ export interface ManualCallInput {
   callback_any_time?: boolean | null;
   /** They asked not to be called again: the lead goes to the dead pile. */
   do_not_call?: boolean | null;
+  /** You left a voicemail on this call. */
+  left_voicemail?: boolean | null;
   note?: string | null;
   /** Appt set: when the appointment is, in your time ("2026-10-30" or "2026-10-30T14:00"). Optional; Unitrust confirms it. */
   appointment_for?: string | null;
@@ -118,9 +120,9 @@ export function logManualCall(db: DB, input: ManualCallInput) {
     const script = live ? currentOpenerVersion(db, now) : null;
     db.prepare(
       `INSERT INTO call (id, lead_id, direction, channel, from_number_id, from_e164, to_e164, requested_at, idempotency_key,
-        initiation_result, state, state_confirmed_by, started_at, ended_at, talk_seconds, dial_count, lead_seconds, script_version_id, derived_at)
-       VALUES (?, ?, 'outbound', 'manual_log', ?, ?, ?, ?, ?, 'accepted', 'ended', 'manual', ?, ?, ?, ?, ?, ?, ?)`,
-    ).run(callId, lead.id, input.from_number_id ?? null, fromE164, to, at, input.idempotency_key, dialed ?? at, live ? now : null, talk, dials, onLead, script, now);
+        initiation_result, state, state_confirmed_by, started_at, ended_at, talk_seconds, dial_count, lead_seconds, script_version_id, derived_at, left_voicemail)
+       VALUES (?, ?, 'outbound', 'manual_log', ?, ?, ?, ?, ?, 'accepted', 'ended', 'manual', ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run(callId, lead.id, input.from_number_id ?? null, fromE164, to, at, input.idempotency_key, dialed ?? at, live ? now : null, talk, dials, onLead, script, now, input.left_voicemail ? 1 : 0);
     db.prepare(
       `INSERT INTO call_event (id, call_id, source, dedup_key, event_type_raw, event_type, occurred_at, received_at, payload_json)
        VALUES (?, ?, 'manual', ?, 'manual.logged', 'call.logged_manually', ?, ?, ?)`,
@@ -183,6 +185,7 @@ export function voidCall(db: DB, callId: string, reason?: string | null) {
       callback_due_at: out?.callback_due_at ?? null,
       callback_any_time: !!out?.callback_any_time,
       do_not_call: !!out?.do_not_call,
+      left_voicemail: call.left_voicemail === 1,
       dial_count: call.dial_count as number,
       talk_seconds: call.talk_seconds as number | null,
       lead_seconds: call.lead_seconds as number | null,

@@ -372,6 +372,7 @@ export function CallHistory({ calls: all, onChange, limit = 0 }: { calls: Call[]
             to {fmtPhone(c.to_e164)}{c.from_e164 && <> · from {c.from_label ?? ''} {fmtPhone(c.from_e164)}</>}
             {c.talk_seconds != null && <> · {Math.round(c.talk_seconds / 60)} min</>}
             {c.dial_count > 1 && <> · <b>{c.dial_count} dials</b></>}
+            {!!c.left_voicemail && <> · left voicemail</>}
             {c.lead_seconds != null && <> · {fmtDuration(c.lead_seconds)} on lead</>}
           </div>
           {c.voided_at && <div className="muted">Undone {fmtDateTime(c.voided_at)}. Not counted anywhere.</div>}

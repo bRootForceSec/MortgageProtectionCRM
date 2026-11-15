@@ -254,6 +254,8 @@ export interface Call {
   requested_at: string;
   state: string;
   talk_seconds: number | null;
+  /** 1 when you ticked "Left voicemail". */
+  left_voicemail?: number;
   /** 0 for history from a spreadsheet's Status column: the real time isn't known. */
   time_known: number;
   history_source: string | null;

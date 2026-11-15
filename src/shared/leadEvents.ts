@@ -1,7 +1,8 @@
-// The lead's log (table lead_event): what happened to a lead, when, and what did it. Tags so far; fields, buttons and
-// counters will be logged here too. Conditions read it through formulas (has, added, times, before...).
+// The lead's log (table lead_event): what happened to a lead, when, and what did it. Tags, never-dial overrides and texts
+// sent so far; fields, buttons and counters will be logged here too. Conditions read it through formulas (has, added, times, before...).
 
-export type LeadEventKind = 'tag_added' | 'tag_removed' | 'never_dial_override';
+/** `texted`: you sent the lead one of your texts (source_id/source_name: the text's id and name). */
+export type LeadEventKind = 'tag_added' | 'tag_removed' | 'never_dial_override' | 'texted';
 
 /** What made a change: you by hand, a rule, an import, the Unitrust extension, a button, or a shortcut's rule. */
 export type LeadEventSource = 'you' | 'rule' | 'import' | 'unitrust' | 'button' | 'shortcut';

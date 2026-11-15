@@ -25,6 +25,7 @@ import { LeadPaging, LeadQuery } from '../../shared/leadFilter.js';
 import { bestTimes } from '../domain/reports.js';
 import { loadCallingSettings } from '../domain/callingSettings.js';
 import { isLeadId } from '../../shared/leadLink.js';
+import { logTexted, textsForLead } from '../domain/texts.js';
 
 // Leads, the call list, logging calls, and call history.
 
@@ -73,6 +74,12 @@ export function registerLeadRoutes(
   app.post('/api/leads/:id/dialed-anyway', async (req) => {
     const { id } = z.object({ id: z.string().max(64) }).parse(req.params);
     return { logged: dialedAnyway(db, id) };
+  });
+  // Your texts filled in for this lead (Settings → Calling, Texts), and noting one you sent from your phone.
+  app.get('/api/leads/:id/texts', async (req) => textsForLead(db, z.object({ id: z.string().max(64) }).parse(req.params).id));
+  app.post('/api/leads/:id/texted', async (req) => {
+    const { id } = z.object({ id: z.string().max(64) }).parse(req.params);
+    return logTexted(db, id, z.object({ text_id: z.string().min(1).max(64) }).parse(req.body).text_id);
   });
   app.delete('/api/tags/:id', async (req) => {
     const { id } = z.object({ id: z.string().max(64) }).parse(req.params);
@@ -226,6 +233,7 @@ export function registerLeadRoutes(
       callback_due_at: z.string().max(40).nullish(),
       callback_any_time: z.boolean().nullish(),
       do_not_call: z.boolean().nullish(),
+      left_voicemail: z.boolean().nullish(),
       note: z.string().max(10000).nullish(),
       appointment_for: z.string().max(20).nullish(),
       on_the_spot: z.boolean().nullish(),

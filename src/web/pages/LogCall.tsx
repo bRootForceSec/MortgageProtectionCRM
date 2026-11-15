@@ -38,6 +38,8 @@ export interface FormValues {
   numberId: string | null;
   /** The "Do not call" tick. */
   doNotCall?: boolean;
+  /** The "Left voicemail" tick. */
+  leftVoicemail?: boolean;
   /** Objection codes you picked. */
   objections?: string[];
 }
@@ -112,6 +114,7 @@ export function LogCall({
   const [minutes, setMinutes] = useState(restore?.minutes ?? '');
   const [note, setNote] = useState(restore?.note ?? '');
   const [doNotCall, setDoNotCall] = useState(!!restore?.doNotCall);
+  const [leftVm, setLeftVm] = useState(!!restore?.leftVoicemail);
   const [objections, setObjections] = useState<string[]>(restore?.objections ?? []);
   // Your fields the picked button asks for (Automation → Calling screen), as typed.
   const [asked, setAsked] = useState<Record<string, string>>({});
@@ -206,6 +209,7 @@ export function LogCall({
         appointment_for: appt && !('error' in appt) ? toWall(appt) : null,
         on_the_spot: spot,
         do_not_call: doNotCall,
+        left_voicemail: leftVm,
         talk_seconds: minutes ? Number(minutes) * 60 : timerSeconds(o),
         dial_count: attempt.dials,
         lead_seconds: Math.round((Date.now() - attempt.shownAt) / 1000),
@@ -220,12 +224,13 @@ export function LogCall({
       setMinutes('');
       setNote('');
       setDoNotCall(false);
+      setLeftVm(false);
       setObjections([]);
       setAsked({});
       setKey(newKey());
       await onSaved({
         callId: r.call_id, leadId: d.lead.id, name: [d.lead.first_name, d.lead.last_name].filter(Boolean).join(' ') || 'this lead',
-        label: `${b.label}${spot ? ', running it now' : ''}${doNotCall ? ', do not call' : ''}`, dials: attempt.dials, at: Date.now(),
+        label: `${b.label}${spot ? ', running it now' : ''}${leftVm ? ', voicemail' : ''}${doNotCall ? ', do not call' : ''}`, dials: attempt.dials, at: Date.now(),
         tz: d.lead.time_zone ?? null, onTheSpot: spot,
       });
     } catch (e: any) {
@@ -233,7 +238,7 @@ export function LogCall({
     } finally {
       setSaving(false);
     }
-  }, [button, buttonOf, outcomeOf, asked, saving, day, time, key, numberId, minutes, note, doNotCall, objections, d.lead.id, toast, onSaved, attempt]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [button, buttonOf, outcomeOf, asked, saving, day, time, key, numberId, minutes, note, doNotCall, leftVm, objections, d.lead.id, toast, onSaved, attempt]); // eslint-disable-line react-hooks/exhaustive-deps
   const saveRef = useRef(save);
   saveRef.current = save;
 
@@ -261,6 +266,11 @@ export function LogCall({
       if (keys.actions.do_not_call?.includes(normKey(e.key))) {
         e.preventDefault();
         setDoNotCall((v) => !v);
+        return;
+      }
+      if (keys.actions.voicemail?.includes(normKey(e.key))) {
+        e.preventDefault();
+        setLeftVm((v) => !v);
         return;
       }
       // Action keys win over outcome keys (Settings warns about clashes).
@@ -341,6 +351,10 @@ export function LogCall({
             {keys.outcomeKey[b.id] && <kbd>{keyLabel(keys.outcomeKey[b.id]!)}</kbd>}{b.label}
           </button>
         ))}
+        <label className={`choice-inline vm ${leftVm ? 'active' : ''}`} title="You left a voicemail on this call. Saved with the call and in the Reports export.">
+          <input type="checkbox" checked={leftVm} onChange={(e) => setLeftVm(e.target.checked)} />
+          {k('voicemail') && <kbd>{k('voicemail')}</kbd>}Left voicemail
+        </label>
         <label className={`choice-inline dnc ${doNotCall ? 'active' : ''}`} title="They asked not to be called again. Pick what happened on the call too; the lead goes to the dead pile.">
           <input type="checkbox" checked={doNotCall} onChange={(e) => setDoNotCall(e.target.checked)} />
           {k('do_not_call') && <kbd>{k('do_not_call')}</kbd>}Do not call

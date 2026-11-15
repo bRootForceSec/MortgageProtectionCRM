@@ -14,6 +14,7 @@ import { DomainError } from '../core/errors.js';
 import { loadCallingSettings } from './callingSettings.js';
 import { bulkOfBatch } from './importHistory.js';
 import { callsAskingObjections, objectionCounts } from './objections.js';
+import { textSection } from './texts.js';
 import { appointmentCounts, appointmentsOnDays, hasAppointments, type ApptRow } from './unitrustAppointments.js';
 import { APPT_RESULTS } from '../../shared/appointments.js';
 import { commissionByLead, hasPolicies, listPolicies, productsNeedingRules, type PolicyView } from './policies.js';
@@ -54,6 +55,7 @@ interface CallRow {
   contact: number;
   /** Ticked "Do not call". */
   do_not_call: number;
+  left_voicemail: number;
   outcome_group: string | null;
   from_label: string | null;
   county_key: string | null;
@@ -162,7 +164,7 @@ function loadCalls(db: DB, f: ReportFilter, range: boolean): CallRow[] {
   const g = groupWhere('l.county_key', f);
   return db
     .prepare(
-      `SELECT c.id, c.lead_id, c.requested_at, c.started_at, c.ended_at, c.time_known, c.dial_count, c.talk_seconds, c.to_e164, c.from_e164, c.channel,
+      `SELECT c.id, c.lead_id, c.requested_at, c.started_at, c.ended_at, c.time_known, c.dial_count, c.talk_seconds, c.to_e164, c.from_e164, c.channel, c.left_voicemail,
               o.outcome_code, oc.label outcome_label, coalesce(oc.counts_as_human_contact, 0) contact, coalesce(o.do_not_call, 0) do_not_call, oc.grp outcome_group, n.label from_label,
               l.county_key, l.county, l.state, l.lead_type, l.batch_id, l.time_zone, l.callin_at, b.name batch_name,
               ${LEAD_NAME} lead_name
@@ -493,6 +495,7 @@ export function buildReport(db: DB, f: ReportFilter) {
     funnel: funnelSection(db, f),
     profit: profitSection(db, f, g.leads, batches),
     objections: objectionSection(db, f, types),
+    texts: textSection(db, f.from, f.to, f),
     weekly: weeklyRatios(db, f, g.allCalls, types),
   };
 }
@@ -736,6 +739,7 @@ export function reportCalls(db: DB, f: ReportFilter) {
       outcome: c.outcome_label ?? '',
       contact: c.contact ? 'yes' : 'no',
       do_not_call: c.do_not_call ? 'yes' : 'no',
+      left_voicemail: c.left_voicemail ? 'yes' : 'no',
       dials: c.dial_count,
       talk_seconds: c.talk_seconds ?? '',
       // Logged live on the Calling page: when you pressed Dial (if you did) and when you saved.
@@ -859,6 +863,9 @@ export function reportSheets(r: ReturnType<typeof buildReport>, calls: ReturnTyp
           ...Object.fromEntries(r.objections!.types.map((t) => [t.label, o.by_type[t.key] ?? 0])),
         })),
       }]
+      : []),
+    ...(r.texts
+      ? [{ name: 'Texts', rows: r.texts.rows.map((t) => ({ text: t.name, sent: t.texts, leads: t.leads, booked_after: t.booked })) }]
       : []),
     { name: 'Calls', rows: calls },
   ];

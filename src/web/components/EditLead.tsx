@@ -89,6 +89,8 @@ export function EditLead({ d, onClose, onSaved }: { d: LeadDetail; onClose: () =
       id: e.id, at: e.at,
       text: e.kind === 'never_dial_override'
         ? `Never dial (${e.tag_name}): ${e.source_name ?? 'gone past'} by you`
+        : e.kind === 'texted'
+        ? `Texted: ${e.source_name ?? 'a text'}`
         : `Tag ${e.kind === 'tag_added' ? 'added' : 'taken off'}: ${e.tag_name ?? '(deleted)'}, ${describeBy(e.source, e.source_name)}`,
     })),
   ].sort((a, b) => b.at.localeCompare(a.at));

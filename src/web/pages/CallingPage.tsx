@@ -7,6 +7,7 @@ import { ApptBadge, LeadSummary, CallHistory, Notes, copyCalendarTag, toggleCall
 import { EditLead } from '../components/EditLead';
 import { SourcePage } from '../components/SourcePage';
 import { DialQr } from '../components/DialQr';
+import { TextPicker } from '../components/TextPicker';
 import { FunnelButton } from '../components/Funnel';
 import { CALL_LIST_CHANGED, ClearListDialog, LoadListDialog, SaveAsDialog, suggestListName } from '../components/CallListDialogs';
 import { isAction, isTyping, keyLabel, type KeyMap } from '../shortcuts';
@@ -66,6 +67,8 @@ export function CallingPage() {
   const [saved, setSaved] = useState<Saved | null>(null);
   const [editing, setEditing] = useState(false);
   const [qr, setQr] = useState<string | null>(null);
+  /** Picking a text for the lead on screen (T). */
+  const [texting, setTexting] = useState(false);
   const [listDialog, setListDialog] = useState<'clear' | 'load' | 'save_as' | null>(null);
   const [order, setOrderState] = useState<ListOrder>(() => {
     const o = getStored(ORDER_KEY);
@@ -384,7 +387,7 @@ export function CallingPage() {
     setSaved(null);
     try {
       const r = await api.post<{
-        lead_id: string; outcome_code: string | null; button_id: string | null; callback_due_at: string | null; callback_any_time: boolean; do_not_call: boolean;
+        lead_id: string; outcome_code: string | null; button_id: string | null; callback_due_at: string | null; callback_any_time: boolean; do_not_call: boolean; left_voicemail: boolean;
         dial_count: number; talk_seconds: number | null; lead_seconds: number | null; from_number_id: string | null; note: string | null;
         appointment_for: string | null;
         dialed_at: string | null;
@@ -403,6 +406,7 @@ export function CallingPage() {
           note: r.note ?? '',
           numberId: r.from_number_id,
           doNotCall: r.do_not_call,
+          leftVoicemail: r.left_voicemail,
           objections: r.objections,
         },
       });
@@ -421,7 +425,7 @@ export function CallingPage() {
     }
   }, [saved, toast, bumpStats, loadDetail, items, selected, keys]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const modalOpen = editing || !!qr || !!listDialog;
+  const modalOpen = editing || !!qr || !!listDialog || texting;
   /** The lead on screen is the one selected. Just after you move on, keys that act on a lead wait for it to load. */
   const ready = !!detail && detail.lead.id === selected;
   const phoneNow = detail ? detail.state?.active_phone_e164 ?? detail.lead.phone_e164 : null;
@@ -437,7 +441,7 @@ export function CallingPage() {
     const onKey = (e: KeyboardEvent) => {
       if (modalOpen || isTyping(e) || e.ctrlKey || e.metaKey || e.altKey) return;
       const act = (a: Parameters<typeof isAction>[1]) => isAction(keys, a, e);
-      const leadKey = ['dial', 'dial_alt', 'dials_up', 'dials_down', 'note', 'edit', 'skip'].some((a) => act(a as Parameters<typeof isAction>[1]));
+      const leadKey = ['dial', 'dial_alt', 'dials_up', 'dials_down', 'note', 'edit', 'skip', 'text'].some((a) => act(a as Parameters<typeof isAction>[1]));
       if (leadKey && !ready) { e.preventDefault(); return; }
       if (act('list_down')) { e.preventDefault(); move(1); }
       else if (act('list_up')) { e.preventDefault(); move(-1); }
@@ -458,6 +462,7 @@ export function CallingPage() {
       else if (act('edit')) { if (detail) { e.preventDefault(); setEditing(true); } }
       else if (act('called_back')) { if (ready && detail) { e.preventDefault(); void toggleCalledBack(detail, toast).then((at) => calledBack(detail.lead.id, at)); } }
       else if (act('copy_tag')) { if (detail) { e.preventDefault(); void copyCalendarTag(detail.lead, toast); } }
+      else if (act('text')) { e.preventDefault(); setTexting(true); }
       else if (act('switch_mode')) { if (ready && detail) { e.preventDefault(); toggleAll(); } }
     };
     window.addEventListener('keydown', onKey);
@@ -639,7 +644,7 @@ export function CallingPage() {
           <span className="help">
             <kbd>{k('list_up')}</kbd><kbd>{k('list_down')}</kbd> move <kbd>{k('skip')}</kbd> skip to the bottom <kbd>{k('dial')}</kbd> {dialLabel.toLowerCase()} <kbd>{k('dial_alt')}</kbd> other number{' '}
             <kbd>{k('dials_down')}</kbd><kbd>{k('dials_up')}</kbd> dials <kbd>Enter</kbd> save and next <kbd>{k('undo')}</kbd> undo <kbd>{k('note')}</kbd> note{' '}
-            <kbd>{k('edit')}</kbd> edit <kbd>{k('switch_mode')}</kbd> every button <kbd>{k('lookup')}</kbd> look up a caller <kbd>{k('called_back')}</kbd> called me back <kbd>{k('copy_tag')}</kbd> copy for calendar
+            <kbd>{k('edit')}</kbd> edit <kbd>{k('switch_mode')}</kbd> every button <kbd>{k('lookup')}</kbd> look up a caller <kbd>{k('called_back')}</kbd> called me back <kbd>{k('copy_tag')}</kbd> copy for calendar <kbd>{k('text')}</kbd> text
           </span>
         </header>
       </section>
@@ -649,6 +654,11 @@ export function CallingPage() {
           <CallerLookup inputRef={lookupRef} hotkey={k('lookup')} onOpen={openOutside} />
           {/* In the header, so it takes no room above the outcome buttons on a short screen. */}
           <SheetSwitch />
+          {detail && (
+            <button className="btn small" onClick={() => setTexting(true)} title="Pick one of your texts, filled in for this lead, and scan it with your phone">
+              Text <kbd>{k('text')}</kbd>
+            </button>
+          )}
           {detail && <EveryButton on={showAll} onChange={toggleAll} hotkey={k('switch_mode')} />}
         </header>
         <div className="body">
@@ -723,6 +733,10 @@ export function CallingPage() {
       {detail ? <SourcePage d={detail} /> : <section className="panel lead-page" aria-label="Lead page" />}
       {editing && detail && <EditLead d={detail} onClose={() => setEditing(false)} onSaved={async () => { setEditing(false); await refreshDetail(); }} />}
       {qr && <DialQr e164={qr} onClose={() => setQr(null)} />}
+      {texting && detail && (
+        <TextPicker leadId={detail.lead.id} who={[detail.lead.first_name, detail.lead.last_name].filter(Boolean).join(' ') || 'this lead'}
+          onClose={() => { setTexting(false); void loadDetail(detail.lead.id); }} />
+      )}
     </div>
   );
 }

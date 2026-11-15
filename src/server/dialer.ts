@@ -2,7 +2,8 @@ import { execFile } from 'node:child_process';
 
 // Sends a number to your phone through KDE Connect (Fedora: `sudo dnf install kdeconnectd`, plus the
 // KDE Connect app on the phone). The phone opens its dialer with the number filled in; you press call.
-// Runs kdeconnect-cli directly with arguments (no shell), and only ever with a checked US number.
+// It can also put a text on the phone's clipboard. Runs kdeconnect-cli directly with arguments (no shell), and only
+// ever with a checked US number or a text you see first.
 
 export interface KdeDevice {
   id: string;
@@ -49,5 +50,12 @@ export class KdeConnect {
     if (!/^[\w-]{1,100}$/.test(deviceId)) throw new Error('choose your phone in Settings first');
     if (!/^\+1\d{10}$/.test(e164)) throw new Error('not a US phone number');
     await this.runner(this.cmd, ['-d', deviceId, '--share', `tel:${e164}`]);
+  }
+
+  /** Puts text on the phone's clipboard (KDE Connect's "share text"), for pasting into the app you text from. */
+  async shareText(deviceId: string, text: string) {
+    if (!/^[\w-]{1,100}$/.test(deviceId)) throw new Error('choose your phone in Settings first');
+    if (!text.trim() || text.length > 2000) throw new Error('nothing to send');
+    await this.runner(this.cmd, ['-d', deviceId, `--share-text=${text}`]);
   }
 }
