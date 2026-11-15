@@ -14,8 +14,9 @@ import { STARTER_ORDER, type SortStep } from '../../shared/listOrder';
 import { LEAD_FACTS, SHEET_BLOCKS, sheetBlocks, sheetFacts, type SheetLayout } from '../../shared/sheetLayout';
 import { useCustomFields } from '../customFields';
 import { bestTimeWords, hourWords } from '../../shared/bestTime';
+import { placeholdersIn, STARTER_TEXTS, TEXT_FIELDS, type TextTemplate } from '../../shared/texts';
 
-// Settings for the Calling screen: retry gap, dialing, timer, goals, alerts, shortcuts and scripts.
+// Settings for the Calling screen: retry gap, dialing, timer, goals, alerts, shortcuts, scripts and texts.
 
 function useSave() {
   const { calling, setCalling, toast } = useApp();
@@ -505,3 +506,89 @@ export function SheetCard() {
 }
 
 const HOURS = Array.from({ length: 25 }, (_, h) => h);
+
+/** One text: its name and words, saved when you leave the box. */
+function TextTemplateRow({ t, n, known, onSave, onMove, onRemove, first, last }: {
+  t: TextTemplate; n: number; known: Set<string>; onSave: (t: TextTemplate) => void; onMove: (by: -1 | 1) => void; onRemove: () => void; first: boolean; last: boolean;
+}) {
+  const [name, setName] = useState(t.name);
+  const [body, setBody] = useState(t.body);
+  useEffect(() => { setName(t.name); setBody(t.body); }, [t]);
+  const commit = () => {
+    if (!name.trim()) return setName(t.name);
+    if (name.trim() !== t.name || body !== t.body) onSave({ ...t, name: name.trim(), body });
+  };
+  const unknown = placeholdersIn(body).filter((p) => !known.has(p.toLowerCase()));
+  return (
+    <div className="text-template">
+      <span className="row" style={{ gap: 6 }}>
+        {n <= 9 ? <kbd title={`Key ${n} in the text picker`}>{n}</kbd> : <span className="muted small">no key</span>}
+        <input aria-label="Text name" value={name} maxLength={60} onChange={(e) => setName(e.target.value)} onBlur={commit} style={{ flex: 1 }} />
+        <button type="button" className="btn small" aria-label="Move up" disabled={first} onClick={() => onMove(-1)}>↑</button>
+        <button type="button" className="btn small" aria-label="Move down" disabled={last} onClick={() => onMove(1)}>↓</button>
+        <button type="button" className="btn small" aria-label={`Remove ${t.name}`} onClick={onRemove}>✕</button>
+      </span>
+      <textarea aria-label={`${t.name} text`} rows={3} maxLength={1000} value={body} onChange={(e) => setBody(e.target.value)} onBlur={commit} />
+      <span className="help">
+        {body.length} characters{body.length > 160 ? ' (over 160, so it may go as more than one text)' : ''}.
+        {unknown.length > 0 && <span className="warn"> Not a field: {unknown.map((u) => `[[${u}]]`).join(', ')}. It fills in only for leads whose sheet has a column by that name.</span>}
+      </span>
+    </div>
+  );
+}
+
+/** Your texts (Calling screen, T then 1-9), with [[field]] filled in from the lead, and your name for [[my_name]]. */
+export function TextsCard() {
+  const { calling, keys } = useApp();
+  const save = useSave();
+  const { fields } = useCustomFields();
+  const [agent, setAgent] = useState(calling?.settings.scripts.agent_name ?? '');
+  useEffect(() => setAgent(calling?.settings.scripts.agent_name ?? ''), [calling?.settings.scripts.agent_name]);
+  const s = calling?.settings;
+  if (!s) return null;
+  const texts = s.texts;
+  const put = (next: TextTemplate[]) => void save({ ...s, texts: next });
+  const known = new Set([...TEXT_FIELDS.map((f) => f.id as string), ...fields.map((f) => f.label.toLowerCase())]);
+  const move = (i: number, by: -1 | 1) => {
+    const next = [...texts];
+    [next[i], next[i + by]] = [next[i + by]!, next[i]!];
+    put(next);
+  };
+  const add = () => {
+    let name = 'New text';
+    for (let n = 2; texts.some((t) => t.name.toLowerCase() === name.toLowerCase()); n++) name = `New text ${n}`;
+    put([...texts, { id: crypto.randomUUID(), name, body: 'Hi [[first_name]], it\'s [[my_name]]. ' }]);
+  };
+  return (
+    <div className="card">
+      <h3>Texts</h3>
+      <p className="help">
+        On the Calling screen press <kbd>{keyLabel(keys.actions.text?.[0] ?? '')}</kbd>, then a number, and the text shows as a QR code with the lead's details filled in. Point your
+        phone's camera (or Google Lens) at it, tap Copy, and paste it into Sideline. It's copied on this computer too, so with KDE Connect's
+        clipboard sync it's already on your phone. Press Enter once it's sent, and it's noted on the lead and counted in Reports.
+        Leads with a never-dial tag, or who asked not to be called, can't be texted.
+      </p>
+      <label className="field">
+        <span>Your name, for [[my_name]]</span>
+        <input value={agent} maxLength={100} placeholder="like Alistair" onChange={(e) => setAgent(e.target.value)}
+          onBlur={() => agent.trim() !== s.scripts.agent_name && void save({ ...s, scripts: { ...s.scripts, agent_name: agent.trim() } })} style={{ width: 220 }} />
+      </label>
+      <div style={{ display: 'grid', gap: 8, margin: '8px 0' }}>
+        {texts.map((t, i) => (
+          <TextTemplateRow key={t.id} t={t} n={i + 1} known={known} first={i === 0} last={i === texts.length - 1}
+            onSave={(x) => put(texts.map((y) => (y.id === x.id ? x : y)))} onMove={(by) => move(i, by)}
+            onRemove={() => window.confirm(`Remove the text "${t.name}"? Texts already sent stay in each lead's history.`) && put(texts.filter((y) => y.id !== t.id))} />
+        ))}
+      </div>
+      <span className="row" style={{ gap: 6 }}>
+        {texts.length < 30 && <button type="button" className="btn small" onClick={add}>Add a text</button>}
+        {texts.length === 0 && <button type="button" className="btn small" onClick={() => put(STARTER_TEXTS)}>Put back the starter texts</button>}
+      </span>
+      <p className="help">
+        Fill in with double brackets: {TEXT_FIELDS.map((f) => <span key={f.id} title={f.label}><code>[[{f.id}]]</code> </span>)}
+        {fields.length > 0 && <>and your fields by name, like <code>[[{fields[0]!.label}]]</code>. </>}
+        Any other column from the lead's sheet works by its name too. One the lead has nothing for is left blank, and the picker warns you.
+      </p>
+    </div>
+  );
+}

@@ -207,6 +207,7 @@ export function ReportsPage() {
     ),
     by_batch: () => r && <ByBatch rows={r.by_batch} N={N} />,
     objections: () => r?.objections && <Objections o={r.objections} />,
+    texts: () => r?.texts && <Texts t={r.texts} />,
     funnel: () => r?.funnel && <FunnelCard steps={r.funnel} />,
     benchmarks: () => r && <Benchmarks r={r} N={N} onSaved={load} />,
     weekly: () => r?.weekly && <Weekly w={r.weekly} targets={r.targets} />,
@@ -763,6 +764,27 @@ function Objections({ o }: { o: any }) {
         </table>
       </div>
       <p className="help">The chips you ticked after Picked up, Appt picked up and Presentation. The small % is out of those calls; a call can have more than one.</p>
+    </div>
+  );
+}
+
+function Texts({ t }: { t: any }) {
+  const Row = ({ name, texts, leads, booked }: { name: string; texts: number; leads: number; booked: number }) => (
+    <tr><td>{name}</td><td>{texts}</td><td>{leads}</td><td>{booked}<span className="muted small"> {pct(leads ? booked / leads : null)}</span></td></tr>
+  );
+  return (
+    <div className="card">
+      <h3>Texts <span className="muted">({t.texts} sent to {t.leads} lead{t.leads === 1 ? '' : 's'} in these dates)</span></h3>
+      <div className="scroll-x">
+        <table className="grid">
+          <thead><tr><th>Text</th><th>Sent</th><th>Leads</th><th>Booked after</th></tr></thead>
+          <tbody>
+            {t.rows.map((x: any) => <Row key={x.name} name={x.name} texts={x.texts} leads={x.leads} booked={x.booked} />)}
+            {t.rows.length > 1 && <Row name="All texts" texts={t.texts} leads={t.leads} booked={t.booked} />}
+          </tbody>
+        </table>
+      </div>
+      <p className="help">The texts you marked sent on the Calling screen. Booked after counts the leads that had an appointment set on a call after their first text in these dates (the % is out of the leads texted).</p>
     </div>
   );
 }

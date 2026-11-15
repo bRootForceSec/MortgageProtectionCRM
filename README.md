@@ -138,7 +138,9 @@ These are the starting keys. Change any of them in **Settings → Keyboard short
 | `B` | Mark (or unmark) that this lead called you back |
 | `I` | Copy "#MP Lead ID Last name" for your calendar |
 | `D` | Tick (or untick) "Do not call" for this call |
+| `V` | Tick (or untick) "Left voicemail" for this call |
 | `M` | Show every button, not only the ones for this lead |
+| `T` | Text this lead: pick a text with 1-9 to show it as a QR code for your phone |
 | `1`–`4` | First call outcome: `1` No answer, `2` Picked up, `3` Appt set, `4` Bad number (No answer and Bad number save straight away, unless you change it in Settings) |
 | `1`–`5` | Appointment outcome: `1` No show, `2` Appt picked up, `3` Presentation, `4` Sale, `5` Rescheduled (No show saves straight away, unless you change it in Settings) |
 | `Enter` | Save the outcome and go to the next lead |

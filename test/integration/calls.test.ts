@@ -37,6 +37,17 @@ const MIGRATIONS = path.join(path.dirname(fileURLToPath(import.meta.url)), '../.
 const key = () => `k-${uuidv7()}`;
 
 describe('manual call logging', () => {
+  it('"Left voicemail" is kept with the call, comes back on undo and is in the Reports export', async () => {
+    const { call_id } = logManualCall(db, { lead_id: jane, idempotency_key: key(), outcome_code: 'no_answer', left_voicemail: true });
+    expect((db.prepare('SELECT left_voicemail FROM call WHERE id = ?').get(call_id) as any).left_voicemail).toBe(1);
+    const { reportCalls } = await import('../../src/server/domain/reports.js');
+    const day = { from: new Date(Date.now() - 86_400_000).toISOString(), to: new Date(Date.now() + 86_400_000).toISOString(), tz: 'America/New_York' };
+    expect(reportCalls(db, day).find((c) => c.call_id === call_id)?.left_voicemail).toBe('yes');
+    expect(voidCall(db, call_id)).toMatchObject({ left_voicemail: true });
+    const other = logManualCall(db, { lead_id: jane, idempotency_key: key(), outcome_code: 'no_answer' });
+    expect(voidCall(db, other.call_id)).toMatchObject({ left_voicemail: false });
+  });
+
   it('T4: multiple calls to the same lead stay separate records', () => {
     logManualCall(db, { lead_id: jane, idempotency_key: key(), outcome_code: 'no_answer', from_number_id: num });
     logManualCall(db, { lead_id: jane, idempotency_key: key(), outcome_code: 'no_answer', from_number_id: num });

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { api, fmtDateTime } from '../api';
 import { useApp } from '../App';
 import { useLeadTypes } from '../leadTypes';
-import { CallingCard, ShortcutsCard } from './CallingSettingsCards';
+import { CallingCard, ShortcutsCard, TextsCard } from './CallingSettingsCards';
 import { UpdatePanel } from '../components/UpdateBar';
 import { ProductsCard } from './ProductsCard';
 import { GoogleCalendarCard } from './GoogleCalendarCard';
@@ -33,7 +33,7 @@ interface County {
 }
 
 const SECTIONS: Section[] = [
-  { id: 'settings-calling', title: 'Calling', help: 'How dialing works, who can be called, the call list order and your keyboard keys.', cards: () => <><CallingCard /><ShortcutsCard /></> },
+  { id: 'settings-calling', title: 'Calling', help: 'How dialing works, who can be called, the call list order, your texts and your keyboard keys.', cards: () => <><CallingCard /><TextsCard /><ShortcutsCard /></> },
   { id: 'settings-leads', title: 'Leads', help: 'Lead types and prices, and counties.', cards: () => <><LeadTypesCard /><CountiesCard /></> },
   { id: 'settings-connected', title: 'Unitrust and Google', help: 'The Unitrust extension, products and comp, and Google Calendar.', cards: () => <><UnitrustCard /><ProductsCard /><GoogleCalendarCard /></> },
   { id: 'settings-imports', title: 'Imports', help: 'The AI that reads scanned lead pages, and how pages are kept.', cards: () => <><AiCard /><LeadPagesCard /></> },

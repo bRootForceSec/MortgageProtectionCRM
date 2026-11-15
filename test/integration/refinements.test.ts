@@ -169,6 +169,14 @@ describe('dial from the computer', () => {
     expect(bad.statusCode).toBe(400);
   });
 
+  it('puts a text on the phone\'s clipboard, as one argument even when it starts with a dash', async () => {
+    const cur = (await app.inject({ url: '/api/settings/calling', headers: auth })).json();
+    await app.inject({ method: 'PUT', url: '/api/settings/calling', headers: write, payload: { ...cur.settings, kdeconnect_device: 'abc123' } });
+    const r = await app.inject({ method: 'POST', url: '/api/texts/to-phone', headers: write, payload: { text: '--help me, Jane' } });
+    expect(r.statusCode).toBe(200);
+    expect(ran.at(-1)).toEqual(['-d', 'abc123', '--share-text=--help me, Jane']);
+  });
+
   it('says so when KDE Connect is missing', async () => {
     const t = tempDb();
     const none = await buildApp({ db: t.db, config: t.c, token: TOKEN, kde: new KdeConnect(undefined, 'kdeconnect-cli-not-here') });

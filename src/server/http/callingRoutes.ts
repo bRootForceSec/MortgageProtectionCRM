@@ -86,6 +86,19 @@ export function registerCallingRoutes(app: FastifyInstance, deps: { db: DB; kde?
     return { ok: true };
   });
 
+  // A filled-in text onto your phone's clipboard, to paste where you text from.
+  app.post('/api/texts/to-phone', async (req) => {
+    const b = z.object({ text: z.string().min(1).max(2000) }).parse(req.body);
+    const device = loadCallingSettings(db).kdeconnect_device;
+    if (!device) throw new DomainError('choose your phone under Settings → Calling first (Dialing: KDE Connect)');
+    try {
+      await kde.shareText(device, b.text);
+    } catch (e: any) {
+      throw new DomainError(e.message, 502);
+    }
+    return { ok: true };
+  });
+
   // ---------- agenda: callbacks, and the appointments of one day ----------
   app.get('/api/agenda', async (req) => {
     const q = z.object({

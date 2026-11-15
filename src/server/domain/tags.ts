@@ -5,7 +5,7 @@ import { audit } from '../core/audit.js';
 import { matchingLeadIds, type LeadFilter } from './callList.js';
 import { rewriteSavedFormulas } from './formulas.js';
 import { renameNameIn } from '../../shared/formula.js';
-import { BY_YOU, type EventBy } from '../../shared/leadEvents.js';
+import { BY_YOU, type EventBy, type LeadEventKind } from '../../shared/leadEvents.js';
 
 // Tags: your own labels on leads. A lead has any number. Each one put on or taken off a lead is a line in the lead's
 // log (lead_event), with what did it; lead_tag is the tags a lead has now. Making, renaming and deleting tags go in
@@ -64,8 +64,16 @@ export function dialedAnyway(db: DB, leadId: string, now = nowIso()): boolean {
 
 /** Logs that you went past a never-dial tag: added the lead to the call list anyway, or dialed it anyway. */
 export function logNeverDialOverride(db: DB, leadId: string, tag: string, what: 'added anyway' | 'dialed anyway', now = nowIso()) {
-  db.prepare('INSERT INTO lead_event (id, lead_id, at, kind, tag_name, source, source_name) VALUES (?,?,?,?,?,?,?)')
-    .run(uuidv7(), leadId, now, 'never_dial_override', tag, 'you', what);
+  logLeadEvent(db, leadId, 'never_dial_override', { tag_name: tag, source_name: what }, now);
+}
+
+/** A line in the lead's log that isn't a tag going on or off (those go through setTagOnLeads): done by you. */
+export function logLeadEvent(
+  db: DB, leadId: string, kind: Exclude<LeadEventKind, 'tag_added' | 'tag_removed'>,
+  what: { tag_name?: string | null; source_id?: string | null; source_name?: string | null }, now = nowIso(),
+) {
+  db.prepare('INSERT INTO lead_event (id, lead_id, at, kind, tag_name, source, source_id, source_name) VALUES (?,?,?,?,?,?,?,?)')
+    .run(uuidv7(), leadId, now, kind, what.tag_name ?? null, 'you', what.source_id ?? null, what.source_name ?? null);
 }
 
 function cleanName(name: string): string {

@@ -3,6 +3,7 @@ import * as z from 'zod/v4';
 import { BestTimeRules, STARTER_BEST_TIME } from './bestTime.js';
 import { isStep } from './followUps.js';
 import { STARTER_ORDER, SortStep } from './listOrder.js';
+import { STARTER_TEXTS, TextTemplates } from './texts.js';
 
 // Calling screen settings, shared by the server (which validates and stores them) and the UI (which edits them).
 // You set every limit yourself; nothing here caps how much you call.
@@ -25,7 +26,9 @@ export const SHORTCUT_ACTIONS = {
   called_back: { label: 'Mark (or unmark) that this lead called you back', keys: ['b'] },
   copy_tag: { label: 'Copy "#MP Lead ID Last name" for your calendar', keys: ['i'] },
   do_not_call: { label: 'Tick (or untick) "Do not call" for this call', keys: ['d'] },
+  voicemail: { label: 'Tick (or untick) "Left voicemail" for this call', keys: ['v'] },
   switch_mode: { label: 'Show every button, not only the ones for this lead', keys: ['m'] },
+  text: { label: 'Text this lead: pick a text with 1-9 to show it as a QR code for your phone', keys: ['t'] },
 } as const;
 export type ShortcutAction = keyof typeof SHORTCUT_ACTIONS;
 
@@ -88,6 +91,8 @@ export const CallingSettings = z.object({
       voicemail: z.string().max(5000).default(''),
     })
     .default({ agent_name: '', opener: '', voicemail: '' }),
+  /** Your texts, with [[field]] filled in from the lead (see texts.ts). The first nine get keys 1-9 on the Calling screen. */
+  texts: TextTemplates.default(STARTER_TEXTS),
   /** You record your calls: leads in all-party consent states get a reminder, and the script starts with the disclosure. */
   recording: z
     .object({
