@@ -251,11 +251,12 @@ table.shortcuts .chip { margin-right: 6px; }
 .history li.voided > div:not(.muted) { text-decoration: line-through; }
 .modal.qr { width: min(380px, 100%); }
 .modal.qr canvas { background: #fff; border-radius: 6px; }
-.modal.text-picker { width: min(460px, 100%); }
+.modal.text-picker { width: min(540px, 100%); }
+.modal.text-picker canvas { max-width: 100%; height: auto !important; }
 .text-choices { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
 .text-choices .btn { width: 100%; text-align: left; display: grid; grid-template-columns: auto 1fr; gap: 2px 8px; white-space: normal; }
 .text-choices .btn .small { grid-column: 2; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-.text-preview { white-space: pre-wrap; text-align: left; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 8px; }
+.text-preview { white-space: pre-wrap; text-align: left; max-height: 140px; overflow: auto; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 8px; }
 .text-template { border: 1px solid var(--border); border-radius: 6px; padding: 8px; display: grid; gap: 6px; }
 .text-template textarea { width: 100%; }
 .card textarea { width: 100%; box-sizing: border-box; font: inherit; }

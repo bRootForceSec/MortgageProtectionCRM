@@ -52,6 +52,18 @@ describe('texts', () => {
     expect(r.texts[1]).toMatchObject({ text: 'See you, Jane!', missing: ['appointment'] });
   });
 
+  it('keeps a long text with its line breaks (over 1,000 characters), and fills in today', () => {
+    const long = `**TIME-SENSITIVE**\nToday [[today]]\n\n${'12:00-12:45 PM\n'.repeat(80)}Thank you,\n[[my_name]]`;
+    expect(long.length).toBeGreaterThan(1000);
+    const s = loadCallingSettings(db);
+    saveCallingSettings(db, { ...s, texts: [{ id: 't3', name: 'Confirm', body: long }] });
+    expect(loadCallingSettings(db).texts[0]!.body).toBe(long);
+    const text = textsForLead(db, lead('Jane')).texts[0]!.text;
+    expect(text).toMatch(/^\*\*TIME-SENSITIVE\*\*\nToday \w+day, \w{3} \d{1,2}\n\n12:00-12:45 PM\n/);
+    expect(text.endsWith('Thank you,\nAlistair')).toBe(true);
+    expect(() => saveCallingSettings(db, { ...s, texts: [{ id: 't4', name: 'Too long', body: 'x'.repeat(2001) }] })).toThrow();
+  });
+
   it('logs a text sent on the lead, refuses a never-dial or do-not-call lead, and Reports counts texts that led to a booking', () => {
     const jane = lead('Jane');
     const robert = lead('Robert');

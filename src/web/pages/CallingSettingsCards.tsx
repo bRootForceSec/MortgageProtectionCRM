@@ -14,7 +14,7 @@ import { STARTER_ORDER, type SortStep } from '../../shared/listOrder';
 import { LEAD_FACTS, SHEET_BLOCKS, sheetBlocks, sheetFacts, type SheetLayout } from '../../shared/sheetLayout';
 import { useCustomFields } from '../customFields';
 import { bestTimeWords, hourWords } from '../../shared/bestTime';
-import { placeholdersIn, STARTER_TEXTS, TEXT_FIELDS, type TextTemplate } from '../../shared/texts';
+import { placeholdersIn, STARTER_TEXTS, TEXT_FIELDS, TEXT_MAX, type TextTemplate } from '../../shared/texts';
 
 // Settings for the Calling screen: retry gap, dialing, timer, goals, alerts, shortcuts, scripts and texts.
 
@@ -528,9 +528,9 @@ function TextTemplateRow({ t, n, known, onSave, onMove, onRemove, first, last }:
         <button type="button" className="btn small" aria-label="Move down" disabled={last} onClick={() => onMove(1)}>↓</button>
         <button type="button" className="btn small" aria-label={`Remove ${t.name}`} onClick={onRemove}>✕</button>
       </span>
-      <textarea aria-label={`${t.name} text`} rows={3} maxLength={1000} value={body} onChange={(e) => setBody(e.target.value)} onBlur={commit} />
+      <textarea aria-label={`${t.name} text`} rows={Math.max(3, Math.min(25, body.split('\n').length + 1))} maxLength={TEXT_MAX} value={body} onChange={(e) => setBody(e.target.value)} onBlur={commit} />
       <span className="help">
-        {body.length} characters{body.length > 160 ? ' (over 160, so it may go as more than one text)' : ''}.
+        {body.length} of {TEXT_MAX} characters{body.length > 160 ? ' (over 160, so it may go as more than one text)' : ''}.
         {unknown.length > 0 && <span className="warn"> Not a field: {unknown.map((u) => `[[${u}]]`).join(', ')}. It fills in only for leads whose sheet has a column by that name.</span>}
       </span>
     </div>

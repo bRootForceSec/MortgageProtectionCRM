@@ -88,7 +88,7 @@ export function registerCallingRoutes(app: FastifyInstance, deps: { db: DB; kde?
 
   // A filled-in text onto your phone's clipboard, to paste where you text from.
   app.post('/api/texts/to-phone', async (req) => {
-    const b = z.object({ text: z.string().min(1).max(2000) }).parse(req.body);
+    const b = z.object({ text: z.string().min(1).max(8000) }).parse(req.body);
     const device = loadCallingSettings(db).kdeconnect_device;
     if (!device) throw new DomainError('choose your phone under Settings → Calling first (Dialing: KDE Connect)');
     try {
