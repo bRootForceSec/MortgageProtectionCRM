@@ -9,7 +9,7 @@ import {
 } from '../../src/server/domain/drafts.js';
 import { Secrets } from '../../src/server/ai/settings.js';
 import type { PageReader } from '../../src/server/ai/readers.js';
-import { AiError } from '../../src/server/ai/readers.js';
+import { AiError, AiSignInError } from '../../src/server/ai/readers.js';
 import Database from 'better-sqlite3';
 import { migrate } from '../../src/server/db/connection.js';
 import { uuidv7 } from '../../src/server/ids.js';
@@ -174,6 +174,17 @@ describe('PDF import drafts', () => {
 
     const off = await setup(['scan'], null);
     expect(getDraftView(off.db, off.id).rows[0]!.issues[0]!.message).toMatch(/no AI reader is set up/);
+  });
+
+  it('when Claude Code is signed out, it is asked once (per worker) and every scan says how to sign in again', async () => {
+    let calls = 0;
+    const signedOut: PageReader = { name: 'ai:fail', read: async () => { calls++; throw new AiSignInError('Claude Code is signed out'); } };
+    const { db, id, worker } = await setup([FAKE[0]!, 'scan', 'scan', 'scan', 'scan', 'scan'], signedOut);
+    const v = getDraftView(db, id);
+    expect(calls).toBeLessThanOrEqual(worker.concurrency);
+    expect(v.progress).toMatchObject({ ai_failed: 5 });
+    for (const r of v.rows.slice(1)) expect(r.issues[0]!.message).toMatch(/signed out.*Try those pages again/);
+    expect(v.rows[0]!.issues.filter((i) => i.blocking)).toEqual([]);
   });
 
   it('"IN 46619" in the State field is split into State and ZIP, and a missing state is blamed on the state, not the county', async () => {
