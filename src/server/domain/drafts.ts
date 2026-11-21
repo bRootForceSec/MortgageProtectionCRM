@@ -12,7 +12,7 @@ import { titleCaseIfShouting, splitStateZip } from './normalize.js';
 import { readPdfText, extractPage, type ReadIssue } from './pdfReader.js';
 import { turnPdfPages, normTurn } from './pageTurn.js';
 import { PROMPT_VERSION, type PageAnswer } from '../ai/prompt.js';
-import { makeReader, AiError, type PageReader } from '../ai/readers.js';
+import { makeReader, AiError, AiSignInError, type PageReader } from '../ai/readers.js';
 import { loadAiSettings, type Secrets } from '../ai/settings.js';
 import { getSetting, setSetting } from '../core/settings.js';
 import type { DraftProgress, Review } from '../../shared/drafts.js';
@@ -359,12 +359,17 @@ export class DraftWorker {
       });
     };
     const queue = [...pending];
+    // Once Claude Code says it is signed out, the other pages are left for later without asking it again.
+    let signedOut: string | null = null;
     const work = async () => {
       while (queue.length) {
         if (!this.alive(id)) return;
         const page = queue.shift()!;
         if (!reader) {
           failPage(page, 'This page is a scan and no AI reader is set up (Settings). Type the details in from the page.');
+          progress.ai_failed++;
+        } else if (signedOut) {
+          failPage(page, signedOut);
           progress.ai_failed++;
         } else {
           try {
@@ -395,6 +400,13 @@ export class DraftWorker {
             progress.cost_usd += result.cost_usd ?? 0;
           } catch (e) {
             if (!(e instanceof AiError)) throw e;
+            if (e instanceof AiSignInError) {
+              signedOut = `${e.message}. Then press "Try those pages again".`;
+              failPage(page, signedOut);
+              progress.ai_failed++;
+              setProgress(db, id, progress);
+              continue;
+            }
             failPage(page, `The AI couldn't read this page (${e.message}). Type the details in from the page.`);
             progress.ai_failed++;
           }
