@@ -44,6 +44,7 @@ const scanReader: PageReader = {
           city: 'Fort Wayne', state: 'IN', zip: '46809', county: null, source_lead_id: null, callin_date: null, phone: '260-555-0186',
         },
         other_phones: [],
+        details: [],
         uncertain: [], notes: null,
       },
     } as any;

@@ -18,6 +18,7 @@ import { setCustomValues } from './customFields.js';
 export const EDITABLE_FIELDS = [
   'first_name', 'last_name', 'phone', 'email', 'address_line', 'city', 'state', 'zip',
   'lender', 'loan_amount', 'age', 'dob', 'coborrower',
+  'coborrower_name', 'coborrower_dob', 'coborrower_age', 'coborrower_gender',
 ] as const;
 export type EditableField = (typeof EDITABLE_FIELDS)[number];
 
@@ -25,6 +26,8 @@ const LABEL: Record<EditableField, string> = {
   first_name: 'First name', last_name: 'Last name', phone: 'Phone',
   email: 'Email', address_line: 'Address', city: 'City', state: 'State', zip: 'ZIP', lender: 'Lender',
   loan_amount: 'Mortgage amount', age: 'Age', dob: 'Date of birth', coborrower: 'Co-borrower',
+  coborrower_name: "Co-borrower's name", coborrower_dob: "Co-borrower's date of birth", coborrower_age: "Co-borrower's age",
+  coborrower_gender: "Co-borrower's gender",
 };
 
 /** Applies edits inside the caller's transaction. Returns how many fields changed. */
@@ -82,8 +85,20 @@ export function editLeadDetails(db: DB, leadId: string, edits: Partial<Record<Ed
       }
       case 'coborrower':
         set.coborrower_raw = v || null;
-        set.coborrower_signal = coborrowerSignal(v);
         break;
+      case 'coborrower_age': {
+        const a = normalizeAge(v);
+        if (v && a.value == null) problems.push(`${LABEL[field]}: ${a.problem}`);
+        set.coborrower_age = a.value;
+        break;
+      }
+      case 'coborrower_dob': {
+        const b = normalizeDob(v);
+        if (v && b.value == null) problems.push(`${LABEL[field]}: ${b.problem}`);
+        set.coborrower_dob = b.value;
+        set.coborrower_dob_raw = v || null;
+        break;
+      }
       default:
         set[field] = v || null;
     }
@@ -91,6 +106,13 @@ export function editLeadDetails(db: DB, leadId: string, edits: Partial<Record<Ed
   if (problems.length) throw new DomainError(problems.join('; '));
   // The age follows a new date of birth, even when an age was typed in the same edit.
   if (typeof set.dob === 'string') set.age = ageOn(set.dob);
+  if (typeof set.coborrower_dob === 'string') set.coborrower_age = ageOn(set.coborrower_dob);
+  // There is a co-borrower when the column says yes or a name is given.
+  if ('coborrower_raw' in set || 'coborrower_name' in set) {
+    const raw = 'coborrower_raw' in set ? set.coborrower_raw : lead.coborrower_raw;
+    const name = 'coborrower_name' in set ? set.coborrower_name : lead.coborrower_name;
+    set.coborrower_signal = name || coborrowerSignal(raw) === 'yes' ? 'yes' : 'unknown';
+  }
 
   const now = nowIso();
   const change = db.prepare('INSERT INTO lead_change (id, lead_id, field, old_value, new_value, created_at) VALUES (?,?,?,?,?,?)');

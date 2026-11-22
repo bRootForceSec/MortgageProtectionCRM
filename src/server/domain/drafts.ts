@@ -58,7 +58,8 @@ export interface DraftSettings {
 /** Fields the AI reports by its own names. */
 const AI_FIELD: Record<keyof PageAnswer['fields'] | 'other_phones', LeadFieldKey> = {
   other_phones: 'other_phones',
-  full_name: 'full_name', coborrower: 'coborrower', age: 'age', dob: 'dob', lender: 'lender', loan_amount: 'loan_amount',
+  full_name: 'full_name', coborrower: 'coborrower', coborrower_age: 'coborrower_age', coborrower_dob: 'coborrower_dob',
+  coborrower_gender: 'coborrower_gender', email: 'email', passphrase: 'passphrase', comments: 'note', age: 'age', dob: 'dob', lender: 'lender', loan_amount: 'loan_amount',
   address: 'address', city: 'city', state: 'state', zip: 'zip', county: 'county', source_lead_id: 'source_lead_id',
   callin_date: 'callin_date', phone: 'phone',
 };
@@ -410,8 +411,11 @@ export class DraftWorker {
             for (const p of a.other_phones) more = addPhoneLine(more, { number: p.number.trim(), label: p.label.trim() }, fields.phone);
             if (more.length) fields.other_phones = phoneLinesText(more);
             fixStateZip(fields);
+            const extra: Record<string, string> = {};
+            for (const d of a.details) if (d.label.trim() && d.value.trim() && !/^null$/i.test(d.value.trim())) extra[d.label.trim()] = d.value.trim();
+            if (fields.email && /^null$/i.test(fields.email)) delete fields.email;
             const data: DraftRowData = {
-              fields, extra: {},
+              fields, extra,
               raw: {
                 ...(Object.fromEntries(Object.entries(a.fields).filter(([, v]) => v)) as Record<string, string>),
                 ...(fields.other_phones ? { other_phones: fields.other_phones } : {}),
@@ -524,6 +528,7 @@ function sourceRowsOf(db: DB, draft: ReturnType<typeof getDraft>, rows: DraftRow
         for (const k of ['full_name', 'address', 'city'] as const) if (fields[k]) fields[k] = titleCaseIfShouting(fields[k], { keepUpper: k !== 'full_name' })!;
         if (fields.lender) fields.lender = titleCaseIfShouting(fields.lender)!;
         if (fields.coborrower && !/^(yes|no|y|n)$/i.test(fields.coborrower)) fields.coborrower = titleCaseIfShouting(fields.coborrower, { keepUpper: false })!;
+        if (fields.coborrower_name) fields.coborrower_name = titleCaseIfShouting(fields.coborrower_name, { keepUpper: false })!;
       }
       const extra = { ...data.extra };
       const allNotes = [r.notes, ...notes].filter(Boolean).join(' ');

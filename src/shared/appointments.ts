@@ -101,6 +101,7 @@ export interface PrepCard {
   dob: string | null;
   age: number | null;
   coborrower_raw: string | null;
+  coborrower_name: string | null;
   tobacco_raw: string | null;
   health_heart_raw: string | null;
   health_stroke_raw: string | null;

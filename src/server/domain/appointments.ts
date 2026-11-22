@@ -89,7 +89,7 @@ export function appointmentsOnDay(db: DB, day: string): PrepCard[] {
     .prepare(
       `SELECT a.id appointment_id, a.lead_id, a.scheduled_for, CASE a.recorded_via WHEN 'unitrust' THEN 'unitrust' ELSE 'app' END source,
               ${LEAD_NAME} name, l.phone_e164, l.city, l.state, l.time_zone, l.lead_type, l.lender, l.loan_amount_cents, l.dob, l.age,
-              l.coborrower_raw, l.tobacco_raw, l.health_heart_raw, l.health_stroke_raw, l.health_cancer_raw, l.health_diabetes_raw,
+              l.coborrower_raw, l.coborrower_name, l.tobacco_raw, l.health_heart_raw, l.health_stroke_raw, l.health_cancer_raw, l.health_diabetes_raw,
               s.status, s.appt_result,
               (SELECT n.body FROM note n LEFT JOIN call nc ON nc.id = n.call_id
                 WHERE n.lead_id = a.lead_id AND nc.voided_at IS NULL
