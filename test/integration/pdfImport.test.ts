@@ -33,6 +33,7 @@ const fakeReader = (calls: number[] = []): PageReader => ({
           callin_date: null, phone: null,
         },
         other_phones: [],
+        details: [],
         uncertain: [{ field: 'phone', best_reading: '260-555-0186', reason: 'the middle digits are hard to read' }],
         notes: 'Mailer card; phone is handwritten.',
       },
@@ -122,7 +123,7 @@ describe('PDF import drafts', () => {
     expect(batch.cost_total_cents).toBe(900); // 2 D leads + 1 B lead
     // Enough is kept to rebuild a spreadsheet later: what was read, by what, and what you changed.
     const raw = JSON.parse((db.prepare('SELECT raw_json FROM import_row WHERE row_number = 2').get() as any).raw_json);
-    expect(raw).toMatchObject({ __page: '2', __extractor: 'ai:fake:test', __prompt_version: 'lead-page-v5', __edited: '{"phone":"(260) 555-0186"}' });
+    expect(raw).toMatchObject({ __page: '2', __extractor: 'ai:fake:test', __prompt_version: 'lead-page-v6', __edited: '{"phone":"(260) 555-0186"}' });
     expect(fs.readdirSync(c.importsDir).some((f) => f.endsWith('IN_574_1-4.pdf'))).toBe(true);
     expect(listDrafts(db)).toEqual([]);
   });
@@ -165,6 +166,34 @@ describe('PDF import drafts', () => {
       { e164: '+15743830790', label: 'Other' },
     ]);
     expect(nums(2)).toEqual([{ e164: '+15745550111', label: 'Called in from' }]);
+  });
+
+  it('keeps the code word, beneficiary, co-borrower and the lead\'s comments from a telemarketing page', async () => {
+    const tele: PageReader = {
+      name: 'ai:fake:tele',
+      async read() {
+        const r = await fakeReader().read(new Uint8Array());
+        r.answer.layout = 'other';
+        Object.assign(r.answer.fields, {
+          full_name: 'STEVEN BROWN', coborrower: 'DENISE BROWN', coborrower_age: '53', phone: '(614) 555-0175', email: 'null',
+          passphrase: 'GREEN', comments: 'how much', callin_date: '11/14/25', source_lead_id: '900000075', county: null,
+        });
+        r.answer.details = [{ label: 'Beneficiary', value: 'HUSBAND' }, { label: 'Record Date', value: '11/07/25' }, { label: 'Email', value: 'null' }];
+        r.answer.uncertain = [];
+        return { ...r, extractor: 'ai:fake:tele' };
+      },
+    };
+    const { c, db, id } = await setup(['scan'], tele);
+    const row = getDraftView(db, id).rows[0]!;
+    expect(row.review).toBe('auto');
+    expect(row.fields.email).toBeUndefined();
+    commitDraft(db, c.importsDir, id, { name: 'Telemarketing' });
+    const l = db.prepare('SELECT * FROM lead').get() as any;
+    expect(l).toMatchObject({ first_name: 'Steven', last_name: 'Brown', coborrower_name: 'Denise Brown', coborrower_age: 53, coborrower_signal: 'yes', email: null });
+    expect(l.callin_at.slice(0, 10)).toBe('2025-11-14');
+    expect(JSON.parse(l.extra_json)).toMatchObject({ Beneficiary: 'HUSBAND', 'Record Date': '11/07/25', Passphrase: 'GREEN' });
+    expect(JSON.parse(l.extra_json).Email).toBeUndefined();
+    expect(db.prepare('SELECT body FROM note WHERE lead_id = ?').all(l.id)).toEqual([{ body: 'how much' }]);
   });
 
   it('a page with no main number calls the first of its other numbers', async () => {

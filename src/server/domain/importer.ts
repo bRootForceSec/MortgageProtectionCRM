@@ -5,7 +5,7 @@ import { type ColumnMapping, type LeadFieldKey, validateMapping, headerKey, cano
 import type { ParsedSheet } from './spreadsheet.js';
 import {
   coborrowerSignal, normalizeAge, normalizeDob, normalizeCallinDate, normalizeMoneyToCents, normalizeState, normalizeUsPhone,
-  normalizeZip, phoneDoubt, splitName, splitPhones, splitStateZip, toText, timeZoneFor,
+  normalizeGender, normalizeZip, phoneDoubt, splitCouple, splitName, splitPhones, splitStateZip, toText, timeZoneFor,
 } from './normalize.js';
 import { resolveCounty, lookupZip } from './county.js';
 import { rebuildLeadState } from './leadState.js';
@@ -14,6 +14,7 @@ import { recordSheetHistory } from './sheetHistory.js';
 import { ageOn } from '../../shared/age.js';
 import { type OtherPhone, parsePhoneLines, phoneLinesText } from '../../shared/phones.js';
 import { writeOtherPhones } from './leadPhones.js';
+import { addNote } from './calls.js';
 
 export type RowStatus = 'accepted' | 'duplicate_in_file' | 'already_imported' | 'rejected';
 
@@ -36,6 +37,11 @@ export interface LeadDraft {
   dob_raw: string | null;
   coborrower_raw: string | null;
   coborrower_signal: 'yes' | 'unknown';
+  coborrower_name: string | null;
+  coborrower_dob: string | null;
+  coborrower_dob_raw: string | null;
+  coborrower_age: number | null;
+  coborrower_gender: string | null;
   address_line: string | null;
   city: string | null;
   state: string | null;
@@ -55,6 +61,8 @@ export interface LeadDraft {
   lead_type: string | null;
   status_raw: string | null;
   extra: Record<string, string>;
+  /** Written on the page by the lead (comments, requested changes): becomes a note on the lead. */
+  note: string | null;
 }
 
 /** Field values for one source row, keyed by lead field. */
@@ -120,7 +128,9 @@ export function mapFields(f: FieldValues, extra: Record<string, string> = {}): {
   let first = txt(f.first_name);
   let last = txt(f.last_name);
   const full = txt(f.full_name);
-  if (full && !first && !last) ({ first, last } = splitName(full));
+  // "Jessica Moore & Kyle Moore": one lead, the second person is its co-borrower.
+  const couple = splitCouple(full);
+  if (full && !first && !last) ({ first, last } = splitName(couple.borrower));
   if (!first && !last) errors.push('no name');
 
   // A cell can hold several numbers ("317-555-0100 / 317-555-0101"): the first in the Phone cell is the main one,
@@ -187,6 +197,15 @@ export function mapFields(f: FieldValues, extra: Record<string, string> = {}): {
   if (passphrase) allExtra.Passphrase = passphrase;
 
   const coRaw = txt(f.coborrower);
+  // The co-borrower column may hold the name itself ("DENISE BROWN") rather than Yes or No.
+  const coName = txt(f.coborrower_name) ?? (coRaw && /[a-z]{2}/i.test(coRaw) && coborrowerSignal(coRaw) !== 'yes' && !/^(no|none|false|unknown|n\/?a)$/i.test(coRaw) ? coRaw : null) ?? couple.coborrower;
+  const coAgeRaw = txt(f.coborrower_age);
+  const coAge = normalizeAge(coAgeRaw);
+  if (coAge.problem) warnings.push(`co-borrower ${coAge.problem}`);
+  const coDobRaw = txt(f.coborrower_dob);
+  const coDob = normalizeDob(coDobRaw);
+  if (coDob.problem) warnings.push(`co-borrower ${coDob.problem}`);
+  if (coDob.value) coAge.value = ageOn(coDob.value);
   return {
     errors,
     warnings,
@@ -206,7 +225,12 @@ export function mapFields(f: FieldValues, extra: Record<string, string> = {}): {
       dob: dob.value,
       dob_raw: dobRaw,
       coborrower_raw: coRaw,
-      coborrower_signal: coborrowerSignal(coRaw),
+      coborrower_signal: coName ? 'yes' : coborrowerSignal(coRaw),
+      coborrower_name: coName,
+      coborrower_dob: coDob.value,
+      coborrower_dob_raw: coDobRaw,
+      coborrower_age: coAge.value,
+      coborrower_gender: normalizeGender(txt(f.coborrower_gender)),
       address_line: txt(f.address),
       city: txt(f.city),
       state: st.value,
@@ -226,6 +250,7 @@ export function mapFields(f: FieldValues, extra: Record<string, string> = {}): {
       lead_type: txt(f.lead_type),
       status_raw: txt(f.status),
       extra: allExtra,
+      note: txt(f.note),
     },
   };
 }
@@ -425,10 +450,10 @@ export function commitRows(
     const insLead = db.prepare(
       `INSERT INTO lead (id, batch_id, import_row_id, first_name, last_name, full_name_raw, phone_raw, phone_e164, phone_valid,
         email, lender, loan_amount_cents, loan_amount_raw, age, age_raw, dob, dob_raw,
-        coborrower_raw, coborrower_signal, address_line, city, state, zip, county, county_key, county_source, time_zone,
+        coborrower_raw, coborrower_signal, coborrower_name, coborrower_dob, coborrower_dob_raw, coborrower_age, coborrower_gender, address_line, city, state, zip, county, county_key, county_source, time_zone,
         tobacco_raw, health_heart_raw, health_stroke_raw, health_cancer_raw, health_diabetes_raw, extra_json,
         lead_type, price_cents, source_lead_id, callin_at, callin_raw, source_page, created_at)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     );
     const insLink = db.prepare(
       `INSERT OR IGNORE INTO lead_link (id, lead_a, lead_b, reason, created_at) VALUES (?,?,?,'same_phone',?)`,
@@ -450,13 +475,15 @@ export function commitRows(
       insLead.run(
         leadId, batchId, rowId, l.first_name, l.last_name, l.full_name_raw, l.phone_raw, l.phone_e164, l.phone_e164 ? 1 : 0,
         l.email, l.lender, l.loan_amount_cents, l.loan_amount_raw,
-        l.age, l.age_raw, l.dob, l.dob_raw, l.coborrower_raw, l.coborrower_signal, l.address_line, l.city, l.state, l.zip,
+        l.age, l.age_raw, l.dob, l.dob_raw, l.coborrower_raw, l.coborrower_signal,
+        l.coborrower_name, l.coborrower_dob, l.coborrower_dob_raw, l.coborrower_age, l.coborrower_gender, l.address_line, l.city, l.state, l.zip,
         l.county, l.county_key, l.county_source, l.time_zone, l.tobacco_raw,
         l.health_heart_raw, l.health_stroke_raw, l.health_cancer_raw, l.health_diabetes_raw,
         Object.keys(l.extra).length ? JSON.stringify(l.extra) : null,
         l.lead_type, price, l.source_lead_id, l.callin_at, l.callin_raw, r.page, now,
       );
       if (l.other_phones.length) writeOtherPhones(db, leadId, l.other_phones);
+      if (l.note) addNote(db, leadId, l.note);
       newLeadIds.push(leadId);
       if (l.status_raw && l.phone_e164) history.push({ leadId, status: l.status_raw, phone: l.phone_e164 });
       for (const other of r.samePhoneLeadIds) insLink.run(uuidv7(), other, leadId, now);

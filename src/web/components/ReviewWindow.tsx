@@ -8,7 +8,7 @@ import { OtherPhones } from './EditLead';
 // The review window: the lead page (or the original spreadsheet row) on the left, the fields on the right.
 // OK adds the lead to the batch, Discard drops it, Cancel asks whether to keep the import for later.
 
-const FIELDS: { key: string; label: string; required?: boolean; sheetOnly?: boolean }[] = [
+const FIELDS: { key: string; label: string; required?: boolean; sheetOnly?: boolean; ifRead?: boolean }[] = [
   { key: 'full_name', label: 'Name', required: true },
   { key: 'first_name', label: 'First name', sheetOnly: true },
   { key: 'last_name', label: 'Last name', sheetOnly: true },
@@ -24,6 +24,13 @@ const FIELDS: { key: string; label: string; required?: boolean; sheetOnly?: bool
   { key: 'age', label: 'Age' },
   { key: 'dob', label: 'Date of birth' },
   { key: 'coborrower', label: 'Co-borrower' },
+  { key: 'coborrower_name', label: "Co-borrower's name", ifRead: true },
+  { key: 'coborrower_age', label: "Co-borrower's age", ifRead: true },
+  { key: 'coborrower_dob', label: "Co-borrower's date of birth", ifRead: true },
+  { key: 'coborrower_gender', label: "Co-borrower's gender", ifRead: true },
+  { key: 'email', label: 'Email', ifRead: true },
+  { key: 'passphrase', label: 'Code word', ifRead: true },
+  { key: 'note', label: 'Note from the lead', ifRead: true },
   { key: 'source_lead_id', label: 'Lead ID' },
   { key: 'callin_date', label: 'Call-in date' },
   { key: 'status', label: 'Status (becomes call history)', sheetOnly: true },
@@ -114,6 +121,8 @@ export function ReviewWindow({
   const isSheet = draft.kind === 'sheet';
   const shown = FIELDS.filter((f) => {
     if (f.sheetOnly) return isSheet && (f.key in row.fields || f.key in row.read);
+    // Fields most pages don't have show when this one did.
+    if (f.ifRead) return f.key in row.fields || f.key in row.read;
     if (f.key === 'full_name' && isSheet && !('full_name' in row.read) && ('first_name' in row.read || 'last_name' in row.read)) return false;
     return true;
   });

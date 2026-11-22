@@ -192,7 +192,7 @@ export function LeadSummary({
             dob: <Fact label="Date of birth" v={l.dob ? fmtDob(l.dob) : l.dob_raw} />,
             lender: <Fact label="Lender" v={l.lender} />,
             loan: <Fact label="Loan amount" v={l.loan_amount_cents != null ? fmtMoney(l.loan_amount_cents) : l.loan_amount_raw} />,
-            coborrower: <Fact label="Co-borrower" v={l.coborrower_signal === 'yes' ? 'Yes' : l.coborrower_raw ? `Unknown (sheet says "${l.coborrower_raw}")` : 'Unknown'} />,
+            coborrower: <Coborrower l={l} />,
             tobacco: <Fact label="Tobacco" v={l.tobacco_raw} />,
             address: <Fact label="Address" v={[l.address_line, l.zip].filter(Boolean).join(' ')} />,
             batch: <Fact label="Batch" v={`${d.batch.name}${d.batch.cost_per_lead_cents != null ? ` · ${fmtMoney(d.batch.cost_per_lead_cents)}/lead` : ''}`} />,
@@ -280,6 +280,29 @@ export function LeadTags({ leadId, initial, before }: { leadId: string; initial:
         </form>
       )}
     </span>
+  );
+}
+
+/** The co-borrower's own box: name, age, gender and date of birth. Shown only when the lead has one. */
+function Coborrower({ l }: { l: LeadDetail['lead'] }) {
+  const age = personAge({ dob: l.coborrower_dob, age: l.coborrower_age });
+  const known = l.coborrower_name || l.coborrower_dob || age != null || l.coborrower_gender;
+  if (!known && l.coborrower_signal !== 'yes') return null;
+  return (
+    <div className="coborrower-box">
+      <label>Co-borrower</label>
+      {known ? (
+        <span>
+          <b>{l.coborrower_name ?? 'Name not given'}</b>
+          {[age != null ? `Age ${age}` : null, l.coborrower_gender, l.coborrower_dob ? `Born ${fmtDob(l.coborrower_dob)}` : l.coborrower_dob_raw]
+            .filter(Boolean)
+            .map((x) => ` · ${x}`)
+            .join('')}
+        </span>
+      ) : (
+        <span>Yes, name not given</span>
+      )}
+    </div>
   );
 }
 

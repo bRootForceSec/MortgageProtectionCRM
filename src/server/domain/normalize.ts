@@ -149,6 +149,28 @@ export function splitName(raw: unknown): { first: string | null; last: string | 
   return { first: parts.slice(0, -1).join(' '), last: parts[parts.length - 1]! };
 }
 
+/**
+ * "Jessica Moore & Kyle Moore" → borrower "Jessica Moore", co-borrower "Kyle Moore". "Jason & Jane Smith" gives the
+ * first person the shared last name. A name without "&" is all borrower.
+ */
+export function splitCouple(raw: string | null): { borrower: string | null; coborrower: string | null } {
+  const s = toText(raw).replace(/\s+/g, ' ');
+  const parts = s.split(/\s+&\s+/);
+  if (parts.length !== 2 || !parts[0] || !parts[1]) return { borrower: s || null, coborrower: null };
+  let [a, b] = parts as [string, string];
+  const bWords = b.split(' ');
+  if (!a.includes(' ') && bWords.length > 1) a = `${a} ${bWords[bWords.length - 1]}`;
+  return { borrower: a, coborrower: b };
+}
+
+/** "M", "male", "F", "Female" → Male or Female; anything else is kept as written. */
+export function normalizeGender(raw: string | null): string | null {
+  const s = toText(raw);
+  if (/^m(ale)?$/i.test(s)) return 'Male';
+  if (/^f(emale)?$/i.test(s)) return 'Female';
+  return s || null;
+}
+
 export function toText(raw: unknown): string {
   if (raw === null || raw === undefined) return '';
   // Spreadsheet dates arrive as UTC-encoded wall-clock times; keep the time when there is one.

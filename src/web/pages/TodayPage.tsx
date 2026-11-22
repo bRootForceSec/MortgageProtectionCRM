@@ -106,7 +106,7 @@ function Prep({ p, onOpen }: { p: PrepCard; onOpen: () => void }) {
     ['Lender', p.lender],
     ['Loan', fmtMoney(p.loan_amount_cents)],
     ['Age', age != null ? String(age) : null],
-    ['On the loan', p.coborrower_raw],
+    ['On the loan', p.coborrower_name ?? p.coborrower_raw],
     ['Lead type', types.find((t) => t.code === p.lead_type)?.label ?? p.lead_type],
   ] as const).filter(([, v]) => v);
   return (

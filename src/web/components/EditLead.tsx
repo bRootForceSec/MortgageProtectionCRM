@@ -21,7 +21,11 @@ const FIELDS: { key: string; label: string; wide?: boolean }[] = [
   { key: 'loan_amount', label: 'Mortgage amount' },
   { key: 'age', label: 'Age' },
   { key: 'dob', label: 'Date of birth' },
-  { key: 'coborrower', label: 'Co-borrower' },
+  { key: 'coborrower', label: 'Co-borrower (as on the sheet)' },
+  { key: 'coborrower_name', label: "Co-borrower's name" },
+  { key: 'coborrower_dob', label: "Co-borrower's date of birth" },
+  { key: 'coborrower_age', label: "Co-borrower's age" },
+  { key: 'coborrower_gender', label: "Co-borrower's gender" },
 ];
 
 function initial(l: LeadDetail['lead']): Record<string, string> {
@@ -40,6 +44,10 @@ function initial(l: LeadDetail['lead']): Record<string, string> {
     age: personAge(l) != null ? String(personAge(l)) : l.age_raw ?? '',
     dob: l.dob_raw ?? l.dob ?? '',
     coborrower: l.coborrower_raw ?? '',
+    coborrower_name: l.coborrower_name ?? '',
+    coborrower_dob: l.coborrower_dob_raw ?? l.coborrower_dob ?? '',
+    coborrower_age: l.coborrower_age != null ? String(l.coborrower_age) : '',
+    coborrower_gender: l.coborrower_gender ?? '',
   };
 }
 
