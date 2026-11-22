@@ -69,7 +69,32 @@ describe('importing several numbers', () => {
       { raw: '317-555-0113', e164: '+13175550113', label: 'Alternate' },
       { raw: '317-555-01', e164: null, label: 'Called in from' },
     ]);
-    expect(warnings).toEqual([expect.stringMatching(/^third phone is not 10 digits/)]);
+    expect(warnings).toEqual([
+      // 0111, 0112 and 0113 are one digit off the main 0110: kept, with a warning to check them.
+      expect.stringMatching(/^other number 317-555-0111 is almost the same as the main number/),
+      expect.stringMatching(/^Alternate number 317-555-0112 is almost the same/),
+      expect.stringMatching(/^Alternate number 317-555-0113 is almost the same/),
+      expect.stringMatching(/^third phone is not 10 digits/),
+    ]);
+  });
+
+  it('phone columns past the mapped ones are more numbers, labelled with their header', async () => {
+    const { db } = tempDb();
+    const headers = [...SAMPLE_HEADERS, 'Alt Phone', 'Phone 3', 'Phone 4', 'Work Cell', 'Notes'];
+    const parsed = await parseSpreadsheet(
+      sampleCsv([['Pat Four', '317-555-0120', 'Chase', 1, 50, '', '', 'Carmel', 'IN', '46032', '', '', '', '', '', '', '317-555-0131', '317-555-0142', '(317) 555-0153', '317.555.0164', 'call after 5']], headers),
+      'four.csv',
+    );
+    const sheet = parsed.sheets[0]!;
+    commitImport(db, parsed, sheet, suggestMapping(sheet.headers), { name: 'b' });
+    const id = (db.prepare("SELECT id FROM lead WHERE first_name = 'Pat'").get() as any).id;
+    expect(db.prepare('SELECT e164, label FROM lead_other_phone WHERE lead_id = ? ORDER BY pos').all(id)).toEqual([
+      { e164: '+13175550131', label: 'Alternate' },
+      { e164: '+13175550142', label: 'Called in from' },
+      { e164: '+13175550153', label: 'Phone 4' },
+      { e164: '+13175550164', label: 'Work Cell' },
+    ]);
+    expect(JSON.parse((db.prepare('SELECT extra_json FROM lead WHERE id = ?').get(id) as any).extra_json)).toMatchObject({ Notes: 'call after 5' });
   });
 
   it('a sheet with an extra phone column gives the lead a list, shown in exports', async () => {

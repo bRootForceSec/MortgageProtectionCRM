@@ -205,6 +205,8 @@ ul.plain { list-style: none; padding: 0; margin: 0; }
 .review-form .has-issue input { border-color: var(--bad); box-shadow: 0 0 0 1px var(--bad); }
 .review-form .issues, .review-form > .help, .review-actions { grid-column: 1 / -1; }
 .review-form .issues { margin: 0; padding-left: 18px; }
+.review-form .review-phones { grid-column: 1 / -1; }
+.review-form .phone-row { display: grid; grid-template-columns: 1fr 1fr auto; gap: 8px; align-items: center; margin-bottom: 6px; }
 .review-actions { margin-top: 6px; }
 @media (max-width: 900px) { .review-body { grid-template-columns: 1fr; } .review-form { grid-template-columns: 1fr; } }
 

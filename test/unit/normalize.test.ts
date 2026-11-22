@@ -1,7 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import {
   normalizeUsPhone, normalizeMoneyToCents, normalizeAge, coborrowerSignal, normalizeState, normalizeZip, splitName, splitStateZip, splitPhones,
+  phoneDoubt,
 } from '../../src/server/domain/normalize.js';
+import { parsePhoneLines, phoneLinesText, addPhoneLine } from '../../src/shared/phones.js';
 import { suggestMapping, validateMapping } from '../../src/server/domain/mapping.js';
 
 describe('phone normalization', () => {
@@ -20,6 +22,38 @@ describe('phone normalization', () => {
   });
 
   it('blank is not an error', () => expect(normalizeUsPhone('  ')).toEqual({ value: null }));
+});
+
+describe('numbers that look wrong', () => {
+  it.each([
+    ['+14195551212', null, 'looks made up'],
+    ['+15133333333', '+15138273768', 'looks made up'],
+    ['+19344503146', '+19374503146', 'is almost the same as the main number (a typo?)'], // one digit off
+    ['+15132306998', '+15133206998', 'is almost the same as the main number (a typo?)'], // two digits swapped
+    ['+15133206998', '+15133206998', null],
+    ['+15134878672', '+15134878503', null], // a different number
+    ['+15134878672', null, null],
+  ])('%s next to %s', (e164, main, doubt) => expect(phoneDoubt(e164, main)).toBe(doubt));
+});
+
+describe('other numbers while importing', () => {
+  it('reads and writes one number per line, with or without a label', () => {
+    const rows = parsePhoneLines('Alternate: (317) 555-0101\n 317-555-0102 \n\nWork cell: 1-317-555-0103');
+    expect(rows).toEqual([
+      { label: 'Alternate', number: '(317) 555-0101' },
+      { label: '', number: '317-555-0102' },
+      { label: 'Work cell', number: '1-317-555-0103' },
+    ]);
+    expect(phoneLinesText([...rows, { label: 'Blank', number: ' ' }])).toBe('Alternate: (317) 555-0101\n317-555-0102\nWork cell: 1-317-555-0103');
+  });
+
+  it('adds a number only once, and never the main number', () => {
+    let rows = addPhoneLine([], { label: 'Called in from', number: '(317) 555-0100' }, '317-555-0100');
+    expect(rows).toEqual([]);
+    rows = addPhoneLine(rows, { label: 'Home', number: '(317) 555-0101' }, '317-555-0100');
+    rows = addPhoneLine(rows, { label: 'Cell', number: '1-317-555-0101' }, '317-555-0100');
+    expect(rows).toEqual([{ label: 'Home', number: '(317) 555-0101' }]);
+  });
 });
 
 describe('cells with several phone numbers', () => {
