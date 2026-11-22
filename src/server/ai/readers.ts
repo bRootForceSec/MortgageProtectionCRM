@@ -21,6 +21,17 @@ export interface AiResult {
 
 export class AiError extends Error {}
 
+/** Claude Code is installed but signed out (its login expired). Every page would fail the same way. */
+export class AiSignInError extends AiError {}
+
+export const CLAUDE_SIGNED_OUT =
+  'Claude Code is signed out (its login expired). Open a terminal, type claude and press Enter, type /login and sign in to your Claude account, then type /exit';
+
+/** Whether Claude Code's answer or error says it needs signing in again. Exported for tests. */
+export function needsSignIn(text: string): boolean {
+  return /oauth|\/login|not logged in|log in again|invalid api key|authentication_error|token (has )?expired|\b401\b/i.test(text);
+}
+
 export interface PageReader {
   name: string;
   read(pagePdf: Uint8Array): Promise<AiResult>;
@@ -69,7 +80,11 @@ export function claudeCodeReader(command: string, model: string): PageReader {
         } catch {
           throw new AiError(`Claude Code gave an answer that isn't JSON: ${out.slice(0, 200)}`);
         }
-        if (parsed.is_error) throw new AiError(`Claude Code: ${String(parsed.result ?? 'error').slice(0, 300)}`);
+        if (parsed.is_error) {
+          const why = String(parsed.result ?? 'error');
+          if (needsSignIn(why)) throw new AiSignInError(CLAUDE_SIGNED_OUT);
+          throw new AiError(`Claude Code: ${why.slice(0, 300)}`);
+        }
         const answer = PageAnswer.safeParse(parsed.structured_output);
         if (!answer.success) throw new AiError('Claude Code answered in the wrong shape');
         return { answer: answer.data, extractor: `ai:claude_code:${model}`, cost_usd: parsed.total_cost_usd ?? null };
@@ -78,6 +93,36 @@ export function claudeCodeReader(command: string, model: string): PageReader {
       }
     },
   };
+}
+
+/** For "Check it works": asks Claude Code a one-word question, so a signed-out Claude Code shows up here, not halfway through an import. */
+export async function checkClaudeCode(command: string, model: string, limits = { ...RUN_LIMITS, timeoutMs: 60_000 }): Promise<{ ok: boolean; message: string }> {
+  const found = findClaudeCode(command);
+  if (!found) return { ok: false, message: claudeNotFoundMessage(command) };
+  const args = [
+    '-p', '--model', model, '--output-format', 'json',
+    '--tools', 'Read', '--allowedTools', 'Read',
+    '--no-session-persistence', '--permission-mode', 'dontAsk',
+    'Reply with the word OK.',
+  ];
+  try {
+    const out = await run(found.file, [...found.prefix, ...args], os.tmpdir(), command, limits);
+    let parsed: { is_error?: boolean; result?: unknown };
+    try {
+      parsed = JSON.parse(out);
+    } catch {
+      return { ok: false, message: `Claude Code gave an answer that isn't JSON: ${out.slice(0, 200)}` };
+    }
+    if (parsed.is_error) {
+      const why = String(parsed.result ?? 'error');
+      return { ok: false, message: needsSignIn(why) ? `${CLAUDE_SIGNED_OUT}.` : `Claude Code: ${why.slice(0, 300)}` };
+    }
+    return { ok: true, message: 'Claude Code is signed in and answering. Pages are read with your Claude account.' };
+  } catch (e) {
+    if (e instanceof AiSignInError) return { ok: false, message: `${CLAUDE_SIGNED_OUT}.` };
+    if (e instanceof AiError) return { ok: false, message: e.message };
+    throw e;
+  }
 }
 
 /** Limits for one Claude Code run. Exported for tests. */
@@ -133,6 +178,7 @@ export function run(file: string, args: string[], cwd: string, command: string, 
     child.on('close', (code) => {
       clearTimeout(timer);
       if (code === 0 || out.trim().startsWith('{')) resolve(out);
+      else if (needsSignIn(err || out)) reject(new AiSignInError(CLAUDE_SIGNED_OUT));
       else reject(new AiError(`"${command}" stopped with code ${code}: ${(err || out).trim().slice(0, 300)}`));
     });
   });
