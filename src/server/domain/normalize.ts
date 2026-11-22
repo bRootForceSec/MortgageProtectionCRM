@@ -25,6 +25,20 @@ export function normalizeUsPhone(raw: unknown): Normalized<string> {
 }
 
 /**
+ * Why a valid extra number looks wrong, or null: a made-up number (555-1212, seven of one digit) or one digit off
+ * the main number (or two digits swapped), which is most likely the same number typed wrong.
+ */
+export function phoneDoubt(e164: string, main: string | null): string | null {
+  const d = e164.slice(-10);
+  if (d.slice(3) === '5551212' || /^(\d)\1{6}$/.test(d.slice(3))) return 'looks made up';
+  const m = main?.slice(-10);
+  if (!m || m === d) return null;
+  const diff = [...d].map((c, i) => (c === m[i] ? -1 : i)).filter((i) => i >= 0);
+  const swapped = diff.length === 2 && diff[1] === diff[0]! + 1 && d[diff[0]!] === m[diff[1]!] && d[diff[1]!] === m[diff[0]!];
+  return diff.length === 1 || swapped ? 'is almost the same as the main number (a typo?)' : null;
+}
+
+/**
  * Splits a cell holding several phone numbers ("317-555-0100 / 317-555-0101", "... or ...") into one per number.
  * A cell that isn't clearly a list of whole numbers comes back as it was, so "317/555-0100" stays one number.
  */

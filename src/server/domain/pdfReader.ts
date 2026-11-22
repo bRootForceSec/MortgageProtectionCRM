@@ -69,7 +69,7 @@ const LABELS: LabelDef[] = [
     name: 'Any History of Heart Attack, Stroke, Cancer, or Diabetes',
   },
   { re: /^called in from:?$/i, slot: 'phone3', col: 'right', name: 'Called in From' },
-  { re: /^contact phone number:?$/i, slot: 'phone', col: 'right', name: 'Contact Phone Number' },
+  { re: /^con(ta)?ct phone number:?$/i, slot: 'phone', col: 'right', name: 'Contact Phone Number' },
   { re: /^alternate phone number:?$/i, slot: 'phone2', col: 'right', name: 'Alternate Phone Number' },
 ];
 /** Second line of the health label. */

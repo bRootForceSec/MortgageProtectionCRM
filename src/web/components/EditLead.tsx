@@ -52,8 +52,8 @@ function initialPhones(l: LeadDetail['lead']): PhoneRow[] {
 const samePhones = (a: PhoneRow[], b: PhoneRow[]) =>
   a.length === b.length && a.every((x, i) => x.number.trim() === b[i]!.number.trim() && x.label.trim() === b[i]!.label.trim());
 
-/** The lead's other numbers, as a list you can add to, change and remove from. */
-function OtherPhones({ rows, onChange }: { rows: PhoneRow[]; onChange: (rows: PhoneRow[]) => void }) {
+/** The lead's other numbers, as a list you can add to, change and remove from (also used when checking an import). */
+export function OtherPhones({ rows, onChange }: { rows: PhoneRow[]; onChange: (rows: PhoneRow[]) => void }) {
   const set = (i: number, p: Partial<PhoneRow>) => onChange(rows.map((r, j) => (j === i ? { ...r, ...p } : r)));
   return (
     <div className="field wide">

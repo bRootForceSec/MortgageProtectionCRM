@@ -2,6 +2,8 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { api } from '../api';
 import { useApp } from '../App';
 import type { DraftRow, DraftView, LeadType } from '../importTypes';
+import { type PhoneLine, parsePhoneLines, phoneLinesText } from '../../shared/phones';
+import { OtherPhones } from './EditLead';
 
 // The review window: the lead page (or the original spreadsheet row) on the left, the fields on the right.
 // OK adds the lead to the batch, Discard drops it, Cancel asks whether to keep the import for later.
@@ -11,8 +13,7 @@ const FIELDS: { key: string; label: string; required?: boolean; sheetOnly?: bool
   { key: 'first_name', label: 'First name', sheetOnly: true },
   { key: 'last_name', label: 'Last name', sheetOnly: true },
   { key: 'phone', label: 'Contact phone', required: true },
-  { key: 'phone2', label: 'Alternate phone' },
-  { key: 'phone3', label: 'Called in from' },
+  { key: 'other_phones', label: 'Other numbers' },
   { key: 'address', label: 'Street address', required: true },
   { key: 'city', label: 'City' },
   { key: 'state', label: 'State' },
@@ -51,11 +52,14 @@ export function ReviewWindow({
   const row = draft.rows.find((r) => r.row_number === rowNumber) ?? null;
 
   const [values, setValues] = useState<Record<string, string>>({});
+  // Other numbers are edited as a list (a blank row you just added has to stay on screen).
+  const [phones, setPhones] = useState<PhoneLine[]>([]);
   const [leadType, setLeadType] = useState<string>('');
   const firstInput = useRef<HTMLInputElement>(null);
   useEffect(() => {
     if (!row) return;
     setValues({ ...(row.fields as Record<string, string>) });
+    setPhones(parsePhoneLines((row.fields as Record<string, string>).other_phones));
     setLeadType(row.lead_type ?? '');
     // Put the cursor in the first field that needs something.
     setTimeout(() => {
@@ -69,7 +73,7 @@ export function ReviewWindow({
   const edits = () => {
     const out: Record<string, string> = {};
     for (const f of FIELDS) {
-      const now = (values[f.key] ?? '').trim();
+      const now = (f.key === 'other_phones' ? phoneLinesText(phones) : values[f.key] ?? '').trim();
       const read = ((row.fields as Record<string, string>)[f.key] ?? '').trim();
       if (now !== read) out[f.key] = now;
     }
@@ -146,6 +150,14 @@ export function ReviewWindow({
             {row.notes && <p className="help">{row.extractor?.startsWith('ai:') ? 'AI notes: ' : ''}{row.notes}</p>}
             {shown.map((f, n) => {
               const iss = issuesFor(f.key);
+              if (f.key === 'other_phones') {
+                return (
+                  <div key={f.key} className={`review-phones ${iss.some((i) => i.blocking) ? 'has-issue' : ''}`}>
+                    <OtherPhones rows={phones} onChange={setPhones} />
+                    {iss.map((i, k) => <small key={k} className={i.blocking ? 'error' : 'warn'}>{i.message}</small>)}
+                  </div>
+                );
+              }
               return (
                 <label key={f.key} className={`field ${iss.some((i) => i.blocking) ? 'has-issue' : ''}`}>
                   <span>{f.label}{f.required && ' *'}</span>

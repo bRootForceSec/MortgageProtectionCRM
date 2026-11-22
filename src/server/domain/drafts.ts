@@ -8,7 +8,8 @@ import { type FieldValues, type SourceRow, type BatchInput, mapFields, previewRo
 import type { LeadFieldKey, ColumnMapping } from './mapping.js';
 import type { ParsedSheet } from './spreadsheet.js';
 import { isKnownCounty } from './county.js';
-import { titleCaseIfShouting, splitStateZip } from './normalize.js';
+import { titleCaseIfShouting, splitStateZip, splitPhones } from './normalize.js';
+import { type PhoneLine, addPhoneLine, parsePhoneLines, phoneLinesText } from '../../shared/phones.js';
 import { readPdfText, extractPage, type ReadIssue } from './pdfReader.js';
 import { turnPdfPages, normTurn } from './pageTurn.js';
 import { PROMPT_VERSION, type PageAnswer } from '../ai/prompt.js';
@@ -55,10 +56,11 @@ export interface DraftSettings {
 }
 
 /** Fields the AI reports by its own names. */
-const AI_FIELD: Record<keyof PageAnswer['fields'], LeadFieldKey> = {
+const AI_FIELD: Record<keyof PageAnswer['fields'] | 'other_phones', LeadFieldKey> = {
+  other_phones: 'other_phones',
   full_name: 'full_name', coborrower: 'coborrower', age: 'age', dob: 'dob', lender: 'lender', loan_amount: 'loan_amount',
   address: 'address', city: 'city', state: 'state', zip: 'zip', county: 'county', source_lead_id: 'source_lead_id',
-  callin_date: 'callin_date', phone: 'phone', alt_phone: 'phone2', called_from: 'phone3',
+  callin_date: 'callin_date', phone: 'phone',
 };
 
 // ---------------------------------------------------------------------------------------------
@@ -86,6 +88,30 @@ export function effectiveFields(data: DraftRowData, edits: FieldValues | null): 
   if (!f.phone && f.phone3) {
     f.phone = f.phone3;
     notes.push('No contact phone on the page, so the "Called in From" number is used.');
+  }
+  // The typed page reader (and drafts saved before) keep the Alternate and Called in From numbers in their own
+  // fields; the review form and the importer take one list of other numbers. A list you edited replaces them.
+  if (edits && 'other_phones' in edits) {
+    delete f.phone2;
+    delete f.phone3;
+  }
+  if (f.phone2 || f.phone3) {
+    let rows: PhoneLine[] = [];
+    for (const [k, label] of [['phone2', 'Alternate'], ['phone3', 'Called in from']] as const) {
+      for (const n of splitPhones(f[k])) rows = addPhoneLine(rows, { number: n, label }, f.phone);
+      delete f[k];
+    }
+    for (const p of parsePhoneLines(f.other_phones)) rows = addPhoneLine(rows, p, f.phone);
+    if (rows.length) f.other_phones = phoneLinesText(rows);
+    else delete f.other_phones;
+  }
+  // No main number but others: the first one is the number to call.
+  if (!f.phone && f.other_phones) {
+    const [first, ...rest] = parsePhoneLines(f.other_phones);
+    f.phone = first!.number;
+    if (rest.length) f.other_phones = phoneLinesText(rest);
+    else delete f.other_phones;
+    notes.push(`No main phone number, so the first other number${first!.label ? ` (${first!.label})` : ''} is used.`);
   }
   return { fields: f, notes };
 }
@@ -380,9 +406,16 @@ export class DraftWorker {
             for (const [k, v] of Object.entries(a.fields) as [keyof PageAnswer['fields'], string | null][]) {
               if (v && v.trim()) fields[AI_FIELD[k]] = v.trim();
             }
+            let more: PhoneLine[] = [];
+            for (const p of a.other_phones) more = addPhoneLine(more, { number: p.number.trim(), label: p.label.trim() }, fields.phone);
+            if (more.length) fields.other_phones = phoneLinesText(more);
             fixStateZip(fields);
             const data: DraftRowData = {
-              fields, extra: {}, raw: Object.fromEntries(Object.entries(a.fields).filter(([, v]) => v)) as Record<string, string>,
+              fields, extra: {},
+              raw: {
+                ...(Object.fromEntries(Object.entries(a.fields).filter(([, v]) => v)) as Record<string, string>),
+                ...(fields.other_phones ? { other_phones: fields.other_phones } : {}),
+              },
               uncertain: a.uncertain, reader_issues: [],
             };
             const turn = normTurn(Number(a.turn ?? 0) || 0);

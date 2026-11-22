@@ -4,7 +4,7 @@ import * as z from 'zod/v4';
 // Adapted from Alistair's "AI Prompt Lead Conversion" rules: blank beats a guess, read handwriting digit
 // by digit, labelled fields only. The app does the spreadsheet, duplicate and formatting work itself.
 
-export const PROMPT_VERSION = 'lead-page-v4';
+export const PROMPT_VERSION = 'lead-page-v5';
 
 const val = z.string().nullable();
 
@@ -28,14 +28,20 @@ export const PageAnswer = z.object({
     county: val.describe('county as printed on the page; null when the page has no county'),
     source_lead_id: val.describe('the labelled Mortgage Identification Number only'),
     callin_date: val.describe('the labelled call-in date and time, exactly as printed'),
-    phone: val.describe('Contact Phone Number, or the main phone on other layouts'),
-    alt_phone: val.describe('Alternate Phone Number'),
-    called_from: val.describe('Called in From number'),
+    phone: val.describe('Contact Phone Number; on other layouts the first phone number on the page'),
   }),
+  other_phones: z
+    .array(
+      z.object({
+        number: z.string().describe('the number exactly as printed or written'),
+        label: z.string().describe('what the page calls it (Alternate, Called in from, Home, Cell, Work, Other); empty when unlabelled'),
+      }),
+    )
+    .describe('every other phone number on the page, in the order shown; leave out repeats of a number already given'),
   uncertain: z
     .array(
       z.object({
-        field: z.string().describe('one of the keys in fields'),
+        field: z.string().describe('one of the keys in fields, or other_phones'),
         best_reading: val.describe('your best reading, or null'),
         reason: z.string(),
       }),
@@ -51,6 +57,7 @@ Layouts you may see:
 - "Mortgage Protection Call-in Delivery Notice": typed, two columns. Left column has labelled fields (Mortgage Identification Number, Call-in Date & Time, Last Action, Borrower Name, Co-Borrower, Borrower Age, Date of Birth (some versions), Lender, Mortgage Amount, Borrower Address, City, State, Zip Code, County). Right column has Called in From, Contact Phone Number, Alternate Phone Number. The paragraph text ("Our records indicate...", "THE REFERENCED MORTGAGE...") is boilerplate, never field data.
 - Scanned mailer cards or postcards, often rotated, with handwritten phone numbers.
 - CRM note pages or online lead forms.
+- Forms or letters with several phone boxes (Home, Cell, Work, Other) for the borrower and spouse.
 
 Rules:
 1. Never invent a value. If a field is missing, ambiguous or illegible, return null for it.
@@ -62,7 +69,8 @@ Rules:
 7. Handwritten marks (X, "NO NEED", strike-throughs) do not change printed values. Mention them in notes.
 8. Put a field in "uncertain" whenever it is printed or written on the page and you were not fully sure of it, even if you returned a value. Do not list fields the page simply does not have (for example a mailer card has no county, call-in date or Mortgage Identification Number): just return null for those.
 9. notes: null for a straightforward page.
-10. turn: look at the page as it is shown. If the printed text runs sideways or upside down, give how many degrees clockwise the page must be turned so it reads normally ("90" when the text runs bottom to top, "270" when it runs top to bottom, "180" when it is upside down). Otherwise "0".`;
+10. Phone numbers: put the Contact Phone Number (or, on other layouts, the first number on the page) in phone, and every other phone number on the page in other_phones with the label the page gives it: Alternate, Called in from, Home, Cell, Work, Other, or empty. Include all of them, however many there are, in the order shown, but list each number only once. A 9-digit number is a Mortgage ID, never a phone. If a call-in notice has no Contact Phone Number, put the Called in From number in phone and say so in notes. Ignore "Call At" ticks and best-time-to-call boxes.
+11. turn: look at the page as it is shown. If the printed text runs sideways or upside down, give how many degrees clockwise the page must be turned so it reads normally ("90" when the text runs bottom to top, "270" when it runs top to bottom, "180" when it is upside down). Otherwise "0".`;
 
 /** JSON Schema of the answer, for readers that take one directly (Claude Code CLI, OpenAI-compatible servers). */
 export function answerJsonSchema(): Record<string, unknown> {

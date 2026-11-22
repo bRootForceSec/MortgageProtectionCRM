@@ -1,18 +1,18 @@
 import { createHash } from 'node:crypto';
 import type { DB } from '../db/connection.js';
 import { uuidv7, nowIso } from '../ids.js';
-import { type ColumnMapping, type LeadFieldKey, validateMapping, headerKey } from './mapping.js';
+import { type ColumnMapping, type LeadFieldKey, validateMapping, headerKey, canonicalHeader } from './mapping.js';
 import type { ParsedSheet } from './spreadsheet.js';
 import {
   coborrowerSignal, normalizeAge, normalizeDob, normalizeCallinDate, normalizeMoneyToCents, normalizeState, normalizeUsPhone,
-  normalizeZip, splitName, splitPhones, splitStateZip, toText, timeZoneFor,
+  normalizeZip, phoneDoubt, splitName, splitPhones, splitStateZip, toText, timeZoneFor,
 } from './normalize.js';
 import { resolveCounty, lookupZip } from './county.js';
 import { rebuildLeadState } from './leadState.js';
 import { ensureTag, setTagOnLeads } from './tags.js';
 import { recordSheetHistory } from './sheetHistory.js';
 import { ageOn } from '../../shared/age.js';
-import type { OtherPhone } from '../../shared/phones.js';
+import { type OtherPhone, parsePhoneLines, phoneLinesText } from '../../shared/phones.js';
 import { writeOtherPhones } from './leadPhones.js';
 
 export type RowStatus = 'accepted' | 'duplicate_in_file' | 'already_imported' | 'rejected';
@@ -134,12 +134,15 @@ export function mapFields(f: FieldValues, extra: Record<string, string> = {}): {
     ...moreMain.map((r) => ({ r, label: null, what: 'phone' })),
     ...splitPhones(f.phone2).map((r) => ({ r, label: 'Alternate', what: 'second' })),
     ...splitPhones(f.phone3).map((r) => ({ r, label: 'Called in from', what: 'third' })),
+    ...parsePhoneLines(f.other_phones).flatMap((p) => splitPhones(p.number).map((r) => ({ r, label: p.label || null, what: 'other' }))),
   ];
   for (const { r, label, what } of more) {
     const n = normalizeUsPhone(r);
     if (n.problem) warnings.push(`${what} ${n.problem}`);
     if (n.value && (n.value === phone.value || others.some((p) => p.e164 === n.value))) continue;
     others.push({ raw: r, e164: n.value, label });
+    const doubt = n.value ? phoneDoubt(n.value, phone.value) : null;
+    if (doubt) warnings.push(`${label ?? 'other'} number ${r} ${doubt}; it is kept, so check it before you rely on it`);
   }
 
   const loanRaw = txt(f.loan_amount);
@@ -238,7 +241,15 @@ export function sheetRowFields(raw: Record<string, string>, m: ColumnMapping): {
   }
   const mappedCols = new Set(Object.values(m).filter(Boolean) as string[]);
   const extra: Record<string, string> = {};
-  for (const [k, v] of Object.entries(raw)) if (!mappedCols.has(k) && toText(v)) extra[k] = toText(v);
+  // Phone columns past the ones mapped ("Phone 4", "Work cell") are more numbers, labelled with their header.
+  const more = parsePhoneLines(fields.other_phones).map((p) => ({ ...p, label: p.label || (m.other_phones ?? '') }));
+  for (const [k, v] of Object.entries(raw)) {
+    const t = toText(v);
+    if (mappedCols.has(k) || !t) continue;
+    if (/\b(phone|cell|mobile|tel|telephone)\b/.test(canonicalHeader(k)) && t.replace(/\D/g, '').length >= 10) more.push({ label: k, number: t });
+    else extra[k] = t;
+  }
+  if (more.length) fields.other_phones = phoneLinesText(more);
   return { fields, extra };
 }
 

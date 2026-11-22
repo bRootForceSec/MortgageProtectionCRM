@@ -30,8 +30,9 @@ const fakeReader = (calls: number[] = []): PageReader => ({
         fields: {
           full_name: 'Casey Cardholder', coborrower: null, age: null, lender: 'HALLMARK HM MTG LLC', loan_amount: '$147,184',
           address: '2505 Sample Dr', city: 'Fort Wayne', state: 'IN', zip: '46809', county: null, source_lead_id: null,
-          callin_date: null, phone: null, alt_phone: null, called_from: null,
+          callin_date: null, phone: null,
         },
+        other_phones: [],
         uncertain: [{ field: 'phone', best_reading: '260-555-0186', reason: 'the middle digits are hard to read' }],
         notes: 'Mailer card; phone is handwritten.',
       },
@@ -121,9 +122,65 @@ describe('PDF import drafts', () => {
     expect(batch.cost_total_cents).toBe(900); // 2 D leads + 1 B lead
     // Enough is kept to rebuild a spreadsheet later: what was read, by what, and what you changed.
     const raw = JSON.parse((db.prepare('SELECT raw_json FROM import_row WHERE row_number = 2').get() as any).raw_json);
-    expect(raw).toMatchObject({ __page: '2', __extractor: 'ai:fake:test', __prompt_version: 'lead-page-v4', __edited: '{"phone":"(260) 555-0186"}' });
+    expect(raw).toMatchObject({ __page: '2', __extractor: 'ai:fake:test', __prompt_version: 'lead-page-v5', __edited: '{"phone":"(260) 555-0186"}' });
     expect(fs.readdirSync(c.importsDir).some((f) => f.endsWith('IN_574_1-4.pdf'))).toBe(true);
     expect(listDrafts(db)).toEqual([]);
+  });
+
+  it('keeps every number the AI reads off a page, with its label, and the review form edits them as one list', async () => {
+    // A call-center printout or a letter with Home / Cell / Other boxes: more numbers than the call-in notice has.
+    const many: PageReader = {
+      name: 'ai:fake:many',
+      async read() {
+        const r = await fakeReader().read(new Uint8Array());
+        r.answer.layout = 'crm_notes';
+        r.answer.fields.phone = '(574) 485-6267';
+        r.answer.other_phones = [
+          { number: '(574) 344-8767', label: '' },
+          { number: '(574) 258-9934', label: 'Cell' },
+          { number: '(574) 485-6267', label: '' }, // the main number again
+          { number: '(574) 383-0790', label: 'Other' },
+          { number: '(574) 344-8767', label: 'Home' }, // listed twice
+        ];
+        r.answer.uncertain = [];
+        return { ...r, extractor: 'ai:fake:many' };
+      },
+    };
+    const { c, db, id } = await setup(['scan', FAKE[1]!], many);
+    const v = getDraftView(db, id);
+    expect(v.rows[0]!.fields.other_phones).toBe('(574) 344-8767\nCell: (574) 258-9934\nOther: (574) 383-0790');
+    // The typed call-in page's Alternate and Called in From numbers come as the same list.
+    expect(v.rows[1]!.fields).toMatchObject({ phone: '(574) 555-0112', other_phones: 'Alternate: (574) 555-0113\nCalled in from: (574) 555-0111' });
+    expect(v.rows[1]!.fields.phone2).toBeUndefined();
+    // Taking a number off the list in review takes it off for good.
+    reviewRow(db, id, 2, { action: 'save', edits: { other_phones: 'Called in from: (574) 555-0111' } });
+    expect(getDraftView(db, id).rows[1]!.fields.other_phones).toBe('Called in from: (574) 555-0111');
+
+    commitDraft(db, c.importsDir, id, { name: 'Many numbers' });
+    const nums = (page: number) =>
+      db.prepare('SELECT o.e164, o.label FROM lead_other_phone o JOIN lead l ON l.id = o.lead_id WHERE l.source_page = ? ORDER BY o.pos').all(page);
+    expect(nums(1)).toEqual([
+      { e164: '+15743448767', label: null },
+      { e164: '+15742589934', label: 'Cell' },
+      { e164: '+15743830790', label: 'Other' },
+    ]);
+    expect(nums(2)).toEqual([{ e164: '+15745550111', label: 'Called in from' }]);
+  });
+
+  it('a page with no main number calls the first of its other numbers', async () => {
+    const noMain: PageReader = {
+      name: 'ai:fake:nomain',
+      async read() {
+        const r = await fakeReader().read(new Uint8Array());
+        r.answer.other_phones = [{ number: '260-555-0186', label: 'Cell' }, { number: '260-555-0190', label: 'Other' }];
+        r.answer.uncertain = [];
+        return { ...r, extractor: 'ai:fake:nomain' };
+      },
+    };
+    const { db, id } = await setup(['scan'], noMain);
+    const row = getDraftView(db, id).rows[0]!;
+    expect(row.fields).toMatchObject({ phone: '260-555-0186', other_phones: 'Other: 260-555-0190' });
+    expect(row.review).toBe('auto');
   });
 
   it('a scan the AI read cleanly goes straight in; a blank field the page does not have is only a note', async () => {

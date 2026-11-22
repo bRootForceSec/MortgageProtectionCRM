@@ -8,6 +8,7 @@ export const LEAD_FIELDS = [
   { key: 'phone', label: 'Phone', synonyms: ['phone', 'phone number', 'telephone', 'tel', 'cell', 'mobile', 'primary phone', 'home phone', 'phone 1'] },
   { key: 'phone2', label: 'Second phone', synonyms: ['phone 2', 'alt phone', 'alternate phone', 'alternate phone number', 'secondary phone', 'work phone', 'other phone'] },
   { key: 'phone3', label: 'Third phone', synonyms: ['phone 3', 'third phone', 'called in from', 'called from'] },
+  { key: 'other_phones', label: 'More phones', synonyms: ['other phones', 'other numbers', 'more phones', 'phone 4'] },
   { key: 'email', label: 'Email', synonyms: ['email', 'e-mail', 'email address'] },
   { key: 'lender', label: 'Lender', synonyms: ['lender', 'mortgage lender', 'bank', 'mortgage company', 'servicer'] },
   { key: 'loan_amount', label: 'Loan amount', synonyms: ['loan amount', 'loan', 'mortgage amount', 'amount', 'loan amt', 'mortgage'] },

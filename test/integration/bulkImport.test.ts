@@ -42,8 +42,8 @@ const scanReader: PageReader = {
         fields: {
           full_name: 'Casey Cardholder', coborrower: null, age: null, lender: 'HALLMARK', loan_amount: '$147,184', address: '2505 Sample Dr',
           city: 'Fort Wayne', state: 'IN', zip: '46809', county: null, source_lead_id: null, callin_date: null, phone: '260-555-0186',
-          alt_phone: null, called_from: null,
         },
+        other_phones: [],
         uncertain: [], notes: null,
       },
     } as any;
